@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>MotionControl.VendorApi.ZMotion</AssemblyName>
+    <RootNamespace>MotionControl.VendorApi.ZMotion</RootNamespace>
+  </PropertyGroup>
+</Project>

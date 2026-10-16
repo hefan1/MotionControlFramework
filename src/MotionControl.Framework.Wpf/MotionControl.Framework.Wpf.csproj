@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+  <PropertyGroup>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>MotionControl.Framework.Wpf</AssemblyName>
+    <RootNamespace>MotionControl.Framework.Wpf</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MotionControl.Framework.Contracts\MotionControl.Framework.Contracts.csproj" />
+    <ProjectReference Include="..\MotionControl.Framework.Runtime\MotionControl.Framework.Runtime.csproj" />
+  </ItemGroup>
+</Project>

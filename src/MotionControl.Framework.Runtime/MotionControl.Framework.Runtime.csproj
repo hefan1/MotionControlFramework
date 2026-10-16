@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>MotionControl.Framework.Runtime</AssemblyName>
+    <RootNamespace>MotionControl.Framework.Runtime</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MotionControl.Framework.Contracts\MotionControl.Framework.Contracts.csproj" />
+  </ItemGroup>
+</Project>

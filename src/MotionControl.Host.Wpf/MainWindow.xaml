@@ -1,0 +1,19 @@
+<Window x:Class="MotionControl.Host.Wpf.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Motion Control Framework"
+        Height="720"
+        Width="1200"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="24">
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+            <TextBlock Text="Motion Control Framework"
+                       FontSize="28"
+                       HorizontalAlignment="Center" />
+            <TextBlock Text="上位机外壳占位，等待客户 UI 模板与设备模块接入。"
+                       Margin="0,12,0,0"
+                       FontSize="15"
+                       HorizontalAlignment="Center" />
+        </StackPanel>
+    </Grid>
+</Window>

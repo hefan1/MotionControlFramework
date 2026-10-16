@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>MotionControl.VendorApi.Leadshine</AssemblyName>
+    <RootNamespace>MotionControl.VendorApi.Leadshine</RootNamespace>
+  </PropertyGroup>
+</Project>

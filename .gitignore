@@ -1,0 +1,7 @@
+**/bin/
+**/obj/
+.vs/
+.tool-home/
+.nuget/
+*.user
+*.suo

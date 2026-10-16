@@ -1,0 +1,272 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using MotionControl.Framework.Contracts.Motion;
+
+namespace MotionControl.Framework.Runtime.Machine
+{
+    /// <summary>
+    /// 管理一台设备配置的多张运动卡，并提供按逻辑名称查找轴的入口。
+    /// Host 负责创建正确厂商的卡实例；设备流程只使用这里返回的逻辑轴。
+    /// </summary>
+    public sealed class MotionCardGroup
+    {
+        private readonly ReadOnlyCollection<IMotionCard> _cards;
+        private readonly ReadOnlyCollection<IAxis> _axes;
+        private readonly Dictionary<string, IAxis> _axesByName;
+        private readonly SemaphoreSlim _lifecycleLock = new SemaphoreSlim(1, 1);
+
+        public MotionCardGroup(IEnumerable<IMotionCard> cards)
+        {
+            if (cards == null)
+            {
+                throw new ArgumentNullException(nameof(cards));
+            }
+
+            var cardList = cards.ToList();
+            if (cardList.Count == 0)
+            {
+                throw new ArgumentException("至少需要配置一张运动控制卡。", nameof(cards));
+            }
+
+            ValidateCards(cardList);
+
+            _cards = cardList.AsReadOnly();
+            _axesByName = new Dictionary<string, IAxis>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var card in cardList)
+            {
+                foreach (var axis in card.Axes)
+                {
+                    if (axis == null)
+                    {
+                        throw new ArgumentException(
+                            "控制卡 '" + card.ControllerId + "' 的轴列表中包含空对象。",
+                            nameof(cards));
+                    }
+
+                    if (string.IsNullOrWhiteSpace(axis.Name))
+                    {
+                        throw new ArgumentException(
+                            "控制卡 '" + card.ControllerId + "' 中有轴没有逻辑名称。",
+                            nameof(cards));
+                    }
+
+                    if (_axesByName.ContainsKey(axis.Name))
+                    {
+                        throw new ArgumentException(
+                            "逻辑轴名称重复：'" + axis.Name + "'。请检查设备硬件配置。",
+                            nameof(cards));
+                    }
+
+                    _axesByName.Add(axis.Name, axis);
+                }
+            }
+
+            _axes = _axesByName.Values.ToList().AsReadOnly();
+        }
+
+        /// <summary>本机配置的运动卡。顺序与 Host 传入顺序一致。</summary>
+        public IReadOnlyCollection<IMotionCard> Cards
+        {
+            get { return _cards; }
+        }
+
+        /// <summary>所有卡上的逻辑轴集合。</summary>
+        public IReadOnlyCollection<IAxis> Axes
+        {
+            get { return _axes; }
+        }
+
+        /// <summary>所有卡均已连接时返回 true。</summary>
+        public bool IsConnected
+        {
+            get { return _cards.All(card => card.IsConnected); }
+        }
+
+        /// <summary>按逻辑名称查找轴；名称不存在时抛出带可用名称的异常。</summary>
+        public IAxis GetAxis(string logicalAxisName)
+        {
+            if (string.IsNullOrWhiteSpace(logicalAxisName))
+            {
+                throw new ArgumentException("逻辑轴名称不能为空。", nameof(logicalAxisName));
+            }
+
+            IAxis axis;
+            if (_axesByName.TryGetValue(logicalAxisName, out axis))
+            {
+                return axis;
+            }
+
+            var availableNames = string.Join(", ", _axes.Select(item => item.Name));
+            throw new KeyNotFoundException(
+                "找不到逻辑轴 '" + logicalAxisName + "'。已配置的逻辑轴：" + availableNames + "。");
+        }
+
+        /// <summary>
+        /// 按配置顺序连接各卡。中途失败时，断开本次调用已连接的卡，避免设备处于半连接状态。
+        /// </summary>
+        public async Task ConnectAsync(CancellationToken cancellationToken)
+        {
+            await _lifecycleLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var connectedByThisCall = new List<IMotionCard>();
+                foreach (var card in _cards)
+                {
+                    if (card.IsConnected)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        await card.ConnectAsync(cancellationToken).ConfigureAwait(false);
+                        connectedByThisCall.Add(card);
+                    }
+                    catch (Exception connectionError)
+                    {
+                        if (card.IsConnected)
+                        {
+                            connectedByThisCall.Add(card);
+                        }
+
+                        var rollbackErrors = await RollBackConnectionAsync(connectedByThisCall).ConfigureAwait(false);
+
+                        if (rollbackErrors.Count == 0 && connectionError is OperationCanceledException)
+                        {
+                            throw;
+                        }
+
+                        var failures = new List<Exception>
+                        {
+                            new InvalidOperationException(
+                            "连接运动控制卡 '" + card.ControllerId + "' 失败。",
+                            connectionError)
+                        };
+                        failures.AddRange(rollbackErrors);
+
+                        if (failures.Count == 1)
+                        {
+                            throw failures[0];
+                        }
+
+                        throw new AggregateException(
+                            "连接运动控制卡失败，且连接回收过程中还发生错误。",
+                            failures);
+                    }
+                }
+            }
+            finally
+            {
+                _lifecycleLock.Release();
+            }
+        }
+
+        /// <summary>按连接顺序的反序断开所有卡，并继续尝试断开其他卡。</summary>
+        public async Task DisconnectAsync(CancellationToken cancellationToken)
+        {
+            await _lifecycleLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var failures = new List<Exception>();
+                var useCancellationToken = true;
+                for (var index = _cards.Count - 1; index >= 0; index--)
+                {
+                    var card = _cards[index];
+                    if (!card.IsConnected)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        var token = useCancellationToken ? cancellationToken : CancellationToken.None;
+                        await card.DisconnectAsync(token).ConfigureAwait(false);
+                    }
+                    catch (Exception disconnectError)
+                    {
+                        failures.Add(new InvalidOperationException(
+                            "断开运动控制卡 '" + card.ControllerId + "' 失败。",
+                            disconnectError));
+
+                        if (disconnectError is OperationCanceledException)
+                        {
+                            useCancellationToken = false;
+                        }
+                    }
+                }
+
+                if (failures.Count > 0)
+                {
+                    throw new AggregateException("一张或多张运动控制卡断开失败。", failures);
+                }
+            }
+            finally
+            {
+                _lifecycleLock.Release();
+            }
+        }
+
+        private static void ValidateCards(IReadOnlyCollection<IMotionCard> cards)
+        {
+            var controllerIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var card in cards)
+            {
+                if (card == null)
+                {
+                    throw new ArgumentException("运动控制卡列表中包含空对象。", nameof(cards));
+                }
+
+                if (string.IsNullOrWhiteSpace(card.ControllerId))
+                {
+                    throw new ArgumentException("运动控制卡没有配置 ControllerId。", nameof(cards));
+                }
+
+                if (!controllerIds.Add(card.ControllerId))
+                {
+                    throw new ArgumentException(
+                        "运动控制卡标识重复：'" + card.ControllerId + "'。请检查设备硬件配置。",
+                        nameof(cards));
+                }
+
+                if (card.Axes == null)
+                {
+                    throw new ArgumentException(
+                        "运动控制卡 '" + card.ControllerId + "' 没有提供逻辑轴列表。",
+                        nameof(cards));
+                }
+            }
+        }
+
+        private static async Task<IReadOnlyList<Exception>> RollBackConnectionAsync(
+            IReadOnlyList<IMotionCard> connectedCards)
+        {
+            var rollbackErrors = new List<Exception>();
+            for (var index = connectedCards.Count - 1; index >= 0; index--)
+            {
+                var card = connectedCards[index];
+                if (!card.IsConnected)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    await card.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception disconnectError)
+                {
+                    rollbackErrors.Add(new InvalidOperationException(
+                        "连接失败后的回收操作中，断开运动控制卡 '" + card.ControllerId + "' 也失败。",
+                        disconnectError));
+                }
+            }
+
+            return rollbackErrors.AsReadOnly();
+        }
+    }
+}

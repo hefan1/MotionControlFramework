@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>MotionControl.Host.Wpf</AssemblyName>
+    <RootNamespace>MotionControl.Host.Wpf</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MotionControl.Framework.Contracts\MotionControl.Framework.Contracts.csproj" />
+    <ProjectReference Include="..\MotionControl.Framework.Runtime\MotionControl.Framework.Runtime.csproj" />
+    <ProjectReference Include="..\MotionControl.Framework.Wpf\MotionControl.Framework.Wpf.csproj" />
+  </ItemGroup>
+</Project>

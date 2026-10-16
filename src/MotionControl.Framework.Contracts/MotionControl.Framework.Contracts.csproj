@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>MotionControl.Framework.Contracts</AssemblyName>
+    <RootNamespace>MotionControl.Framework.Contracts</RootNamespace>
+  </PropertyGroup>
+</Project>

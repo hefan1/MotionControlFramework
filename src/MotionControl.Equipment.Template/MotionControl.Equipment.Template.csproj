@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>MotionControl.Equipment.Template</AssemblyName>
+    <RootNamespace>MotionControl.Equipment.Template</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MotionControl.Framework.Contracts\MotionControl.Framework.Contracts.csproj" />
+  </ItemGroup>
+</Project>
