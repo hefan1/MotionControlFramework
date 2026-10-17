@@ -188,7 +188,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             Ensure(logicalIo.LastReadInputName == "EmergencyStop", "安全状态读取器没有使用配置的急停 DI 名称。");
         }
 
-        /// <summary>确认有效配置可通过校验，重复物理轴映射和无效急停名称会被拒绝。</summary>
+        /// <summary>确认有效配置可通过校验，并逐项检查无效控制卡、轴、IO 和急停映射会被拒绝。</summary>
         private static Task HardwareConfigurationValidationAsync()
         {
             var cards = new[]
@@ -223,24 +223,110 @@ namespace MotionControl.ZMotionSimulatorCheck
             };
 
             MachineHardwareConfigurationValidator.Validate(cards, axes, inputs, new DigitalIoHardwareDefinition[0], "EmergencyStop");
-            ExpectException<InvalidOperationException>(() => MachineHardwareConfigurationValidator.Validate(
-                cards,
-                new[]
-                {
-                    axes[0],
-                    new AxisHardwareDefinition
+
+            ExpectConfigurationFailureContaining(
+                () => MachineHardwareConfigurationValidator.Validate(
+                    new[]
                     {
-                        ControllerId = "CardA",
-                        Name = "Y",
-                        AxisNumber = 0,
-                        MinimumPosition = 100,
-                        MaximumPosition = -100
-                    }
-                },
-                inputs,
-                new DigitalIoHardwareDefinition[0],
-                "UnmappedEmergencyStop"));
+                        new MotionCardHardwareDefinition
+                        {
+                            ControllerId = "CardA",
+                            AdapterType = "ZMotion",
+                            ConnectionConfigurationFile = "..\\Outside.json"
+                        }
+                    },
+                    axes,
+                    inputs,
+                    new DigitalIoHardwareDefinition[0],
+                    "EmergencyStop"),
+                "连接配置必须是设备目录内的相对路径");
+
+            ExpectConfigurationFailureContaining(
+                () => MachineHardwareConfigurationValidator.Validate(
+                    cards,
+                    new[]
+                    {
+                        axes[0],
+                        new AxisHardwareDefinition
+                        {
+                            ControllerId = "CardA",
+                            Name = "Y",
+                            AxisNumber = 0,
+                            MinimumPosition = -100,
+                            MaximumPosition = 100
+                        }
+                    },
+                    inputs,
+                    new DigitalIoHardwareDefinition[0],
+                    "EmergencyStop"),
+                "物理轴号重复");
+
+            ExpectConfigurationFailureContaining(
+                () => MachineHardwareConfigurationValidator.Validate(
+                    cards,
+                    new[]
+                    {
+                        new AxisHardwareDefinition
+                        {
+                            ControllerId = "MissingCard",
+                            Name = "Y",
+                            AxisNumber = 1,
+                            MinimumPosition = -100,
+                            MaximumPosition = 100
+                        }
+                    },
+                    inputs,
+                    new DigitalIoHardwareDefinition[0],
+                    "EmergencyStop"),
+                "关联的控制卡未配置");
+
+            ExpectConfigurationFailureContaining(
+                () => MachineHardwareConfigurationValidator.Validate(
+                    cards,
+                    axes,
+                    new[]
+                    {
+                        inputs[0],
+                        new DigitalIoHardwareDefinition
+                        {
+                            ControllerId = "CardA",
+                            Name = "DoorSensor",
+                            Channel = 3,
+                            ActiveHigh = true
+                        }
+                    },
+                    new DigitalIoHardwareDefinition[0],
+                    "EmergencyStop"),
+                "物理通道");
+
+            ExpectConfigurationFailureContaining(
+                () => MachineHardwareConfigurationValidator.Validate(
+                    cards,
+                    axes,
+                    inputs,
+                    new DigitalIoHardwareDefinition[0],
+                    "UnmappedEmergencyStop"),
+                "必须在数字输入列表中配置一次");
             return Task.CompletedTask;
+        }
+
+        /// <summary>确认硬件配置因指定规则失败，并核对错误信息指向了预期问题。</summary>
+        private static void ExpectConfigurationFailureContaining(Action action, string expectedMessage)
+        {
+            try
+            {
+                action();
+            }
+            catch (InvalidOperationException error)
+            {
+                Ensure(
+                    error.Message.Contains(expectedMessage),
+                    "配置失败原因不匹配，预期包含 '" + expectedMessage + "'，实际为：" + error.Message);
+                return;
+            }
+
+            throw new InvalidOperationException(
+                "硬件配置没有因为预期问题而被拒绝：" + expectedMessage + "。");
         }
 
         /// <summary>使用单张模拟卡、一个测试轴和指定工位创建 Runtime。</summary>
