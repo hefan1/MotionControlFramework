@@ -21,10 +21,10 @@
                     <TextBlock x:Name="AxisStatusText" Margin="0,10,0,0" FontFamily="Consolas" TextWrapping="Wrap" Foreground="#33383C" />
                     <WrapPanel Margin="0,12,0,0">
                         <Button x:Name="ServoEnableButton" Content="{DynamicResource 伺服使能}" Click="ServoEnableButton_Click" Margin="0,0,8,8" Padding="12,6" />
-                        <Button Content="{DynamicResource 伺服关闭}" Click="ServoDisableButton_Click" Margin="0,0,8,8" Padding="12,6" />
-                        <Button Content="{DynamicResource 回零}" Click="HomeButton_Click" Margin="0,0,8,8" Padding="12,6" />
-                        <Button Content="{DynamicResource 轴报警复位}" Click="ResetAxisAlarmButton_Click" Margin="0,0,8,8" Padding="12,6" />
-                        <Button Content="{DynamicResource 受控停止}" Click="StopButton_Click" Margin="0,0,8,8" Padding="12,6" />
+                        <Button x:Name="ServoDisableButton" Content="{DynamicResource 伺服关闭}" Click="ServoDisableButton_Click" Margin="0,0,8,8" Padding="12,6" />
+                        <Button x:Name="HomeButton" Content="{DynamicResource 回零}" Click="HomeButton_Click" Margin="0,0,8,8" Padding="12,6" />
+                        <Button x:Name="ResetAxisAlarmButton" Content="{DynamicResource 轴报警复位}" Click="ResetAxisAlarmButton_Click" Margin="0,0,8,8" Padding="12,6" />
+                        <Button x:Name="StopButton" Content="{DynamicResource 受控停止}" Click="StopButton_Click" Margin="0,0,8,8" Padding="12,6" />
                     </WrapPanel>
                     <WrapPanel Margin="0,4,0,0" VerticalAlignment="Center">
                         <TextBlock Text="{DynamicResource 速度}" VerticalAlignment="Center" Margin="0,0,6,8" />
@@ -35,8 +35,8 @@
                         <TextBox x:Name="DecelerationTextBox" Text="10" Width="72" Margin="0,0,16,8" Padding="5" />
                         <TextBlock Text="{DynamicResource 目标位置}" VerticalAlignment="Center" Margin="0,0,6,8" />
                         <TextBox x:Name="TargetPositionTextBox" Text="0" Width="90" Margin="0,0,8,8" Padding="5" />
-                        <Button Content="{DynamicResource 绝对定位}" Click="MoveAbsoluteButton_Click" Margin="0,0,8,8" Padding="12,6" />
-                        <Button Content="{DynamicResource 相对移动}" Click="MoveRelativeButton_Click" Margin="0,0,8,8" Padding="12,6" />
+                        <Button x:Name="MoveAbsoluteButton" Content="{DynamicResource 绝对定位}" Click="MoveAbsoluteButton_Click" Margin="0,0,8,8" Padding="12,6" />
+                        <Button x:Name="MoveRelativeButton" Content="{DynamicResource 相对移动}" Click="MoveRelativeButton_Click" Margin="0,0,8,8" Padding="12,6" />
                     </WrapPanel>
                     <WrapPanel Margin="0,2,0,0">
                         <TextBlock Text="{DynamicResource 按住点动}" VerticalAlignment="Center" Margin="0,0,12,8" />

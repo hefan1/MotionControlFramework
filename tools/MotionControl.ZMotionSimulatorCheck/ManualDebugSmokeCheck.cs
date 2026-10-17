@@ -75,6 +75,10 @@ namespace MotionControl.ZMotionSimulatorCheck
                     page,
                     card);
 
+                runtime.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
+                runtime.ResetAsync(CancellationToken.None).GetAwaiter().GetResult();
+                VerifyConnectedControlsUseCommonContracts(page, card);
+
                 var hostWindow = new MainWindow();
                 hostWindow.SetManualMotionDebugPage(page);
                 var primaryNavigation = (StackPanel)hostWindow.FindName("PrimaryNavigation");
@@ -88,7 +92,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(manualContent.Visibility == Visibility.Visible, "Host 手动调试内容当前不可见。");
 
                 application.Shutdown();
-                Console.WriteLine("[通过] 手动调试页 XAML、中英资源、DI/DO 行、Host 导航和断开保护检查完成；没有连接或操作硬件。");
+                Console.WriteLine("[通过] 手动调试页中英资源、断开保护、连接后轴/IO命令、软限位、DO读回和Host导航离屏检查完成；使用内存测试卡。");
                 return 0;
             }
             catch (Exception error)
@@ -168,12 +172,61 @@ namespace MotionControl.ZMotionSimulatorCheck
             application.Resources.MergedDictionaries[0] = chineseResources;
         }
 
+        /// <summary>用内存测试卡检查已连接时的轴操作、软限位拦截和 DO 读回。</summary>
+        private static void VerifyConnectedControlsUseCommonContracts(
+            ManualMotionDebugView page,
+            SmokeMotionCard card)
+        {
+            var axis = (SmokeAxis)card.Axes.Single();
+            var initialCommandCount = axis.CommandCount;
+            ClickButton(page, "ServoEnableButton");
+            ClickButton(page, "ServoDisableButton");
+            ClickButton(page, "HomeButton");
+            ClickButton(page, "ResetAxisAlarmButton");
+            ClickButton(page, "StopButton");
+
+            var targetPosition = (TextBox)page.FindName("TargetPositionTextBox");
+            targetPosition.Text = "50";
+            ClickButton(page, "MoveAbsoluteButton");
+            targetPosition.Text = "1";
+            ClickButton(page, "MoveRelativeButton");
+            Ensure(axis.CommandCount == initialCommandCount + 7, "已连接时轴按钮没有通过 IAxis 调用预期的操作。");
+
+            var operationMessage = (TextBlock)page.FindName("OperationMessageText");
+            targetPosition.Text = "101";
+            ClickButton(page, "MoveAbsoluteButton");
+            Ensure(axis.CommandCount == initialCommandCount + 7, "绝对定位超出软限位时仍然调用了轴。");
+            Ensure(operationMessage.Text.Contains("软限位"), "软限位拒绝原因没有显示在页面上。");
+
+            var outputRows = (StackPanel)page.FindName("DigitalOutputsPanel");
+            var firstOutputRow = (StackPanel)outputRows.Children[0];
+            var outputStatusText = (TextBlock)firstOutputRow.Children[1];
+            var outputOnButton = (Button)firstOutputRow.Children[2];
+            var outputOffButton = (Button)firstOutputRow.Children[3];
+            outputOnButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, outputOnButton));
+            Ensure(outputStatusText.Text == "输出已开", "DO 开启后页面没有显示读回状态。");
+            outputOffButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, outputOffButton));
+            Ensure(outputStatusText.Text == "输出已关", "DO 关闭后页面没有显示读回状态。");
+            Ensure(card.LogicalIo.WriteCount == 2, "DO 开启和关闭按钮没有各写入一次逻辑 IO。");
+            Ensure(!card.LogicalIo.ReadOutput("Vacuum"), "DO 关闭后读回状态仍然为开启。");
+        }
+
+        /// <summary>通过页面名称点击指定按钮，便于检查页面到契约的命令连接。</summary>
+        private static void ClickButton(ManualMotionDebugView page, string controlName)
+        {
+            var button = page.FindName(controlName) as Button;
+            Ensure(button != null, "页面缺少按钮控件：" + controlName + "。");
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, button));
+        }
+
         /// <summary>提供页面构造所需的一张未连接测试卡和一个逻辑轴。</summary>
         private sealed class SmokeMotionCard : IMotionCard
         {
+            private bool _isConnected;
+
             public string ControllerId { get { return "SmokeCard"; } }
 
-            public bool IsConnected { get { return false; } }
+            public bool IsConnected { get { return _isConnected; } }
 
             /// <summary>创建一张断开状态的测试卡和对应逻辑 IO。</summary>
             public SmokeMotionCard()
@@ -187,11 +240,11 @@ namespace MotionControl.ZMotionSimulatorCheck
 
             public SmokeLogicalIo LogicalIo { get; private set; }
 
-            /// <summary>离屏检查不连接物理控制卡。</summary>
-            public Task ConnectAsync(CancellationToken cancellationToken) { return Task.CompletedTask; }
+            /// <summary>标记内存测试卡为已连接状态。</summary>
+            public Task ConnectAsync(CancellationToken cancellationToken) { _isConnected = true; return Task.CompletedTask; }
 
-            /// <summary>离屏检查不连接物理控制卡。</summary>
-            public Task DisconnectAsync(CancellationToken cancellationToken) { return Task.CompletedTask; }
+            /// <summary>标记内存测试卡为已断开状态。</summary>
+            public Task DisconnectAsync(CancellationToken cancellationToken) { _isConnected = false; return Task.CompletedTask; }
         }
 
         /// <summary>提供页面构造所需的无动作测试轴。</summary>
@@ -245,16 +298,33 @@ namespace MotionControl.ZMotionSimulatorCheck
         /// <summary>提供页面初始化需要的逻辑 DI/DO 名称。</summary>
         private sealed class SmokeLogicalIo : ILogicalIo
         {
+            private readonly Dictionary<string, bool> _outputs = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+
             public int WriteCount { get; private set; }
 
             /// <summary>返回测试 DI 的关闭状态。</summary>
             public Task<bool> ReadInputAsync(string inputName, CancellationToken cancellationToken) { return Task.FromResult(false); }
 
             /// <summary>返回测试 DO 的关闭状态。</summary>
-            public Task<bool> ReadOutputAsync(string outputName, CancellationToken cancellationToken) { return Task.FromResult(false); }
+            public Task<bool> ReadOutputAsync(string outputName, CancellationToken cancellationToken)
+            {
+                return Task.FromResult(ReadOutput(outputName));
+            }
 
             /// <summary>接受测试 DO 写入，但不控制真实硬件。</summary>
-            public Task WriteOutputAsync(string outputName, bool value, CancellationToken cancellationToken) { WriteCount++; return Task.CompletedTask; }
+            public Task WriteOutputAsync(string outputName, bool value, CancellationToken cancellationToken)
+            {
+                WriteCount++;
+                _outputs[outputName] = value;
+                return Task.CompletedTask;
+            }
+
+            /// <summary>读取内存测试卡上保存的 DO 值。</summary>
+            public bool ReadOutput(string outputName)
+            {
+                bool value;
+                return _outputs.TryGetValue(outputName, out value) && value;
+            }
         }
 
         /// <summary>提供 Runtime 构造所需的最小测试工位。</summary>
