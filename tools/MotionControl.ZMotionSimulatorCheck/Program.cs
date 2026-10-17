@@ -281,7 +281,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             }
         }
 
-        /// <summary>在仿真软限位内将首个逻辑轴移动一个工程单位后返回原位置。</summary>
+        /// <summary>在仿真软限位内将首个逻辑轴往返移动一个工程单位，并恢复原伺服状态。</summary>
         private static async Task ExerciseAxisAsync(
             IAxis axis,
             ZMotionAxisConfiguration configuration,
@@ -301,7 +301,12 @@ namespace MotionControl.ZMotionSimulatorCheck
             }
 
             var profile = new AxisMotionProfile(5.0, 10.0, 10.0);
-            await axis.EnableServoAsync(cancellationToken).ConfigureAwait(false);
+            var servoWasEnabled = originalStatus.ServoEnabled;
+            if (!servoWasEnabled)
+            {
+                await axis.EnableServoAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             try
             {
                 await axis.MoveAbsoluteAsync(targetPosition, profile, cancellationToken).ConfigureAwait(false);
@@ -316,7 +321,10 @@ namespace MotionControl.ZMotionSimulatorCheck
             }
             finally
             {
-                await axis.DisableServoAsync(CancellationToken.None).ConfigureAwait(false);
+                if (!servoWasEnabled)
+                {
+                    await axis.DisableServoAsync(CancellationToken.None).ConfigureAwait(false);
+                }
             }
 
             Console.WriteLine("[通过] 逻辑轴 " + axis.Name + " 完成一个工程单位往返定位。");
