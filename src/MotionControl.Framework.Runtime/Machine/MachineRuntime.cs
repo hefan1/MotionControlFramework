@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Flow;
+using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Runtime.FlowScheduling;
 
 namespace MotionControl.Framework.Runtime.Machine
@@ -240,6 +241,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 EnsureState(MachineRunState.Ready, "启动前必须先成功复位设备。");
                 try
                 {
+                    await EnsureAxesReadyForAutomaticStartAsync(cancellationToken).ConfigureAwait(false);
                     SetRunningIfNoStopAlarm();
                     var runTask = _flowScheduler.Start();
                     _flowObserverTask = ObserveFlowRunAsync(runTask);
@@ -263,6 +265,35 @@ namespace MotionControl.Framework.Runtime.Machine
             finally
             {
                 _commandLock.Release();
+            }
+        }
+
+        /// <summary>自动流程启动前逐轴检查报警和限位恢复后的回零要求。</summary>
+        private async Task EnsureAxesReadyForAutomaticStartAsync(CancellationToken cancellationToken)
+        {
+            foreach (var axis in _motionCards.Axes)
+            {
+                var status = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
+                if (status.AlarmActive
+                    || status.PositiveLimitActive
+                    || status.NegativeLimitActive
+                    || status.PositiveSoftLimitActive
+                    || status.NegativeSoftLimitActive)
+                {
+                    var reason = string.IsNullOrWhiteSpace(status.AlarmMessage)
+                        ? status.AlarmCode
+                        : status.AlarmMessage;
+                    throw new InvalidOperationException(
+                        "逻辑轴 '" + axis.Name + "' 当前存在报警或限位，禁止启动自动流程。"
+                        + (string.IsNullOrWhiteSpace(reason) ? string.Empty : "原因：" + reason + "。"));
+                }
+
+                if (status.RequiresHomingAfterLimitAlarm)
+                {
+                    throw new InvalidOperationException(
+                        "逻辑轴 '" + axis.Name
+                        + "' 曾触发硬限位，恢复后必须先完成回零，才能启动自动流程。");
+                }
             }
         }
 

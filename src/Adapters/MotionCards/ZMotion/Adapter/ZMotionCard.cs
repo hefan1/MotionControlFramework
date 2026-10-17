@@ -19,9 +19,44 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
     {
         public const string SimulationControllerType = "VPLC5xx-Simu";
 
+        private const int RemoteAxisCommunicationErrorBit = 2;
+        private const int RemoteDriveErrorBit = 3;
         private const int PositiveLimitBit = 4;
         private const int NegativeLimitBit = 5;
-        private const int ServoAlarmBit = 22;
+        private const int FollowingErrorBit = 8;
+        private const int PositiveSoftLimitBit = 9;
+        private const int NegativeSoftLimitBit = 10;
+        private const int PowerAbnormalBit = 18;
+        private const int AxisSpeedProtectionBit = 20;
+        private const int SpecialMotionCommandErrorBit = 21;
+        private const int AlarmSignalInputBit = 22;
+        private const int PositiveHardLimitMask = 1 << PositiveLimitBit;
+        private const int NegativeHardLimitMask = 1 << NegativeLimitBit;
+        private const int PositiveSoftLimitMask = 1 << PositiveSoftLimitBit;
+        private const int NegativeSoftLimitMask = 1 << NegativeSoftLimitBit;
+        private const int ActiveLimitMask = PositiveHardLimitMask
+            | NegativeHardLimitMask
+            | PositiveSoftLimitMask
+            | NegativeSoftLimitMask;
+        private const int ActiveAlarmStatusMask = (1 << RemoteAxisCommunicationErrorBit)
+            | (1 << RemoteDriveErrorBit)
+            | PositiveHardLimitMask
+            | NegativeHardLimitMask
+            | (1 << FollowingErrorBit)
+            | PositiveSoftLimitMask
+            | NegativeSoftLimitMask
+            | (1 << PowerAbnormalBit)
+            | (1 << AxisSpeedProtectionBit)
+            | (1 << SpecialMotionCommandErrorBit)
+            | (1 << AlarmSignalInputBit);
+        private const int HomingFailureStatusMask = (1 << RemoteAxisCommunicationErrorBit)
+            | (1 << RemoteDriveErrorBit)
+            | (1 << AlarmSignalInputBit);
+        private const int BusDriveAlarmMask = 1 << RemoteDriveErrorBit;
+        private const int AlarmSignalInputMask = 1 << AlarmSignalInputBit;
+        private const int HardLimitStopReasonMask = PositiveHardLimitMask | NegativeHardLimitMask;
+        private const uint CurrentDriveAlarmClearMode = 0;
+        private const int DriveAlarmResetDelayMilliseconds = 50;
         private const int PollIntervalMilliseconds = 20;
         private const int HomingStartTimeoutMilliseconds = 1000;
         private const int StopConfirmationTimeoutMilliseconds = 5000;
@@ -279,7 +314,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             }
         }
 
-        /// <summary>清除指定逻辑轴的驱动报警并清除回零标记。</summary>
+        /// <summary>确认故障原因已解除后清除轴报警，并在硬限位恢复后要求重新回零。</summary>
         internal Task ResetAxisAlarmAsync(ZMotionAxis axis, CancellationToken cancellationToken)
         {
             return Task.Run(() =>
@@ -287,10 +322,78 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 lock (_nativeLock)
                 {
                     var handle = GetConnectedHandle();
+                    EnsureAxisIdle(handle, axis);
+
+                    var statusBeforeReset = ReadAxisStatusBits(handle, axis, "读取报警复位前轴状态");
+                    var stopReasonBeforeReset = ReadAxisStopReason(handle, axis, "读取报警复位前停止原因");
+                    var activeLimitMessage = BuildActiveLimitMessage(statusBeforeReset);
+                    if (!string.IsNullOrEmpty(activeLimitMessage))
+                    {
+                        throw new InvalidOperationException(
+                            "逻辑轴 '" + axis.Name + "' 的" + activeLimitMessage
+                            + "仍有效。请先低速向离开限位的方向点动，确认限位解除后再复位。");
+                    }
+
+                    if ((statusBeforeReset & AlarmSignalInputMask) != 0
+                        && (statusBeforeReset & BusDriveAlarmMask) == 0)
+                    {
+                        throw new InvalidOperationException(
+                            "逻辑轴 '" + axis.Name
+                            + "' 的报警信号输入仍有效。请先处理驱动器报警或外部报警信号，再执行复位。");
+                    }
+
+                    var hasControllerError = (statusBeforeReset & ActiveAlarmStatusMask) != 0;
+                    var hasStopReason = stopReasonBeforeReset != 0;
+                    if (!hasControllerError && !hasStopReason)
+                    {
+                        return;
+                    }
+
+                    if (((statusBeforeReset | stopReasonBeforeReset) & BusDriveAlarmMask) != 0)
+                    {
+                        CheckResult(
+                            zmcaux.ZAux_BusCmd_DriveClear(
+                                handle,
+                                (uint)axis.AxisNumber,
+                                CurrentDriveAlarmClearMode),
+                            "清除总线伺服当前报警",
+                            axis.Name);
+                        Thread.Sleep(DriveAlarmResetDelayMilliseconds);
+                    }
+
                     CheckResult(
-                        zmcaux.ZAux_BusCmd_DriveClear(handle, (uint)axis.AxisNumber, 0),
-                        "清除轴报警",
+                        zmcaux.ZAux_Direct_Single_Datum(handle, axis.AxisNumber, 0),
+                        "清除控制器轴错误状态（DATUM 模式 0）",
                         axis.Name);
+
+                    if (hasStopReason)
+                    {
+                        CheckResult(
+                            zmcaux.ZAux_Direct_SetParam(handle, "AXIS_STOPREASON", axis.AxisNumber, 0),
+                            "清除轴历史停止原因",
+                            axis.Name);
+                    }
+
+                    var statusAfterReset = ReadAxisStatusBits(handle, axis, "复核报警复位后的轴状态");
+                    var stopReasonAfterReset = ReadAxisStopReason(handle, axis, "复核报警复位后的停止原因");
+                    if ((statusAfterReset & ActiveAlarmStatusMask) != 0)
+                    {
+                        throw new InvalidOperationException(
+                            "逻辑轴 '" + axis.Name + "' 复位后仍报告报警："
+                            + BuildAxisAlarmMessage(statusAfterReset) + "。");
+                    }
+
+                    if (stopReasonAfterReset != 0)
+                    {
+                        throw new InvalidOperationException(
+                            "逻辑轴 '" + axis.Name + "' 的历史停止原因仍未清除：0x"
+                            + stopReasonAfterReset.ToString("X8") + "。");
+                    }
+
+                    if (((statusBeforeReset | stopReasonBeforeReset) & HardLimitStopReasonMask) != 0)
+                    {
+                        axis.RequireHomingAfterLimitAlarm();
+                    }
                 }
             }, cancellationToken);
         }
@@ -309,6 +412,13 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 {
                     var handle = GetConnectedHandle();
                     EnsureAxisParametersApplied(axis);
+                    if (axis.RequiresHomingAfterLimitAlarm)
+                    {
+                        throw new InvalidOperationException(
+                            "逻辑轴 '" + axis.Name
+                            + "' 曾触发正负硬限位，必须先完成回零，才能执行定位运动。");
+                    }
+
                     EnsureServoEnabled(handle, axis);
 
                     double targetPosition = positionOrDistance;
@@ -346,11 +456,52 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 {
                     var handle = GetConnectedHandle();
                     EnsureAxisParametersApplied(axis);
+                    var statusBits = ReadAxisStatusBits(handle, axis, "读取点动前限位状态");
+                    var positiveLimitMask = PositiveHardLimitMask | PositiveSoftLimitMask;
+                    var negativeLimitMask = NegativeHardLimitMask | NegativeSoftLimitMask;
+                    if (direction == MotionDirection.Positive && (statusBits & positiveLimitMask) != 0)
+                    {
+                        throw new InvalidOperationException(
+                            "逻辑轴 '" + axis.Name
+                            + "' 的正向限位仍有效，不能继续正向点动；请向反方向退出限位。");
+                    }
+
+                    if (direction == MotionDirection.Negative && (statusBits & negativeLimitMask) != 0)
+                    {
+                        throw new InvalidOperationException(
+                            "逻辑轴 '" + axis.Name
+                            + "' 的负向限位仍有效，不能继续反向点动；请向正方向退出限位。");
+                    }
+
+                    var otherActiveAlarmBits = statusBits & ActiveAlarmStatusMask & ~ActiveLimitMask;
+                    if (otherActiveAlarmBits != 0)
+                    {
+                        throw new InvalidOperationException(
+                            "逻辑轴 '" + axis.Name + "' 仍存在非限位报警，不能执行点动："
+                            + BuildAxisAlarmMessage(statusBits) + "。");
+                    }
+
+                    var jogSpeed = speed;
+                    if (axis.RequiresHomingAfterLimitAlarm || (statusBits & ActiveLimitMask) != 0)
+                    {
+                        var recoverySpeed = axis.Configuration.HomeCreepSpeed;
+                        if (double.IsNaN(recoverySpeed)
+                            || double.IsInfinity(recoverySpeed)
+                            || recoverySpeed <= 0)
+                        {
+                            throw new InvalidOperationException(
+                                "逻辑轴 '" + axis.Name
+                                + "' 需要低速退出限位，但轴参数 HomeCreepSpeed 未配置为有效正数。");
+                        }
+
+                        jogSpeed = Math.Min(speed, recoverySpeed);
+                    }
+
                     EnsureServoEnabled(handle, axis);
                     SetMotionProfile(
                         handle,
                         axis,
-                        speed,
+                        jogSpeed,
                         axis.Configuration.JogAcceleration,
                         axis.Configuration.JogDeceleration);
                     CheckResult(
@@ -450,11 +601,12 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     return;
                 }
 
-                if ((axisStatus & (1 << ServoAlarmBit)) != 0)
+                if ((axisStatus & HomingFailureStatusMask) != 0)
                 {
                     throw new InvalidOperationException(
                         "正运动控制卡 '" + ControllerId + "' 逻辑轴 '" + axis.Name
-                        + "' 回零期间出现伺服报警，轴状态字：0x" + axisStatus.ToString("X8") + "。");
+                        + "' 回零期间出现驱动器、通讯或报警输入异常，轴状态字：0x"
+                        + axisStatus.ToString("X8") + "。");
                 }
 
                 if (idle == 0)
@@ -686,7 +838,6 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 float velocity = 0;
                 int servoEnabled = 0;
                 int idle = 1;
-                int statusBits = 0;
 
                 CheckResult(
                     zmcaux.ZAux_Direct_GetMpos(handle, axis.AxisNumber, ref actualPosition),
@@ -704,14 +855,13 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     zmcaux.ZAux_Direct_GetIfIdle(handle, axis.AxisNumber, ref idle),
                     "读取轴运动状态",
                     axis.Name);
-                CheckResult(
-                    zmcaux.ZAux_Direct_GetAxisStatus(handle, axis.AxisNumber, ref statusBits),
-                    "读取轴状态字",
-                    axis.Name);
 
-                var alarmActive = (statusBits & (1 << ServoAlarmBit)) != 0;
-                var alarmCode = alarmActive ? "0x" + statusBits.ToString("X8") : null;
-                var alarmMessage = alarmActive ? "正运动轴状态字报告伺服报警。" : null;
+                var statusBits = ReadAxisStatusBits(handle, axis, "读取轴状态字");
+                var stopReasonCode = ReadAxisStopReason(handle, axis, "读取轴历史停止原因");
+                var activeAlarmBits = statusBits & ActiveAlarmStatusMask;
+                var alarmActive = activeAlarmBits != 0;
+                var alarmCode = alarmActive ? "0x" + activeAlarmBits.ToString("X8") : null;
+                var alarmMessage = alarmActive ? BuildAxisAlarmMessage(statusBits) : null;
 
                 return new AxisStatus(
                     actualPosition,
@@ -719,12 +869,127 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     servoEnabled != 0,
                     idle == 0,
                     axis.IsHomed,
-                    (statusBits & (1 << PositiveLimitBit)) != 0,
-                    (statusBits & (1 << NegativeLimitBit)) != 0,
+                    (statusBits & PositiveHardLimitMask) != 0,
+                    (statusBits & NegativeHardLimitMask) != 0,
+                    (statusBits & PositiveSoftLimitMask) != 0,
+                    (statusBits & NegativeSoftLimitMask) != 0,
                     alarmActive,
                     alarmCode,
-                    alarmMessage);
+                    alarmMessage,
+                    stopReasonCode,
+                    axis.RequiresHomingAfterLimitAlarm);
             }
+        }
+
+        /// <summary>读取正运动控制器的实时轴状态字。</summary>
+        private int ReadAxisStatusBits(IntPtr handle, ZMotionAxis axis, string operation)
+        {
+            var statusBits = 0;
+            CheckResult(
+                zmcaux.ZAux_Direct_GetAxisStatus(handle, axis.AxisNumber, ref statusBits),
+                operation,
+                axis.Name);
+            return statusBits;
+        }
+
+        /// <summary>读取正运动控制器锁存的历史停止原因。</summary>
+        private int ReadAxisStopReason(IntPtr handle, ZMotionAxis axis, string operation)
+        {
+            var stopReasonCode = 0;
+            CheckResult(
+                zmcaux.ZAux_Direct_GetAxisStopReason(handle, axis.AxisNumber, ref stopReasonCode),
+                operation,
+                axis.Name);
+            return stopReasonCode;
+        }
+
+        /// <summary>把正运动实时状态位转换为容易读懂的中文报警原因。</summary>
+        private static string BuildAxisAlarmMessage(int statusBits)
+        {
+            var messages = new List<string>();
+            if ((statusBits & (1 << RemoteAxisCommunicationErrorBit)) != 0)
+            {
+                messages.Add("远程轴通讯异常");
+            }
+
+            if ((statusBits & BusDriveAlarmMask) != 0)
+            {
+                messages.Add("总线驱动器报警");
+            }
+
+            if ((statusBits & PositiveHardLimitMask) != 0)
+            {
+                messages.Add("正向硬限位有效");
+            }
+
+            if ((statusBits & NegativeHardLimitMask) != 0)
+            {
+                messages.Add("负向硬限位有效");
+            }
+
+            if ((statusBits & (1 << FollowingErrorBit)) != 0)
+            {
+                messages.Add("随动误差超限");
+            }
+
+            if ((statusBits & PositiveSoftLimitMask) != 0)
+            {
+                messages.Add("超过正向软限位");
+            }
+
+            if ((statusBits & NegativeSoftLimitMask) != 0)
+            {
+                messages.Add("超过负向软限位");
+            }
+
+            if ((statusBits & (1 << PowerAbnormalBit)) != 0)
+            {
+                messages.Add("控制器电源异常");
+            }
+
+            if ((statusBits & (1 << AxisSpeedProtectionBit)) != 0)
+            {
+                messages.Add("触发轴速度保护");
+            }
+
+            if ((statusBits & (1 << SpecialMotionCommandErrorBit)) != 0)
+            {
+                messages.Add("运动中触发特殊指令失败");
+            }
+
+            if ((statusBits & AlarmSignalInputMask) != 0)
+            {
+                messages.Add("报警信号输入有效");
+            }
+
+            return string.Join("；", messages);
+        }
+
+        /// <summary>整理当前有效的硬限位和软限位名称，供复位提示使用。</summary>
+        private static string BuildActiveLimitMessage(int statusBits)
+        {
+            var messages = new List<string>();
+            if ((statusBits & PositiveHardLimitMask) != 0)
+            {
+                messages.Add("正向硬限位");
+            }
+
+            if ((statusBits & NegativeHardLimitMask) != 0)
+            {
+                messages.Add("负向硬限位");
+            }
+
+            if ((statusBits & PositiveSoftLimitMask) != 0)
+            {
+                messages.Add("正向软限位");
+            }
+
+            if ((statusBits & NegativeSoftLimitMask) != 0)
+            {
+                messages.Add("负向软限位");
+            }
+
+            return string.Join("、", messages);
         }
 
         /// <summary>读取物理 DI 或 DO，并按逻辑 IO 的有效电平转换结果。</summary>

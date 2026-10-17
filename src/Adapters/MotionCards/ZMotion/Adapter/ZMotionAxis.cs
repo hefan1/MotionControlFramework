@@ -10,6 +10,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
     {
         private readonly ZMotionCard _card;
         private bool _isHomed;
+        private bool _requiresHomingAfterLimitAlarm;
 
         /// <summary>绑定所属运动卡和设备配置中的逻辑轴参数。</summary>
         internal ZMotionAxis(ZMotionCard card, ZMotionAxisConfiguration configuration)
@@ -33,6 +34,12 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         internal bool IsHomed
         {
             get { return _isHomed; }
+        }
+
+        /// <summary>硬限位报警复位后，是否要求先重新回零才能执行定位。</summary>
+        internal bool RequiresHomingAfterLimitAlarm
+        {
+            get { return _requiresHomingAfterLimitAlarm; }
         }
 
         /// <summary>读取该逻辑轴的实时位置、伺服、运动和报警状态。</summary>
@@ -126,7 +133,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 cancellationToken).ConfigureAwait(false);
         }
 
-        /// <summary>清除该轴的报警状态，并清除已回零标记。</summary>
+        /// <summary>按正运动控制卡的当前状态清除该轴报警；有效限位仍触发时不会复位。</summary>
         public Task ResetAlarmAsync(CancellationToken cancellationToken)
         {
             return _card.ResetAxisAlarmAsync(this, cancellationToken);
@@ -136,6 +143,14 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         internal void MarkHomed()
         {
             _isHomed = true;
+            _requiresHomingAfterLimitAlarm = false;
+        }
+
+        /// <summary>硬限位报警恢复后，清除回零标记并要求完成回零。</summary>
+        internal void RequireHomingAfterLimitAlarm()
+        {
+            _isHomed = false;
+            _requiresHomingAfterLimitAlarm = true;
         }
 
         /// <summary>清除该轴的回零标记；断开或重连后调用。</summary>

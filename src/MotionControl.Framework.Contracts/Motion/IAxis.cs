@@ -42,7 +42,10 @@ namespace MotionControl.Framework.Contracts.Motion
         /// <summary>按指定的普通运动停止方式停止轴；急停不通过此方法处理。</summary>
         Task StopAsync(AxisStopMode stopMode, CancellationToken cancellationToken);
 
-        /// <summary>清除运动卡报告的轴报警；不会替代设备级报警复位逻辑。</summary>
+        /// <summary>
+        /// 清除运动卡报告的轴报警。当前限位或报警输入仍有效时必须失败；该操作不会移动轴，
+        /// 也不会替代设备级报警复位逻辑。
+        /// </summary>
         Task ResetAlarmAsync(CancellationToken cancellationToken);
     }
 }
