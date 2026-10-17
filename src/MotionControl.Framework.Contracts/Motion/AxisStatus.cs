@@ -3,6 +3,7 @@ namespace MotionControl.Framework.Contracts.Motion
     /// <summary>运动卡适配器返回的一次轴状态快照。</summary>
     public sealed class AxisStatus
     {
+        /// <summary>创建包含轴位置、速度、伺服、限位和报警信息的状态快照。</summary>
         public AxisStatus(
             double position,
             double velocity,

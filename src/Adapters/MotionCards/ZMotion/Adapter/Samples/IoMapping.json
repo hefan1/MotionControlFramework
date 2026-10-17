@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "digitalInputs": [
+    {
+      "controllerId": "ZMotionSimulation",
+      "name": "SimulationInput0",
+      "channel": 0,
+      "activeHigh": true
+    }
+  ],
+  "digitalOutputs": [
+    {
+      "controllerId": "ZMotionSimulation",
+      "name": "SimulationOutput0",
+      "channel": 0,
+      "activeHigh": true
+    }
+  ]
+}

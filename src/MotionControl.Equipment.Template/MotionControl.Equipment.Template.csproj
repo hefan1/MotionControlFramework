@@ -6,4 +6,10 @@
   <ItemGroup>
     <ProjectReference Include="..\MotionControl.Framework.Contracts\MotionControl.Framework.Contracts.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Update="**\*.json"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest"
+          Link="EquipmentTemplates\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
 </Project>

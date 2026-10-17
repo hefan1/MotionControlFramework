@@ -1,0 +1,202 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using MotionControl.Framework.Contracts.Motion;
+
+namespace MotionControl.Adapter.MotionCard.ZMotion
+{
+    /// <summary>正运动控制卡上的一个逻辑轴，负责将框架动作交给所属卡实例。</summary>
+    public sealed class ZMotionAxis : IAxis
+    {
+        private readonly ZMotionCard _card;
+        private bool _isHomed;
+
+        /// <summary>绑定所属运动卡和设备配置中的逻辑轴参数。</summary>
+        internal ZMotionAxis(ZMotionCard card, ZMotionAxisConfiguration configuration)
+        {
+            _card = card;
+            Configuration = configuration;
+        }
+
+        public string Name
+        {
+            get { return Configuration.Name; }
+        }
+
+        public int AxisNumber
+        {
+            get { return Configuration.AxisNumber; }
+        }
+
+        internal ZMotionAxisConfiguration Configuration { get; private set; }
+
+        internal bool IsHomed
+        {
+            get { return _isHomed; }
+        }
+
+        /// <summary>读取该逻辑轴的实时位置、伺服、运动和报警状态。</summary>
+        public Task<AxisStatus> ReadStatusAsync(CancellationToken cancellationToken)
+        {
+            return _card.ReadAxisStatusAsync(this, cancellationToken);
+        }
+
+        /// <summary>使能该轴的伺服驱动。</summary>
+        public Task EnableServoAsync(CancellationToken cancellationToken)
+        {
+            return _card.EnableServoAsync(this, true, cancellationToken);
+        }
+
+        /// <summary>关闭该轴的伺服驱动。</summary>
+        public Task DisableServoAsync(CancellationToken cancellationToken)
+        {
+            return _card.EnableServoAsync(this, false, cancellationToken);
+        }
+
+        /// <summary>在仿真器上将指令坐标清零，并标记该轴已建立坐标。</summary>
+        public Task HomeAsync(CancellationToken cancellationToken)
+        {
+            return _card.HomeAsync(this, cancellationToken);
+        }
+
+        /// <summary>以工程单位移动到指定绝对位置，并等待轴停止。</summary>
+        public async Task MoveAbsoluteAsync(
+            double position,
+            AxisMotionProfile profile,
+            CancellationToken cancellationToken)
+        {
+            ValidateFinite(position, nameof(position));
+            if (profile == null)
+            {
+                throw new ArgumentNullException(nameof(profile));
+            }
+
+            await _card.StartMoveAsync(this, position, profile, true, cancellationToken).ConfigureAwait(false);
+            await WaitForCompletionAndStopOnFailureAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>以工程单位相对当前位置移动，并等待轴停止。</summary>
+        public async Task MoveRelativeAsync(
+            double distance,
+            AxisMotionProfile profile,
+            CancellationToken cancellationToken)
+        {
+            ValidateFinite(distance, nameof(distance));
+            if (profile == null)
+            {
+                throw new ArgumentNullException(nameof(profile));
+            }
+
+            await _card.StartMoveAsync(this, distance, profile, false, cancellationToken).ConfigureAwait(false);
+            await WaitForCompletionAndStopOnFailureAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>按指定方向和速度启动连续点动。</summary>
+        public Task StartJogAsync(
+            MotionDirection direction,
+            double speed,
+            CancellationToken cancellationToken)
+        {
+            if (direction != MotionDirection.Positive && direction != MotionDirection.Negative)
+            {
+                throw new ArgumentOutOfRangeException(nameof(direction), "点动方向无效。");
+            }
+
+            ValidateFinite(speed, nameof(speed));
+            if (speed <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(speed), "点动速度必须大于 0。");
+            }
+
+            return _card.StartJogAsync(this, direction, speed, cancellationToken);
+        }
+
+        /// <summary>按指定停止方式停止轴，并等待控制卡确认轴已空闲。</summary>
+        public async Task StopAsync(AxisStopMode stopMode, CancellationToken cancellationToken)
+        {
+            if (stopMode != AxisStopMode.Controlled && stopMode != AxisStopMode.Abort)
+            {
+                throw new ArgumentOutOfRangeException(nameof(stopMode), "轴停止方式无效。");
+            }
+
+            await _card.StopAxisAsync(this, stopMode, cancellationToken).ConfigureAwait(false);
+            await _card.WaitForAxisIdleAsync(
+                this,
+                _card.StopConfirmationTimeout,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>清除该轴的报警状态，并清除已回零标记。</summary>
+        public Task ResetAlarmAsync(CancellationToken cancellationToken)
+        {
+            return _card.ResetAxisAlarmAsync(this, cancellationToken);
+        }
+
+        /// <summary>记录该轴已完成仿真坐标回零。</summary>
+        internal void MarkHomed()
+        {
+            _isHomed = true;
+        }
+
+        /// <summary>清除该轴的回零标记；断开或重连后调用。</summary>
+        internal void ClearHomedState()
+        {
+            _isHomed = false;
+        }
+
+        /// <summary>等待运动完成；取消或超时时先请求受控停止，再保留原异常。</summary>
+        private async Task WaitForCompletionAndStopOnFailureAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                await _card.WaitForAxisIdleAsync(
+                    this,
+                    _card.MotionTimeoutMilliseconds,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException cancellationError)
+            {
+                await StopAfterInterruptedMoveAsync(cancellationError).ConfigureAwait(false);
+                throw;
+            }
+            catch (TimeoutException timeoutError)
+            {
+                await StopAfterInterruptedMoveAsync(timeoutError).ConfigureAwait(false);
+                throw;
+            }
+        }
+
+        /// <summary>在运动被取消或超时后执行受控停止，并确认轴已停稳。</summary>
+        private async Task StopAfterInterruptedMoveAsync(Exception originalError)
+        {
+            try
+            {
+                await _card.StopAxisAsync(this, AxisStopMode.Controlled, CancellationToken.None)
+                    .ConfigureAwait(false);
+                using (var stopTimeout = new CancellationTokenSource(_card.StopConfirmationTimeout))
+                {
+                    await _card.WaitForAxisIdleAsync(
+                        this,
+                        _card.StopConfirmationTimeout,
+                        stopTimeout.Token).ConfigureAwait(false);
+                }
+            }
+            catch (Exception stopError)
+            {
+                throw new AggregateException(
+                    "正运动逻辑轴 '" + Name + "' 的运动被取消或超时，且受控停止未能确认完成。",
+                    originalError,
+                    stopError);
+            }
+        }
+
+        /// <summary>拒绝 NaN 和无穷大，避免把无效运动参数传给控制卡。</summary>
+        private static void ValidateFinite(double value, string parameterName)
+        {
+            if (double.IsNaN(value) || double.IsInfinity(value))
+            {
+                throw new ArgumentOutOfRangeException(parameterName, "运动参数必须是有限数值。");
+            }
+        }
+    }
+}

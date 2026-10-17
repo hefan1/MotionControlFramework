@@ -7,6 +7,7 @@ namespace MotionControl.Framework.Contracts.Motion
     /// </summary>
     public sealed class AxisMotionProfile
     {
+        /// <summary>创建一次运动使用的速度、加速度和减速度参数。</summary>
         public AxisMotionProfile(double speed, double acceleration, double deceleration)
         {
             if (double.IsNaN(speed) || double.IsInfinity(speed) || speed <= 0)

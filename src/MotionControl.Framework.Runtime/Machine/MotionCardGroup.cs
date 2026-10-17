@@ -19,6 +19,7 @@ namespace MotionControl.Framework.Runtime.Machine
         private readonly Dictionary<string, IAxis> _axesByName;
         private readonly SemaphoreSlim _lifecycleLock = new SemaphoreSlim(1, 1);
 
+        /// <summary>检查并保存本设备配置的运动卡及其逻辑轴。</summary>
         public MotionCardGroup(IEnumerable<IMotionCard> cards)
         {
             if (cards == null)
@@ -36,6 +37,7 @@ namespace MotionControl.Framework.Runtime.Machine
 
             _cards = cardList.AsReadOnly();
             _axesByName = new Dictionary<string, IAxis>(StringComparer.OrdinalIgnoreCase);
+            var axisList = new List<IAxis>();
 
             foreach (var card in cardList)
             {
@@ -55,6 +57,13 @@ namespace MotionControl.Framework.Runtime.Machine
                             nameof(cards));
                     }
 
+                    if (!string.Equals(axis.Name, axis.Name.Trim(), StringComparison.Ordinal))
+                    {
+                        throw new ArgumentException(
+                            "逻辑轴名称不能包含首尾空格：'" + axis.Name + "'。",
+                            nameof(cards));
+                    }
+
                     if (_axesByName.ContainsKey(axis.Name))
                     {
                         throw new ArgumentException(
@@ -63,10 +72,11 @@ namespace MotionControl.Framework.Runtime.Machine
                     }
 
                     _axesByName.Add(axis.Name, axis);
+                    axisList.Add(axis);
                 }
             }
 
-            _axes = _axesByName.Values.ToList().AsReadOnly();
+            _axes = axisList.AsReadOnly();
         }
 
         /// <summary>本机配置的运动卡。顺序与 Host 传入顺序一致。</summary>
@@ -193,7 +203,7 @@ namespace MotionControl.Framework.Runtime.Machine
                             "断开运动控制卡 '" + card.ControllerId + "' 失败。",
                             disconnectError));
 
-                        if (disconnectError is OperationCanceledException)
+                        if (disconnectError is OperationCanceledException || cancellationToken.IsCancellationRequested)
                         {
                             useCancellationToken = false;
                         }
@@ -211,6 +221,7 @@ namespace MotionControl.Framework.Runtime.Machine
             }
         }
 
+        /// <summary>检查控制卡实例、标识和逻辑轴列表是否有效且不重复。</summary>
         private static void ValidateCards(IReadOnlyCollection<IMotionCard> cards)
         {
             var controllerIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -224,6 +235,13 @@ namespace MotionControl.Framework.Runtime.Machine
                 if (string.IsNullOrWhiteSpace(card.ControllerId))
                 {
                     throw new ArgumentException("运动控制卡没有配置 ControllerId。", nameof(cards));
+                }
+
+                if (!string.Equals(card.ControllerId, card.ControllerId.Trim(), StringComparison.Ordinal))
+                {
+                    throw new ArgumentException(
+                        "运动控制卡标识不能包含首尾空格：'" + card.ControllerId + "'。",
+                        nameof(cards));
                 }
 
                 if (!controllerIds.Add(card.ControllerId))
@@ -242,6 +260,7 @@ namespace MotionControl.Framework.Runtime.Machine
             }
         }
 
+        /// <summary>连接失败时按相反顺序断开本次已经连上的控制卡。</summary>
         private static async Task<IReadOnlyList<Exception>> RollBackConnectionAsync(
             IReadOnlyList<IMotionCard> connectedCards)
         {

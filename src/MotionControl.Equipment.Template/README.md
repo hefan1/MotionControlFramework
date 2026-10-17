@@ -3,7 +3,7 @@
 新设备项目的目录模板，不是具体设备实现，也不会被 Host 自动引用。新建设备时复制此项目，按设备需要添加流程、硬件映射、页面和配置，再由对应 Host 显式引用。
 
 ```text
-HardwareConfig/   轴硬件参数默认模板（AxisParameters.json）、逻辑 DI/DO 点位映射（IoMapping.json）
+HardwareConfig/   控制卡清单（MotionCards.json）、轴参数（AxisParameters.json）、逻辑 DI/DO 映射（IoMapping.json）
 Communications/   设备专属 PLC 数据点与命令握手、自定义 TCP 设备协议
 Flows/Stations/   各工位独立的 C# 流程步；并行工位通过设备定义的请求/完成信号协作
 Alarms/           设备报警定义与条件
@@ -13,7 +13,7 @@ TraceData/        SN 关联的设备采集字段与生产记录组装规则
 Views/            设备操作、调试和参数页面
 ```
 
-设备项目里的 JSON 文件是同型号设备共用的默认模板。首次部署时，Host 为物理设备建立独立的生效配置，并关联唯一 `MachineId`；各设备的现场调试值互不影响。生效配置保存在软件发布目录之外，升级程序时保留原配置；配置格式变化时先备份，再迁移和验证。产品配方与设备级调试参数分开管理。
+设备项目里的 JSON 文件是同型号设备共用的默认模板，构建后放在 `EquipmentTemplates/`。首次部署时，Runtime 为物理设备建立独立的生效配置，并关联唯一 `MachineId`；后续升级只补入缺少的模板文件，不覆盖现场值。生效配置保存在软件发布目录之外；每份配置带 `schemaVersion`，设备项目按明确版本迁移和校验，Runtime 保存时自动备份旧文件。产品配方与设备级调试参数分开管理。
 
 Runtime 管理整机运行状态和工位流程的启停协调。各工位流程保留自己的当前步骤；停机报警时整机暂停，复位后启动从中断步骤重新进入。共享轴或运动区域的避让逻辑根据具体设备需求设计。
 

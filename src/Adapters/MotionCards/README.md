@@ -6,6 +6,6 @@ These API modules are the native SDK boundary. A driver adapter will reference o
 
 The first common motion contracts cover card connection, logical axes, axis status, absolute and relative moves, jog, stop, servo, homing, and logical DI/DO access. A deployment may create multiple card instances of its selected adapter. Adapter selection remains explicit in the Host; equipment flows do not reference vendor APIs.
 
-No concrete card driver is connected yet. Implement and review one driver against these contracts before treating an API declaration project as a usable adapter.
+`ZMotion/Adapter/MotionControl.Adapter.MotionCard.ZMotion` is the first concrete adapter. It is limited to the ZDevelop offline simulator at `127.0.0.1` and accepts only the reported identity `VPLC5xx-Simu`. It is not a physical-card driver. Leadshine and ADLINK currently have API declarations only.
 
-Only the managed API declaration files are included here. The native runtime DLLs are not copied into this solution because the reference projects contain SDK versions and processor architectures that do not consistently match. See `docs/vendor-motion-card-apis.md` before configuring a deployment.
+The repository includes managed API declarations and adapter source code, but does not copy native runtime DLLs because the reference projects contain SDK versions and processor architectures that do not consistently match. See `docs/vendor-motion-card-apis.md` before configuring a deployment.

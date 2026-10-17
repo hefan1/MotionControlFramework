@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "motionCards": [
+    {
+      "controllerId": "ZMotionSimulation",
+      "adapterType": "ZMotion",
+      "connectionConfigurationFile": "ZDevelopSimulation.json"
+    }
+  ]
+}

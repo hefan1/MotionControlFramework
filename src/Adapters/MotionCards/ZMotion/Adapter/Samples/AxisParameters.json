@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "axes": [
+    {
+      "controllerId": "ZMotionSimulation",
+      "name": "SimulationX",
+      "axisNumber": 0,
+      "unitsPerEngineeringUnit": 1.0,
+      "minimumPosition": -100.0,
+      "maximumPosition": 100.0,
+      "jogAcceleration": 10.0,
+      "jogDeceleration": 10.0
+    },
+    {
+      "controllerId": "ZMotionSimulation",
+      "name": "SimulationY",
+      "axisNumber": 1,
+      "unitsPerEngineeringUnit": 1.0,
+      "minimumPosition": -100.0,
+      "maximumPosition": 100.0,
+      "jogAcceleration": 10.0,
+      "jogDeceleration": 10.0
+    }
+  ]
+}

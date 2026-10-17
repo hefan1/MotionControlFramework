@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>MotionControl.Adapter.MotionCard.ZMotion</AssemblyName>
+    <RootNamespace>MotionControl.Adapter.MotionCard.ZMotion</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\MotionControl.Framework.Contracts\MotionControl.Framework.Contracts.csproj" />
+    <ProjectReference Include="..\VendorApi\MotionControl.VendorApi.ZMotion.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>MotionControl.ZMotionSimulatorCheck</AssemblyName>
+    <RootNamespace>MotionControl.ZMotionSimulatorCheck</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Adapters\MotionCards\ZMotion\Adapter\MotionControl.Adapter.MotionCard.ZMotion.csproj" />
+    <ProjectReference Include="..\..\src\MotionControl.Framework.Runtime\MotionControl.Framework.Runtime.csproj" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\src\Adapters\MotionCards\ZMotion\Adapter\Samples\*.json"
+          Link="Samples\ZDevelopSimulation\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

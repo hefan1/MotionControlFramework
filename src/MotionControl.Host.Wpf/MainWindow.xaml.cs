@@ -40,6 +40,9 @@ namespace MotionControl.Host.Wpf
 
         public string CurrentLanguage { get; private set; }
 
+        /// <summary>
+        /// 初始化主窗口、默认导航、多语言界面和顶部时钟。
+        /// </summary>
         public MainWindow()
         {
             InitializeComponent();
@@ -58,6 +61,9 @@ namespace MotionControl.Host.Wpf
             Closed += MainWindow_Closed;
         }
 
+        /// <summary>
+        /// 处理顶部主导航点击，并切换到对应功能分区。
+        /// </summary>
         private void PrimaryNavigationButton_Click(object sender, RoutedEventArgs e)
         {
             ToggleButton navigationButton = sender as ToggleButton;
@@ -69,6 +75,9 @@ namespace MotionControl.Host.Wpf
             NavigateToSection(navigationButton.Tag as string);
         }
 
+        /// <summary>
+        /// 根据功能分区生成左侧导航，并显示该分区的默认页面。
+        /// </summary>
         private void NavigateToSection(string sectionKey)
         {
             string sectionTitleResourceKey;
@@ -124,11 +133,17 @@ namespace MotionControl.Host.Wpf
             SelectSidebarPage(currentPageButton ?? firstPageButton);
         }
 
+        /// <summary>
+        /// 处理左侧页面导航点击，并更新当前显示页面。
+        /// </summary>
         private void SidebarNavigationButton_Click(object sender, RoutedEventArgs e)
         {
             SelectSidebarPage(sender as ToggleButton);
         }
 
+        /// <summary>
+        /// 选中左侧导航页面，并更新页面标题和按钮状态。
+        /// </summary>
         private void SelectSidebarPage(ToggleButton selectedPageButton)
         {
             if (selectedPageButton == null)
@@ -149,6 +164,9 @@ namespace MotionControl.Host.Wpf
             PageTitle.Text = GetLocalizedText(_currentPageResourceKey);
         }
 
+        /// <summary>
+        /// 处理语言下拉框变化，并应用所选界面语言。
+        /// </summary>
         private void LanguageSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (!IsLoaded)
@@ -161,6 +179,9 @@ namespace MotionControl.Host.Wpf
             ApplyLanguage(languageCode);
         }
 
+        /// <summary>
+        /// 加载指定语言资源，并刷新当前导航显示文字。
+        /// </summary>
         private void ApplyLanguage(string languageCode)
         {
             if (!string.Equals(languageCode, "en-US", StringComparison.OrdinalIgnoreCase))
@@ -183,11 +204,17 @@ namespace MotionControl.Host.Wpf
             NavigateToSection(_currentSectionKey);
         }
 
+        /// <summary>
+        /// 根据中文资源键读取当前语言对应的显示文字。
+        /// </summary>
         private string GetLocalizedText(string chineseResourceKey)
         {
             return (string)FindResource(chineseResourceKey);
         }
 
+        /// <summary>
+        /// 将应用中已加载的语言资源替换为指定资源。
+        /// </summary>
         private void ReplaceLanguageResources(ResourceDictionary languageResources)
         {
             var applicationDictionaries = Application.Current.Resources.MergedDictionaries;
@@ -207,6 +234,9 @@ namespace MotionControl.Host.Wpf
             applicationDictionaries.Add(languageResources);
         }
 
+        /// <summary>
+        /// 显示设备操作提示；具体设备控制逻辑由后续模块接入。
+        /// </summary>
         private void MachineCommandButton_Click(object sender, RoutedEventArgs e)
         {
             Button commandButton = sender as Button;
@@ -220,16 +250,25 @@ namespace MotionControl.Host.Wpf
             CurrentMachineState.SetResourceReference(TextBlock.TextProperty, "控制逻辑未接入");
         }
 
+        /// <summary>
+        /// 响应时钟定时器，并刷新主窗口的当前时间。
+        /// </summary>
         private void ClockTimer_Tick(object sender, EventArgs e)
         {
             UpdateClock();
         }
 
+        /// <summary>
+        /// 将当前本地时间显示在主窗口顶部。
+        /// </summary>
         private void UpdateClock()
         {
             ClockText.Text = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
         }
 
+        /// <summary>
+        /// 关闭主窗口时停止时钟定时器。
+        /// </summary>
         private void MainWindow_Closed(object sender, EventArgs e)
         {
             _clockTimer.Stop();
