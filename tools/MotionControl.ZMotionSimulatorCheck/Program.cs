@@ -230,6 +230,9 @@ namespace MotionControl.ZMotionSimulatorCheck
                             + "：位置=" + status.Position
                             + "，伺服=" + status.ServoEnabled
                             + "，运动中=" + status.Moving
+                            + "，正限位=" + status.PositiveLimitActive
+                            + "，负限位=" + status.NegativeLimitActive
+                            + "，已回零=" + status.Homed
                             + "，报警=" + status.AlarmActive + "。");
                     }
 
