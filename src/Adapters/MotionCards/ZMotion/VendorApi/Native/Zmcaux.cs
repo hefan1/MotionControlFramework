@@ -2474,22 +2474,18 @@ namespace MotionControl.VendorApi.ZMotion.Native
         [DllImport("zauxdll.dll", EntryPoint = "ZAux_Direct_Single_Vmove", CharSet = CharSet.Ansi, CallingConvention = CallingConvention.StdCall)]
         public static extern Int32 ZAux_Direct_Single_Vmove(IntPtr handle, int iaxis, int idir);
 
-        /// <summary>
-        /// 控制器方式回零
-        /// </summary>
+        /// <summary>调用正运动控制器执行指定模式的直接回零。</summary>
         /// <param name="handle">连接句柄</param>
         /// <param name="iaxis">轴号</param>
-        /// <param name="imode">回零模式</param>
+        /// <param name="imode">DATUM 回零模式号</param>
         /// <returns>错误码</returns>
         [DllImport("zauxdll.dll", EntryPoint = "ZAux_Direct_Single_Datum", CharSet = CharSet.Ansi, CallingConvention = CallingConvention.StdCall)]
         public static extern Int32 ZAux_Direct_Single_Datum(IntPtr handle, int iaxis, int imode);
 
-        /// <summary>
-        /// 控制器方式回零
-        /// </summary>
+        /// <summary>读取指定轴的正运动直接回零状态。</summary>
         /// <param name="handle">连接句柄</param>
         /// <param name="iaxis">轴号</param>
-        /// <param name="imode">回零模式</param>
+        /// <param name="homestatus">控制器返回的回零状态值</param>
         /// <returns>错误码</returns>
         [DllImport("zauxdll.dll", EntryPoint = "ZAux_Direct_GetHomeStatus", CharSet = CharSet.Ansi, CallingConvention = CallingConvention.StdCall)]
         public static extern Int32 ZAux_Direct_GetHomeStatus(IntPtr handle, int iaxis, ref UInt32 homestatus);

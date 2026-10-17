@@ -53,7 +53,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             return _card.EnableServoAsync(this, false, cancellationToken);
         }
 
-        /// <summary>在仿真器上将指令坐标清零，并标记该轴已建立坐标。</summary>
+        /// <summary>按设备轴配置调用正运动控制器的 DATUM 回零，并等待控制器报告完成。</summary>
         public Task HomeAsync(CancellationToken cancellationToken)
         {
             return _card.HomeAsync(this, cancellationToken);
@@ -132,7 +132,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             return _card.ResetAxisAlarmAsync(this, cancellationToken);
         }
 
-        /// <summary>记录该轴已完成仿真坐标回零。</summary>
+        /// <summary>记录控制器已报告该轴回零完成。</summary>
         internal void MarkHomed()
         {
             _isHomed = true;

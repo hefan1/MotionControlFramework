@@ -25,6 +25,21 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         /// <summary>连续点动使用的减速度，单位为工程单位/秒²。</summary>
         public double JogDeceleration { get; set; }
 
+        /// <summary>正运动 DATUM 模式号：3 正向找原点、反向慢速离开；4 反向找原点、正向慢速离开；13 正向碰限位后反向找原点。</summary>
+        public int HomeMode { get; set; }
+
+        /// <summary>回零搜索速度，单位为工程单位/秒。</summary>
+        public double HomeSearchSpeed { get; set; }
+
+        /// <summary>回零爬行速度，单位为工程单位/秒。</summary>
+        public double HomeCreepSpeed { get; set; }
+
+        /// <summary>回零加速度，单位为工程单位/秒²。</summary>
+        public double HomeAcceleration { get; set; }
+
+        /// <summary>回零减速度，单位为工程单位/秒²。</summary>
+        public double HomeDeceleration { get; set; }
+
         /// <summary>检查轴名称、通道、单位换算、软限位和点动参数。</summary>
         internal void Validate()
         {
@@ -62,6 +77,24 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             {
                 throw new InvalidOperationException(
                     "轴 '" + Name + "' 的点动加速度和减速度必须是大于 0 的有限数值。");
+            }
+        }
+
+        /// <summary>检查回零模式、速度和加减速度，避免向控制器下发无效回零参数。</summary>
+        internal void ValidateHomeParameters()
+        {
+            if (HomeMode < 0)
+            {
+                throw new InvalidOperationException("轴 '" + Name + "' 的正运动回零模式号不能小于 0。");
+            }
+
+            if (!IsFinite(HomeSearchSpeed) || HomeSearchSpeed <= 0
+                || !IsFinite(HomeCreepSpeed) || HomeCreepSpeed <= 0
+                || !IsFinite(HomeAcceleration) || HomeAcceleration <= 0
+                || !IsFinite(HomeDeceleration) || HomeDeceleration <= 0)
+            {
+                throw new InvalidOperationException(
+                    "轴 '" + Name + "' 的回零速度、爬行速度、加速度和减速度必须是大于 0 的有限数值。");
             }
         }
 

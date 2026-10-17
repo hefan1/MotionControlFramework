@@ -9,7 +9,12 @@
       "minimumPosition": -100.0,
       "maximumPosition": 100.0,
       "jogAcceleration": 10.0,
-      "jogDeceleration": 10.0
+      "jogDeceleration": 10.0,
+      "homeMode": 3,
+      "homeSearchSpeed": 5.0,
+      "homeCreepSpeed": 1.0,
+      "homeAcceleration": 10.0,
+      "homeDeceleration": 10.0
     },
     {
       "controllerId": "ZMotionSimulation",
@@ -19,7 +24,12 @@
       "minimumPosition": -100.0,
       "maximumPosition": 100.0,
       "jogAcceleration": 10.0,
-      "jogDeceleration": 10.0
+      "jogDeceleration": 10.0,
+      "homeMode": 3,
+      "homeSearchSpeed": 5.0,
+      "homeCreepSpeed": 1.0,
+      "homeAcceleration": 10.0,
+      "homeDeceleration": 10.0
     }
   ]
 }

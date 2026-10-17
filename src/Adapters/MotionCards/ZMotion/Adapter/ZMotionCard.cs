@@ -23,7 +23,11 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         private const int NegativeLimitBit = 5;
         private const int ServoAlarmBit = 22;
         private const int PollIntervalMilliseconds = 20;
+        private const int HomingStartTimeoutMilliseconds = 1000;
         private const int StopConfirmationTimeoutMilliseconds = 5000;
+        // 正运动直接回零结果：1 和 2 均由现有正运动参考适配器识别为完成。
+        private const uint HomeStatusSucceeded = 1;
+        private const uint HomeStatusCompleted = 2;
 
         private readonly object _nativeLock = new object();
         private readonly string _controllerId;
@@ -229,23 +233,50 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             }, cancellationToken);
         }
 
-        /// <summary>在仿真器上清零指定逻辑轴的指令坐标并设置回零标记。</summary>
-        internal Task HomeAsync(ZMotionAxis axis, CancellationToken cancellationToken)
+        /// <summary>按轴配置下发正运动 DATUM 指令，并等待控制器报告回零完成。</summary>
+        internal async Task HomeAsync(ZMotionAxis axis, CancellationToken cancellationToken)
         {
-            return Task.Run(() =>
+            await Task.Run(() =>
             {
                 lock (_nativeLock)
                 {
                     var handle = GetConnectedHandle();
+                    axis.Configuration.ValidateHomeParameters();
                     EnsureAxisParametersApplied(axis);
                     EnsureAxisIdle(handle, axis);
+                    EnsureServoEnabled(handle, axis);
+                    axis.ClearHomedState();
+                    SetHomeProfile(handle, axis);
                     CheckResult(
-                        zmcaux.ZAux_Direct_SetDpos(handle, axis.AxisNumber, 0),
-                        "仿真坐标清零",
+                        zmcaux.ZAux_Direct_Single_Datum(
+                            handle,
+                            axis.AxisNumber,
+                            axis.Configuration.HomeMode),
+                        "启动 DATUM 回零（模式 " + axis.Configuration.HomeMode + "）",
                         axis.Name);
-                    axis.MarkHomed();
                 }
-            }, cancellationToken);
+            }, cancellationToken).ConfigureAwait(false);
+
+            try
+            {
+                await WaitForHomingAsync(axis, cancellationToken).ConfigureAwait(false);
+                axis.MarkHomed();
+            }
+            catch (OperationCanceledException cancellationError)
+            {
+                await StopHomingAfterFailureAsync(axis, cancellationError).ConfigureAwait(false);
+                throw;
+            }
+            catch (TimeoutException timeoutError)
+            {
+                await StopHomingAfterFailureAsync(axis, timeoutError).ConfigureAwait(false);
+                throw;
+            }
+            catch (Exception homingError)
+            {
+                await StopHomingAfterFailureAsync(axis, homingError).ConfigureAwait(false);
+                throw;
+            }
         }
 
         /// <summary>清除指定逻辑轴的驱动报警并清除回零标记。</summary>
@@ -383,6 +414,119 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     await Task.Delay(PollIntervalMilliseconds, cancellationToken).ConfigureAwait(false);
                 }
             }, cancellationToken);
+        }
+
+        /// <summary>等待正运动 HOMESTATUS 报告回零完成，或在轴停止后报告回零失败。</summary>
+        private async Task WaitForHomingAsync(ZMotionAxis axis, CancellationToken cancellationToken)
+        {
+            var startedAt = DateTime.UtcNow;
+            var observedMotion = false;
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                uint homeStatus = 0;
+                int idle = 1;
+                int axisStatus = 0;
+                lock (_nativeLock)
+                {
+                    var handle = GetConnectedHandle();
+                    CheckResult(
+                        zmcaux.ZAux_Direct_GetHomeStatus(handle, axis.AxisNumber, ref homeStatus),
+                        "读取回零结果",
+                        axis.Name);
+                    CheckResult(
+                        zmcaux.ZAux_Direct_GetIfIdle(handle, axis.AxisNumber, ref idle),
+                        "读取回零运动状态",
+                        axis.Name);
+                    CheckResult(
+                        zmcaux.ZAux_Direct_GetAxisStatus(handle, axis.AxisNumber, ref axisStatus),
+                        "读取回零轴状态",
+                        axis.Name);
+                }
+
+                if (idle != 0
+                    && (homeStatus == HomeStatusSucceeded || homeStatus == HomeStatusCompleted))
+                {
+                    return;
+                }
+
+                if ((axisStatus & (1 << ServoAlarmBit)) != 0)
+                {
+                    throw new InvalidOperationException(
+                        "正运动控制卡 '" + ControllerId + "' 逻辑轴 '" + axis.Name
+                        + "' 回零期间出现伺服报警，轴状态字：0x" + axisStatus.ToString("X8") + "。");
+                }
+
+                if (idle == 0)
+                {
+                    observedMotion = true;
+                }
+                else if (observedMotion)
+                {
+                    throw new InvalidOperationException(
+                        "正运动控制卡 '" + ControllerId + "' 逻辑轴 '" + axis.Name
+                        + "' 已停止，但控制器回零状态不是成功（HOMESTATUS=" + homeStatus + "）。");
+                }
+                else if ((DateTime.UtcNow - startedAt).TotalMilliseconds >= HomingStartTimeoutMilliseconds)
+                {
+                    throw new InvalidOperationException(
+                        "正运动控制卡 '" + ControllerId + "' 逻辑轴 '" + axis.Name
+                        + "' 没有开始回零运动（HOMESTATUS=" + homeStatus + "）。");
+                }
+
+                if ((DateTime.UtcNow - startedAt).TotalMilliseconds >= _configuration.MotionTimeoutMilliseconds)
+                {
+                    throw new TimeoutException(
+                        "正运动控制卡 '" + ControllerId + "' 逻辑轴 '" + axis.Name
+                        + "' 回零超时，超时毫秒数：" + _configuration.MotionTimeoutMilliseconds + "。");
+                }
+
+                await Task.Delay(PollIntervalMilliseconds, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>把该轴配置的回零搜索速度、爬行速度和加减速度写入控制器。</summary>
+        private void SetHomeProfile(IntPtr handle, ZMotionAxis axis)
+        {
+            CheckResult(
+                zmcaux.ZAux_Direct_SetSpeed(handle, axis.AxisNumber, (float)axis.Configuration.HomeSearchSpeed),
+                "设置回零搜索速度",
+                axis.Name);
+            CheckResult(
+                zmcaux.ZAux_Direct_SetCreep(handle, axis.AxisNumber, (float)axis.Configuration.HomeCreepSpeed),
+                "设置回零爬行速度",
+                axis.Name);
+            CheckResult(
+                zmcaux.ZAux_Direct_SetAccel(handle, axis.AxisNumber, (float)axis.Configuration.HomeAcceleration),
+                "设置回零加速度",
+                axis.Name);
+            CheckResult(
+                zmcaux.ZAux_Direct_SetDecel(handle, axis.AxisNumber, (float)axis.Configuration.HomeDeceleration),
+                "设置回零减速度",
+                axis.Name);
+        }
+
+        /// <summary>回零取消或超时后请求中止，并确认轴停下；停止失败时保留原始故障。</summary>
+        private async Task StopHomingAfterFailureAsync(ZMotionAxis axis, Exception originalError)
+        {
+            try
+            {
+                await StopAxisAsync(axis, AxisStopMode.Abort, CancellationToken.None).ConfigureAwait(false);
+                using (var stopTimeout = new CancellationTokenSource(StopConfirmationTimeoutMilliseconds))
+                {
+                    await WaitForAxisIdleAsync(
+                        axis,
+                        StopConfirmationTimeoutMilliseconds,
+                        stopTimeout.Token).ConfigureAwait(false);
+                }
+            }
+            catch (Exception stopError)
+            {
+                throw new AggregateException(
+                    "正运动逻辑轴 '" + axis.Name + "' 回零失败后未能确认停止。",
+                    originalError,
+                    stopError);
+            }
         }
 
         internal int StopConfirmationTimeout

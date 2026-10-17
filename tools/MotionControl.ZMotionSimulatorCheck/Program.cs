@@ -80,6 +80,22 @@ namespace MotionControl.ZMotionSimulatorCheck
                 {
                     options.ExerciseRuntime = true;
                 }
+                else if (string.Equals(argument, "--exercise-home", StringComparison.OrdinalIgnoreCase))
+                {
+                    options.ExerciseHome = true;
+                }
+                else if (string.Equals(argument, "--home-mode", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (index + 1 >= args.Length
+                        || !int.TryParse(args[++index], out var homeMode)
+                        || homeMode < 0)
+                    {
+                        throw new ArgumentException("--home-mode 后面必须提供大于或等于 0 的正运动 DATUM 模式号。");
+                    }
+
+                    options.HomeModeOverride = homeMode;
+                    options.ExerciseHome = true;
+                }
                 else if (string.Equals(argument, "--config-dir", StringComparison.OrdinalIgnoreCase))
                 {
                     if (index + 1 >= args.Length)
@@ -123,6 +139,11 @@ namespace MotionControl.ZMotionSimulatorCheck
                     cardDefinition.ControllerId,
                     StringComparison.OrdinalIgnoreCase))
                 .ToList();
+            if (options.HomeModeOverride.HasValue)
+            {
+                axesForCard[0].HomeMode = options.HomeModeOverride.Value;
+            }
+
             var inputsForCard = ioMapping.DigitalInputs
                 .Where(point => string.Equals(
                     point.ControllerId,
@@ -249,7 +270,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                     }
                 }
 
-                if (options.ExerciseMotion)
+                if (options.ExerciseMotion || options.ExerciseHome)
                 {
                     var selectedAxis = card.Axes.First();
                     var axisConfiguration = axisConfigurations.First(axis => string.Equals(
@@ -258,10 +279,18 @@ namespace MotionControl.ZMotionSimulatorCheck
                         StringComparison.OrdinalIgnoreCase));
                     await card.ApplyAxisParametersAsync(cancellationToken).ConfigureAwait(false);
                     Console.WriteLine("[通过] 仿真轴单位和软限位参数已应用。");
-                    await ExerciseAxisAsync(
-                        selectedAxis,
-                        axisConfiguration,
-                        cancellationToken).ConfigureAwait(false);
+                    if (options.ExerciseMotion)
+                    {
+                        await ExerciseAxisAsync(
+                            selectedAxis,
+                            axisConfiguration,
+                            cancellationToken).ConfigureAwait(false);
+                    }
+
+                    if (options.ExerciseHome)
+                    {
+                        await ExerciseHomeAsync(selectedAxis, cancellationToken).ConfigureAwait(false);
+                    }
                 }
 
                 if (options.ExerciseIo)
@@ -331,6 +360,35 @@ namespace MotionControl.ZMotionSimulatorCheck
             }
 
             Console.WriteLine("[通过] 逻辑轴 " + axis.Name + " 完成一个工程单位往返定位。");
+        }
+
+        /// <summary>通过真实正运动 DATUM 指令执行样例轴回零，并恢复测试前的伺服状态。</summary>
+        private static async Task ExerciseHomeAsync(IAxis axis, CancellationToken cancellationToken)
+        {
+            var originalStatus = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
+            if (!originalStatus.ServoEnabled)
+            {
+                await axis.EnableServoAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            try
+            {
+                await axis.HomeAsync(cancellationToken).ConfigureAwait(false);
+                var homedStatus = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
+                if (!homedStatus.Homed)
+                {
+                    throw new InvalidOperationException("正运动控制器报告回零调用结束，但框架没有记录到回零完成状态。");
+                }
+            }
+            finally
+            {
+                if (!originalStatus.ServoEnabled)
+                {
+                    await axis.DisableServoAsync(CancellationToken.None).ConfigureAwait(false);
+                }
+            }
+
+            Console.WriteLine("[通过] 逻辑轴 " + axis.Name + " 的正运动 DATUM 回零完成。");
         }
 
         /// <summary>翻转一个仿真 DO 并确认读回，最后恢复测试前的逻辑值。</summary>
@@ -449,6 +507,8 @@ namespace MotionControl.ZMotionSimulatorCheck
             Console.WriteLine("  默认只连接仿真器并读取控制器身份，不发送运动或 IO 写入命令");
             Console.WriteLine("  --read-status         读取逻辑轴、DI 和 DO 状态，不写入硬件值");
             Console.WriteLine("  --exercise-motion    在仿真软限位内执行一个工程单位的轴往返定位");
+            Console.WriteLine("  --exercise-home      按样例轴参数执行真实 DATUM 回零（要求先确认仿真器输入映射）");
+            Console.WriteLine("  --home-mode <模式号> 指定本次验证的 DATUM 模式并执行回零，例如 3、4 或 13");
             Console.WriteLine("  --exercise-io        翻转一个仿真 DO，读回后恢复原值");
             Console.WriteLine("  --exercise-runtime   验证 Runtime 连接、复位、启动和暂停生命周期");
             Console.WriteLine("  --help               显示帮助");
@@ -460,6 +520,10 @@ namespace MotionControl.ZMotionSimulatorCheck
             public string ConfigurationDirectory { get; set; }
 
             public bool ExerciseMotion { get; set; }
+
+            public bool ExerciseHome { get; set; }
+
+            public int? HomeModeOverride { get; set; }
 
             public bool ReadStatus { get; set; }
 
