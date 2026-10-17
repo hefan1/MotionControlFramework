@@ -3,10 +3,15 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Alarms;
+using MotionControl.Framework.Contracts.Configuration;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.Motion;
+using MotionControl.Framework.Contracts.IO;
+using MotionControl.Framework.Contracts.Safety;
 using MotionControl.Framework.Runtime.Alarms;
+using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Runtime.Machine;
+using MotionControl.Framework.Runtime.Safety;
 
 namespace MotionControl.ZMotionSimulatorCheck
 {
@@ -23,6 +28,9 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("停机报警暂停流程并要求复位", StopAlarmPausesMachineUntilResetAsync, failures);
             await RunCheckAsync("非停机报警在条件恢复后自动清除", NonStopAlarmClearsWhenRecoveredAsync, failures);
             await RunCheckAsync("工位流程异常使整机进入报警", StationFailureAlarmsMachineAsync, failures);
+            await RunCheckAsync("急停有效时禁止复位和启动，运行期间触发会暂停流程", EmergencyStopBlocksAndStopsMachineAsync, failures);
+            await RunCheckAsync("急停状态通过配置的逻辑 DI 读取", EmergencyStopStatusUsesConfiguredInputAsync, failures);
+            await RunCheckAsync("设备硬件配置关联和急停输入校验", HardwareConfigurationValidationAsync, failures);
             return failures.AsReadOnly();
         }
 
@@ -142,11 +150,113 @@ namespace MotionControl.ZMotionSimulatorCheck
             await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
+        /// <summary>确认急停状态未恢复时不能复位或启动，运行期间触发会停机报警。</summary>
+        private static async Task EmergencyStopBlocksAndStopsMachineAsync()
+        {
+            var flow = new WaitingStationFlow("上料工位", "等待上料完成");
+            var safetyStatus = new FakeSafetyStatus { EmergencyStopActive = true };
+            var runtime = CreateRuntime(flow, new MachineAlarmService(), safetyStatus);
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await ExpectExceptionAsync<InvalidOperationException>(
+                () => runtime.ResetAsync(CancellationToken.None)).ConfigureAwait(false);
+            Ensure(runtime.State == MachineRunState.Alarmed, "急停有效时 Runtime 没有进入报警状态。");
+
+            safetyStatus.EmergencyStopActive = false;
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await flow.WaitUntilStartedAsync().ConfigureAwait(false);
+            safetyStatus.EmergencyStopActive = true;
+            await WaitForStateAsync(runtime, MachineRunState.Alarmed).ConfigureAwait(false);
+            Ensure(flow.CurrentStepName == "等待上料完成", "急停触发后工位当前步骤发生变化。");
+
+            safetyStatus.EmergencyStopActive = false;
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(runtime.State == MachineRunState.Ready, "释放急停并复位后没有回到 Ready 状态。");
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        /// <summary>确认急停状态读取器只读取配置指定的逻辑 DI 名称。</summary>
+        private static async Task EmergencyStopStatusUsesConfiguredInputAsync()
+        {
+            var logicalIo = new FakeLogicalIo();
+            logicalIo.SetInput("EmergencyStop", true);
+            logicalIo.SetInput("OtherInput", false);
+            var safetyStatus = new LogicalIoEmergencyStopStatus(logicalIo, "EmergencyStop");
+
+            var active = await safetyStatus.ReadEmergencyStopActiveAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(active, "急停逻辑输入有效时，安全状态读取器返回了 false。");
+            Ensure(logicalIo.LastReadInputName == "EmergencyStop", "安全状态读取器没有使用配置的急停 DI 名称。");
+        }
+
+        /// <summary>确认有效配置可通过校验，重复物理轴映射和无效急停名称会被拒绝。</summary>
+        private static Task HardwareConfigurationValidationAsync()
+        {
+            var cards = new[]
+            {
+                new MotionCardHardwareDefinition
+                {
+                    ControllerId = "CardA",
+                    AdapterType = "ZMotion",
+                    ConnectionConfigurationFile = "ZDevelopSimulation.json"
+                }
+            };
+            var axes = new[]
+            {
+                new AxisHardwareDefinition
+                {
+                    ControllerId = "CardA",
+                    Name = "X",
+                    AxisNumber = 0,
+                    MinimumPosition = -100,
+                    MaximumPosition = 100
+                }
+            };
+            var inputs = new[]
+            {
+                new DigitalIoHardwareDefinition
+                {
+                    ControllerId = "CardA",
+                    Name = "EmergencyStop",
+                    Channel = 3,
+                    ActiveHigh = true
+                }
+            };
+
+            MachineHardwareConfigurationValidator.Validate(cards, axes, inputs, new DigitalIoHardwareDefinition[0], "EmergencyStop");
+            ExpectException<InvalidOperationException>(() => MachineHardwareConfigurationValidator.Validate(
+                cards,
+                new[]
+                {
+                    axes[0],
+                    new AxisHardwareDefinition
+                    {
+                        ControllerId = "CardA",
+                        Name = "Y",
+                        AxisNumber = 0,
+                        MinimumPosition = 100,
+                        MaximumPosition = -100
+                    }
+                },
+                inputs,
+                new DigitalIoHardwareDefinition[0],
+                "UnmappedEmergencyStop"));
+            return Task.CompletedTask;
+        }
+
         /// <summary>使用单张模拟卡、一个测试轴和指定工位创建 Runtime。</summary>
-        private static MachineRuntime CreateRuntime(IStationFlow flow, IMachineAlarmService alarms)
+        private static MachineRuntime CreateRuntime(
+            IStationFlow flow,
+            IMachineAlarmService alarms,
+            FakeSafetyStatus safetyStatus = null)
         {
             var card = new FakeMotionCard("TestCard", new FakeAxis("TestAxis"));
-            return new MachineRuntime(new MotionCardGroup(new[] { card }), new[] { flow }, alarms, TimeSpan.FromSeconds(2));
+            return new MachineRuntime(
+                new MotionCardGroup(new[] { card }),
+                new[] { flow },
+                alarms,
+                safetyStatus ?? new FakeSafetyStatus(),
+                TimeSpan.FromSeconds(2),
+                TimeSpan.FromMilliseconds(10));
         }
 
         /// <summary>等待 Runtime 进入目标状态，超时后报告实际状态。</summary>
@@ -281,6 +391,55 @@ namespace MotionControl.ZMotionSimulatorCheck
 
             /// <summary>模拟轴报警复位。</summary>
             public Task ResetAlarmAsync(CancellationToken cancellationToken) { cancellationToken.ThrowIfCancellationRequested(); return Task.CompletedTask; }
+        }
+
+        /// <summary>提供可由回归用例切换的急停输入状态。</summary>
+        private sealed class FakeSafetyStatus : IMachineSafetyStatus
+        {
+            public bool EmergencyStopActive { get; set; }
+
+            /// <summary>返回回归用例当前设置的急停状态。</summary>
+            public Task<bool> ReadEmergencyStopActiveAsync(CancellationToken cancellationToken)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.FromResult(EmergencyStopActive);
+            }
+        }
+
+        /// <summary>保存测试 DI 状态，并记录最近一次读取的逻辑名称。</summary>
+        private sealed class FakeLogicalIo : ILogicalIo
+        {
+            private readonly Dictionary<string, bool> _inputs = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+
+            public string LastReadInputName { get; private set; }
+
+            /// <summary>设置一个测试逻辑 DI 的有效状态。</summary>
+            public void SetInput(string inputName, bool value)
+            {
+                _inputs[inputName] = value;
+            }
+
+            /// <summary>读取测试逻辑 DI，并保存本次读取的名称。</summary>
+            public Task<bool> ReadInputAsync(string inputName, CancellationToken cancellationToken)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                LastReadInputName = inputName;
+                return Task.FromResult(_inputs[inputName]);
+            }
+
+            /// <summary>返回测试 DO 的固定关闭状态。</summary>
+            public Task<bool> ReadOutputAsync(string outputName, CancellationToken cancellationToken)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.FromResult(false);
+            }
+
+            /// <summary>接受测试 DO 写入但不连接真实硬件。</summary>
+            public Task WriteOutputAsync(string outputName, bool value, CancellationToken cancellationToken)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.CompletedTask;
+            }
         }
 
         /// <summary>在当前步骤等待暂停，便于检查暂停和复位不会推进工艺步骤。</summary>

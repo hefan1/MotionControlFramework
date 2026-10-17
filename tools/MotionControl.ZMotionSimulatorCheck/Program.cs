@@ -5,10 +5,13 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Adapter.MotionCard.ZMotion;
+using MotionControl.Framework.Contracts.Configuration;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.Framework.Runtime.Machine;
+using MotionControl.Framework.Runtime.Configuration;
+using MotionControl.Framework.Runtime.Safety;
 using Newtonsoft.Json;
 
 namespace MotionControl.ZMotionSimulatorCheck
@@ -47,7 +50,14 @@ namespace MotionControl.ZMotionSimulatorCheck
                 }
 
                 await RunChecksAsync(options).ConfigureAwait(false);
-                Console.WriteLine("已请求的正运动仿真器检查全部通过。");
+                if (options.ValidateConfigurationOnly)
+                {
+                    Console.WriteLine("设备硬件配置校验通过，不需要连接仿真器。");
+                }
+                else
+                {
+                    Console.WriteLine("已请求的正运动仿真器检查全部通过。");
+                }
                 return 0;
             }
             catch (Exception error)
@@ -96,6 +106,10 @@ namespace MotionControl.ZMotionSimulatorCheck
                 {
                     options.RuntimeRegressionOnly = true;
                 }
+                else if (string.Equals(argument, "--validate-config", StringComparison.OrdinalIgnoreCase))
+                {
+                    options.ValidateConfigurationOnly = true;
+                }
                 else if (string.Equals(argument, "--exercise-home", StringComparison.OrdinalIgnoreCase))
                 {
                     options.ExerciseHome = true;
@@ -143,6 +157,10 @@ namespace MotionControl.ZMotionSimulatorCheck
             var ioMapping = LoadJson<IoMappingDocument>(ioMappingPath);
             ValidateConfigurationDocuments(motionCards, axisParameters, ioMapping);
             options.IoMapping = ioMapping;
+            if (options.ValidateConfigurationOnly)
+            {
+                return;
+            }
 
             var cardDefinition = motionCards.MotionCards.Single();
             var cardConfigurationPath = GetConfigurationFilePath(
@@ -231,6 +249,37 @@ namespace MotionControl.ZMotionSimulatorCheck
             {
                 throw new InvalidOperationException("仿真控制卡没有关联的轴参数。");
             }
+
+            MachineHardwareConfigurationValidator.Validate(
+                motionCards.MotionCards.Select(configuredCard => configuredCard == null ? null : new MotionCardHardwareDefinition
+                {
+                    ControllerId = configuredCard.ControllerId,
+                    AdapterType = configuredCard.AdapterType,
+                    ConnectionConfigurationFile = configuredCard.ConnectionConfigurationFile
+                }),
+                axisParameters.Axes.Select(axis => axis == null ? null : new AxisHardwareDefinition
+                {
+                    ControllerId = axis.ControllerId,
+                    Name = axis.Name,
+                    AxisNumber = axis.AxisNumber,
+                    MinimumPosition = axis.MinimumPosition,
+                    MaximumPosition = axis.MaximumPosition
+                }),
+                ioMapping.DigitalInputs.Select(point => point == null ? null : new DigitalIoHardwareDefinition
+                {
+                    ControllerId = point.ControllerId,
+                    Name = point.Name,
+                    Channel = point.Channel,
+                    ActiveHigh = point.ActiveHigh
+                }),
+                ioMapping.DigitalOutputs.Select(point => point == null ? null : new DigitalIoHardwareDefinition
+                {
+                    ControllerId = point.ControllerId,
+                    Name = point.Name,
+                    Channel = point.Channel,
+                    ActiveHigh = point.ActiveHigh
+                }),
+                ioMapping.EmergencyStopInputName);
         }
 
         /// <summary>连接 ZDevelop 仿真器，检查身份、轴状态、DI/DO，并按选项执行运动和输出测试。</summary>
@@ -438,6 +487,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 motionCards,
                 new IStationFlow[] { stationFlow },
                 new MachineAlarmService(),
+                new LogicalIoEmergencyStopStatus(card, "SimulationEmergencyStop"),
                 TimeSpan.FromSeconds(10));
 
             await runtime.ConnectAsync(cancellationToken).ConfigureAwait(false);
@@ -528,6 +578,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             Console.WriteLine("  --exercise-io        翻转一个仿真 DO，读回后恢复原值");
             Console.WriteLine("  --exercise-runtime   验证 Runtime 连接、复位、启动和暂停生命周期");
             Console.WriteLine("  --runtime-regression 不连接仿真器，回归检查连接回滚、报警和步骤保留");
+            Console.WriteLine("  --validate-config   校验指定目录中的卡、轴、IO 和急停映射，不连接仿真器");
             Console.WriteLine("  --help               显示帮助");
         }
 
@@ -549,6 +600,8 @@ namespace MotionControl.ZMotionSimulatorCheck
             public bool ExerciseRuntime { get; set; }
 
             public bool RuntimeRegressionOnly { get; set; }
+
+            public bool ValidateConfigurationOnly { get; set; }
 
             public bool ShowHelp { get; set; }
 
@@ -585,6 +638,8 @@ namespace MotionControl.ZMotionSimulatorCheck
         private sealed class IoMappingDocument
         {
             public int SchemaVersion { get; set; }
+
+            public string EmergencyStopInputName { get; set; }
 
             public List<ZMotionIoPointConfiguration> DigitalInputs { get; set; }
 

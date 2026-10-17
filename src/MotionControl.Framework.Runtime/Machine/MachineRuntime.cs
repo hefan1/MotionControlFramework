@@ -6,35 +6,47 @@ using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.Motion;
+using MotionControl.Framework.Contracts.Safety;
 using MotionControl.Framework.Runtime.FlowScheduling;
 
 namespace MotionControl.Framework.Runtime.Machine
 {
     /// <summary>
-    /// 管理一台设备的卡连接、复位、启动和暂停。各工位流程由设备项目提供，
+    /// 管理一台设备的卡连接、复位、启动、暂停和急停监控。各工位流程由设备项目提供，
     /// 暂停后保留工位当前步骤，复位成功后才能再次启动。
     /// </summary>
     public sealed class MachineRuntime
     {
         private static readonly TimeSpan DefaultPauseTimeout = TimeSpan.FromSeconds(30);
+        private static readonly TimeSpan DefaultSafetyPollInterval = TimeSpan.FromMilliseconds(100);
+        private static readonly MachineAlarmDefinition EmergencyStopAlarm = new MachineAlarmDefinition(
+            "EMERGENCY_STOP",
+            "急停输入已触发或无法读取",
+            MachineAlarmKind.StopMachine);
 
         private readonly MotionCardGroup _motionCards;
         private readonly StationFlowScheduler _flowScheduler;
         private readonly IMachineAlarmService _alarmService;
+        private readonly IMachineSafetyStatus _safetyStatus;
         private readonly TimeSpan _pauseTimeout;
+        private readonly TimeSpan _safetyPollInterval;
         private readonly SemaphoreSlim _commandLock = new SemaphoreSlim(1, 1);
         private readonly object _statusLock = new object();
 
         private MachineRunState _state;
         private Exception _lastError;
         private Task _flowObserverTask = Task.CompletedTask;
+        private Task _safetyMonitorTask = Task.CompletedTask;
+        private CancellationTokenSource _safetyMonitorCancellation;
 
-        /// <summary>创建单机运行上下文，并设置流程暂停等待时限。</summary>
+        /// <summary>创建单机运行上下文，并设置流程暂停时限和急停状态轮询间隔。</summary>
         public MachineRuntime(
             MotionCardGroup motionCards,
             IEnumerable<IStationFlow> stationFlows,
             IMachineAlarmService alarmService,
-            TimeSpan? pauseTimeout = null)
+            IMachineSafetyStatus safetyStatus,
+            TimeSpan? pauseTimeout = null,
+            TimeSpan? safetyPollInterval = null)
         {
             if (motionCards == null)
             {
@@ -51,15 +63,27 @@ namespace MotionControl.Framework.Runtime.Machine
                 throw new ArgumentNullException(nameof(alarmService));
             }
 
+            if (safetyStatus == null)
+            {
+                throw new ArgumentNullException(nameof(safetyStatus), "运行时必须接入急停状态来源。");
+            }
+
             if (pauseTimeout.HasValue && pauseTimeout.Value <= TimeSpan.Zero)
             {
                 throw new ArgumentOutOfRangeException(nameof(pauseTimeout), "暂停等待时限必须大于 0。");
             }
 
+            if (safetyPollInterval.HasValue && safetyPollInterval.Value <= TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(nameof(safetyPollInterval), "急停状态轮询间隔必须大于 0。");
+            }
+
             _motionCards = motionCards;
             _flowScheduler = new StationFlowScheduler(stationFlows);
             _alarmService = alarmService;
+            _safetyStatus = safetyStatus;
             _pauseTimeout = pauseTimeout ?? DefaultPauseTimeout;
+            _safetyPollInterval = safetyPollInterval ?? DefaultSafetyPollInterval;
             _state = MachineRunState.Disconnected;
 
             _alarmService.StopAlarmRaised += OnStopAlarmRaised;
@@ -179,6 +203,7 @@ namespace MotionControl.Framework.Runtime.Machine
 
                 try
                 {
+                    await UpdateEmergencyStopAlarmAsync(cancellationToken).ConfigureAwait(false);
                     _alarmService.EnsureStopAlarmConditionsRecovered();
 
                     foreach (var axis in _motionCards.Axes)
@@ -241,8 +266,14 @@ namespace MotionControl.Framework.Runtime.Machine
                 EnsureState(MachineRunState.Ready, "启动前必须先成功复位设备。");
                 try
                 {
+                    if (await UpdateEmergencyStopAlarmAsync(cancellationToken).ConfigureAwait(false))
+                    {
+                        throw new InvalidOperationException("急停输入仍处于触发状态，设备不能启动。");
+                    }
+
                     await EnsureAxesReadyForAutomaticStartAsync(cancellationToken).ConfigureAwait(false);
                     SetRunningIfNoStopAlarm();
+                    StartEmergencyStopMonitor();
                     var runTask = _flowScheduler.Start();
                     _flowObserverTask = ObserveFlowRunAsync(runTask);
 
@@ -258,6 +289,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 }
                 catch (Exception startError)
                 {
+                    await StopEmergencyStopMonitorAsync().ConfigureAwait(false);
                     SetStatus(MachineRunState.Alarmed, startError);
                     throw;
                 }
@@ -265,6 +297,127 @@ namespace MotionControl.Framework.Runtime.Machine
             finally
             {
                 _commandLock.Release();
+            }
+        }
+
+        /// <summary>读取急停输入并更新停机报警条件；读取失败按急停触发处理。</summary>
+        private async Task<bool> UpdateEmergencyStopAlarmAsync(CancellationToken cancellationToken)
+        {
+            bool emergencyStopActive;
+            try
+            {
+                emergencyStopActive = await _safetyStatus
+                    .ReadEmergencyStopActiveAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception readError)
+            {
+                _alarmService.ReportCondition(
+                    EmergencyStopAlarm,
+                    "整机急停输入",
+                    true,
+                    "读取急停状态失败，按急停触发处理。原因：" + readError.Message);
+                throw new InvalidOperationException("读取急停状态失败，设备不能启动或复位。", readError);
+            }
+
+            _alarmService.ReportCondition(
+                EmergencyStopAlarm,
+                "整机急停输入",
+                emergencyStopActive,
+                emergencyStopActive ? "急停输入有效，请释放急停并检查安全回路。" : "急停输入已恢复。");
+            return emergencyStopActive;
+        }
+
+        /// <summary>启动流程期间周期读取急停输入，触发时借助停机报警暂停整机流程。</summary>
+        private void StartEmergencyStopMonitor()
+        {
+            if (_safetyMonitorTask != null && !_safetyMonitorTask.IsCompleted)
+            {
+                throw new InvalidOperationException("上一次急停状态监控尚未结束，不能重复启动设备。");
+            }
+
+            _safetyMonitorCancellation = new CancellationTokenSource();
+            _safetyMonitorTask = MonitorEmergencyStopAsync(_safetyMonitorCancellation.Token);
+        }
+
+        /// <summary>在整机运行期间监控急停输入；读取异常时也触发停机报警。</summary>
+        private async Task MonitorEmergencyStopAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                while (State == MachineRunState.Running)
+                {
+                    await Task.Delay(_safetyPollInterval, cancellationToken).ConfigureAwait(false);
+                    if (State != MachineRunState.Running)
+                    {
+                        return;
+                    }
+
+                    try
+                    {
+                        var active = await _safetyStatus
+                            .ReadEmergencyStopActiveAsync(cancellationToken)
+                            .ConfigureAwait(false);
+                        _alarmService.ReportCondition(
+                            EmergencyStopAlarm,
+                            "整机急停输入",
+                            active,
+                            active ? "运行期间检测到急停输入有效。" : "急停输入已恢复。");
+                        if (active)
+                        {
+                            return;
+                        }
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        return;
+                    }
+                    catch (Exception readError)
+                    {
+                        _alarmService.ReportCondition(
+                            EmergencyStopAlarm,
+                            "整机急停输入",
+                            true,
+                            "运行期间读取急停状态失败，按急停触发处理。原因：" + readError.Message);
+                        return;
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // 正常暂停时取消轮询，不把监控取消当作设备故障。
+            }
+        }
+
+        /// <summary>整机流程退出后取消并回收急停状态监控任务。</summary>
+        private async Task StopEmergencyStopMonitorAsync()
+        {
+            var cancellation = _safetyMonitorCancellation;
+            if (cancellation == null)
+            {
+                return;
+            }
+
+            cancellation.Cancel();
+            try
+            {
+                await _safetyMonitorTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // 监控任务因整机暂停而取消，属于正常结束。
+            }
+            finally
+            {
+                if (ReferenceEquals(_safetyMonitorCancellation, cancellation))
+                {
+                    _safetyMonitorCancellation = null;
+                    cancellation.Dispose();
+                }
             }
         }
 
@@ -305,6 +458,7 @@ namespace MotionControl.Framework.Runtime.Machine
             {
                 var currentState = State;
                 if (currentState != MachineRunState.Running
+                    && currentState != MachineRunState.Pausing
                     && !(currentState == MachineRunState.Alarmed && _flowScheduler.IsRunning))
                 {
                     throw new InvalidOperationException(
@@ -368,6 +522,10 @@ namespace MotionControl.Framework.Runtime.Machine
                         MachineRunState.Alarmed,
                         new InvalidOperationException("工位流程发生错误，整机已暂停。", flowError));
                 }
+            }
+            finally
+            {
+                await StopEmergencyStopMonitorAsync().ConfigureAwait(false);
             }
         }
 

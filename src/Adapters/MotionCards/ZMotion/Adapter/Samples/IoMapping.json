@@ -1,10 +1,17 @@
 {
   "schemaVersion": 1,
+  "emergencyStopInputName": "SimulationEmergencyStop",
   "digitalInputs": [
     {
       "controllerId": "ZMotionSimulation",
       "name": "SimulationInput0",
       "channel": 0,
+      "activeHigh": true
+    },
+    {
+      "controllerId": "ZMotionSimulation",
+      "name": "SimulationEmergencyStop",
+      "channel": 3,
       "activeHigh": true
     }
   ],
