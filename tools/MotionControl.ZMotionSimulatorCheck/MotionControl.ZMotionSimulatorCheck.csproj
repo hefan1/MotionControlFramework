@@ -1,15 +1,18 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AssemblyName>MotionControl.ZMotionSimulatorCheck</AssemblyName>
     <RootNamespace>MotionControl.ZMotionSimulatorCheck</RootNamespace>
     <PlatformTarget>x64</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Adapters\MotionCards\ZMotion\Adapter\MotionControl.Adapter.MotionCard.ZMotion.csproj" />
     <ProjectReference Include="..\..\src\MotionControl.Framework.Contracts\MotionControl.Framework.Contracts.csproj" />
     <ProjectReference Include="..\..\src\MotionControl.Framework.Runtime\MotionControl.Framework.Runtime.csproj" />
+    <ProjectReference Include="..\..\src\MotionControl.Framework.Wpf\MotionControl.Framework.Wpf.csproj" />
+    <ProjectReference Include="..\..\src\MotionControl.Host.Wpf\MotionControl.Host.Wpf.csproj" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
   <ItemGroup>

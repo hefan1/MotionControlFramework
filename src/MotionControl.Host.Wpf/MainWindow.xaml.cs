@@ -37,6 +37,7 @@ namespace MotionControl.Host.Wpf
         private readonly DispatcherTimer _clockTimer;
         private string _currentSectionKey;
         private string _currentPageResourceKey;
+        private UserControl _manualMotionDebugPage;
 
         public string CurrentLanguage { get; private set; }
 
@@ -162,6 +163,37 @@ namespace MotionControl.Host.Wpf
 
             _currentPageResourceKey = selectedPageButton.Tag as string;
             PageTitle.Text = GetLocalizedText(_currentPageResourceKey);
+            UpdatePageContent();
+        }
+
+        /// <summary>由 Host 组合根注入设备配置后的通用手动调试页。</summary>
+        public void SetManualMotionDebugPage(UserControl manualMotionDebugPage)
+        {
+            _manualMotionDebugPage = manualMotionDebugPage;
+            UpdatePageContent();
+        }
+
+        /// <summary>仅在手动分区的轴手动或 IO 手动页面显示通用调试控件。</summary>
+        private void UpdatePageContent()
+        {
+            var isManualDebugPage = _manualMotionDebugPage != null
+                && string.Equals(_currentSectionKey, "Manual", StringComparison.Ordinal)
+                && (string.Equals(_currentPageResourceKey, "轴手动", StringComparison.Ordinal)
+                    || string.Equals(_currentPageResourceKey, "IO手动", StringComparison.Ordinal));
+
+            if (isManualDebugPage)
+            {
+                ManualDebugContent.Content = _manualMotionDebugPage;
+                ManualDebugContent.Visibility = Visibility.Visible;
+                PagePlaceholder.Visibility = Visibility.Collapsed;
+                PageDescription.SetResourceReference(TextBlock.TextProperty, "手动调试说明");
+                return;
+            }
+
+            ManualDebugContent.Content = null;
+            ManualDebugContent.Visibility = Visibility.Collapsed;
+            PagePlaceholder.Visibility = Visibility.Visible;
+            PageDescription.SetResourceReference(TextBlock.TextProperty, "该页面为导航占位具体功能后续接入");
         }
 
         /// <summary>

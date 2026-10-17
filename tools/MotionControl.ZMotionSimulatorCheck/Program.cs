@@ -12,6 +12,7 @@ using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.Framework.Runtime.Machine;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Runtime.Safety;
+using MotionControl.Host.Wpf;
 using Newtonsoft.Json;
 
 namespace MotionControl.ZMotionSimulatorCheck
@@ -20,8 +21,14 @@ namespace MotionControl.ZMotionSimulatorCheck
     internal static class Program
     {
         /// <summary>启动仿真器连接检查，并按命令行选项运行扩展验证。</summary>
+        [STAThread]
         private static int Main(string[] args)
         {
+            if (args.Any(argument => string.Equals(argument, "--manual-ui-smoke", StringComparison.OrdinalIgnoreCase)))
+            {
+                return ManualDebugSmokeCheck.Run();
+            }
+
             return MainAsync(args).GetAwaiter().GetResult();
         }
 
@@ -579,6 +586,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             Console.WriteLine("  --exercise-runtime   验证 Runtime 连接、复位、启动和暂停生命周期");
             Console.WriteLine("  --runtime-regression 不连接仿真器，回归检查连接回滚、报警和步骤保留");
             Console.WriteLine("  --validate-config   校验指定目录中的卡、轴、IO 和急停映射，不连接仿真器");
+            Console.WriteLine("  --manual-ui-smoke   检查通用手动页 XAML、轴/IO 行和 Host 导航注入，不连接硬件");
             Console.WriteLine("  --help               显示帮助");
         }
 

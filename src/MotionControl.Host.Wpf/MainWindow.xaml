@@ -186,7 +186,7 @@
                     </Border>
 
                     <Grid Grid.Row="1" Background="White">
-                        <StackPanel HorizontalAlignment="Center"
+                        <StackPanel x:Name="PagePlaceholder" HorizontalAlignment="Center"
                                     VerticalAlignment="Center">
                             <TextBlock Text="⌂"
                                        FontFamily="Segoe UI Symbol"
@@ -204,6 +204,7 @@
                                        Foreground="#858D92"
                                        HorizontalAlignment="Center" />
                         </StackPanel>
+                        <ContentControl x:Name="ManualDebugContent" Visibility="Collapsed" />
                     </Grid>
                 </Grid>
             </Border>
