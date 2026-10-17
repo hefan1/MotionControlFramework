@@ -40,8 +40,8 @@
                     </WrapPanel>
                     <WrapPanel Margin="0,2,0,0">
                         <TextBlock Text="{DynamicResource 按住点动}" VerticalAlignment="Center" Margin="0,0,12,8" />
-                        <Button Content="{DynamicResource 负向点动}" PreviewMouseLeftButtonDown="NegativeJogButton_MouseDown" PreviewMouseLeftButtonUp="JogButton_MouseUp" LostMouseCapture="JogButton_LostMouseCapture" Margin="0,0,8,8" Padding="14,6" />
-                        <Button Content="{DynamicResource 正向点动}" PreviewMouseLeftButtonDown="PositiveJogButton_MouseDown" PreviewMouseLeftButtonUp="JogButton_MouseUp" LostMouseCapture="JogButton_LostMouseCapture" Margin="0,0,8,8" Padding="14,6" />
+                        <Button x:Name="NegativeJogButton" Content="{DynamicResource 负向点动}" PreviewMouseLeftButtonDown="NegativeJogButton_MouseDown" PreviewMouseLeftButtonUp="JogButton_MouseUp" LostMouseCapture="JogButton_LostMouseCapture" Margin="0,0,8,8" Padding="14,6" />
+                        <Button x:Name="PositiveJogButton" Content="{DynamicResource 正向点动}" PreviewMouseLeftButtonDown="PositiveJogButton_MouseDown" PreviewMouseLeftButtonUp="JogButton_MouseUp" LostMouseCapture="JogButton_LostMouseCapture" Margin="0,0,8,8" Padding="14,6" />
                     </WrapPanel>
                 </StackPanel>
             </Border>

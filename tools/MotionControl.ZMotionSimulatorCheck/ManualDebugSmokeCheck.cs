@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Configuration;
 using MotionControl.Framework.Contracts.Flow;
@@ -92,7 +93,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(manualContent.Visibility == Visibility.Visible, "Host 手动调试内容当前不可见。");
 
                 application.Shutdown();
-                Console.WriteLine("[通过] 手动调试页中英资源、断开保护、连接后轴/IO命令、软限位、DO读回和Host导航离屏检查完成；使用内存测试卡。");
+                Console.WriteLine("[通过] 手动调试页中英资源、断开保护、双向点动、轴/IO命令、软限位、DO读回和Host导航离屏检查完成；使用内存测试卡。");
                 return 0;
             }
             catch (Exception error)
@@ -198,6 +199,8 @@ namespace MotionControl.ZMotionSimulatorCheck
             Ensure(axis.CommandCount == initialCommandCount + 7, "绝对定位超出软限位时仍然调用了轴。");
             Ensure(operationMessage.Text.Contains("软限位"), "软限位拒绝原因没有显示在页面上。");
 
+            VerifyJogButtonsStartAndStop(page, axis);
+
             var outputRows = (StackPanel)page.FindName("DigitalOutputsPanel");
             var firstOutputRow = (StackPanel)outputRows.Children[0];
             var outputStatusText = (TextBlock)firstOutputRow.Children[1];
@@ -217,6 +220,38 @@ namespace MotionControl.ZMotionSimulatorCheck
             var button = page.FindName(controlName) as Button;
             Ensure(button != null, "页面缺少按钮控件：" + controlName + "。");
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, button));
+        }
+
+        /// <summary>模拟按下和松开两个方向点动按钮，确认页面调用对应点动与受控停止。</summary>
+        private static void VerifyJogButtonsStartAndStop(ManualMotionDebugView page, SmokeAxis axis)
+        {
+            VerifyJogButtonStartAndStop(page, axis, "NegativeJogButton", MotionDirection.Negative);
+            VerifyJogButtonStartAndStop(page, axis, "PositiveJogButton", MotionDirection.Positive);
+        }
+
+        /// <summary>检查指定方向点动按钮按下启动对应方向，松开后发送受控停止。</summary>
+        private static void VerifyJogButtonStartAndStop(
+            ManualMotionDebugView page,
+            SmokeAxis axis,
+            string controlName,
+            MotionDirection expectedDirection)
+        {
+            var jogButton = (Button)page.FindName(controlName);
+            var initialCommandCount = axis.CommandCount;
+            var mouseDown = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+            {
+                RoutedEvent = UIElement.PreviewMouseLeftButtonDownEvent
+            };
+            jogButton.RaiseEvent(mouseDown);
+            Ensure(axis.CommandCount == initialCommandCount + 1, "按下点动按钮后没有调用连续点动。");
+            Ensure(axis.LastJogDirection == expectedDirection, "点动按钮发送的运动方向不正确。");
+
+            var mouseUp = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+            {
+                RoutedEvent = UIElement.PreviewMouseLeftButtonUpEvent
+            };
+            jogButton.RaiseEvent(mouseUp);
+            Ensure(axis.CommandCount == initialCommandCount + 2, "松开点动按钮后没有调用受控停止。");
         }
 
         /// <summary>提供页面构造所需的一张未连接测试卡和一个逻辑轴。</summary>
@@ -252,6 +287,8 @@ namespace MotionControl.ZMotionSimulatorCheck
         {
             public int CommandCount { get; private set; }
 
+            public MotionDirection? LastJogDirection { get; private set; }
+
             public string Name { get { return "X"; } }
 
             /// <summary>返回固定无报警状态，不读取真实设备。</summary>
@@ -276,7 +313,12 @@ namespace MotionControl.ZMotionSimulatorCheck
             public Task MoveRelativeAsync(double distance, AxisMotionProfile profile, CancellationToken cancellationToken) { CommandCount++; return Task.CompletedTask; }
 
             /// <summary>本次离屏检查不发出点动命令。</summary>
-            public Task StartJogAsync(MotionDirection direction, double speed, CancellationToken cancellationToken) { CommandCount++; return Task.CompletedTask; }
+            public Task StartJogAsync(MotionDirection direction, double speed, CancellationToken cancellationToken)
+            {
+                CommandCount++;
+                LastJogDirection = direction;
+                return Task.CompletedTask;
+            }
 
             /// <summary>本次离屏检查不发出停止命令。</summary>
             public Task StopAsync(AxisStopMode stopMode, CancellationToken cancellationToken) { CommandCount++; return Task.CompletedTask; }
