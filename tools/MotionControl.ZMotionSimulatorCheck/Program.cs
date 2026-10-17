@@ -67,6 +67,14 @@ namespace MotionControl.ZMotionSimulatorCheck
                 }
                 return 0;
             }
+            catch (ZMotionApiException error) when (error.ErrorCode == 20008)
+            {
+                Console.Error.WriteLine(
+                    "[连接未建立] 命令行检查器无法建立到正运动仿真控制器的连接，SDK 错误码为 20008。"
+                    + "此结果只说明本次命令行会话没有连接成功，不能据此判断控制器的轴、IO、回零或流程功能失败。"
+                    + "请在持有仿真器的桌面会话中验证，不要为重试而断开 ZDevelop。");
+                return 2;
+            }
             catch (Exception error)
             {
                 Console.Error.WriteLine("仿真器检查失败：" + error);

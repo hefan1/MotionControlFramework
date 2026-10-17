@@ -53,4 +53,6 @@
 
 `tools/MotionControl.ZMotionSimulatorCheck` 提供可重复运行的连接验证。默认仅连接并读取控制器身份，不移动轴，也不写 IO。使用时将与程序位数匹配的 `zauxdll.dll` 和 `zmotion.dll` 放到检查程序目录，或放入 `PATH` 可搜索的目录，然后运行检查程序。
 
+若连接阶段返回 SDK 错误码 `20008`，检查器会报告“本次命令行会话未建立”，而不会将它归类为轴、IO 或回零功能失败。该结果也不能证明 ZDevelop 中的仿真控制器不可用；若仿真器正由 ZDevelop 会话承载，应优先在该桌面会话中验证，并避免为了重试而断开 ZDevelop。
+
 传入 `--read-status` 可额外读取样例逻辑轴、DI 和 DO 状态；传入 `--exercise-motion` 或 `--exercise-io` 会主动操作仿真轴或 DO，只应在确认目标是仿真器时使用。传入 `--exercise-home --home-mode 3`（也可用模式 4、13）会调用框架的真实 DATUM 回零方法；测试时要按上述流程触发仿真原点和限位输入。
