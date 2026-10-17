@@ -34,6 +34,18 @@ namespace MotionControl.ZMotionSimulatorCheck
                     return 0;
                 }
 
+                if (options.RuntimeRegressionOnly)
+                {
+                    var failures = await RuntimeRegressionChecks.RunAsync().ConfigureAwait(false);
+                    if (failures.Count > 0)
+                    {
+                        throw new InvalidOperationException("Runtime 回归检查失败：" + string.Join("；", failures));
+                    }
+
+                    Console.WriteLine("Runtime 回归检查全部通过，不需要连接仿真器。");
+                    return 0;
+                }
+
                 await RunChecksAsync(options).ConfigureAwait(false);
                 Console.WriteLine("已请求的正运动仿真器检查全部通过。");
                 return 0;
@@ -79,6 +91,10 @@ namespace MotionControl.ZMotionSimulatorCheck
                 else if (string.Equals(argument, "--exercise-runtime", StringComparison.OrdinalIgnoreCase))
                 {
                     options.ExerciseRuntime = true;
+                }
+                else if (string.Equals(argument, "--runtime-regression", StringComparison.OrdinalIgnoreCase))
+                {
+                    options.RuntimeRegressionOnly = true;
                 }
                 else if (string.Equals(argument, "--exercise-home", StringComparison.OrdinalIgnoreCase))
                 {
@@ -511,6 +527,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             Console.WriteLine("  --home-mode <模式号> 指定本次验证的 DATUM 模式并执行回零，例如 3、4 或 13");
             Console.WriteLine("  --exercise-io        翻转一个仿真 DO，读回后恢复原值");
             Console.WriteLine("  --exercise-runtime   验证 Runtime 连接、复位、启动和暂停生命周期");
+            Console.WriteLine("  --runtime-regression 不连接仿真器，回归检查连接回滚、报警和步骤保留");
             Console.WriteLine("  --help               显示帮助");
         }
 
@@ -530,6 +547,8 @@ namespace MotionControl.ZMotionSimulatorCheck
             public bool ExerciseIo { get; set; }
 
             public bool ExerciseRuntime { get; set; }
+
+            public bool RuntimeRegressionOnly { get; set; }
 
             public bool ShowHelp { get; set; }
 
