@@ -1,0 +1,75 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+    <ResourceDictionary.MergedDictionaries>
+        <!-- 未维护英文的条目继续显示中文，避免界面出现空白。 -->
+        <ResourceDictionary Source="/MotionControl.Host.Wpf;component/Localization/Strings.zh-CN.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+    <!-- 中文原文作为资源键，中文开发者可直接按界面文字搜索。 -->
+    <sys:String x:Key="运动控制上位机">Motion Control Host</sys:String>
+    <sys:String x:Key="首页">Home</sys:String>
+    <sys:String x:Key="统计">Statistics</sys:String>
+    <sys:String x:Key="监控">Monitor</sys:String>
+    <sys:String x:Key="手动">Manual</sys:String>
+    <sys:String x:Key="设置">Settings</sys:String>
+    <sys:String x:Key="报警">Alarms</sys:String>
+    <sys:String x:Key="用户管理">Users</sys:String>
+    <sys:String x:Key="帮助">Help</sys:String>
+
+    <sys:String x:Key="设备总览">Device Overview</sys:String>
+    <sys:String x:Key="轴状态">Axis Status</sys:String>
+    <sys:String x:Key="IO状态">I/O Status</sys:String>
+    <sys:String x:Key="运行日志">Runtime Log</sys:String>
+    <sys:String x:Key="产量统计">Output Statistics</sys:String>
+    <sys:String x:Key="节拍统计">Cycle Time</sys:String>
+    <sys:String x:Key="运行统计">Runtime Statistics</sys:String>
+    <sys:String x:Key="设备状态">Device Status</sys:String>
+    <sys:String x:Key="轴监控">Axis Monitor</sys:String>
+    <sys:String x:Key="IO监控">I/O Monitor</sys:String>
+    <sys:String x:Key="流程状态">Sequence Status</sys:String>
+    <sys:String x:Key="轴手动">Axis Control</sys:String>
+    <sys:String x:Key="IO手动">I/O Control</sys:String>
+    <sys:String x:Key="气缸手动">Cylinder Control</sys:String>
+    <sys:String x:Key="通讯调试">Communication Debug</sys:String>
+    <sys:String x:Key="控制卡设置">Motion Card Settings</sys:String>
+    <sys:String x:Key="轴参数">Axis Parameters</sys:String>
+    <sys:String x:Key="IO映射">I/O Mapping</sys:String>
+    <sys:String x:Key="通讯设置">Communication Settings</sys:String>
+    <sys:String x:Key="数据采集">Data Collection</sys:String>
+    <sys:String x:Key="当前报警">Current Alarms</sys:String>
+    <sys:String x:Key="历史报警">Alarm History</sys:String>
+    <sys:String x:Key="报警统计">Alarm Statistics</sys:String>
+    <sys:String x:Key="操作日志">Operation Log</sys:String>
+    <sys:String x:Key="密码登录">Password Login</sys:String>
+    <sys:String x:Key="刷卡登录">Card Login</sys:String>
+    <sys:String x:Key="权限管理">Permissions</sys:String>
+    <sys:String x:Key="软件信息">About</sys:String>
+    <sys:String x:Key="使用说明">User Guide</sys:String>
+
+    <sys:String x:Key="单机运行控制卡未连接">Single-machine mode · Motion card not connected</sys:String>
+    <sys:String x:Key="启动">▶ Start</sys:String>
+    <sys:String x:Key="暂停">Ⅱ Pause</sys:String>
+    <sys:String x:Key="停止">■ Stop</sys:String>
+    <sys:String x:Key="外壳预览启动命令未接入设备控制逻辑">Shell preview · Start command is not connected</sys:String>
+    <sys:String x:Key="外壳预览暂停命令未接入设备控制逻辑">Shell preview · Pause command is not connected</sys:String>
+    <sys:String x:Key="外壳预览停止命令未接入设备控制逻辑">Shell preview · Stop command is not connected</sys:String>
+    <sys:String x:Key="外壳预览启动命令提示">Shell preview: machine control logic is not connected</sys:String>
+    <sys:String x:Key="外壳预览暂停命令提示">Shell preview: machine control logic is not connected</sys:String>
+    <sys:String x:Key="外壳预览停止命令提示">Shell preview: machine control logic is not connected</sys:String>
+    <sys:String x:Key="待机占位">Standby (placeholder)</sys:String>
+    <sys:String x:Key="控制逻辑未接入">Control logic not connected</sys:String>
+    <sys:String x:Key="该页面为导航占位具体功能后续接入">Navigation placeholder · page content will be added later.</sys:String>
+    <sys:String x:Key="工作区占位">Workspace Placeholder</sys:String>
+    <sys:String x:Key="具体页面与内容后续逐项开发并接入此区域">Specific pages and content will be added here later.</sys:String>
+    <sys:String x:Key="未登录">Not logged in</sys:String>
+    <sys:String x:Key="控制卡未连接">Motion card: not connected</sys:String>
+    <sys:String x:Key="通讯未连接">Communication: not connected</sys:String>
+    <sys:String x:Key="数据库未接入">Database: not connected</sys:String>
+    <sys:String x:Key="MES未配置">MES: not configured</sys:String>
+    <sys:String x:Key="设备状态标题">Machine State:</sys:String>
+    <sys:String x:Key="当前用户">User:</sys:String>
+    <sys:String x:Key="语言">Language:</sys:String>
+    <sys:String x:Key="简体中文">中文</sys:String>
+    <sys:String x:Key="English">English</sys:String>
+</ResourceDictionary>
