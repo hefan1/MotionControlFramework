@@ -46,18 +46,6 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>保存手动调试速度；未配置时为空。</summary>
         private double? _manualSpeed;
 
-        /// <summary>保存手动定位加速度；未配置时为空。</summary>
-        private double? _manualAcceleration;
-
-        /// <summary>保存手动定位减速度；未配置时为空。</summary>
-        private double? _manualDeceleration;
-
-        /// <summary>保存连续点动加速度；未配置时为空。</summary>
-        private double? _jogAcceleration;
-
-        /// <summary>保存连续点动减速度；未配置时为空。</summary>
-        private double? _jogDeceleration;
-
         /// <summary>保存控制卡厂商使用的回零模式编号；未配置时为空。</summary>
         private int? _homeMode;
 
@@ -141,34 +129,6 @@ namespace MotionControl.Framework.Wpf.Configuration
             set { SetValue(ref _manualSpeed, value, "ManualSpeed"); }
         }
 
-        /// <summary>手动定位加速度，单位为工程单位每秒平方；未配置时为空。</summary>
-        public double? ManualAcceleration
-        {
-            get { return _manualAcceleration; }
-            set { SetValue(ref _manualAcceleration, value, "ManualAcceleration"); }
-        }
-
-        /// <summary>手动定位减速度，单位为工程单位每秒平方；未配置时为空。</summary>
-        public double? ManualDeceleration
-        {
-            get { return _manualDeceleration; }
-            set { SetValue(ref _manualDeceleration, value, "ManualDeceleration"); }
-        }
-
-        /// <summary>连续点动加速度，单位为工程单位每秒平方；未配置时为空。</summary>
-        public double? JogAcceleration
-        {
-            get { return _jogAcceleration; }
-            set { SetValue(ref _jogAcceleration, value, "JogAcceleration"); }
-        }
-
-        /// <summary>连续点动减速度，单位为工程单位每秒平方；未配置时为空。</summary>
-        public double? JogDeceleration
-        {
-            get { return _jogDeceleration; }
-            set { SetValue(ref _jogDeceleration, value, "JogDeceleration"); }
-        }
-
         /// <summary>控制卡厂商定义的回零模式编号；未配置时为空。</summary>
         public int? HomeMode
         {
@@ -176,7 +136,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             set { SetValue(ref _homeMode, value, "HomeMode"); }
         }
 
-        /// <summary>回零模式编号所属的控制卡厂商；旧配置没有此项时由页面按已选厂商迁移。</summary>
+        /// <summary>回零模式编号所属的控制卡厂商，避免不同厂商相同编号被误认为同一模式。</summary>
         public string HomeModeVendor
         {
             get { return _homeModeVendor; }

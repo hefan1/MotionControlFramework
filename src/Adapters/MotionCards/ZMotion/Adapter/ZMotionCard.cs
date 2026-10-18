@@ -59,6 +59,10 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         private const int AlarmSignalInputMask = 1 << AlarmSignalInputBit;
         private const int HardLimitStopReasonMask = PositiveHardLimitMask | NegativeHardLimitMask;
         private const uint CurrentDriveAlarmClearMode = 0;
+        /// <summary>当前仿真适配器点动时使用的默认加速度，沿用原仿真样例值。</summary>
+        private const double DefaultJogAcceleration = 10;
+        /// <summary>当前仿真适配器点动时使用的默认减速度，沿用原仿真样例值。</summary>
+        private const double DefaultJogDeceleration = 10;
         private const int DriveAlarmResetDelayMilliseconds = 50;
         private const int PollIntervalMilliseconds = 20;
         private const int HomingStartTimeoutMilliseconds = 1000;
@@ -621,8 +625,8 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                         handle,
                         axis,
                         jogSpeed,
-                        axis.Configuration.JogAcceleration,
-                        axis.Configuration.JogDeceleration);
+                        DefaultJogAcceleration,
+                        DefaultJogDeceleration);
                     CheckResult(
                         zmcaux.ZAux_Direct_Single_Vmove(
                             handle,

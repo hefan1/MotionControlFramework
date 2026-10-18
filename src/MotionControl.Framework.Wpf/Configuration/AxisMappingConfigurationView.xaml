@@ -436,36 +436,22 @@
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="34" /><RowDefinition Height="34" />
                                         <RowDefinition Height="34" /><RowDefinition Height="34" />
-                                        <RowDefinition Height="34" /><RowDefinition Height="34" />
-                                        <RowDefinition Height="34" /><RowDefinition Height="34" />
                                     </Grid.RowDefinitions>
-                                    <TextBlock Grid.Row="0" Text="{DynamicResource 手动定位加速度}" Style="{StaticResource AxisMappingFieldLabel}" />
-                                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding SelectedAxis.ManualAcceleration, StringFormat={}{0:0.000}}"
+                                    <TextBlock Grid.Row="0" Text="{DynamicResource 回零搜索速度}" Style="{StaticResource AxisMappingFieldLabel}" />
+                                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding SelectedAxis.HomeSearchSpeed, StringFormat={}{0:0.000}}"
                                              Style="{StaticResource AxisMappingTextBox}" />
-                                    <TextBlock Grid.Row="1" Text="{DynamicResource 手动定位减速度}" Style="{StaticResource AxisMappingFieldLabel}" />
-                                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding SelectedAxis.ManualDeceleration, StringFormat={}{0:0.000}}"
-                                             Style="{StaticResource AxisMappingTextBox}" />
-                                    <TextBlock Grid.Row="2" Text="{DynamicResource 回零搜索速度}" Style="{StaticResource AxisMappingFieldLabel}" />
-                                    <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding SelectedAxis.HomeSearchSpeed, StringFormat={}{0:0.000}}"
-                                             Style="{StaticResource AxisMappingTextBox}" />
-                                    <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding SelectedAxis.EngineeringUnit, StringFormat={}{0}/s}"
+                                    <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding SelectedAxis.EngineeringUnit, StringFormat={}{0}/s}"
                                                VerticalAlignment="Center" Margin="8,0,0,0" FontSize="11" Foreground="#718096" />
-                                    <TextBlock Grid.Row="3" Text="{DynamicResource 回零爬行速度}" Style="{StaticResource AxisMappingFieldLabel}" />
-                                    <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding SelectedAxis.HomeCreepSpeed, StringFormat={}{0:0.000}}"
+                                    <TextBlock Grid.Row="1" Text="{DynamicResource 回零爬行速度}" Style="{StaticResource AxisMappingFieldLabel}" />
+                                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding SelectedAxis.HomeCreepSpeed, StringFormat={}{0:0.000}}"
                                              Style="{StaticResource AxisMappingTextBox}" />
-                                    <TextBlock Grid.Row="3" Grid.Column="2" Text="{Binding SelectedAxis.EngineeringUnit, StringFormat={}{0}/s}"
+                                    <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding SelectedAxis.EngineeringUnit, StringFormat={}{0}/s}"
                                                VerticalAlignment="Center" Margin="8,0,0,0" FontSize="11" Foreground="#718096" />
-                                    <TextBlock Grid.Row="4" Text="{DynamicResource 回零加速度}" Style="{StaticResource AxisMappingFieldLabel}" />
-                                    <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding SelectedAxis.HomeAcceleration, StringFormat={}{0:0.000}}"
+                                    <TextBlock Grid.Row="2" Text="{DynamicResource 回零加速度}" Style="{StaticResource AxisMappingFieldLabel}" />
+                                    <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding SelectedAxis.HomeAcceleration, StringFormat={}{0:0.000}}"
                                              Style="{StaticResource AxisMappingTextBox}" />
-                                    <TextBlock Grid.Row="5" Text="{DynamicResource 回零减速度}" Style="{StaticResource AxisMappingFieldLabel}" />
-                                    <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding SelectedAxis.HomeDeceleration, StringFormat={}{0:0.000}}"
-                                             Style="{StaticResource AxisMappingTextBox}" />
-                                    <TextBlock Grid.Row="6" Text="{DynamicResource 点动加速度}" Style="{StaticResource AxisMappingFieldLabel}" />
-                                    <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding SelectedAxis.JogAcceleration, StringFormat={}{0:0.000}}"
-                                             Style="{StaticResource AxisMappingTextBox}" />
-                                    <TextBlock Grid.Row="7" Text="{DynamicResource 点动减速度}" Style="{StaticResource AxisMappingFieldLabel}" />
-                                    <TextBox Grid.Row="7" Grid.Column="1" Text="{Binding SelectedAxis.JogDeceleration, StringFormat={}{0:0.000}}"
+                                    <TextBlock Grid.Row="3" Text="{DynamicResource 回零减速度}" Style="{StaticResource AxisMappingFieldLabel}" />
+                                    <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding SelectedAxis.HomeDeceleration, StringFormat={}{0:0.000}}"
                                              Style="{StaticResource AxisMappingTextBox}" />
                                 </Grid>
                             </Expander>

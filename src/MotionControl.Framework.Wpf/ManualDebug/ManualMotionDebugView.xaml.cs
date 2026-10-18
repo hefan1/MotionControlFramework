@@ -340,7 +340,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
-        /// <summary>切换逻辑轴时，把该轴配置的手动默认速度和加减速度填入页面。</summary>
+        /// <summary>切换逻辑轴时填入手动默认速度，并按需显示可选的定位加减速度初始值。</summary>
         private void ApplySelectedAxisMotionProfile()
         {
             var axis = AxisSelector.SelectedItem as IAxis;
@@ -356,8 +356,12 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
 
             SpeedTextBox.Text = configuration.ManualSpeed.ToString(CultureInfo.CurrentCulture);
-            AccelerationTextBox.Text = configuration.ManualAcceleration.ToString(CultureInfo.CurrentCulture);
-            DecelerationTextBox.Text = configuration.ManualDeceleration.ToString(CultureInfo.CurrentCulture);
+            AccelerationTextBox.Text = configuration.ManualAcceleration > 0
+                ? configuration.ManualAcceleration.ToString(CultureInfo.CurrentCulture)
+                : string.Empty;
+            DecelerationTextBox.Text = configuration.ManualDeceleration > 0
+                ? configuration.ManualDeceleration.ToString(CultureInfo.CurrentCulture)
+                : string.Empty;
         }
 
         /// <summary>执行伺服使能操作，并把操作结果显示在页面上。</summary>
@@ -448,7 +452,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             await StopJogAsync().ConfigureAwait(true);
         }
 
-        /// <summary>启动按住式点动并捕获鼠标，确保松开时可以发送停止命令。</summary>
+        /// <summary>读取手动速度后启动按住式点动，并捕获鼠标以便松开时停止轴。</summary>
         private async Task BeginJogAsync(MotionDirection direction, Button jogButton)
         {
             await RunUiActionAsync(GetText("点动"), async () =>
@@ -464,8 +468,8 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 }
 
                 var axis = GetSelectedAxis();
-                var profile = ReadMotionProfile();
-                await axis.StartJogAsync(direction, profile.Speed, CancellationToken.None).ConfigureAwait(true);
+                var jogSpeed = ReadNumber(SpeedTextBox, GetText("速度"));
+                await axis.StartJogAsync(direction, jogSpeed, CancellationToken.None).ConfigureAwait(true);
                 _joggingAxis = axis;
                 Mouse.Capture(jogButton);
             }).ConfigureAwait(true);

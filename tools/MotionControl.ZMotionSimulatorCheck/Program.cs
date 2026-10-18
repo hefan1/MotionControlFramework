@@ -296,9 +296,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                     AxisNumber = axis.AxisNumber,
                     MinimumPosition = axis.MinimumPosition,
                     MaximumPosition = axis.MaximumPosition,
-                    ManualSpeed = axis.ManualSpeed,
-                    ManualAcceleration = axis.ManualAcceleration,
-                    ManualDeceleration = axis.ManualDeceleration
+                    ManualSpeed = axis.ManualSpeed
                 }),
                 ioMapping.DigitalInputs.Select(point => point == null ? null : new DigitalIoHardwareDefinition
                 {

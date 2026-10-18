@@ -9,8 +9,8 @@
 - 连接配置、轴参数和 IO 映射分开保存：卡地址在 `ZDevelopSimulation.json`，轴参数在 `AxisParameters.json`，IO 映射在 `IoMapping.json`。
 - 设备项目的 `HardwareConfig/AxisParameters.json` 与 `HardwareConfig/IoMapping.json` 是设备运行时的唯一参数来源；适配器样例中的同名文件只用于仿真验证。
 - 已在本机 ZDevelop V3.10.10 仿真器验证连接：控制器类型 `VPLC5xx-Simu`、版本 `20180521`、身份 `1234`。真实厂商 SDK 调用已验证轴状态、正负限位，以及 DATUM 模式 3、4、13；虚拟输入通过 `ZSIMU_IN` 切换并在测试后恢复。该结果验证仿真器和适配器调用链，不等于实体卡接线验收。
-- 每个逻辑轴配置一个所属控制卡标识、0 起始的正运动轴号、`UNITS` 换算、仿真软限位、手动定位默认速度/加减速度，以及连续点动专用加减速度。
-- 通用手动调试页按逻辑轴读取 `ManualSpeed`、`ManualAcceleration` 和 `ManualDeceleration` 作为初始值；工程师可在页面临时修改。连续点动命令只发送方向和速度，其加减速度由轴配置中的 `JogAcceleration`、`JogDeceleration` 提供。
+- 每个逻辑轴配置一个所属控制卡标识、0 起始的正运动轴号、`UNITS` 换算、仿真软限位、手动默认速度和回零参数。
+- 通用手动调试页按逻辑轴读取 `ManualSpeed`；定位加减速度是调试人员在操作页临时填写的曲线参数，不保存在轴映射中。连续点动命令只发送方向和速度；当前仿真适配器用内部默认加减速度 10 设置正运动点动曲线。
 - DI/DO 映射到所属控制卡的正运动单个物理 IO 点号；适配器通过厂商单点 API 读写，不按 32 位端口自行拆位。
 - 支持轴状态、伺服使能、绝对/相对运动、连续点动、停止、DATUM 回零、受条件保护的轴报警复位和逻辑 DI/DO。
 - `HomeAsync` 在 ZDevelop 仿真器上调用真实的 `ZAux_Direct_Single_Datum`，按轴参数中的模式、搜索速度、爬行速度和加减速度执行回零；轴停止后读取控制器回零结果，`HOMESTATUS=1` 或 `2` 才确认完成。

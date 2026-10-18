@@ -168,12 +168,6 @@ namespace MotionControl.Framework.Wpf.Configuration
             if (string.Equals(e.PropertyName, "Name", StringComparison.Ordinal))
             {
                 UpdateConfiguredAxisCountText();
-
-                AxisMappingEntry changedAxis = sender as AxisMappingEntry;
-                if (!_loadingConfiguration && changedAxis != null && !changedAxis.IsConfigured)
-                {
-                    ResetAxisAndRefreshEditor(changedAxis);
-                }
             }
 
             if (ReferenceEquals(SelectedAxis, sender))
@@ -297,10 +291,6 @@ namespace MotionControl.Framework.Wpf.Configuration
             axis.MinimumPosition = null;
             axis.MaximumPosition = null;
             axis.ManualSpeed = null;
-            axis.ManualAcceleration = null;
-            axis.ManualDeceleration = null;
-            axis.JogAcceleration = null;
-            axis.JogDeceleration = null;
             axis.HomeMode = null;
             axis.HomeModeVendor = null;
             axis.HomeSearchSpeed = null;
@@ -387,19 +377,8 @@ namespace MotionControl.Framework.Wpf.Configuration
                 visibleAxis.MinimumPosition = configuredAxis.MinimumPosition;
                 visibleAxis.MaximumPosition = configuredAxis.MaximumPosition;
                 visibleAxis.ManualSpeed = configuredAxis.ManualSpeed;
-                visibleAxis.ManualAcceleration = configuredAxis.ManualAcceleration;
-                visibleAxis.ManualDeceleration = configuredAxis.ManualDeceleration;
-                visibleAxis.JogAcceleration = configuredAxis.JogAcceleration;
-                visibleAxis.JogDeceleration = configuredAxis.JogDeceleration;
                 visibleAxis.HomeMode = configuredAxis.HomeMode;
                 visibleAxis.HomeModeVendor = configuredAxis.HomeModeVendor;
-                if (string.IsNullOrWhiteSpace(visibleAxis.HomeModeVendor)
-                    && string.Equals(_cardConfiguration.MotionCardVendor, ZMotionVendorName, StringComparison.Ordinal)
-                    && IsSupportedZMotionHomeMode(visibleAxis.HomeMode))
-                {
-                    // 旧版 JSON 只保存模式数字；当时页面选项属于正运动，因此补上厂商归属。
-                    visibleAxis.HomeModeVendor = ZMotionVendorName;
-                }
                 visibleAxis.HomeSearchSpeed = configuredAxis.HomeSearchSpeed;
                 visibleAxis.HomeCreepSpeed = configuredAxis.HomeCreepSpeed;
                 visibleAxis.HomeAcceleration = configuredAxis.HomeAcceleration;
@@ -850,7 +829,8 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
 
             int selectedAxisCount = int.Parse(GetSelectedTag(AxisCountComboBox), CultureInfo.InvariantCulture);
-            if (_allAxes.Any(axis => axis.AxisNumber >= selectedAxisCount && axis.IsConfigured))
+            if (_allAxes.Any(axis => axis.AxisNumber >= selectedAxisCount
+                && (axis.IsConfigured || HasAxisParameterValues(axis))))
             {
                 _loadingConfiguration = true;
                 SelectAxisCount(_cardConfiguration.AxisCount);
@@ -1075,6 +1055,18 @@ namespace MotionControl.Framework.Wpf.Configuration
         private List<string> ValidateConfiguredAxes()
         {
             var errors = new List<string>();
+            foreach (AxisMappingEntry axis in _allAxes.Where(axis =>
+                axis.AxisNumber < _cardConfiguration.AxisCount
+                && !axis.IsConfigured
+                && HasAxisParameterValues(axis)))
+            {
+                string physicalAxisName = "Axis" + axis.AxisNumber.ToString(CultureInfo.InvariantCulture);
+                errors.Add(string.Format(
+                    CultureInfo.CurrentCulture,
+                    (string)FindResource("未命名物理轴仍有参数格式"),
+                    physicalAxisName));
+            }
+
             List<AxisMappingEntry> configuredAxes = _allAxes
                 .Where(axis => axis.AxisNumber < _cardConfiguration.AxisCount && axis.IsConfigured)
                 .ToList();
@@ -1119,11 +1111,7 @@ namespace MotionControl.Framework.Wpf.Configuration
                     errors.Add(string.Format((string)FindResource("轴参数大于零格式"), axisName, (string)FindResource("手动调试速度")));
                 }
 
-                if (!IsFinite(axis.ManualAcceleration) || axis.ManualAcceleration.Value <= 0
-                    || !IsFinite(axis.ManualDeceleration) || axis.ManualDeceleration.Value <= 0
-                    || !IsFinite(axis.JogAcceleration) || axis.JogAcceleration.Value <= 0
-                    || !IsFinite(axis.JogDeceleration) || axis.JogDeceleration.Value <= 0
-                    || !IsFinite(axis.HomeAcceleration) || axis.HomeAcceleration.Value <= 0
+                if (!IsFinite(axis.HomeAcceleration) || axis.HomeAcceleration.Value <= 0
                     || !IsFinite(axis.HomeDeceleration) || axis.HomeDeceleration.Value <= 0)
                 {
                     errors.Add(string.Format((string)FindResource("轴加减速度无效格式"), axisName));
@@ -1147,6 +1135,23 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
 
             return errors;
+        }
+
+        /// <summary>判断未命名物理轴是否仍保留用户填写的类型、单位或运动参数。</summary>
+        private static bool HasAxisParameterValues(AxisMappingEntry axis)
+        {
+            return !string.IsNullOrWhiteSpace(axis.AxisType)
+                || !string.IsNullOrWhiteSpace(axis.EngineeringUnit)
+                || axis.UnitsPerEngineeringUnit.HasValue
+                || axis.MinimumPosition.HasValue
+                || axis.MaximumPosition.HasValue
+                || axis.ManualSpeed.HasValue
+                || axis.HomeMode.HasValue
+                || !string.IsNullOrWhiteSpace(axis.HomeModeVendor)
+                || axis.HomeSearchSpeed.HasValue
+                || axis.HomeCreepSpeed.HasValue
+                || axis.HomeAcceleration.HasValue
+                || axis.HomeDeceleration.HasValue;
         }
 
         /// <summary>从下拉框已选项目读取用于保存的中文配置值。</summary>
