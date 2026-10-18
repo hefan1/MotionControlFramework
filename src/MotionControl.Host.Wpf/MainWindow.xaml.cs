@@ -42,6 +42,9 @@ namespace MotionControl.Host.Wpf
         /// <summary>由 Host 组合根注入的通用轴映射配置页面。</summary>
         private UserControl _axisMappingConfigurationPage;
 
+        /// <summary>由 Host 组合根注入的通用 DI/DO 映射配置页面。</summary>
+        private UserControl _ioMappingConfigurationPage;
+
         public string CurrentLanguage { get; private set; }
 
         /// <summary>
@@ -183,6 +186,13 @@ namespace MotionControl.Host.Wpf
             UpdatePageContent();
         }
 
+        /// <summary>由 Host 组合根注入当前设备的 DI/DO 映射配置页面。</summary>
+        public void SetIoMappingConfigurationPage(UserControl ioMappingConfigurationPage)
+        {
+            _ioMappingConfigurationPage = ioMappingConfigurationPage;
+            UpdatePageContent();
+        }
+
         /// <summary>由 Host 组合根按运行时连接结果更新底栏的控制卡状态。</summary>
         public void SetMotionCardConnectionStatus(bool isConnected)
         {
@@ -191,7 +201,7 @@ namespace MotionControl.Host.Wpf
             MotionCardConnectionStatus.SetResourceReference(TextBlock.TextProperty, footerResourceKey);
         }
 
-        /// <summary>仅在手动分区的轴手动或 IO 手动页面显示通用调试控件。</summary>
+        /// <summary>根据当前导航在映射页、手动调试页或占位内容之间切换。</summary>
         private void UpdatePageContent()
         {
             var isAxisMappingPage = _axisMappingConfigurationPage != null
@@ -204,6 +214,19 @@ namespace MotionControl.Host.Wpf
                 ManualDebugContent.Visibility = Visibility.Visible;
                 PagePlaceholder.Visibility = Visibility.Collapsed;
                 PageDescription.SetResourceReference(TextBlock.TextProperty, "轴映射页面说明");
+                return;
+            }
+
+            var isIoMappingPage = _ioMappingConfigurationPage != null
+                && string.Equals(_currentSectionKey, "Settings", StringComparison.Ordinal)
+                && string.Equals(_currentPageResourceKey, "IO映射", StringComparison.Ordinal);
+
+            if (isIoMappingPage)
+            {
+                ManualDebugContent.Content = _ioMappingConfigurationPage;
+                ManualDebugContent.Visibility = Visibility.Visible;
+                PagePlaceholder.Visibility = Visibility.Collapsed;
+                PageDescription.SetResourceReference(TextBlock.TextProperty, "IO映射页面说明");
                 return;
             }
 

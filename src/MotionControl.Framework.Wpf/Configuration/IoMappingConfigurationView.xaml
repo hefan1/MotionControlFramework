@@ -1,0 +1,241 @@
+<UserControl x:Class="MotionControl.Framework.Wpf.Configuration.IoMappingConfigurationView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#F3F6FA">
+    <UserControl.Resources>
+        <Style x:Key="IoMappingTextBox" TargetType="TextBox">
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Padding" Value="8,3" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#26384D" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="#CAD5E2" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style x:Key="IoMappingComboBox" TargetType="ComboBox">
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Padding" Value="6,2" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#26384D" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="#CAD5E2" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style x:Key="IoMappingButton" TargetType="Button">
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#33485F" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="#C9D5E3" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style x:Key="IoMappingPrimaryButton" TargetType="Button" BasedOn="{StaticResource IoMappingButton}">
+            <Setter Property="Background" Value="#2375D1" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#2375D1" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style x:Key="IoMappingGrid" TargetType="DataGrid">
+            <Setter Property="AutoGenerateColumns" Value="False" />
+            <Setter Property="CanUserAddRows" Value="False" />
+            <Setter Property="CanUserDeleteRows" Value="False" />
+            <Setter Property="CanUserReorderColumns" Value="False" />
+            <Setter Property="CanUserResizeRows" Value="False" />
+            <Setter Property="HeadersVisibility" Value="Column" />
+            <Setter Property="GridLinesVisibility" Value="Horizontal" />
+            <Setter Property="HorizontalGridLinesBrush" Value="#E5EAF0" />
+            <Setter Property="VerticalGridLinesBrush" Value="#E5EAF0" />
+            <Setter Property="RowHeight" Value="40" />
+            <Setter Property="ColumnHeaderHeight" Value="36" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#26384D" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="AlternationCount" Value="2" />
+            <Setter Property="AlternatingRowBackground" Value="#F8FAFD" />
+        </Style>
+        <Style x:Key="IoMappingCellText" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Padding" Value="7,0" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="14,8,14,12" ToolTip="{Binding Text, ElementName=ConfigurationFileText}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Padding="12,10" Margin="0,0,0,10"
+                Background="#F7F9FC" BorderBrush="#D8E2EE" BorderThickness="1" CornerRadius="6">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="{DynamicResource 急停输入名称}" VerticalAlignment="Center"
+                               Margin="0,0,8,0" FontSize="12" Foreground="#40536A" />
+                    <ComboBox x:Name="EmergencyStopInputComboBox" Width="260" IsEditable="True"
+                              IsTextSearchEnabled="True" ItemsSource="{Binding EmergencyStopInputNames}"
+                              Style="{StaticResource IoMappingComboBox}"
+                              ToolTip="{DynamicResource IO映射急停输入提示}"
+                              DropDownOpened="EmergencyStopInputComboBox_DropDownOpened"
+                              LostFocus="EmergencyStopInputComboBox_LostFocus"
+                              Text="{Binding EmergencyStopInputName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="{DynamicResource IO映射说明}"
+                           VerticalAlignment="Center" Margin="18,0" FontSize="11"
+                           Foreground="#718096" TextWrapping="Wrap" />
+                <Border Grid.Column="2" Padding="9,6" Background="#EAF3FF" CornerRadius="4">
+                    <TextBlock Text="{DynamicResource IO映射连接与输出说明}" FontSize="11"
+                               Foreground="#37638F" VerticalAlignment="Center" />
+                </Border>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Padding="10" Background="White"
+                    BorderBrush="#D9E0E8" BorderThickness="1" CornerRadius="6">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <DockPanel Margin="2,0,2,8">
+                        <StackPanel DockPanel.Dock="Left">
+                            <TextBlock Text="{DynamicResource 数字输入映射}" FontSize="15" FontWeight="SemiBold"
+                                       Foreground="#24364B" />
+                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                <TextBlock Text="{Binding DigitalInputs.Count}" FontSize="11" Foreground="#718096" />
+                                <TextBlock Text="{DynamicResource 个输入点}" FontSize="11" Foreground="#718096" />
+                            </StackPanel>
+                        </StackPanel>
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button x:Name="AddInputButton" Content="{DynamicResource 添加DI}" Click="AddInputButton_Click"
+                                    Style="{StaticResource IoMappingButton}" Margin="4,0,0,0" />
+                            <Button Content="{DynamicResource 删除所选}" Click="RemoveInputButton_Click"
+                                    Style="{StaticResource IoMappingButton}" Margin="4,0,0,0" />
+                        </StackPanel>
+                    </DockPanel>
+                    <DataGrid x:Name="DigitalInputsGrid" Grid.Row="1" ItemsSource="{Binding DigitalInputs}"
+                              Style="{StaticResource IoMappingGrid}" SelectionMode="Single" SelectionUnit="FullRow"
+                              CellEditEnding="DigitalInputsGrid_CellEditEnding">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="{DynamicResource 逻辑名称}" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                                                Width="1.2*" ElementStyle="{StaticResource IoMappingCellText}" />
+                            <DataGridTemplateColumn Header="{DynamicResource 控制卡编号}" Width="1.1*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <ComboBox ItemsSource="{Binding DataContext.ControllerIds, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                  SelectedItem="{Binding ControllerId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  Style="{StaticResource IoMappingComboBox}" Margin="3,2" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="{DynamicResource 物理通道}" Binding="{Binding Channel, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}"
+                                                Width="78" ElementStyle="{StaticResource IoMappingCellText}" />
+                            <DataGridTemplateColumn Header="{DynamicResource 有效电平}" Width="105">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox Content="{DynamicResource 高电平有效}"
+                                                  ToolTip="{DynamicResource 低电平有效提示}"
+                                                  IsChecked="{Binding ActiveHigh, Mode=TwoWay}"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </Border>
+
+            <Border Grid.Column="2" Padding="10" Background="White"
+                    BorderBrush="#D9E0E8" BorderThickness="1" CornerRadius="6">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <DockPanel Margin="2,0,2,8">
+                        <StackPanel DockPanel.Dock="Left">
+                            <TextBlock Text="{DynamicResource 数字输出映射}" FontSize="15" FontWeight="SemiBold"
+                                       Foreground="#24364B" />
+                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                <TextBlock Text="{Binding DigitalOutputs.Count}" FontSize="11" Foreground="#718096" />
+                                <TextBlock Text="{DynamicResource 个输出点}" FontSize="11" Foreground="#718096" />
+                            </StackPanel>
+                        </StackPanel>
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button x:Name="AddOutputButton" Content="{DynamicResource 添加DO}" Click="AddOutputButton_Click"
+                                    Style="{StaticResource IoMappingButton}" Margin="4,0,0,0" />
+                            <Button Content="{DynamicResource 删除所选}" Click="RemoveOutputButton_Click"
+                                    Style="{StaticResource IoMappingButton}" Margin="4,0,0,0" />
+                        </StackPanel>
+                    </DockPanel>
+                    <DataGrid x:Name="DigitalOutputsGrid" Grid.Row="1" ItemsSource="{Binding DigitalOutputs}"
+                              Style="{StaticResource IoMappingGrid}" SelectionMode="Single" SelectionUnit="FullRow"
+                              CellEditEnding="DigitalOutputsGrid_CellEditEnding">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="{DynamicResource 逻辑名称}" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                                                Width="1.2*" ElementStyle="{StaticResource IoMappingCellText}" />
+                            <DataGridTemplateColumn Header="{DynamicResource 控制卡编号}" Width="1.1*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <ComboBox ItemsSource="{Binding DataContext.ControllerIds, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                  SelectedItem="{Binding ControllerId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  Style="{StaticResource IoMappingComboBox}" Margin="3,2" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="{DynamicResource 物理通道}" Binding="{Binding Channel, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}"
+                                                Width="78" ElementStyle="{StaticResource IoMappingCellText}" />
+                            <DataGridTemplateColumn Header="{DynamicResource 有效电平}" Width="105">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox Content="{DynamicResource 高电平有效}"
+                                                  ToolTip="{DynamicResource 低电平有效提示}"
+                                                  IsChecked="{Binding ActiveHigh, Mode=TwoWay}"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <Grid Grid.Row="2" Margin="0,10,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock x:Name="ConfigurationStatusText" Text="{DynamicResource IO映射尚未保存}"
+                           FontSize="11" Foreground="#586B80" TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="ConfigurationFileText" Visibility="Collapsed" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="{DynamicResource 检查映射}" Click="CheckMappingButton_Click"
+                        Style="{StaticResource IoMappingButton}" MinWidth="96" Margin="0,0,8,0" />
+                <Button Content="{DynamicResource 保存配置}" Click="SaveConfigurationButton_Click"
+                        Style="{StaticResource IoMappingPrimaryButton}" MinWidth="108" Margin="0,0,8,0" />
+                <Button Content="{DynamicResource 取消修改}" Click="CancelChangesButton_Click"
+                        Style="{StaticResource IoMappingButton}" MinWidth="96" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl>

@@ -15,10 +15,13 @@ namespace MotionControl.Host.Wpf
         /// <summary>当前 Host 使用的轴映射页面，用于在应用启动时恢复控制卡连接。</summary>
         private AxisMappingConfigurationView _axisMappingPage;
 
+        /// <summary>当前 Host 使用的 IO 映射页面，按设备配置目录读写 DI/DO 映射。</summary>
+        private IoMappingConfigurationView _ioMappingPage;
+
         /// <summary>当前 Host 主窗口，用于显示控制卡的统一连接状态。</summary>
         private MainWindow _mainWindow;
 
-        /// <summary>创建当前单机的 JSON 配置存储，并把轴映射页面接入主窗口。</summary>
+        /// <summary>创建当前单机的 JSON 配置存储，并接入轴映射和 IO 映射页面。</summary>
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
@@ -34,9 +37,11 @@ namespace MotionControl.Host.Wpf
                 "Machine01",
                 _cardConnection);
             _axisMappingPage.CardConnectionChanged += AxisMappingPage_CardConnectionChanged;
+            _ioMappingPage = new IoMappingConfigurationView(configurationStore, "Machine01", _cardConnection);
             _mainWindow = new MainWindow();
             _mainWindow.Loaded += MainWindow_Loaded;
             _mainWindow.SetAxisMappingConfigurationPage(_axisMappingPage);
+            _mainWindow.SetIoMappingConfigurationPage(_ioMappingPage);
 
             MainWindow = _mainWindow;
             _mainWindow.Show();

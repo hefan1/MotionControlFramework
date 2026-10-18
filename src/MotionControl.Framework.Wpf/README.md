@@ -6,6 +6,8 @@
 
 `Configuration/AxisMappingConfigurationView` 提供控制卡厂商、卡类型、轴通道数量和物理轴映射配置。控制卡选项保存到 `HardwareConfig/MotionCards.json`，设备轴名称和轴参数保存到 `HardwareConfig/AxisParameters.json`；两个文件按 MachineId 独立保存并由 Runtime 配置存储备份。
 
+`Configuration/IoMappingConfigurationView` 编辑 `HardwareConfig/IoMapping.json` 中的逻辑 DI/DO 名称、控制卡标识、物理通道、有效电平和急停输入名称。此页面与轴映射页共用控制卡连接状态；断开时锁定编辑，检查和保存只修改配置文件，不会直接切换物理输出。
+
 回零模式编号由控制卡厂商定义，不是跨厂商通用值。轴参数中的 `HomeMode` 要和 `HomeModeVendor` 一起理解；当前页面只为正运动显示并校验 DATUM 模式 3、4、13，选择其他厂商时会清空可见选择并保留原厂商设置，不会把同一个数字自动套用过去。接入新厂商时，应根据该适配器和控制器手册增加它自己的中文选项与参数处理；例如雷赛参考代码把 `home_dir` 和 `mode` 分开传给 API，不能仅凭模式编号推断搜索方向。
 
 设备项目完成硬件配置校验并创建 `MachineRuntime`、`MotionCardGroup` 和 `ILogicalIo` 后，由 Host 组合根创建此页面，并调用 `MainWindow.SetManualMotionDebugPage` 注入。页面不负责选择或创建厂商驱动；设备自动流程运行期间会拒绝手动操作，急停报警未复位时也会拒绝动作。
