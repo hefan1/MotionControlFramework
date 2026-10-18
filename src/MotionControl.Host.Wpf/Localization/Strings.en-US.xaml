@@ -194,6 +194,7 @@
     <sys:String x:Key="手动加速度">Manual Acceleration</sys:String>
     <sys:String x:Key="手动减速度">Manual Deceleration</sys:String>
     <sys:String x:Key="回零模式">Home Mode</sys:String>
+    <sys:String x:Key="请选择回零模式">Select a home mode.</sys:String>
     <sys:String x:Key="回零搜索速度">Home Search Speed</sys:String>
     <sys:String x:Key="回零爬行速度">Home Creep Speed</sys:String>
     <sys:String x:Key="回零加速度">Home Acceleration</sys:String>
@@ -224,9 +225,11 @@
     <sys:String x:Key="轴映射保存失败">Failed to save axis mapping: {0}</sys:String>
     <sys:String x:Key="当前轴映射已清除">Mapping for the selected physical axis was cleared.</sys:String>
     <sys:String x:Key="设备轴名称重复格式">Duplicate machine axis name: {0}</sys:String>
+    <sys:String x:Key="轴类型未选择格式">{0} has no axis type selected.</sys:String>
+    <sys:String x:Key="工程单位未选择格式">{0} has no engineering unit selected.</sys:String>
     <sys:String x:Key="轴参数大于零格式">{0} {1} must be a valid number greater than zero.</sys:String>
     <sys:String x:Key="轴软限位无效格式">{0} soft limit minimum must be less than maximum; both values must be valid.</sys:String>
     <sys:String x:Key="轴加减速度无效格式">{0} manual, jog, and home acceleration/deceleration must be valid numbers greater than zero.</sys:String>
     <sys:String x:Key="轴回零速度无效格式">{0} home search and creep speeds must be valid numbers greater than zero.</sys:String>
-    <sys:String x:Key="轴回零模式无效格式">{0} home mode cannot be negative.</sys:String>
+    <sys:String x:Key="轴回零模式无效格式">{0} has an invalid home mode. Select mode 3, 4, or 13.</sys:String>
 </ResourceDictionary>

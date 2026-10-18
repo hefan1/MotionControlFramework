@@ -294,17 +294,17 @@
                         <DataGridTextColumn Header="{DynamicResource 物理轴号}"
                                             Binding="{Binding AxisNumber, StringFormat='Axis{0}'}" Width="62"
                                             ElementStyle="{StaticResource AxisMappingCellText}" />
-                        <DataGridTextColumn Header="{DynamicResource 设备轴名称}" Binding="{Binding Name}" Width="1.15*"
+                        <DataGridTextColumn Header="{DynamicResource 设备轴名称}" Binding="{Binding Name, TargetNullValue='-'}" Width="1.15*"
                                             ElementStyle="{StaticResource AxisMappingCellText}" />
-                        <DataGridTextColumn Header="{DynamicResource 轴类型}" Binding="{Binding AxisType}" Width="62"
+                        <DataGridTextColumn Header="{DynamicResource 轴类型}" Binding="{Binding AxisType, TargetNullValue='-'}" Width="62"
                                             ElementStyle="{StaticResource AxisMappingCellText}" />
-                        <DataGridTextColumn Header="{DynamicResource 工程单位}" Binding="{Binding EngineeringUnit}" Width="62"
+                        <DataGridTextColumn Header="{DynamicResource 工程单位}" Binding="{Binding EngineeringUnit, TargetNullValue='-'}" Width="62"
                                             ElementStyle="{StaticResource AxisMappingCellText}" />
-                        <DataGridTextColumn Header="{DynamicResource 单位换算}" Binding="{Binding UnitsPerEngineeringUnit, StringFormat={}{0:0.###}}" Width="84"
+                        <DataGridTextColumn Header="{DynamicResource 单位换算}" Binding="{Binding UnitsPerEngineeringUnit, TargetNullValue='-', StringFormat={}{0:0.###}}" Width="84"
                                             ElementStyle="{StaticResource AxisMappingCellText}" />
-                        <DataGridTextColumn Header="{DynamicResource 软限位下限}" Binding="{Binding MinimumPosition, StringFormat={}{0:0.000}}" Width="86"
+                        <DataGridTextColumn Header="{DynamicResource 软限位下限}" Binding="{Binding MinimumPosition, TargetNullValue='-', StringFormat={}{0:0.000}}" Width="86"
                                             ElementStyle="{StaticResource AxisMappingCellText}" />
-                        <DataGridTextColumn Header="{DynamicResource 软限位上限}" Binding="{Binding MaximumPosition, StringFormat={}{0:0.000}}" Width="86"
+                        <DataGridTextColumn Header="{DynamicResource 软限位上限}" Binding="{Binding MaximumPosition, TargetNullValue='-', StringFormat={}{0:0.000}}" Width="86"
                                             ElementStyle="{StaticResource AxisMappingCellText}" />
                         <DataGridTemplateColumn Header="{DynamicResource 配置状态}" Width="74">
                             <DataGridTemplateColumn.CellTemplate>
@@ -411,7 +411,7 @@
                                     <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#526A86" VerticalAlignment="Center">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
-                                                <Setter Property="Text" Value="{DynamicResource 回零模式3}" />
+                                                <Setter Property="Text" Value="{DynamicResource 请选择回零模式}" />
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding SelectedItem.Tag, ElementName=HomeModeComboBox}" Value="4">
                                                         <Setter Property="Text" Value="{DynamicResource 回零模式4}" />

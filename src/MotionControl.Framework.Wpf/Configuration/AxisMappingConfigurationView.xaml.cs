@@ -159,23 +159,55 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
         }
 
-        /// <summary>根据当前物理轴名称刷新已配置轴数量。</summary>
+        /// <summary>根据当前物理轴名称刷新已配置轴数量，并更新当前轴的写卡按钮状态。</summary>
         private void Axis_PropertyChanged(object sender, PropertyChangedEventArgs e)
         {
             if (string.Equals(e.PropertyName, "Name", StringComparison.Ordinal))
             {
                 UpdateConfiguredAxisCountText();
+
+                AxisMappingEntry changedAxis = sender as AxisMappingEntry;
+                if (!_loadingConfiguration && changedAxis != null && !changedAxis.IsConfigured)
+                {
+                    ResetAxisAndRefreshEditor(changedAxis);
+                }
+            }
+
+            if (ReferenceEquals(SelectedAxis, sender))
+            {
+                UpdateCardConnectionUiState();
             }
         }
 
-        /// <summary>从当前设备的轴参数 JSON 读取设置；文件不存在时显示约定的默认值。</summary>
+        /// <summary>清空轴映射后同步清除右侧下拉框，避免残留旧参数显示。</summary>
+        private void ResetAxisAndRefreshEditor(AxisMappingEntry axis)
+        {
+            bool wasLoadingConfiguration = _loadingConfiguration;
+            _loadingConfiguration = true;
+            try
+            {
+                ResetAxisToUnconfigured(axis);
+                if (ReferenceEquals(SelectedAxis, axis))
+                {
+                    SelectComboBoxItem(AxisTypeComboBox, axis.AxisType);
+                    SelectComboBoxItem(EngineeringUnitComboBox, axis.EngineeringUnit);
+                    SelectHomeMode(axis.HomeMode);
+                }
+            }
+            finally
+            {
+                _loadingConfiguration = wasLoadingConfiguration;
+            }
+        }
+
+        /// <summary>从当前设备的轴参数 JSON 读取设置；文件不存在时保持所有通道为空。</summary>
         private void LoadConfiguration()
         {
             _loadingConfiguration = true;
             _configurationCanBeSaved = true;
             SaveConfigurationButton.IsEnabled = true;
             ConfigurationStatusText.Text = (string)FindResource("轴映射尚未保存");
-            ResetAxesToDefaults();
+            ResetAxesToUnconfigured();
             _configuration = new AxisMappingConfigurationDocument();
             _cardConfiguration = new MotionCardSettingsDocument();
 
@@ -220,7 +252,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
             catch (Exception error)
             {
-                ResetAxesToDefaults();
+                ResetAxesToUnconfigured();
                 _configuration = new AxisMappingConfigurationDocument();
                 _cardConfiguration = new MotionCardSettingsDocument();
                 SelectComboBoxItem(CardVendorComboBox, _cardConfiguration.MotionCardVendor);
@@ -243,29 +275,35 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
         }
 
-        /// <summary>把新建配置中的 64 个物理轴通道恢复为直观的默认参数。</summary>
-        private void ResetAxesToDefaults()
+        /// <summary>把 64 个物理轴通道恢复为空配置，不为未映射轴伪造运动参数。</summary>
+        private void ResetAxesToUnconfigured()
         {
             foreach (AxisMappingEntry axis in _allAxes)
             {
-                axis.Name = string.Empty;
-                axis.AxisType = "直线轴";
-                axis.EngineeringUnit = "mm";
-                axis.UnitsPerEngineeringUnit = 1000;
-                axis.MinimumPosition = -100;
-                axis.MaximumPosition = 100;
-                axis.ManualSpeed = 50;
-                axis.ManualAcceleration = 10;
-                axis.ManualDeceleration = 10;
-                axis.JogAcceleration = 10;
-                axis.JogDeceleration = 10;
-                axis.HomeMode = 3;
-                axis.HomeSearchSpeed = 5;
-                axis.HomeCreepSpeed = 1;
-                axis.HomeAcceleration = 10;
-                axis.HomeDeceleration = 10;
-                axis.ControllerId = "MotionCard01";
+                ResetAxisToUnconfigured(axis);
             }
+        }
+
+        /// <summary>清空一个物理轴的映射名称、类型、单位及所有运动参数。</summary>
+        private static void ResetAxisToUnconfigured(AxisMappingEntry axis)
+        {
+            axis.Name = null;
+            axis.AxisType = null;
+            axis.EngineeringUnit = null;
+            axis.UnitsPerEngineeringUnit = null;
+            axis.MinimumPosition = null;
+            axis.MaximumPosition = null;
+            axis.ManualSpeed = null;
+            axis.ManualAcceleration = null;
+            axis.ManualDeceleration = null;
+            axis.JogAcceleration = null;
+            axis.JogDeceleration = null;
+            axis.HomeMode = null;
+            axis.HomeSearchSpeed = null;
+            axis.HomeCreepSpeed = null;
+            axis.HomeAcceleration = null;
+            axis.HomeDeceleration = null;
+            axis.ControllerId = "MotionCard01";
         }
 
         /// <summary>检查已读取文件的格式版本、卡选项和物理轴号。</summary>
@@ -329,6 +367,11 @@ namespace MotionControl.Framework.Wpf.Configuration
         {
             foreach (AxisMappingEntry configuredAxis in configuredAxes)
             {
+                if (!configuredAxis.IsConfigured)
+                {
+                    continue;
+                }
+
                 AxisMappingEntry visibleAxis = _allAxes[configuredAxis.AxisNumber];
                 visibleAxis.ControllerId = string.IsNullOrWhiteSpace(configuredAxis.ControllerId)
                     ? "MotionCard01"
@@ -355,6 +398,12 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>设置卡选项下拉框的选中项，并保留配置文件中的厂商文字。</summary>
         private static void SelectComboBoxItem(ComboBox comboBox, string value)
         {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                comboBox.SelectedIndex = -1;
+                return;
+            }
+
             foreach (ComboBoxItem item in comboBox.Items)
             {
                 if (string.Equals(item.Tag as string, value, StringComparison.Ordinal))
@@ -571,8 +620,22 @@ namespace MotionControl.Framework.Wpf.Configuration
             ReadAxisParametersButton.IsEnabled = connected && !_connectionInProgress;
             WriteAxisParametersButton.IsEnabled = connected
                 && !_connectionInProgress
-                && SelectedAxis != null
-                && SelectedAxis.IsConfigured;
+                && CanWriteAxisParameters(SelectedAxis);
+        }
+
+        /// <summary>确认当前轴已配置了控制卡写入所需的全部数值。</summary>
+        private static bool CanWriteAxisParameters(AxisMappingEntry axis)
+        {
+            return axis != null
+                && axis.IsConfigured
+                && IsFinite(axis.UnitsPerEngineeringUnit) && axis.UnitsPerEngineeringUnit.Value > 0
+                && IsFinite(axis.MinimumPosition)
+                && IsFinite(axis.MaximumPosition)
+                && axis.MinimumPosition.Value < axis.MaximumPosition.Value
+                && IsFinite(axis.HomeSearchSpeed) && axis.HomeSearchSpeed.Value > 0
+                && IsFinite(axis.HomeCreepSpeed) && axis.HomeCreepSpeed.Value > 0
+                && IsFinite(axis.HomeAcceleration) && axis.HomeAcceleration.Value > 0
+                && IsFinite(axis.HomeDeceleration) && axis.HomeDeceleration.Value > 0;
         }
 
         /// <summary>读取当前物理轴的控制器参数，并在右侧以只读文本显示卡上实时值。</summary>
@@ -629,7 +692,7 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>确认后向控制卡写入当前轴设置，并立即读回核对控制器实际值。</summary>
         private async void WriteAxisParametersButton_Click(object sender, RoutedEventArgs e)
         {
-            if (!_cardConnection.IsConnected || SelectedAxis == null || !SelectedAxis.IsConfigured)
+            if (!_cardConnection.IsConnected || !CanWriteAxisParameters(SelectedAxis))
             {
                 return;
             }
@@ -654,13 +717,13 @@ namespace MotionControl.Framework.Wpf.Configuration
                 var requestedParameters = new AxisMappingCardParameters
                 {
                     AxisNumber = SelectedAxis.AxisNumber,
-                    UnitsPerEngineeringUnit = SelectedAxis.UnitsPerEngineeringUnit,
-                    MinimumPosition = SelectedAxis.MinimumPosition,
-                    MaximumPosition = SelectedAxis.MaximumPosition,
-                    Speed = SelectedAxis.HomeSearchSpeed,
-                    CreepSpeed = SelectedAxis.HomeCreepSpeed,
-                    Acceleration = SelectedAxis.HomeAcceleration,
-                    Deceleration = SelectedAxis.HomeDeceleration
+                    UnitsPerEngineeringUnit = SelectedAxis.UnitsPerEngineeringUnit.Value,
+                    MinimumPosition = SelectedAxis.MinimumPosition.Value,
+                    MaximumPosition = SelectedAxis.MaximumPosition.Value,
+                    Speed = SelectedAxis.HomeSearchSpeed.Value,
+                    CreepSpeed = SelectedAxis.HomeCreepSpeed.Value,
+                    Acceleration = SelectedAxis.HomeAcceleration.Value,
+                    Deceleration = SelectedAxis.HomeDeceleration.Value
                 };
                 await _cardConnection.WriteAxisParametersAsync(requestedParameters, CancellationToken.None);
                 AxisMappingCardParameters actualParameters = await ReadSelectedAxisParametersAsync(false);
@@ -778,8 +841,14 @@ namespace MotionControl.Framework.Wpf.Configuration
         }
 
         /// <summary>显示当前控制卡厂商对应的回零模式选项。</summary>
-        private void SelectHomeMode(int homeMode)
+        private void SelectHomeMode(int? homeMode)
         {
+            if (!homeMode.HasValue)
+            {
+                HomeModeComboBox.SelectedIndex = -1;
+                return;
+            }
+
             foreach (ComboBoxItem item in HomeModeComboBox.Items)
             {
                 int itemMode;
@@ -883,7 +952,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
         }
 
-        /// <summary>清空当前物理轴的设备名称，使该通道回到未配置状态。</summary>
+        /// <summary>清空当前物理轴的设备名称和运动参数，使该通道回到未配置状态。</summary>
         private void ClearAxisMappingButton_Click(object sender, RoutedEventArgs e)
         {
             if (!_cardConnection.IsConnected || SelectedAxis == null)
@@ -891,7 +960,8 @@ namespace MotionControl.Framework.Wpf.Configuration
                 return;
             }
 
-            SelectedAxis.Name = string.Empty;
+            ResetAxisAndRefreshEditor(SelectedAxis);
+            UpdateCardConnectionUiState();
             ConfigurationStatusText.Text = (string)FindResource("当前轴映射已清除");
         }
 
@@ -922,40 +992,51 @@ namespace MotionControl.Framework.Wpf.Configuration
             foreach (AxisMappingEntry axis in configuredAxes)
             {
                 string axisName = "Axis" + axis.AxisNumber.ToString(CultureInfo.InvariantCulture);
-                if (!IsFinite(axis.UnitsPerEngineeringUnit) || axis.UnitsPerEngineeringUnit <= 0)
+                if (string.IsNullOrWhiteSpace(axis.AxisType))
+                {
+                    errors.Add(string.Format((string)FindResource("轴类型未选择格式"), axisName));
+                }
+
+                if (string.IsNullOrWhiteSpace(axis.EngineeringUnit))
+                {
+                    errors.Add(string.Format((string)FindResource("工程单位未选择格式"), axisName));
+                }
+
+                if (!IsFinite(axis.UnitsPerEngineeringUnit) || axis.UnitsPerEngineeringUnit.Value <= 0)
                 {
                     errors.Add(string.Format((string)FindResource("轴参数大于零格式"), axisName, (string)FindResource("单位换算")));
                 }
 
                 if (!IsFinite(axis.MinimumPosition)
                     || !IsFinite(axis.MaximumPosition)
-                    || axis.MinimumPosition >= axis.MaximumPosition)
+                    || axis.MinimumPosition.Value >= axis.MaximumPosition.Value)
                 {
                     errors.Add(string.Format((string)FindResource("轴软限位无效格式"), axisName));
                 }
 
-                if (!IsFinite(axis.ManualSpeed) || axis.ManualSpeed <= 0)
+                if (!IsFinite(axis.ManualSpeed) || axis.ManualSpeed.Value <= 0)
                 {
                     errors.Add(string.Format((string)FindResource("轴参数大于零格式"), axisName, (string)FindResource("手动速度")));
                 }
 
-                if (!IsFinite(axis.ManualAcceleration) || axis.ManualAcceleration <= 0
-                    || !IsFinite(axis.ManualDeceleration) || axis.ManualDeceleration <= 0
-                    || !IsFinite(axis.JogAcceleration) || axis.JogAcceleration <= 0
-                    || !IsFinite(axis.JogDeceleration) || axis.JogDeceleration <= 0
-                    || !IsFinite(axis.HomeAcceleration) || axis.HomeAcceleration <= 0
-                    || !IsFinite(axis.HomeDeceleration) || axis.HomeDeceleration <= 0)
+                if (!IsFinite(axis.ManualAcceleration) || axis.ManualAcceleration.Value <= 0
+                    || !IsFinite(axis.ManualDeceleration) || axis.ManualDeceleration.Value <= 0
+                    || !IsFinite(axis.JogAcceleration) || axis.JogAcceleration.Value <= 0
+                    || !IsFinite(axis.JogDeceleration) || axis.JogDeceleration.Value <= 0
+                    || !IsFinite(axis.HomeAcceleration) || axis.HomeAcceleration.Value <= 0
+                    || !IsFinite(axis.HomeDeceleration) || axis.HomeDeceleration.Value <= 0)
                 {
                     errors.Add(string.Format((string)FindResource("轴加减速度无效格式"), axisName));
                 }
 
-                if (!IsFinite(axis.HomeSearchSpeed) || axis.HomeSearchSpeed <= 0
-                    || !IsFinite(axis.HomeCreepSpeed) || axis.HomeCreepSpeed <= 0)
+                if (!IsFinite(axis.HomeSearchSpeed) || axis.HomeSearchSpeed.Value <= 0
+                    || !IsFinite(axis.HomeCreepSpeed) || axis.HomeCreepSpeed.Value <= 0)
                 {
                     errors.Add(string.Format((string)FindResource("轴回零速度无效格式"), axisName));
                 }
 
-                if (axis.HomeMode < 0)
+                if (!axis.HomeMode.HasValue
+                    || (axis.HomeMode.Value != 3 && axis.HomeMode.Value != 4 && axis.HomeMode.Value != 13))
                 {
                     errors.Add(string.Format((string)FindResource("轴回零模式无效格式"), axisName));
                 }
@@ -971,10 +1052,10 @@ namespace MotionControl.Framework.Wpf.Configuration
             return selectedItem == null ? string.Empty : selectedItem.Tag as string;
         }
 
-        /// <summary>判断配置数值是否为有限数值。</summary>
-        private static bool IsFinite(double value)
+        /// <summary>判断配置数值是否已填写且为有限数值。</summary>
+        private static bool IsFinite(double? value)
         {
-            return !double.IsNaN(value) && !double.IsInfinity(value);
+            return value.HasValue && !double.IsNaN(value.Value) && !double.IsInfinity(value.Value);
         }
 
         /// <summary>向 WPF 页面发送指定属性已变化的通知。</summary>
