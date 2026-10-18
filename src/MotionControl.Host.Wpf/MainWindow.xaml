@@ -162,25 +162,25 @@
                     BorderThickness="1">
                 <Grid>
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="68" />
+                        <RowDefinition Height="58" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
                     <Border Grid.Row="0"
-                            Padding="20,10"
+                            Padding="20,5"
                             Background="#FAFAFA"
                             BorderBrush="#E1E4E6"
                             BorderThickness="0,0,0,1">
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock x:Name="PageTitle"
                                        Text="{DynamicResource 设备总览}"
-                                       FontSize="20"
+                                       FontSize="23"
                                        FontWeight="SemiBold"
                                        Foreground="#25282B" />
                             <TextBlock x:Name="PageDescription"
                                        Text="{DynamicResource 该页面为导航占位具体功能后续接入}"
-                                       Margin="0,4,0,0"
-                                       FontSize="12"
+                                       Margin="0,2,0,0"
+                                       FontSize="11"
                                        Foreground="#70777C" />
                         </StackPanel>
                     </Border>

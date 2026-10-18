@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using MotionControl.Framework.Runtime.Configuration;
 
 namespace MotionControl.Framework.Wpf.Configuration
@@ -555,6 +556,9 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
 
             bool connected = _cardConnection.IsConnected;
+            ConnectionIndicator.Fill = connected ? new SolidColorBrush(Color.FromRgb(35, 153, 85)) : new SolidColorBrush(Color.FromRgb(135, 151, 168));
+            CardConnectionStatusBadge.Background = connected ? new SolidColorBrush(Color.FromRgb(232, 247, 237)) : new SolidColorBrush(Color.FromRgb(239, 244, 249));
+            CardConnectionStatusText.Foreground = connected ? new SolidColorBrush(Color.FromRgb(28, 126, 70)) : new SolidColorBrush(Color.FromRgb(89, 107, 125));
             CardVendorComboBox.IsEnabled = !connected && !_connectionInProgress;
             CardTypeComboBox.IsEnabled = !connected && !_connectionInProgress;
             AxisCountComboBox.IsEnabled = !connected && !_connectionInProgress;
