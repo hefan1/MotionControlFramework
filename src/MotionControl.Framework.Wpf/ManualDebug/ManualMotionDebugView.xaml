@@ -28,11 +28,11 @@
                     </WrapPanel>
                     <WrapPanel Margin="0,4,0,0" VerticalAlignment="Center">
                         <TextBlock Text="{DynamicResource 速度}" VerticalAlignment="Center" Margin="0,0,6,8" />
-                        <TextBox x:Name="SpeedTextBox" Text="5" Width="72" Margin="0,0,12,8" Padding="5" />
+                        <TextBox x:Name="SpeedTextBox" Width="72" Margin="0,0,12,8" Padding="5" />
                         <TextBlock Text="{DynamicResource 加速度}" VerticalAlignment="Center" Margin="0,0,6,8" />
-                        <TextBox x:Name="AccelerationTextBox" Text="10" Width="72" Margin="0,0,12,8" Padding="5" />
+                        <TextBox x:Name="AccelerationTextBox" Width="72" Margin="0,0,12,8" Padding="5" />
                         <TextBlock Text="{DynamicResource 减速度}" VerticalAlignment="Center" Margin="0,0,6,8" />
-                        <TextBox x:Name="DecelerationTextBox" Text="10" Width="72" Margin="0,0,16,8" Padding="5" />
+                        <TextBox x:Name="DecelerationTextBox" Width="72" Margin="0,0,16,8" Padding="5" />
                         <TextBlock Text="{DynamicResource 目标位置}" VerticalAlignment="Center" Margin="0,0,6,8" />
                         <TextBox x:Name="TargetPositionTextBox" Text="0" Width="90" Margin="0,0,8,8" Padding="5" />
                         <Button x:Name="MoveAbsoluteButton" Content="{DynamicResource 绝对定位}" Click="MoveAbsoluteButton_Click" Margin="0,0,8,8" Padding="12,6" />

@@ -325,6 +325,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>切换轴选择后立即刷新新轴的状态。</summary>
         private async void AxisSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            ApplySelectedAxisMotionProfile();
             if (!IsLoaded || _refreshInProgress)
             {
                 return;
@@ -338,6 +339,26 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             {
                 OperationMessageText.Text = string.Format(GetText("读取轴状态失败"), error.Message);
             }
+        }
+
+        /// <summary>切换逻辑轴时，把该轴配置的手动默认速度和加减速度填入页面。</summary>
+        private void ApplySelectedAxisMotionProfile()
+        {
+            var axis = AxisSelector.SelectedItem as IAxis;
+            if (axis == null)
+            {
+                return;
+            }
+
+            AxisHardwareDefinition configuration;
+            if (!_axisConfigurationByName.TryGetValue(axis.Name, out configuration))
+            {
+                return;
+            }
+
+            SpeedTextBox.Text = configuration.ManualSpeed.ToString(CultureInfo.CurrentCulture);
+            AccelerationTextBox.Text = configuration.ManualAcceleration.ToString(CultureInfo.CurrentCulture);
+            DecelerationTextBox.Text = configuration.ManualDeceleration.ToString(CultureInfo.CurrentCulture);
         }
 
         /// <summary>执行伺服使能操作，并把操作结果显示在页面上。</summary>

@@ -4,7 +4,7 @@
 
 - 每份 JSON 文件根节点带有正整数 `schemaVersion`。
 - `MotionCards.json`：本设备使用的控制卡标识、适配器名称和连接配置文件。
-- `AxisParameters.json`：逻辑轴所属控制卡、物理轴通道、工程单位换算、软限位、回零及轴级默认运动参数。
+- `AxisParameters.json`：逻辑轴所属控制卡、物理轴通道、工程单位换算、软限位、回零参数，以及手动调试默认速度和加减速度。
 - `IoMapping.json`：逻辑 DI/DO 名称、所属控制卡和物理 IO 点位映射，并用 `emergencyStopInputName` 指定急停状态输入。
 
 这三份文件各自保存一类设置。运动卡适配器的连接配置只保存厂商连接参数，不重复保存轴参数或 IO 映射。

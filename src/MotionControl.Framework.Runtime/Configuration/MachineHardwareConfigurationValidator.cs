@@ -156,6 +156,14 @@ namespace MotionControl.Framework.Runtime.Configuration
                 {
                     errors.Add("逻辑轴 '" + displayName + "' 的最小位置必须小于有效的最大位置。");
                 }
+
+                if (!IsFinite(axis.ManualSpeed) || axis.ManualSpeed <= 0
+                    || !IsFinite(axis.ManualAcceleration) || axis.ManualAcceleration <= 0
+                    || !IsFinite(axis.ManualDeceleration) || axis.ManualDeceleration <= 0)
+                {
+                    errors.Add("逻辑轴 '" + displayName
+                        + "' 的手动速度、加速度和减速度必须是大于 0 的有限数值。");
+                }
             }
         }
 

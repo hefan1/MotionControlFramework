@@ -58,7 +58,10 @@ namespace MotionControl.ZMotionSimulatorCheck
                             ControllerId = card.ControllerId,
                             AxisNumber = 0,
                             MinimumPosition = -100,
-                            MaximumPosition = 100
+                            MaximumPosition = 100,
+                            ManualSpeed = 23,
+                            ManualAcceleration = 34,
+                            ManualDeceleration = 45
                         }
                     },
                     new[] { "EmergencyStop", "PartPresent" },
@@ -66,6 +69,9 @@ namespace MotionControl.ZMotionSimulatorCheck
 
                 Ensure(page.FindName("AxisSelector") is ComboBox, "页面没有加载逻辑轴选择框。");
                 Ensure(page.FindName("AxisStatusText") is TextBlock, "页面没有加载轴状态显示。");
+                Ensure(((TextBox)page.FindName("SpeedTextBox")).Text == "23", "页面没有从轴配置加载手动速度。");
+                Ensure(((TextBox)page.FindName("AccelerationTextBox")).Text == "34", "页面没有从轴配置加载手动加速度。");
+                Ensure(((TextBox)page.FindName("DecelerationTextBox")).Text == "45", "页面没有从轴配置加载手动减速度。");
                 Ensure(((StackPanel)page.FindName("DigitalInputsPanel")).Children.Count == 2, "DI 列表行数与配置数量不一致。");
                 Ensure(((StackPanel)page.FindName("DigitalOutputsPanel")).Children.Count == 2, "DO 列表行数与配置数量不一致。");
                 VerifyMachineStateLocalization(application, chineseResources, englishResources, page);
@@ -189,6 +195,10 @@ namespace MotionControl.ZMotionSimulatorCheck
             var targetPosition = (TextBox)page.FindName("TargetPositionTextBox");
             targetPosition.Text = "50";
             ClickButton(page, "MoveAbsoluteButton");
+            Ensure(axis.LastMotionProfile != null, "手动定位没有使用运动参数配置。");
+            Ensure(axis.LastMotionProfile.Speed == 23, "手动定位没有使用轴配置的默认速度。");
+            Ensure(axis.LastMotionProfile.Acceleration == 34, "手动定位没有使用轴配置的默认加速度。");
+            Ensure(axis.LastMotionProfile.Deceleration == 45, "手动定位没有使用轴配置的默认减速度。");
             targetPosition.Text = "1";
             ClickButton(page, "MoveRelativeButton");
             Ensure(axis.CommandCount == initialCommandCount + 7, "已连接时轴按钮没有通过 IAxis 调用预期的操作。");
@@ -245,6 +255,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             jogButton.RaiseEvent(mouseDown);
             Ensure(axis.CommandCount == initialCommandCount + 1, "按下点动按钮后没有调用连续点动。");
             Ensure(axis.LastJogDirection == expectedDirection, "点动按钮发送的运动方向不正确。");
+            Ensure(axis.LastJogSpeed == 23, "点动命令没有使用轴配置的默认速度。");
 
             var mouseUp = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
             {
@@ -289,6 +300,12 @@ namespace MotionControl.ZMotionSimulatorCheck
 
             public MotionDirection? LastJogDirection { get; private set; }
 
+            /// <summary>保存页面最近一次定位命令的参数，供离屏检查确认。</summary>
+            public AxisMotionProfile LastMotionProfile { get; private set; }
+
+            /// <summary>保存页面最近一次点动命令的速度，供离屏检查确认。</summary>
+            public double LastJogSpeed { get; private set; }
+
             public string Name { get { return "X"; } }
 
             /// <summary>返回固定无报警状态，不读取真实设备。</summary>
@@ -307,16 +324,27 @@ namespace MotionControl.ZMotionSimulatorCheck
             public Task HomeAsync(CancellationToken cancellationToken) { CommandCount++; return Task.CompletedTask; }
 
             /// <summary>本次离屏检查不发出定位命令。</summary>
-            public Task MoveAbsoluteAsync(double position, AxisMotionProfile profile, CancellationToken cancellationToken) { CommandCount++; return Task.CompletedTask; }
+            public Task MoveAbsoluteAsync(double position, AxisMotionProfile profile, CancellationToken cancellationToken)
+            {
+                CommandCount++;
+                LastMotionProfile = profile;
+                return Task.CompletedTask;
+            }
 
             /// <summary>本次离屏检查不发出相对移动命令。</summary>
-            public Task MoveRelativeAsync(double distance, AxisMotionProfile profile, CancellationToken cancellationToken) { CommandCount++; return Task.CompletedTask; }
+            public Task MoveRelativeAsync(double distance, AxisMotionProfile profile, CancellationToken cancellationToken)
+            {
+                CommandCount++;
+                LastMotionProfile = profile;
+                return Task.CompletedTask;
+            }
 
             /// <summary>本次离屏检查不发出点动命令。</summary>
             public Task StartJogAsync(MotionDirection direction, double speed, CancellationToken cancellationToken)
             {
                 CommandCount++;
                 LastJogDirection = direction;
+                LastJogSpeed = speed;
                 return Task.CompletedTask;
             }
 

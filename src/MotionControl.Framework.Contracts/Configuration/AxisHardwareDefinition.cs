@@ -17,5 +17,14 @@ namespace MotionControl.Framework.Contracts.Configuration
 
         /// <summary>逻辑轴允许的最大工程位置。</summary>
         public double MaximumPosition { get; set; }
+
+        /// <summary>手动调试时默认使用的速度，直线轴为 mm/s，旋转轴为度/s。</summary>
+        public double ManualSpeed { get; set; }
+
+        /// <summary>手动定位时默认使用的加速度，直线轴为 mm/s²，旋转轴为度/s²。</summary>
+        public double ManualAcceleration { get; set; }
+
+        /// <summary>手动定位时默认使用的减速度，直线轴为 mm/s²，旋转轴为度/s²。</summary>
+        public double ManualDeceleration { get; set; }
     }
 }

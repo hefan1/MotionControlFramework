@@ -208,7 +208,10 @@ namespace MotionControl.ZMotionSimulatorCheck
                     Name = "X",
                     AxisNumber = 0,
                     MinimumPosition = -100,
-                    MaximumPosition = 100
+                    MaximumPosition = 100,
+                    ManualSpeed = 5,
+                    ManualAcceleration = 10,
+                    ManualDeceleration = 10
                 }
             };
             var inputs = new[]
@@ -253,7 +256,10 @@ namespace MotionControl.ZMotionSimulatorCheck
                             Name = "Y",
                             AxisNumber = 0,
                             MinimumPosition = -100,
-                            MaximumPosition = 100
+                            MaximumPosition = 100,
+                            ManualSpeed = 5,
+                            ManualAcceleration = 10,
+                            ManualDeceleration = 10
                         }
                     },
                     inputs,
@@ -272,7 +278,10 @@ namespace MotionControl.ZMotionSimulatorCheck
                             Name = "Y",
                             AxisNumber = 1,
                             MinimumPosition = -100,
-                            MaximumPosition = 100
+                            MaximumPosition = 100,
+                            ManualSpeed = 5,
+                            ManualAcceleration = 10,
+                            ManualDeceleration = 10
                         }
                     },
                     inputs,
@@ -307,6 +316,28 @@ namespace MotionControl.ZMotionSimulatorCheck
                     new DigitalIoHardwareDefinition[0],
                     "UnmappedEmergencyStop"),
                 "必须在数字输入列表中配置一次");
+
+            ExpectConfigurationFailureContaining(
+                () => MachineHardwareConfigurationValidator.Validate(
+                    cards,
+                    new[]
+                    {
+                        new AxisHardwareDefinition
+                        {
+                            ControllerId = "CardA",
+                            Name = "X",
+                            AxisNumber = 0,
+                            MinimumPosition = -100,
+                            MaximumPosition = 100,
+                            ManualSpeed = 0,
+                            ManualAcceleration = 10,
+                            ManualDeceleration = 10
+                        }
+                    },
+                    inputs,
+                    new DigitalIoHardwareDefinition[0],
+                    "EmergencyStop"),
+                "手动速度、加速度和减速度必须是大于 0 的有限数值");
             return Task.CompletedTask;
         }
 

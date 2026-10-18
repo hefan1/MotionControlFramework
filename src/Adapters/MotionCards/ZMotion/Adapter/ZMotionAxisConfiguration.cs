@@ -5,6 +5,14 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
     /// <summary>一个 ZDevelop 仿真轴的逻辑名称、通道和工程单位范围。</summary>
     public sealed class ZMotionAxisConfiguration
     {
+        /// <summary>设置仿真轴调试参数的可用初始值；设备配置可按轴覆盖。</summary>
+        public ZMotionAxisConfiguration()
+        {
+            ManualSpeed = 5;
+            ManualAcceleration = 10;
+            ManualDeceleration = 10;
+        }
+
         /// <summary>设备硬件配置中所属的控制卡标识。</summary>
         public string ControllerId { get; set; }
 
@@ -18,6 +26,15 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         public double MinimumPosition { get; set; }
 
         public double MaximumPosition { get; set; }
+
+        /// <summary>手动调试页面初始速度，单位为工程单位/秒。</summary>
+        public double ManualSpeed { get; set; }
+
+        /// <summary>手动定位初始加速度，单位为工程单位/秒²。</summary>
+        public double ManualAcceleration { get; set; }
+
+        /// <summary>手动定位初始减速度，单位为工程单位/秒²。</summary>
+        public double ManualDeceleration { get; set; }
 
         /// <summary>连续点动使用的加速度，单位为工程单位/秒²。</summary>
         public double JogAcceleration { get; set; }
@@ -40,7 +57,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         /// <summary>回零减速度，单位为工程单位/秒²。</summary>
         public double HomeDeceleration { get; set; }
 
-        /// <summary>检查轴名称、通道、单位换算、软限位和点动参数。</summary>
+        /// <summary>检查轴名称、通道、单位换算、软限位、手动默认参数和点动参数。</summary>
         internal void Validate()
         {
             if (string.IsNullOrWhiteSpace(ControllerId) || ControllerId != ControllerId.Trim())
@@ -77,6 +94,14 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             {
                 throw new InvalidOperationException(
                     "轴 '" + Name + "' 的点动加速度和减速度必须是大于 0 的有限数值。");
+            }
+
+            if (!IsFinite(ManualSpeed) || ManualSpeed <= 0
+                || !IsFinite(ManualAcceleration) || ManualAcceleration <= 0
+                || !IsFinite(ManualDeceleration) || ManualDeceleration <= 0)
+            {
+                throw new InvalidOperationException(
+                    "轴 '" + Name + "' 的手动速度、加速度和减速度必须是大于 0 的有限数值。");
             }
         }
 
