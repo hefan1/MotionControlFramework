@@ -37,6 +37,7 @@
 
     <!-- 设置导航 -->
     <sys:String x:Key="控制卡设置">控制卡设置</sys:String>
+    <sys:String x:Key="轴映射配置">轴映射配置</sys:String>
     <sys:String x:Key="轴参数">轴参数</sys:String>
     <sys:String x:Key="IO映射">IO 映射</sys:String>
     <sys:String x:Key="通讯设置">通讯设置</sys:String>
@@ -151,4 +152,68 @@
     <sys:String x:Key="参数必须为有效数字">{0}必须是有效数字。</sys:String>
     <sys:String x:Key="参数不能为无穷或NaN">{0}不能是无穷大或 NaN。</sys:String>
     <sys:String x:Key="目标位置超出软限位范围">目标位置超出软限位范围：{0} 到 {1}。</sys:String>
+
+    <!-- 轴映射配置页 -->
+    <sys:String x:Key="轴映射页面说明">设置控制卡基本类型，并把设备轴名称对应到物理轴通道。</sys:String>
+    <sys:String x:Key="控制卡厂商">控制卡厂商</sys:String>
+    <sys:String x:Key="控制卡类型">卡类型</sys:String>
+    <sys:String x:Key="控制卡轴数量">轴数量</sys:String>
+    <sys:String x:Key="其他厂商">其他</sys:String>
+    <sys:String x:Key="总线型">总线型</sys:String>
+    <sys:String x:Key="脉冲型">脉冲型</sys:String>
+    <sys:String x:Key="已配置轴数量默认">已配置 0 / 64 个轴通道</sys:String>
+    <sys:String x:Key="已配置轴数量格式">已配置 {0} / {1} 个轴通道</sys:String>
+    <sys:String x:Key="卡适配器由Host指定">具体运动卡适配器由 Host 项目选择。</sys:String>
+    <sys:String x:Key="物理轴映射">物理轴映射</sys:String>
+    <sys:String x:Key="物理轴映射说明">物理轴号按控制卡通道排布；设备轴名称供流程代码和维护人员使用。</sys:String>
+    <sys:String x:Key="物理轴号">物理轴号</sys:String>
+    <sys:String x:Key="设备轴名称">设备轴名称</sys:String>
+    <sys:String x:Key="轴类型">轴类型</sys:String>
+    <sys:String x:Key="工程单位">工程单位</sys:String>
+    <sys:String x:Key="单位换算">单位换算</sys:String>
+    <sys:String x:Key="脉冲每工程单位">脉冲 / 单位</sys:String>
+    <sys:String x:Key="软限位下限">软限位下限</sys:String>
+    <sys:String x:Key="软限位上限">软限位上限</sys:String>
+    <sys:String x:Key="配置状态">配置状态</sys:String>
+    <sys:String x:Key="已配置">已配置</sys:String>
+    <sys:String x:Key="未配置">未配置</sys:String>
+    <sys:String x:Key="轴参数配置">轴参数配置</sys:String>
+    <sys:String x:Key="当前选择物理轴格式">当前选择：Axis{0}</sys:String>
+    <sys:String x:Key="直线轴">直线轴</sys:String>
+    <sys:String x:Key="旋转轴">旋转轴</sys:String>
+    <sys:String x:Key="手动速度">手动速度</sys:String>
+    <sys:String x:Key="手动加速度">手动加速度</sys:String>
+    <sys:String x:Key="手动减速度">手动减速度</sys:String>
+    <sys:String x:Key="回零模式">回零模式</sys:String>
+    <sys:String x:Key="回零搜索速度">回零搜索速度</sys:String>
+    <sys:String x:Key="回零爬行速度">回零爬行速度</sys:String>
+    <sys:String x:Key="回零加速度">回零加速度</sys:String>
+    <sys:String x:Key="回零减速度">回零减速度</sys:String>
+    <sys:String x:Key="点动加速度">点动加速度</sys:String>
+    <sys:String x:Key="点动减速度">点动减速度</sys:String>
+    <sys:String x:Key="回零模式3">模式 3：正向找原点，触发后反向慢速离开</sys:String>
+    <sys:String x:Key="回零模式4">模式 4：反向找原点，触发后正向慢速离开</sys:String>
+    <sys:String x:Key="回零模式13">模式 13：正向碰限位后，反向找原点</sys:String>
+    <sys:String x:Key="回零模式厂商提示">回零模式由控制卡厂商定义。以上模式说明按正运动 DATUM 编号解释；其他厂商接入时需确认对应设置。</sys:String>
+    <sys:String x:Key="轴映射尚未保存">当前修改尚未保存。</sys:String>
+    <sys:String x:Key="轴映射保存位置">控制卡参数与轴映射分别保存到设备 JSON 配置。</sys:String>
+    <sys:String x:Key="轴映射保存路径格式">MotionCards.json：{0}；AxisParameters.json：{1}</sys:String>
+    <sys:String x:Key="轴映射读取完成">已读取当前设备的轴参数。</sys:String>
+    <sys:String x:Key="轴映射读取失败">读取轴参数失败，已停止保存以免覆盖原文件：{0}</sys:String>
+    <sys:String x:Key="检查映射">检查映射</sys:String>
+    <sys:String x:Key="保存配置">保存配置</sys:String>
+    <sys:String x:Key="取消修改">取消修改</sys:String>
+    <sys:String x:Key="清除当前轴映射">清除当前轴映射</sys:String>
+    <sys:String x:Key="轴数量减少时仍有轴已映射">所选轴数量之外仍有已配置通道，请先清除这些通道的轴名称再减少数量。</sys:String>
+    <sys:String x:Key="还没有配置设备轴">还没有配置设备轴，请先填写设备轴名称。</sys:String>
+    <sys:String x:Key="轴映射检查通过格式">映射检查通过，已配置 {0} 个设备轴。</sys:String>
+    <sys:String x:Key="轴映射保存成功">轴映射已保存到当前设备配置。</sys:String>
+    <sys:String x:Key="轴映射保存失败">保存轴映射失败：{0}</sys:String>
+    <sys:String x:Key="当前轴映射已清除">当前物理轴已清除映射。</sys:String>
+    <sys:String x:Key="设备轴名称重复格式">设备轴名称重复：{0}</sys:String>
+    <sys:String x:Key="轴参数大于零格式">{0} 的 {1} 必须是大于零的有效数值。</sys:String>
+    <sys:String x:Key="轴软限位无效格式">{0} 的软限位下限必须小于上限，且两项必须是有效数值。</sys:String>
+    <sys:String x:Key="轴加减速度无效格式">{0} 的手动、点动和回零加减速度必须是大于零的有效数值。</sys:String>
+    <sys:String x:Key="轴回零速度无效格式">{0} 的回零搜索速度和爬行速度必须是大于零的有效数值。</sys:String>
+    <sys:String x:Key="轴回零模式无效格式">{0} 的回零模式编号不能小于零。</sys:String>
 </ResourceDictionary>

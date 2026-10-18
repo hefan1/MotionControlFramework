@@ -1,0 +1,225 @@
+<UserControl x:Class="MotionControl.Framework.Wpf.Configuration.AxisMappingConfigurationView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#F3F6FA">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Padding="14,10" Margin="0,0,0,12" Background="White"
+                BorderBrush="#D9E0E8" BorderThickness="1" CornerRadius="5">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="155" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="140" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="90" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{DynamicResource 控制卡厂商}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <ComboBox x:Name="CardVendorComboBox" Grid.Column="1" Height="30" SelectionChanged="CardVendorComboBox_SelectionChanged">
+                    <ComboBoxItem Tag="正运动" Content="正运动" />
+                    <ComboBoxItem Tag="雷赛" Content="雷赛" />
+                    <ComboBoxItem Tag="凌华" Content="凌华" />
+                    <ComboBoxItem Tag="其他" Content="{DynamicResource 其他厂商}" />
+                </ComboBox>
+                <TextBlock Grid.Column="2" Text="{DynamicResource 控制卡类型}" VerticalAlignment="Center" Margin="18,0,8,0" />
+                <ComboBox x:Name="CardTypeComboBox" Grid.Column="3" Height="30" SelectionChanged="CardTypeComboBox_SelectionChanged">
+                    <ComboBoxItem Tag="总线型" Content="{DynamicResource 总线型}" />
+                    <ComboBoxItem Tag="脉冲型" Content="{DynamicResource 脉冲型}" />
+                </ComboBox>
+                <TextBlock Grid.Column="4" Text="{DynamicResource 控制卡轴数量}" VerticalAlignment="Center" Margin="18,0,8,0" />
+                <ComboBox x:Name="AxisCountComboBox" Grid.Column="5" Height="30" SelectionChanged="AxisCountComboBox_SelectionChanged">
+                    <ComboBoxItem Tag="8" Content="8" />
+                    <ComboBoxItem Tag="16" Content="16" />
+                    <ComboBoxItem Tag="32" Content="32" />
+                    <ComboBoxItem Tag="64" Content="64" />
+                </ComboBox>
+                <StackPanel Grid.Column="6" Margin="18,0,0,0" VerticalAlignment="Center">
+                    <TextBlock x:Name="ConfiguredAxisCountText" Foreground="#536579" Text="{DynamicResource 已配置轴数量默认}" />
+                    <TextBlock Text="{DynamicResource 卡适配器由Host指定}" Margin="0,3,0,0" FontSize="11" Foreground="#7A8794" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1.65*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="1*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Padding="10" Background="White"
+                    BorderBrush="#D9E0E8" BorderThickness="1" CornerRadius="5">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <StackPanel Margin="2,0,2,8">
+                        <TextBlock Text="{DynamicResource 物理轴映射}" FontSize="16" FontWeight="SemiBold" Foreground="#24364B" />
+                        <TextBlock Text="{DynamicResource 物理轴映射说明}" Margin="0,4,0,0" FontSize="12" Foreground="#718092" />
+                    </StackPanel>
+                    <DataGrid x:Name="AxisMappingGrid" Grid.Row="1" ItemsSource="{Binding VisibleAxes}"
+                              SelectionChanged="AxisMappingGrid_SelectionChanged"
+                              AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                              CanUserReorderColumns="False" CanUserSortColumns="False" IsReadOnly="True"
+                              HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                              RowHeaderWidth="0" SelectionMode="Single" SelectionUnit="FullRow"
+                              RowHeight="35" FontSize="12" BorderThickness="0">
+                        <DataGrid.Resources>
+                            <Style TargetType="DataGridColumnHeader">
+                                <Setter Property="Background" Value="#EEF3F8" />
+                                <Setter Property="Foreground" Value="#34465A" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                                <Setter Property="Padding" Value="6,7" />
+                            </Style>
+                            <Style TargetType="DataGridCell">
+                                <Setter Property="Padding" Value="5,3" />
+                                <Setter Property="BorderThickness" Value="0,0,0,1" />
+                                <Setter Property="BorderBrush" Value="#EDF0F3" />
+                            </Style>
+                        </DataGrid.Resources>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="{DynamicResource 物理轴号}" Binding="{Binding AxisNumber, StringFormat='Axis{0}'}" Width="76" />
+                            <DataGridTextColumn Header="{DynamicResource 设备轴名称}" Binding="{Binding Name}" Width="1.25*" />
+                            <DataGridTextColumn Header="{DynamicResource 轴类型}" Binding="{Binding AxisType}" Width="76" />
+                            <DataGridTextColumn Header="{DynamicResource 工程单位}" Binding="{Binding EngineeringUnit}" Width="66" />
+                            <DataGridTextColumn Header="{DynamicResource 单位换算}" Binding="{Binding UnitsPerEngineeringUnit, StringFormat=N0}" Width="88" />
+                            <DataGridTextColumn Header="{DynamicResource 软限位下限}" Binding="{Binding MinimumPosition, StringFormat=N3}" Width="90" />
+                            <DataGridTextColumn Header="{DynamicResource 软限位上限}" Binding="{Binding MaximumPosition, StringFormat=N3}" Width="90" />
+                            <DataGridTemplateColumn Header="{DynamicResource 配置状态}" Width="78">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{DynamicResource 未配置}" VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="#788694" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsConfigured}" Value="True">
+                                                            <Setter Property="Text" Value="{DynamicResource 已配置}" />
+                                                            <Setter Property="Foreground" Value="#168447" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </Border>
+
+            <Border Grid.Column="2" Padding="16" Background="White"
+                    BorderBrush="#D9E0E8" BorderThickness="1" CornerRadius="5">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="{DynamicResource 轴参数配置}" FontSize="16" FontWeight="SemiBold" Foreground="#24364B" />
+                        <TextBlock x:Name="SelectedAxisText" Margin="0,4,0,12" Foreground="#60758C" />
+                    </StackPanel>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <Grid x:Name="AxisDetailsGrid" Margin="0,0,6,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="105" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="42" /><RowDefinition Height="42" />
+                                <RowDefinition Height="42" /><RowDefinition Height="42" />
+                                <RowDefinition Height="42" /><RowDefinition Height="42" />
+                                <RowDefinition Height="42" /><RowDefinition Height="42" />
+                                <RowDefinition Height="42" /><RowDefinition Height="42" />
+                                <RowDefinition Height="42" /><RowDefinition Height="42" />
+                                <RowDefinition Height="42" /><RowDefinition Height="42" />
+                                <RowDefinition Height="42" /><RowDefinition Height="42" />
+                                <RowDefinition Height="42" /><RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Text="{DynamicResource 物理轴号}" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="0" Grid.Column="1" x:Name="PhysicalAxisTextBox" IsReadOnly="True" />
+                            <TextBlock Grid.Row="1" Text="{DynamicResource 设备轴名称}" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding SelectedAxis.Name, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Grid.Row="2" Text="{DynamicResource 轴类型}" VerticalAlignment="Center" />
+                            <ComboBox Grid.Row="2" Grid.Column="1" x:Name="AxisTypeComboBox" SelectionChanged="AxisTypeComboBox_SelectionChanged">
+                                <ComboBoxItem Tag="直线轴" Content="{DynamicResource 直线轴}" />
+                                <ComboBoxItem Tag="旋转轴" Content="{DynamicResource 旋转轴}" />
+                            </ComboBox>
+                            <TextBlock Grid.Row="3" Text="{DynamicResource 工程单位}" VerticalAlignment="Center" />
+                            <ComboBox Grid.Row="3" Grid.Column="1" x:Name="EngineeringUnitComboBox" SelectionChanged="EngineeringUnitComboBox_SelectionChanged">
+                                <ComboBoxItem Tag="mm" Content="mm" />
+                                <ComboBoxItem Tag="deg" Content="deg" />
+                            </ComboBox>
+                            <TextBlock Grid.Row="4" Text="{DynamicResource 单位换算}" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding SelectedAxis.UnitsPerEngineeringUnit, StringFormat=N3}" />
+                            <TextBlock Grid.Row="4" Grid.Column="2" Text="{DynamicResource 脉冲每工程单位}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                            <TextBlock Grid.Row="5" Text="{DynamicResource 软限位下限}" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding SelectedAxis.MinimumPosition, StringFormat=N3}" />
+                            <TextBlock Grid.Row="5" Grid.Column="2" Text="{Binding SelectedAxis.EngineeringUnit}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                            <TextBlock Grid.Row="6" Text="{DynamicResource 软限位上限}" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding SelectedAxis.MaximumPosition, StringFormat=N3}" />
+                            <TextBlock Grid.Row="6" Grid.Column="2" Text="{Binding SelectedAxis.EngineeringUnit}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                            <TextBlock Grid.Row="7" Text="{DynamicResource 手动速度}" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="7" Grid.Column="1" Text="{Binding SelectedAxis.ManualSpeed, StringFormat=N3}" />
+                            <TextBlock Grid.Row="7" Grid.Column="2" Text="{Binding SelectedAxis.EngineeringUnit, StringFormat={}{0}/s}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                            <TextBlock Grid.Row="8" Text="{DynamicResource 手动加速度}" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="8" Grid.Column="1" Text="{Binding SelectedAxis.ManualAcceleration, StringFormat=N3}" />
+                            <TextBlock Grid.Row="9" Text="{DynamicResource 手动减速度}" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="9" Grid.Column="1" Text="{Binding SelectedAxis.ManualDeceleration, StringFormat=N3}" />
+                            <TextBlock Grid.Row="10" Text="{DynamicResource 回零模式}" VerticalAlignment="Center" />
+                            <ComboBox Grid.Row="10" Grid.Column="1" x:Name="HomeModeComboBox" SelectionChanged="HomeModeComboBox_SelectionChanged">
+                                <ComboBoxItem Tag="3" Content="{DynamicResource 回零模式3}" />
+                                <ComboBoxItem Tag="4" Content="{DynamicResource 回零模式4}" />
+                                <ComboBoxItem Tag="13" Content="{DynamicResource 回零模式13}" />
+                            </ComboBox>
+                            <TextBlock Grid.Row="11" Text="{DynamicResource 回零搜索速度}" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="11" Grid.Column="1" Text="{Binding SelectedAxis.HomeSearchSpeed, StringFormat=N3}" />
+                            <TextBlock Grid.Row="11" Grid.Column="2" Text="{Binding SelectedAxis.EngineeringUnit, StringFormat={}{0}/s}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                            <TextBlock Grid.Row="12" Text="{DynamicResource 回零爬行速度}" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="12" Grid.Column="1" Text="{Binding SelectedAxis.HomeCreepSpeed, StringFormat=N3}" />
+                            <TextBlock Grid.Row="12" Grid.Column="2" Text="{Binding SelectedAxis.EngineeringUnit, StringFormat={}{0}/s}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                            <TextBlock Grid.Row="13" Text="{DynamicResource 回零加速度}" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="13" Grid.Column="1" Text="{Binding SelectedAxis.HomeAcceleration, StringFormat=N3}" />
+                            <TextBlock Grid.Row="14" Text="{DynamicResource 回零减速度}" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="14" Grid.Column="1" Text="{Binding SelectedAxis.HomeDeceleration, StringFormat=N3}" />
+                            <TextBlock Grid.Row="15" Text="{DynamicResource 点动加速度}" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="15" Grid.Column="1" Text="{Binding SelectedAxis.JogAcceleration, StringFormat=N3}" />
+                            <TextBlock Grid.Row="16" Text="{DynamicResource 点动减速度}" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="16" Grid.Column="1" Text="{Binding SelectedAxis.JogDeceleration, StringFormat=N3}" />
+                            <TextBlock Grid.Row="17" Grid.ColumnSpan="3" Text="{DynamicResource 回零模式厂商提示}"
+                                       TextWrapping="Wrap" Foreground="#60758C" FontSize="11" Margin="0,4,0,0" />
+                        </Grid>
+                    </ScrollViewer>
+                    <StackPanel Grid.Row="2" Margin="0,10,0,0">
+                        <TextBlock x:Name="ConfigurationStatusText" Text="{DynamicResource 轴映射尚未保存}"
+                                   Margin="0,0,0,10" FontSize="12" Foreground="#536579" TextWrapping="Wrap" />
+                        <WrapPanel HorizontalAlignment="Right">
+                            <Button Content="{DynamicResource 检查映射}" Click="CheckMappingButton_Click"
+                                    Padding="12,8" Margin="0,0,8,0" />
+                            <Button x:Name="SaveConfigurationButton" Content="{DynamicResource 保存配置}" Click="SaveConfigurationButton_Click"
+                                    Padding="14,8" Margin="0,0,8,0" Background="#2475D0" Foreground="White" />
+                            <Button Content="{DynamicResource 取消修改}" Click="CancelChangesButton_Click" Padding="12,8" />
+                        </WrapPanel>
+                        <Button Content="{DynamicResource 清除当前轴映射}" Click="ClearAxisMappingButton_Click"
+                                HorizontalAlignment="Left" Margin="0,8,0,0" Padding="10,5" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <TextBlock Grid.Row="2" x:Name="ConfigurationFileText" Margin="2,8,0,0"
+                   Text="{DynamicResource 轴映射保存位置}" FontSize="11" Foreground="#7A8794" />
+    </Grid>
+</UserControl>
