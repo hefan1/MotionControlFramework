@@ -232,7 +232,6 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             try
             {
                 await RefreshAllStatusAsync().ConfigureAwait(true);
-                OperationMessageText.Text = string.Empty;
             }
             catch (Exception error)
             {
@@ -536,6 +535,8 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>执行手动命令并将成功或完整异常信息写入页面状态栏。</summary>
         private async Task RunUiActionAsync(string operationName, Func<Task> operation)
         {
+            // 新操作开始时清除旧结果，状态轮询期间保留本次操作的成功或失败信息。
+            OperationMessageText.Text = string.Empty;
             try
             {
                 EnsureManualOperationAllowed();
