@@ -4,9 +4,12 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using MotionControl.Framework.Contracts.Configuration;
+using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Runtime.Configuration;
 
 namespace MotionControl.Framework.Wpf.Configuration
@@ -28,6 +31,12 @@ namespace MotionControl.Framework.Wpf.Configuration
 
         /// <summary>轴映射页共用的控制卡连接，确保断连时不能改 IO 映射。</summary>
         private readonly IAxisMappingCardConnection _cardConnection;
+
+        /// <summary>当前适配器提供的可选 I/O 能力查询接口。</summary>
+        private readonly IMotionCardIoCapabilityProvider _ioCapabilityProvider;
+
+        /// <summary>阻止 I/O 能力查询期间重复提交厂商 API 请求。</summary>
+        private bool _isReadingIoCapabilities;
 
         /// <summary>从控制卡配置读取出的可选控制卡标识。</summary>
         public ObservableCollection<string> ControllerIds { get; private set; }
@@ -72,6 +81,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             _configurationStore = configurationStore;
             _machineId = machineId;
             _cardConnection = cardConnection;
+            _ioCapabilityProvider = cardConnection as IMotionCardIoCapabilityProvider;
             ControllerIds = new ObservableCollection<string>();
             DigitalInputs = new ObservableCollection<DigitalIoHardwareDefinition>();
             DigitalOutputs = new ObservableCollection<DigitalIoHardwareDefinition>();
@@ -83,10 +93,11 @@ namespace MotionControl.Framework.Wpf.Configuration
         }
 
         /// <summary>每次打开页面都刷新控制卡清单，取得轴映射页刚保存的卡标识。</summary>
-        private void IoMappingConfigurationView_Loaded(object sender, RoutedEventArgs e)
+        private async void IoMappingConfigurationView_Loaded(object sender, RoutedEventArgs e)
         {
             LoadControllerIds();
             UpdateConnectionState();
+            await RefreshIoCapabilitiesAsync();
         }
 
         /// <summary>根据轴映射页共用的实时连接状态锁定或开放 IO 配置控件。</summary>
@@ -98,7 +109,87 @@ namespace MotionControl.Framework.Wpf.Configuration
             DigitalOutputsGrid.IsEnabled = canEdit;
             AddInputButton.IsEnabled = canEdit && ControllerIds.Count > 0;
             AddOutputButton.IsEnabled = canEdit && ControllerIds.Count > 0;
+            RefreshIoCapabilitiesButton.IsEnabled = _cardConnection.IsConnected
+                && _ioCapabilityProvider != null
+                && !_isReadingIoCapabilities;
             UpdateRemoveButtons(canEdit);
+        }
+
+        /// <summary>页面按钮触发一次控制卡 I/O 数量读取。</summary>
+        private async void RefreshIoCapabilitiesButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RefreshIoCapabilitiesAsync();
+        }
+
+        /// <summary>连接后读取控制器本体、最大支持和总线扩展 DI/DO 数量。</summary>
+        private async Task RefreshIoCapabilitiesAsync()
+        {
+            if (!_cardConnection.IsConnected)
+            {
+                IoCapabilityStatusText.Text = (string)FindResource("控制卡Io数量未连接");
+                UpdateConnectionState();
+                return;
+            }
+
+            if (_ioCapabilityProvider == null)
+            {
+                IoCapabilityStatusText.Text = (string)FindResource("控制卡Io数量能力不支持");
+                UpdateConnectionState();
+                return;
+            }
+
+            _isReadingIoCapabilities = true;
+            UpdateConnectionState();
+            IoCapabilityStatusText.Text = (string)FindResource("控制卡Io数量读取中");
+
+            try
+            {
+                MotionCardIoCapabilities capabilities = await _ioCapabilityProvider
+                    .ReadIoCapabilitiesAsync(CancellationToken.None);
+                if (capabilities == null)
+                {
+                    throw new InvalidOperationException("控制卡适配器没有返回 I/O 能力信息。");
+                }
+
+                IoCapabilityStatusText.Text = string.Format(
+                    CultureInfo.CurrentCulture,
+                    (string)FindResource("控制卡Io数量读取结果格式"),
+                    FormatIoCount(capabilities.BuiltInDigitalInputCount),
+                    FormatIoCount(capabilities.BuiltInDigitalOutputCount),
+                    FormatIoCount(capabilities.MaximumDigitalInputCount),
+                    FormatIoCount(capabilities.MaximumDigitalOutputCount),
+                    FormatIoCount(capabilities.ScannedBusNodeCount),
+                    FormatIoCount(capabilities.ScannedBusDigitalInputCount),
+                    FormatIoCount(capabilities.ScannedBusDigitalOutputCount));
+
+                if (!string.IsNullOrWhiteSpace(capabilities.BusScanError))
+                {
+                    IoCapabilityStatusText.Text += " " + string.Format(
+                        CultureInfo.CurrentCulture,
+                        (string)FindResource("控制卡Io总线扫描失败格式"),
+                        capabilities.BusScanError);
+                }
+            }
+            catch (Exception error)
+            {
+                IoCapabilityStatusText.Text = string.Format(
+                    CultureInfo.CurrentCulture,
+                    (string)FindResource("控制卡Io数量查询失败格式"),
+                    error.Message);
+            }
+            finally
+            {
+                _isReadingIoCapabilities = false;
+                UpdateConnectionState();
+            }
+        }
+
+        /// <summary>把尚未读取的可选数量转换成当前语言的提示文字。</summary>
+        private string FormatIoCount(int? count)
+        {
+            return count.HasValue
+                ? count.Value.ToString(CultureInfo.CurrentCulture)
+                : (string)FindResource("控制卡Io数量未读取");
         }
 
         /// <summary>仅在控制卡已连接且选中映射行时启用对应删除按钮。</summary>

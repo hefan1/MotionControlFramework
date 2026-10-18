@@ -150,6 +150,14 @@
     <sys:String x:Key="IO映射急停输入提示">Select a configured DI name or enter it manually.</sys:String>
     <sys:String x:Key="IO映射说明">Logical names are used in sequence code and Chinese searches; enter channel numbers from the wiring plan.</sys:String>
     <sys:String x:Key="IO映射连接与输出说明">Connect on the Axis Mapping page first. This page saves configuration only and never switches outputs.</sys:String>
+    <sys:String x:Key="控制卡Io数量未连接">Motion card disconnected. Connect it to read onboard, maximum, and scanned bus DI/DO counts.</sys:String>
+    <sys:String x:Key="控制卡Io数量能力不支持">The current card adapter does not provide I/O count queries.</sys:String>
+    <sys:String x:Key="控制卡Io数量读取中">Reading motion card I/O counts…</sys:String>
+    <sys:String x:Key="控制卡Io数量读取结果格式">Onboard DI {0} / DO {1}; maximum DI {2} / DO {3}; scanned bus nodes {4}, expansion DI {5} / DO {6}.</sys:String>
+    <sys:String x:Key="控制卡Io总线扫描失败格式">Card specifications were read, but scanning bus expansion failed: {0}</sys:String>
+    <sys:String x:Key="控制卡Io数量查询失败格式">Failed to read motion card I/O counts: {0}</sys:String>
+    <sys:String x:Key="控制卡Io数量未读取">Not read</sys:String>
+    <sys:String x:Key="刷新控制卡Io数量">Refresh I/O Counts</sys:String>
     <sys:String x:Key="数字输入映射">Digital Input Mapping (DI)</sys:String>
     <sys:String x:Key="数字输出映射">Digital Output Mapping (DO)</sys:String>
     <sys:String x:Key="个输入点"> input points</sys:String>

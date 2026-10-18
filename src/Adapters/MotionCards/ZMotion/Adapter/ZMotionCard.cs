@@ -15,7 +15,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
     /// 正运动 ZDevelop 本机仿真器适配器。当前只接受 127.0.0.1 上的 VPLC5xx-Simu，
     /// 不连接实体控制卡。
     /// </summary>
-    public sealed class ZMotionCard : IMotionCard, ILogicalIo
+    public sealed class ZMotionCard : IMotionCard, ILogicalIo, IMotionCardIoCapabilityProvider
     {
         /// <summary>读取正运动控制器的单个浮点轴参数。</summary>
         private delegate int AxisFloatParameterReader(IntPtr handle, int axisNumber, ref float value);
@@ -290,6 +290,51 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                         value => parameters.Deceleration = value);
 
                     return parameters;
+                }
+            }, cancellationToken);
+        }
+
+        /// <summary>只读查询正运动控制器自带、最大支持和总线扩展 DI/DO 数量。</summary>
+        public Task<MotionCardIoCapabilities> ReadIoCapabilitiesAsync(CancellationToken cancellationToken)
+        {
+            return Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                lock (_nativeLock)
+                {
+                    IntPtr handle = GetConnectedHandle();
+                    var response = new StringBuilder(4096);
+                    CheckResult(
+                        zmcaux.ZAux_Execute(handle, "?*MAX", response, 4096),
+                        "读取控制器最大规格",
+                        "控制卡",
+                        ControllerId);
+
+                    int builtInInputs;
+                    int maximumInputs;
+                    int builtInOutputs;
+                    int maximumOutputs;
+                    int busSlotCount;
+                    if (!TryReadMaximumPair(response.ToString(), "max_in", out builtInInputs, out maximumInputs)
+                        || !TryReadMaximumPair(response.ToString(), "max_out", out builtInOutputs, out maximumOutputs)
+                        || !TryReadMaximumValue(response.ToString(), "max_slot", out busSlotCount))
+                    {
+                        throw new InvalidOperationException(
+                            "正运动控制器的 ?*MAX 响应中缺少 max_in、max_out 或 max_slot，无法读取完整 I/O 能力。返回内容："
+                            + response.ToString());
+                    }
+
+                    var capabilities = new MotionCardIoCapabilities
+                    {
+                        BuiltInDigitalInputCount = builtInInputs,
+                        BuiltInDigitalOutputCount = builtInOutputs,
+                        MaximumDigitalInputCount = maximumInputs,
+                        MaximumDigitalOutputCount = maximumOutputs
+                    };
+
+                    ReadScannedBusIoCapabilities(handle, busSlotCount, capabilities, cancellationToken);
+                    return capabilities;
                 }
             }, cancellationToken);
         }
@@ -1291,6 +1336,163 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 zmcaux.ZAux_Direct_SetDecel(handle, axis.AxisNumber, (float)deceleration),
                 "设置运动减速度",
                 axis.Name);
+        }
+
+        /// <summary>读取每个已扫描总线节点的 DI/DO 数量，并在扫描失败时保留板卡本体能力。</summary>
+        private void ReadScannedBusIoCapabilities(
+            IntPtr handle,
+            int busSlotCount,
+            MotionCardIoCapabilities capabilities,
+            CancellationToken cancellationToken)
+        {
+            if (busSlotCount < 0 || busSlotCount > 64)
+            {
+                capabilities.BusScanError = "控制器返回的总线数量无效：" + busSlotCount + "。";
+                return;
+            }
+
+            int totalNodeCount = 0;
+            int totalInputCount = 0;
+            int totalOutputCount = 0;
+
+            try
+            {
+                for (int slot = 0; slot < busSlotCount; slot++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    int nodeCount = 0;
+                    CheckResult(
+                        zmcaux.ZAux_BusCmd_GetNodeNum(handle, slot, ref nodeCount),
+                        "读取总线节点数量",
+                        "总线槽位",
+                        slot.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+                    if (nodeCount < 0 || nodeCount > 4096)
+                    {
+                        throw new InvalidOperationException(
+                            "控制器返回了无效的总线节点数量：槽位 " + slot + "，节点数 " + nodeCount + "。");
+                    }
+
+                    totalNodeCount += nodeCount;
+                    for (int node = 0; node < nodeCount; node++)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        int inputCount = 0;
+                        int outputCount = 0;
+                        string nodeName = "槽位 "
+                            + slot.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                            + "，节点 "
+                            + node.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+                        CheckResult(
+                            zmcaux.ZAux_BusCmd_GetNodeInfo(
+                                handle,
+                                (uint)slot,
+                                (uint)node,
+                                10,
+                                ref inputCount),
+                            "读取总线节点 DI 数量",
+                            "总线节点",
+                            nodeName);
+                        CheckResult(
+                            zmcaux.ZAux_BusCmd_GetNodeInfo(
+                                handle,
+                                (uint)slot,
+                                (uint)node,
+                                11,
+                                ref outputCount),
+                            "读取总线节点 DO 数量",
+                            "总线节点",
+                            nodeName);
+
+                        if (inputCount < 0 || outputCount < 0)
+                        {
+                            throw new InvalidOperationException("控制器返回了负数的总线 DI/DO 数量：" + nodeName + "。");
+                        }
+
+                        totalInputCount += inputCount;
+                        totalOutputCount += outputCount;
+                    }
+                }
+            }
+            catch (InvalidOperationException error)
+            {
+                capabilities.BusScanError = error.Message;
+                return;
+            }
+
+            capabilities.ScannedBusNodeCount = totalNodeCount;
+            capabilities.ScannedBusDigitalInputCount = totalInputCount;
+            capabilities.ScannedBusDigitalOutputCount = totalOutputCount;
+        }
+
+        /// <summary>从 ?*MAX 的返回文本读取指定参数的两个逗号分隔整数。</summary>
+        private static bool TryReadMaximumPair(
+            string response,
+            string parameterName,
+            out int firstValue,
+            out int secondValue)
+        {
+            firstValue = 0;
+            secondValue = 0;
+            string value = FindMaximumSpecificationValue(response, parameterName);
+            if (value == null)
+            {
+                return false;
+            }
+
+            string[] values = value.Split(',');
+            return values.Length == 2
+                && int.TryParse(
+                    values[0].Trim(),
+                    System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out firstValue)
+                && int.TryParse(
+                    values[1].Trim(),
+                    System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out secondValue)
+                && firstValue >= 0
+                && secondValue >= firstValue;
+        }
+
+        /// <summary>从 ?*MAX 的返回文本读取指定参数的单个整数。</summary>
+        private static bool TryReadMaximumValue(string response, string parameterName, out int value)
+        {
+            value = 0;
+            string text = FindMaximumSpecificationValue(response, parameterName);
+            return text != null
+                && int.TryParse(
+                    text,
+                    System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out value)
+                && value >= 0;
+        }
+
+        /// <summary>按参数名查找 ?*MAX 输出中的冒号后文本。</summary>
+        private static string FindMaximumSpecificationValue(string response, string parameterName)
+        {
+            if (string.IsNullOrWhiteSpace(response))
+            {
+                return null;
+            }
+
+            string expectedPrefix = parameterName + ":";
+            string[] lines = response.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (string rawLine in lines)
+            {
+                string line = rawLine.Trim();
+                if (!line.StartsWith(expectedPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                return line.Substring(expectedPrefix.Length).Trim();
+            }
+
+            return null;
         }
 
         /// <summary>取得当前连接句柄；未连接时抛出带控制卡标识的异常。</summary>

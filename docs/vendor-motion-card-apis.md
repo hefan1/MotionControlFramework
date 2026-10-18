@@ -16,6 +16,14 @@
 
 正运动适配器的逻辑 DI/DO 映射使用单个物理 IO 点号，读写调用单点 `ZAux_Direct_GetIn`、`ZAux_Direct_GetOp` 和 `ZAux_Direct_SetOp`。不同参考项目对端口分组的封装方式不完全一致，首期适配器依照厂商 API 单点调用及当前参考实现，具体硬件点号仍需按控制器 IO 表核对。
 
+## 控制卡 DI/DO 数量查询
+
+数量能力通过可选契约 `IMotionCardIoCapabilityProvider` 提供，不扩充所有运动卡都必须实现的 `IMotionCard`。IO 映射页连接控制卡后会读取并显示板卡自带点数、板卡报告的最大支持点数，以及总线扫描到的从站节点与 DI/DO 合计数；用户也可以手动刷新。没有实现该可选能力的厂商适配器会显示“未提供”，不会伪造点数。
+
+正运动实现通过只读在线命令 `?*MAX` 解析 `max_in`、`max_out` 和 `max_slot`。正运动手册说明 `max_in`、`max_out` 的第一项分别为控制器本体 IN/OUT 数量，第二项为最大支持数量；`max_slot` 为总线数量。适配器再逐槽调用 `ZAux_BusCmd_GetNodeNum`，并用 `ZAux_BusCmd_GetNodeInfo` 的 selector 10/11 查询节点 DI/DO 数后累加。总线扫描失败时仍保留本体和最大规格数据，同时把扫描错误显示出来。
+
+这些数值是控制器和已扫描节点的能力信息，不会自动生成 `IoMapping.json` 通道，也不把“最大支持数”误当成当前接线数。可参考正运动[RTSys 使用手册](https://file.zmotion.com.cn/upload/RTSys%E4%BD%BF%E7%94%A8%E6%89%8B%E5%86%8CV1.3.1.pdf)中 `?*MAX` 规格字段说明，以及[PC 函数库编程手册](https://www.zmotion.com.cn/upload/ZMotion%20PC%E5%87%BD%E6%95%B0%E5%BA%93%E7%BC%96%E7%A8%8B%E6%89%8B%E5%86%8CV2.1.2.pdf)中总线节点查询函数说明。具体型号或固件若不支持这些查询，页面会报告读取状态，不改变映射配置。
+
 ## 接入边界
 
 ```text

@@ -159,6 +159,14 @@
     <sys:String x:Key="IO映射急停输入提示">可从已配置 DI 中选择，也可手动输入名称。</sys:String>
     <sys:String x:Key="IO映射说明">逻辑名称供流程代码和中文搜索使用；通道号按设备接线表填写。</sys:String>
     <sys:String x:Key="IO映射连接与输出说明">先在轴映射页连接卡；这里只保存配置，不会切换物理输出。</sys:String>
+    <sys:String x:Key="控制卡Io数量未连接">控制卡未连接：连接后可查询板卡自带、最大支持和总线扩展 DI/DO 数量。</sys:String>
+    <sys:String x:Key="控制卡Io数量能力不支持">当前控制卡适配器未提供 I/O 数量查询能力。</sys:String>
+    <sys:String x:Key="控制卡Io数量读取中">正在读取控制卡 I/O 数量…</sys:String>
+    <sys:String x:Key="控制卡Io数量读取结果格式">板载 DI {0} / DO {1}；最大支持 DI {2} / DO {3}；已扫描总线节点 {4}，扩展 DI {5} / DO {6}。</sys:String>
+    <sys:String x:Key="控制卡Io总线扫描失败格式">板卡规格已读取，但总线扩展扫描失败：{0}</sys:String>
+    <sys:String x:Key="控制卡Io数量查询失败格式">读取控制卡 I/O 数量失败：{0}</sys:String>
+    <sys:String x:Key="控制卡Io数量未读取">未读取</sys:String>
+    <sys:String x:Key="刷新控制卡Io数量">刷新 I/O 数量</sys:String>
     <sys:String x:Key="数字输入映射">数字输入映射（DI）</sys:String>
     <sys:String x:Key="数字输出映射">数字输出映射（DO）</sys:String>
     <sys:String x:Key="个输入点"> 个输入点</sys:String>

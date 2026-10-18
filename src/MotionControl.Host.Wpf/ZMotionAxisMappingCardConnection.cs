@@ -5,13 +5,14 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Adapter.MotionCard.ZMotion;
+using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Wpf.Configuration;
 
 namespace MotionControl.Host.Wpf
 {
     /// <summary>由 Host 选择正运动适配器，并为轴映射页面提供连接和参数读写。</summary>
-    public sealed class ZMotionAxisMappingCardConnection : IAxisMappingCardConnection
+    public sealed class ZMotionAxisMappingCardConnection : IAxisMappingCardConnection, IMotionCardIoCapabilityProvider
     {
         /// <summary>运动卡选择配置在单机配置目录中的相对路径。</summary>
         private const string MotionCardsFilePath = "HardwareConfig/MotionCards.json";
@@ -169,6 +170,13 @@ namespace MotionControl.Host.Wpf
                 Acceleration = currentParameters.Acceleration,
                 Deceleration = currentParameters.Deceleration
             };
+        }
+
+        /// <summary>通过正运动只读 API 查询控制器本体和已扫描总线上的 DI/DO 数量。</summary>
+        public Task<MotionCardIoCapabilities> ReadIoCapabilitiesAsync(CancellationToken cancellationToken)
+        {
+            EnsureConnected();
+            return _card.ReadIoCapabilitiesAsync(cancellationToken);
         }
 
         /// <summary>显式下发选中物理轴的单位换算、软限位和当前运动参数。</summary>

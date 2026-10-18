@@ -74,6 +74,10 @@
         <Border Grid.Row="0" Padding="12,10" Margin="0,0,0,10"
                 Background="#F7F9FC" BorderBrush="#D8E2EE" BorderThickness="1" CornerRadius="6">
             <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
@@ -96,6 +100,23 @@
                 <Border Grid.Column="2" Padding="9,6" Background="#EAF3FF" CornerRadius="4">
                     <TextBlock Text="{DynamicResource IO映射连接与输出说明}" FontSize="11"
                                Foreground="#37638F" VerticalAlignment="Center" />
+                </Border>
+                <Border Grid.Row="1" Grid.ColumnSpan="3" Margin="0,8,0,0" Padding="8,5"
+                        Background="#EAF3FF" CornerRadius="4">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="IoCapabilityStatusText" Text="{DynamicResource 控制卡Io数量未连接}"
+                                   VerticalAlignment="Center" FontSize="11" Foreground="#37638F"
+                                   TextWrapping="Wrap" />
+                        <Button x:Name="RefreshIoCapabilitiesButton" Grid.Column="1"
+                                Content="{DynamicResource 刷新控制卡Io数量}"
+                                Click="RefreshIoCapabilitiesButton_Click"
+                                Style="{StaticResource IoMappingButton}" Height="28" Margin="10,0,0,0"
+                                IsEnabled="False" />
+                    </Grid>
                 </Border>
             </Grid>
         </Border>
