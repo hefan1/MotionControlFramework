@@ -222,6 +222,7 @@
     <sys:String x:Key="轴映射保存位置">控制卡参数与轴映射分别保存到设备 JSON 配置。</sys:String>
     <sys:String x:Key="轴映射保存路径格式">MotionCards.json：{0}；AxisParameters.json：{1}</sys:String>
     <sys:String x:Key="轴映射读取完成">已读取当前设备的轴参数。</sys:String>
+    <sys:String x:Key="轴参数读卡回填完成格式">Axis{0} 卡上参数已填入编辑区；尚未保存配置。</sys:String>
     <sys:String x:Key="轴映射读取失败">读取轴参数失败，已停止保存以免覆盖原文件：{0}</sys:String>
     <sys:String x:Key="检查映射">检查映射</sys:String>
     <sys:String x:Key="保存配置">保存配置</sys:String>

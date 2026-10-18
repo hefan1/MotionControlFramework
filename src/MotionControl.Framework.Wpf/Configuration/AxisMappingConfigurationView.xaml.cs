@@ -613,7 +613,8 @@ namespace MotionControl.Framework.Wpf.Configuration
             AxisCountComboBox.IsEnabled = !connected && !_connectionInProgress;
             ConnectCardButton.IsEnabled = !connected && !_connectionInProgress;
             DisconnectCardButton.IsEnabled = connected && !_connectionInProgress;
-            AxisDetailsGrid.IsEnabled = connected;
+            AxisMappingGrid.IsEnabled = connected && !_connectionInProgress;
+            AxisDetailsGrid.IsEnabled = connected && !_connectionInProgress;
             ClearAxisMappingButton.IsEnabled = connected;
             CheckMappingButton.IsEnabled = connected;
             SaveConfigurationButton.IsEnabled = connected && _configurationCanBeSaved;
@@ -683,10 +684,42 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
         }
 
-        /// <summary>按用户操作读取当前选中物理轴的控制器参数。</summary>
+        /// <summary>按用户操作读取卡上参数并回填当前轴编辑区，不自动保存配置或写卡。</summary>
         private async void ReadAxisParametersButton_Click(object sender, RoutedEventArgs e)
         {
-            await ReadSelectedAxisParametersAsync(true);
+            if (!_cardConnection.IsConnected || SelectedAxis == null)
+            {
+                return;
+            }
+
+            AxisMappingEntry axis = SelectedAxis;
+            _connectionInProgress = true;
+            UpdateCardConnectionUiState();
+            try
+            {
+                AxisMappingCardParameters parameters = await ReadSelectedAxisParametersAsync(true);
+                if (parameters == null)
+                {
+                    return;
+                }
+
+                axis.UnitsPerEngineeringUnit = parameters.UnitsPerEngineeringUnit;
+                axis.MinimumPosition = parameters.MinimumPosition;
+                axis.MaximumPosition = parameters.MaximumPosition;
+                axis.HomeSearchSpeed = parameters.Speed;
+                axis.HomeCreepSpeed = parameters.CreepSpeed;
+                axis.HomeAcceleration = parameters.Acceleration;
+                axis.HomeDeceleration = parameters.Deceleration;
+                ConfigurationStatusText.Text = string.Format(
+                    CultureInfo.CurrentCulture,
+                    (string)FindResource("轴参数读卡回填完成格式"),
+                    axis.AxisNumber);
+            }
+            finally
+            {
+                _connectionInProgress = false;
+                UpdateCardConnectionUiState();
+            }
         }
 
         /// <summary>确认后向控制卡写入当前轴设置，并立即读回核对控制器实际值。</summary>

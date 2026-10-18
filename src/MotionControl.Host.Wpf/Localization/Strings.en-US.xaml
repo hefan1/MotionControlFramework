@@ -213,6 +213,7 @@
     <sys:String x:Key="轴映射保存位置">Card settings and axis mappings use separate device JSON files.</sys:String>
     <sys:String x:Key="轴映射保存路径格式">MotionCards.json: {0}; AxisParameters.json: {1}</sys:String>
     <sys:String x:Key="轴映射读取完成">Loaded axis parameters for this machine.</sys:String>
+    <sys:String x:Key="轴参数读卡回填完成格式">Axis{0} card values were copied into the editor; changes are not saved.</sys:String>
     <sys:String x:Key="轴映射读取失败">Failed to load axis parameters. Saving is disabled to protect the existing file: {0}</sys:String>
     <sys:String x:Key="检查映射">Check Mapping</sys:String>
     <sys:String x:Key="保存配置">Save Configuration</sys:String>
