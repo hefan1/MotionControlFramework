@@ -48,8 +48,7 @@
     <sys:String x:Key="软件信息">About</sys:String>
     <sys:String x:Key="使用说明">User Guide</sys:String>
 
-    <sys:String x:Key="单机运行控制卡未连接">Single-machine mode · Motion card not connected</sys:String>
-    <sys:String x:Key="单机运行控制卡已连接">Single-machine mode · Motion card connected</sys:String>
+    <sys:String x:Key="设备状态待机">Machine state: standby</sys:String>
     <sys:String x:Key="启动">▶ Start</sys:String>
     <sys:String x:Key="暂停">Ⅱ Pause</sys:String>
     <sys:String x:Key="停止">■ Stop</sys:String>
@@ -147,6 +146,14 @@
 
     <sys:String x:Key="轴映射页面说明">Select the motion card basics and map machine axis names to physical channels.</sys:String>
     <sys:String x:Key="控制卡厂商">Card vendor</sys:String>
+    <sys:String x:Key="控制卡未连接首次提示">For first-time setup, choose a vendor and card type, then connect. Axis mapping is enabled after connection.</sys:String>
+    <sys:String x:Key="连接运动控制卡">Connect Motion Card</sys:String>
+    <sys:String x:Key="断开运动控制卡">Disconnect</sys:String>
+    <sys:String x:Key="正在连接控制卡">Connecting to motion card…</sys:String>
+    <sys:String x:Key="控制卡连接成功格式">Connected: {0}, version {1}</sys:String>
+    <sys:String x:Key="控制卡连接失败格式">Connection failed: {0}</sys:String>
+    <sys:String x:Key="控制卡连接已断开">Motion card disconnected.</sys:String>
+    <sys:String x:Key="控制卡连接状态格式">Connection status: {0}</sys:String>
     <sys:String x:Key="控制卡类型">Card type</sys:String>
     <sys:String x:Key="控制卡轴数量">Axis count</sys:String>
     <sys:String x:Key="其他厂商">Other</sys:String>
@@ -169,6 +176,17 @@
     <sys:String x:Key="已配置">Configured</sys:String>
     <sys:String x:Key="未配置">Not configured</sys:String>
     <sys:String x:Key="轴参数配置">Axis Parameters</sys:String>
+    <sys:String x:Key="控制器参数说明">After connection, the selected physical axis shows live card values. The DATUM home mode and machine axis name are kept in software configuration.</sys:String>
+    <sys:String x:Key="控制器参数未读取">Controller parameters have not been read.</sys:String>
+    <sys:String x:Key="控制器参数读回格式">Current card values: UNITS={0}, RS_LIMIT={1}, FS_LIMIT={2}, SPEED={3}, CREEP={4}, ACCEL={5}, DECEL={6}</sys:String>
+    <sys:String x:Key="控制器参数读取失败格式">Failed to read controller parameters for Axis{0}: {1}</sys:String>
+    <sys:String x:Key="读取控制卡参数">Read Card Values</sys:String>
+    <sys:String x:Key="写入控制卡">Write Axis Values</sys:String>
+    <sys:String x:Key="写卡确认标题">Confirm Axis Parameter Write</sys:String>
+    <sys:String x:Key="写卡确认内容格式">This writes the current Axis{0} unit scale, soft limits, home speeds, and accelerations to the motion card. The axis must be stopped. Continue?</sys:String>
+    <sys:String x:Key="轴参数写卡成功">Axis values were written to the card and read back successfully.</sys:String>
+    <sys:String x:Key="轴映射要求先连接">Connect the motion card before checking or saving axis mappings.</sys:String>
+    <sys:String x:Key="轴映射连接保存失败格式">The card connected, but saving the connection profile failed: {0}</sys:String>
     <sys:String x:Key="当前选择物理轴格式">Selected: Axis{0}</sys:String>
     <sys:String x:Key="直线轴">Linear</sys:String>
     <sys:String x:Key="旋转轴">Rotary</sys:String>

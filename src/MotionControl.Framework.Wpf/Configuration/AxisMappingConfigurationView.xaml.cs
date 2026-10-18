@@ -5,6 +5,8 @@ using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -23,6 +25,9 @@ namespace MotionControl.Framework.Wpf.Configuration
 
         /// <summary>按 MachineId 读取和备份保存设备配置。</summary>
         private readonly MachineConfigurationStore _configurationStore;
+
+        /// <summary>由 Host 按所选厂商建立的控制卡连接及轴参数读写入口。</summary>
+        private readonly IAxisMappingCardConnection _cardConnection;
 
         /// <summary>当前页面对应的物理设备编号。</summary>
         private readonly string _machineId;
@@ -45,8 +50,17 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>配置文件损坏或版本不支持时禁止覆盖原文件。</summary>
         private bool _configurationCanBeSaved = true;
 
+        /// <summary>页面首次显示时只自动连接一次，避免导航回来重复建立连接。</summary>
+        private bool _startupConnectionAttempted;
+
+        /// <summary>连接和断开期间锁定相关按钮，避免重复操作控制器句柄。</summary>
+        private bool _connectionInProgress;
+
         /// <summary>通知页面绑定项已经变化。</summary>
         public event PropertyChangedEventHandler PropertyChanged;
+
+        /// <summary>通知 Host 当前控制卡连接状态已经变化。</summary>
+        public event EventHandler CardConnectionChanged;
 
         /// <summary>当前轴数量范围内显示的物理轴通道。</summary>
         public ObservableCollection<AxisMappingEntry> VisibleAxes { get; private set; }
@@ -68,7 +82,10 @@ namespace MotionControl.Framework.Wpf.Configuration
         }
 
         /// <summary>创建轴映射页面并加载指定设备自己的 JSON 配置。</summary>
-        public AxisMappingConfigurationView(MachineConfigurationStore configurationStore, string machineId)
+        public AxisMappingConfigurationView(
+            MachineConfigurationStore configurationStore,
+            string machineId,
+            IAxisMappingCardConnection cardConnection)
         {
             if (configurationStore == null)
             {
@@ -80,8 +97,14 @@ namespace MotionControl.Framework.Wpf.Configuration
                 throw new ArgumentException("设备编号不能为空。", nameof(machineId));
             }
 
+            if (cardConnection == null)
+            {
+                throw new ArgumentNullException(nameof(cardConnection));
+            }
+
             InitializeComponent();
             _configurationStore = configurationStore;
+            _cardConnection = cardConnection;
             _machineId = machineId;
             VisibleAxes = new ObservableCollection<AxisMappingEntry>();
             DataContext = this;
@@ -97,6 +120,42 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
 
             LoadConfiguration();
+            Loaded += AxisMappingConfigurationView_Loaded;
+        }
+
+        /// <summary>页面首次显示时，按已保存的控制卡配置自动连接。</summary>
+        private async void AxisMappingConfigurationView_Loaded(object sender, RoutedEventArgs e)
+        {
+            await InitializeSavedCardConnectionAsync();
+        }
+
+        /// <summary>应用启动或页面首次显示时，按已保存配置自动连接一次控制卡。</summary>
+        public async Task InitializeSavedCardConnectionAsync()
+        {
+            if (_startupConnectionAttempted)
+            {
+                return;
+            }
+
+            _startupConnectionAttempted = true;
+            if (_cardConfiguration.MotionCards != null && _cardConfiguration.MotionCards.Count > 0)
+            {
+                await ConnectCardAsync(true);
+                return;
+            }
+
+            UpdateCardConnectionUiState();
+            NotifyCardConnectionChanged();
+        }
+
+        /// <summary>通知 Host 顶部状态栏同步显示当前控制卡连接状态。</summary>
+        private void NotifyCardConnectionChanged()
+        {
+            EventHandler handler = CardConnectionChanged;
+            if (handler != null)
+            {
+                handler(this, EventArgs.Empty);
+            }
         }
 
         /// <summary>根据当前物理轴名称刷新已配置轴数量。</summary>
@@ -179,6 +238,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             {
                 _loadingConfiguration = false;
                 UpdateConfiguredAxisCountText();
+                UpdateCardConnectionUiState();
             }
         }
 
@@ -383,9 +443,271 @@ namespace MotionControl.Framework.Wpf.Configuration
         }
 
         /// <summary>根据物理轴号选择当前编辑行。</summary>
-        private void AxisMappingGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private async void AxisMappingGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             SelectAxis(AxisMappingGrid.SelectedItem as AxisMappingEntry);
+            if (!_loadingConfiguration && _cardConnection.IsConnected)
+            {
+                await ReadSelectedAxisParametersAsync(false);
+            }
+        }
+
+        /// <summary>首次配置时按用户选择连接控制卡，已保存配置则由页面启动流程调用。</summary>
+        private async void ConnectCardButton_Click(object sender, RoutedEventArgs e)
+        {
+            await ConnectCardAsync(false);
+        }
+
+        /// <summary>按用户操作断开控制卡，并锁定轴映射编辑区。</summary>
+        private async void DisconnectCardButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_cardConnection.IsConnected)
+            {
+                UpdateCardConnectionUiState();
+                return;
+            }
+
+            _connectionInProgress = true;
+            UpdateCardConnectionUiState();
+            try
+            {
+                await _cardConnection.DisconnectAsync(CancellationToken.None);
+                CardConnectionStatusText.Text = (string)FindResource("控制卡连接已断开");
+                CardReadbackText.Text = (string)FindResource("控制器参数未读取");
+            }
+            catch (Exception error)
+            {
+                CardConnectionStatusText.Text = string.Format(
+                    CultureInfo.CurrentCulture,
+                    (string)FindResource("控制卡连接失败格式"),
+                    error.Message);
+            }
+            finally
+            {
+                _connectionInProgress = false;
+                UpdateCardConnectionUiState();
+                NotifyCardConnectionChanged();
+            }
+        }
+
+        /// <summary>首次连接或按已保存配置自动连接，并在成功后读取当前选中物理轴参数。</summary>
+        private async Task ConnectCardAsync(bool automatic)
+        {
+            if (_cardConnection.IsConnected)
+            {
+                UpdateCardConnectionUiState();
+                await ReadSelectedAxisParametersAsync(false);
+                NotifyCardConnectionChanged();
+                return;
+            }
+
+            if (!_configurationCanBeSaved)
+            {
+                CardConnectionStatusText.Text = string.Format(
+                    CultureInfo.CurrentCulture,
+                    (string)FindResource("控制卡连接失败格式"),
+                    (string)FindResource("轴映射读取失败"));
+                return;
+            }
+
+            _connectionInProgress = true;
+            CardConnectionStatusText.Text = (string)FindResource("正在连接控制卡");
+            UpdateCardConnectionUiState();
+            try
+            {
+                await _cardConnection.ConnectAsync(_cardConfiguration, CancellationToken.None);
+                CardConnectionStatusText.Text = string.Format(
+                    CultureInfo.CurrentCulture,
+                    (string)FindResource("控制卡连接成功格式"),
+                    _cardConnection.ActualControllerType,
+                    _cardConnection.ActualControllerVersion);
+                await ReadSelectedAxisParametersAsync(false);
+            }
+            catch (Exception error)
+            {
+                CardConnectionStatusText.Text = string.Format(
+                    CultureInfo.CurrentCulture,
+                    (string)FindResource("控制卡连接失败格式"),
+                    error.Message);
+                if (!automatic)
+                {
+                    MessageBox.Show(
+                        error.Message,
+                        (string)FindResource("连接运动控制卡"),
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
+            }
+            finally
+            {
+                _connectionInProgress = false;
+                UpdateCardConnectionUiState();
+                NotifyCardConnectionChanged();
+            }
+        }
+
+        /// <summary>依据真实连接状态启用参数编辑、轴映射保存和控制卡操作按钮。</summary>
+        private void UpdateCardConnectionUiState()
+        {
+            if (CardConnectionStatusText == null)
+            {
+                return;
+            }
+
+            bool connected = _cardConnection.IsConnected;
+            CardVendorComboBox.IsEnabled = !connected && !_connectionInProgress;
+            CardTypeComboBox.IsEnabled = !connected && !_connectionInProgress;
+            AxisCountComboBox.IsEnabled = !connected && !_connectionInProgress;
+            ConnectCardButton.IsEnabled = !connected && !_connectionInProgress;
+            DisconnectCardButton.IsEnabled = connected && !_connectionInProgress;
+            AxisDetailsGrid.IsEnabled = connected;
+            ClearAxisMappingButton.IsEnabled = connected;
+            CheckMappingButton.IsEnabled = connected;
+            SaveConfigurationButton.IsEnabled = connected && _configurationCanBeSaved;
+            ReadAxisParametersButton.IsEnabled = connected && !_connectionInProgress;
+            WriteAxisParametersButton.IsEnabled = connected
+                && !_connectionInProgress
+                && SelectedAxis != null
+                && SelectedAxis.IsConfigured;
+        }
+
+        /// <summary>读取当前物理轴的控制器参数，并在右侧以只读文本显示卡上实时值。</summary>
+        private async Task<AxisMappingCardParameters> ReadSelectedAxisParametersAsync(bool showError)
+        {
+            if (!_cardConnection.IsConnected || SelectedAxis == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                AxisMappingCardParameters parameters = await _cardConnection.ReadAxisParametersAsync(
+                    SelectedAxis.AxisNumber,
+                    CancellationToken.None);
+                CardReadbackText.Text = string.Format(
+                    CultureInfo.CurrentCulture,
+                    (string)FindResource("控制器参数读回格式"),
+                    parameters.UnitsPerEngineeringUnit,
+                    parameters.MinimumPosition,
+                    parameters.MaximumPosition,
+                    parameters.Speed,
+                    parameters.CreepSpeed,
+                    parameters.Acceleration,
+                    parameters.Deceleration);
+                return parameters;
+            }
+            catch (Exception error)
+            {
+                CardReadbackText.Text = string.Format(
+                    CultureInfo.CurrentCulture,
+                    (string)FindResource("控制器参数读取失败格式"),
+                    SelectedAxis.AxisNumber,
+                    error.Message);
+                if (showError)
+                {
+                    MessageBox.Show(
+                        error.Message,
+                        (string)FindResource("读取控制卡参数"),
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
+
+                return null;
+            }
+        }
+
+        /// <summary>按用户操作读取当前选中物理轴的控制器参数。</summary>
+        private async void ReadAxisParametersButton_Click(object sender, RoutedEventArgs e)
+        {
+            await ReadSelectedAxisParametersAsync(true);
+        }
+
+        /// <summary>确认后向控制卡写入当前轴设置，并立即读回核对控制器实际值。</summary>
+        private async void WriteAxisParametersButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_cardConnection.IsConnected || SelectedAxis == null || !SelectedAxis.IsConfigured)
+            {
+                return;
+            }
+
+            string confirmation = string.Format(
+                CultureInfo.CurrentCulture,
+                (string)FindResource("写卡确认内容格式"),
+                SelectedAxis.AxisNumber);
+            if (MessageBox.Show(
+                confirmation,
+                (string)FindResource("写卡确认标题"),
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            _connectionInProgress = true;
+            UpdateCardConnectionUiState();
+            try
+            {
+                var requestedParameters = new AxisMappingCardParameters
+                {
+                    AxisNumber = SelectedAxis.AxisNumber,
+                    UnitsPerEngineeringUnit = SelectedAxis.UnitsPerEngineeringUnit,
+                    MinimumPosition = SelectedAxis.MinimumPosition,
+                    MaximumPosition = SelectedAxis.MaximumPosition,
+                    Speed = SelectedAxis.HomeSearchSpeed,
+                    CreepSpeed = SelectedAxis.HomeCreepSpeed,
+                    Acceleration = SelectedAxis.HomeAcceleration,
+                    Deceleration = SelectedAxis.HomeDeceleration
+                };
+                await _cardConnection.WriteAxisParametersAsync(requestedParameters, CancellationToken.None);
+                AxisMappingCardParameters actualParameters = await ReadSelectedAxisParametersAsync(false);
+                if (!ControllerParametersMatch(requestedParameters, actualParameters))
+                {
+                    throw new InvalidOperationException("写入后读回值与请求值不一致，请检查控制器状态。");
+                }
+
+                ConfigurationStatusText.Text = (string)FindResource("轴参数写卡成功");
+            }
+            catch (Exception error)
+            {
+                ConfigurationStatusText.Text = error.Message;
+                MessageBox.Show(
+                    error.Message,
+                    (string)FindResource("写入控制卡"),
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+            finally
+            {
+                _connectionInProgress = false;
+                UpdateCardConnectionUiState();
+            }
+        }
+
+        /// <summary>比较卡参数写入前后的全部读回值，允许正运动浮点参数的转换误差。</summary>
+        private static bool ControllerParametersMatch(
+            AxisMappingCardParameters requestedParameters,
+            AxisMappingCardParameters actualParameters)
+        {
+            if (requestedParameters == null || actualParameters == null
+                || requestedParameters.AxisNumber != actualParameters.AxisNumber)
+            {
+                return false;
+            }
+
+            return AreControllerValuesEqual(requestedParameters.UnitsPerEngineeringUnit, actualParameters.UnitsPerEngineeringUnit)
+                && AreControllerValuesEqual(requestedParameters.MinimumPosition, actualParameters.MinimumPosition)
+                && AreControllerValuesEqual(requestedParameters.MaximumPosition, actualParameters.MaximumPosition)
+                && AreControllerValuesEqual(requestedParameters.Speed, actualParameters.Speed)
+                && AreControllerValuesEqual(requestedParameters.CreepSpeed, actualParameters.CreepSpeed)
+                && AreControllerValuesEqual(requestedParameters.Acceleration, actualParameters.Acceleration)
+                && AreControllerValuesEqual(requestedParameters.Deceleration, actualParameters.Deceleration);
+        }
+
+        /// <summary>比较单项正运动浮点参数，并兼容控制器使用单精度保存的误差。</summary>
+        private static bool AreControllerValuesEqual(double expected, double actual)
+        {
+            double tolerance = Math.Max(0.0001, Math.Abs(expected) * 0.000001);
+            return Math.Abs(expected - actual) <= tolerance;
         }
 
         /// <summary>记录控制卡厂商下拉框的当前值。</summary>
@@ -482,6 +804,12 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>检查设备轴名称、单位换算、软限位、速度和加减速度参数。</summary>
         private void CheckMappingButton_Click(object sender, RoutedEventArgs e)
         {
+            if (!_cardConnection.IsConnected)
+            {
+                ConfigurationStatusText.Text = (string)FindResource("轴映射要求先连接");
+                return;
+            }
+
             Keyboard.ClearFocus();
             List<string> errors = ValidateConfiguredAxes();
             if (errors.Count > 0)
@@ -509,6 +837,12 @@ namespace MotionControl.Framework.Wpf.Configuration
         {
             if (!_configurationCanBeSaved)
             {
+                return;
+            }
+
+            if (!_cardConnection.IsConnected)
+            {
+                ConfigurationStatusText.Text = (string)FindResource("轴映射要求先连接");
                 return;
             }
 
@@ -548,7 +882,7 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>清空当前物理轴的设备名称，使该通道回到未配置状态。</summary>
         private void ClearAxisMappingButton_Click(object sender, RoutedEventArgs e)
         {
-            if (SelectedAxis == null)
+            if (!_cardConnection.IsConnected || SelectedAxis == null)
             {
                 return;
             }

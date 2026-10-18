@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,8 +15,10 @@ using MotionControl.Framework.Contracts.IO;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Contracts.Safety;
 using MotionControl.Framework.Runtime.Alarms;
+using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Runtime.Machine;
 using MotionControl.Framework.Wpf.ManualDebug;
+using MotionControl.Framework.Wpf.Configuration;
 using MotionControl.Host.Wpf;
 
 namespace MotionControl.ZMotionSimulatorCheck
@@ -89,6 +92,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 var hostWindow = new MainWindow();
                 hostWindow.SetManualMotionDebugPage(page);
                 VerifyMotionCardConnectionStatus(application, hostWindow, englishResources, chineseResources);
+                VerifyAxisMappingStartupConnection();
                 var primaryNavigation = (StackPanel)hostWindow.FindName("PrimaryNavigation");
                 var manualNavigation = primaryNavigation.Children
                     .OfType<ToggleButton>()
@@ -100,7 +104,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(manualContent.Visibility == Visibility.Visible, "Host 手动调试内容当前不可见。");
 
                 application.Shutdown();
-                Console.WriteLine("[通过] 手动调试页中英资源、断开保护、双向点动、轴/IO命令、软限位、DO读回和Host导航离屏检查完成；使用内存测试卡。");
+                Console.WriteLine("[通过] 手动调试页与轴映射页离屏检查完成：启动连接策略、轴参数读回、Host底栏卡状态、中英资源及手动调试控件；使用内存测试卡。");
                 return 0;
             }
             catch (Exception error)
@@ -130,7 +134,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             }
         }
 
-        /// <summary>确认 Host 顶部和底栏的卡连接状态支持中英文并能切换连接结果。</summary>
+        /// <summary>确认 Host 顶部显示设备状态，底栏独立显示中英文控制卡连接状态。</summary>
         private static void VerifyMotionCardConnectionStatus(
             Application application,
             MainWindow hostWindow,
@@ -141,21 +145,137 @@ namespace MotionControl.ZMotionSimulatorCheck
             var footerStatus = (TextBlock)hostWindow.FindName("MotionCardConnectionStatus");
 
             hostWindow.SetMotionCardConnectionStatus(true);
-            Ensure(headerMessage.Text.Contains("控制卡已连接"), "Host 顶部没有显示控制卡已连接。");
+            Ensure(headerMessage.Text.Contains("待机"), "Host 顶部没有保持设备待机状态。");
             Ensure(footerStatus.Text.Contains("控制卡 已连接"), "Host 底栏没有显示控制卡已连接。");
 
             application.Resources.MergedDictionaries[0] = englishResources;
-            Ensure(headerMessage.Text.Contains("Motion card connected"), "Host 顶部连接状态没有切换为英文。");
+            Ensure(headerMessage.Text.Contains("Machine state: standby"), "Host 顶部设备状态没有切换为英文。");
             Ensure(footerStatus.Text.Contains("Motion card: connected"), "Host 底栏连接状态没有切换为英文。");
 
             hostWindow.SetMotionCardConnectionStatus(false);
-            Ensure(headerMessage.Text.Contains("Motion card not connected"), "Host 顶部没有显示未连接状态。");
+            Ensure(headerMessage.Text.Contains("Machine state: standby"), "Host 顶部设备状态受卡连接变化影响。");
             Ensure(footerStatus.Text.Contains("Motion card: not connected"), "Host 底栏没有显示未连接状态。");
 
             application.Resources.MergedDictionaries[0] = chineseResources;
             hostWindow.SetMotionCardConnectionStatus(false);
-            Ensure(headerMessage.Text.Contains("控制卡未连接"), "Host 顶部未恢复中文未连接状态。");
+            Ensure(headerMessage.Text.Contains("设备状态：待机"), "Host 顶部未恢复中文设备状态。");
             Ensure(footerStatus.Text.Contains("控制卡 未连接"), "Host 底栏未恢复中文未连接状态。");
+        }
+
+        /// <summary>确认首次运行等待用户连接，已有控制卡配置时启动流程会自动重连。</summary>
+        private static void VerifyAxisMappingStartupConnection()
+        {
+            string configurationRoot = Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory,
+                "AxisMappingSmokeData_" + Guid.NewGuid().ToString("N"));
+
+            try
+            {
+                var configurationStore = new MachineConfigurationStore(configurationRoot);
+                var firstRunConnection = new SmokeAxisMappingCardConnection();
+                var firstRunPage = new AxisMappingConfigurationView(
+                    configurationStore,
+                    "FirstRun",
+                    firstRunConnection);
+                firstRunPage.InitializeSavedCardConnectionAsync().GetAwaiter().GetResult();
+
+                Ensure(firstRunConnection.ConnectCount == 0, "首次运行没有已保存的卡配置，却自动连接了控制卡。");
+                Ensure(!((Grid)firstRunPage.FindName("AxisDetailsGrid")).IsEnabled, "未连接时轴映射编辑区没有锁定。");
+
+                var savedCardSettings = new MotionCardSettingsDocument
+                {
+                    MotionCards = new List<MotionCardConnectionDefinition>
+                    {
+                        new MotionCardConnectionDefinition
+                        {
+                            ControllerId = "MotionCard01",
+                            AdapterType = "ZMotion",
+                            ConnectionConfigurationFile = "HardwareConfig/ZDevelopSimulation.json"
+                        }
+                    }
+                };
+                configurationStore.SaveJson(
+                    "SavedRun",
+                    "HardwareConfig/MotionCards.json",
+                    savedCardSettings);
+
+                var savedRunConnection = new SmokeAxisMappingCardConnection();
+                var savedRunPage = new AxisMappingConfigurationView(
+                    configurationStore,
+                    "SavedRun",
+                    savedRunConnection);
+                savedRunPage.InitializeSavedCardConnectionAsync().GetAwaiter().GetResult();
+
+                Ensure(savedRunConnection.ConnectCount == 1, "启动时没有按已保存的控制卡配置自动连接。");
+                Ensure(((Grid)savedRunPage.FindName("AxisDetailsGrid")).IsEnabled, "自动连接成功后轴映射编辑区没有启用。");
+                Ensure(
+                    ((TextBlock)savedRunPage.FindName("CardReadbackText")).Text.Contains("UNITS=1"),
+                    "自动连接成功后没有读取所选物理轴的当前参数。");
+            }
+            finally
+            {
+                if (Directory.Exists(configurationRoot))
+                {
+                    Directory.Delete(configurationRoot, true);
+                }
+            }
+        }
+
+        /// <summary>提供无硬件的轴映射页连接替身，记录自动连接及参数读取调用。</summary>
+        private sealed class SmokeAxisMappingCardConnection : IAxisMappingCardConnection
+        {
+            /// <summary>当前内存测试卡的连接状态。</summary>
+            public bool IsConnected { get; private set; }
+
+            /// <summary>测试中收到的连接请求数量。</summary>
+            public int ConnectCount { get; private set; }
+
+            /// <summary>返回固定的测试控制器型号。</summary>
+            public string ActualControllerType { get { return "内存测试控制器"; } }
+
+            /// <summary>返回固定的测试控制器版本。</summary>
+            public string ActualControllerVersion { get { return "SmokeTest"; } }
+
+            /// <summary>记录一次连接并将内存测试卡切换为已连接。</summary>
+            public Task ConnectAsync(MotionCardSettingsDocument settings, CancellationToken cancellationToken)
+            {
+                ConnectCount++;
+                IsConnected = true;
+                return Task.CompletedTask;
+            }
+
+            /// <summary>将内存测试卡切换为已断开。</summary>
+            public Task DisconnectAsync(CancellationToken cancellationToken)
+            {
+                IsConnected = false;
+                return Task.CompletedTask;
+            }
+
+            /// <summary>返回固定 Axis0 参数，供自动连接后验证页面读回显示。</summary>
+            public Task<AxisMappingCardParameters> ReadAxisParametersAsync(
+                int axisNumber,
+                CancellationToken cancellationToken)
+            {
+                return Task.FromResult(new AxisMappingCardParameters
+                {
+                    AxisNumber = axisNumber,
+                    UnitsPerEngineeringUnit = 1,
+                    MinimumPosition = -100,
+                    MaximumPosition = 100,
+                    Speed = 5,
+                    CreepSpeed = 1,
+                    Acceleration = 10,
+                    Deceleration = 10
+                });
+            }
+
+            /// <summary>接受轴参数写入调用但不操作任何硬件。</summary>
+            public Task WriteAxisParametersAsync(
+                AxisMappingCardParameters parameters,
+                CancellationToken cancellationToken)
+            {
+                return Task.CompletedTask;
+            }
         }
 
         /// <summary>确认断开状态下点击轴和 DO 控件不会向设备发送命令。</summary>

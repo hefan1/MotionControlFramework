@@ -98,7 +98,7 @@
                         Background="#EEF0F2"
                         CornerRadius="6">
                     <TextBlock x:Name="HeaderMessage"
-                               Text="{DynamicResource 单机运行控制卡未连接}"
+                               Text="{DynamicResource 设备状态待机}"
                                FontSize="15"
                                Foreground="#44494D"
                                VerticalAlignment="Center"

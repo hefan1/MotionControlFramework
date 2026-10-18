@@ -55,8 +55,7 @@
     <sys:String x:Key="使用说明">使用说明</sys:String>
 
     <!-- 外壳状态与提示 -->
-    <sys:String x:Key="单机运行控制卡未连接">单机运行 · 控制卡未连接</sys:String>
-    <sys:String x:Key="单机运行控制卡已连接">单机运行 · 控制卡已连接</sys:String>
+    <sys:String x:Key="设备状态待机">设备状态：待机</sys:String>
     <sys:String x:Key="启动">▶ 启动</sys:String>
     <sys:String x:Key="暂停">Ⅱ 暂停</sys:String>
     <sys:String x:Key="停止">■ 停止</sys:String>
@@ -156,6 +155,14 @@
     <!-- 轴映射配置页 -->
     <sys:String x:Key="轴映射页面说明">设置控制卡基本类型，并把设备轴名称对应到物理轴通道。</sys:String>
     <sys:String x:Key="控制卡厂商">控制卡厂商</sys:String>
+    <sys:String x:Key="控制卡未连接首次提示">首次配置请先选择厂商和卡类型，再连接运动控制卡。连接成功后才能编辑轴映射。</sys:String>
+    <sys:String x:Key="连接运动控制卡">连接运动控制卡</sys:String>
+    <sys:String x:Key="断开运动控制卡">断开连接</sys:String>
+    <sys:String x:Key="正在连接控制卡">正在连接运动控制卡…</sys:String>
+    <sys:String x:Key="控制卡连接成功格式">已连接：{0}，版本 {1}</sys:String>
+    <sys:String x:Key="控制卡连接失败格式">连接失败：{0}</sys:String>
+    <sys:String x:Key="控制卡连接已断开">运动控制卡已断开。</sys:String>
+    <sys:String x:Key="控制卡连接状态格式">连接状态：{0}</sys:String>
     <sys:String x:Key="控制卡类型">卡类型</sys:String>
     <sys:String x:Key="控制卡轴数量">轴数量</sys:String>
     <sys:String x:Key="其他厂商">其他</sys:String>
@@ -178,6 +185,17 @@
     <sys:String x:Key="已配置">已配置</sys:String>
     <sys:String x:Key="未配置">未配置</sys:String>
     <sys:String x:Key="轴参数配置">轴参数配置</sys:String>
+    <sys:String x:Key="控制器参数说明">连接后显示所选物理轴的卡上实时参数。DATUM 回零模式和设备轴名称保存在软件配置中。</sys:String>
+    <sys:String x:Key="控制器参数未读取">尚未读取控制卡参数。</sys:String>
+    <sys:String x:Key="控制器参数读回格式">控制器当前值：UNITS={0}，RS_LIMIT={1}，FS_LIMIT={2}，SPEED={3}，CREEP={4}，ACCEL={5}，DECEL={6}</sys:String>
+    <sys:String x:Key="控制器参数读取失败格式">读取 Axis{0} 控制器参数失败：{1}</sys:String>
+    <sys:String x:Key="读取控制卡参数">读取卡上参数</sys:String>
+    <sys:String x:Key="写入控制卡">下发当前轴参数</sys:String>
+    <sys:String x:Key="写卡确认标题">确认下发轴参数</sys:String>
+    <sys:String x:Key="写卡确认内容格式">将把当前编辑的 Axis{0} 单位换算、软限位、回零速度和加减速度写入运动控制卡。轴必须处于停止状态，是否继续？</sys:String>
+    <sys:String x:Key="轴参数写卡成功">当前轴参数已写入控制卡并完成读回核对。</sys:String>
+    <sys:String x:Key="轴映射要求先连接">请先连接运动控制卡，再检查或保存轴映射。</sys:String>
+    <sys:String x:Key="轴映射连接保存失败格式">控制卡已连接，但连接配置保存失败：{0}</sys:String>
     <sys:String x:Key="当前选择物理轴格式">当前选择：Axis{0}</sys:String>
     <sys:String x:Key="直线轴">直线轴</sys:String>
     <sys:String x:Key="旋转轴">旋转轴</sys:String>

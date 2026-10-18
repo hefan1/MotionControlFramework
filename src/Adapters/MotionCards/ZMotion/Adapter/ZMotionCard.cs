@@ -17,6 +17,9 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
     /// </summary>
     public sealed class ZMotionCard : IMotionCard, ILogicalIo
     {
+        /// <summary>读取正运动控制器的单个浮点轴参数。</summary>
+        private delegate int AxisFloatParameterReader(IntPtr handle, int axisNumber, ref float value);
+
         public const string SimulationControllerType = "VPLC5xx-Simu";
 
         private const int RemoteAxisCommunicationErrorBit = 2;
@@ -153,13 +156,6 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 _axesByNumber.Add(axis.AxisNumber, axis);
             }
 
-            if (axes.Count == 0)
-            {
-                throw new ArgumentException(
-                    "控制卡 '" + controllerId + "' 至少需要配置一个逻辑轴。",
-                    nameof(axisConfigurations));
-            }
-
             _axes = axes.AsReadOnly();
         }
 
@@ -220,6 +216,129 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         public Task ApplyAxisParametersAsync(CancellationToken cancellationToken)
         {
             return Task.Run(() => ApplyAxisParameters(cancellationToken), cancellationToken);
+        }
+
+        /// <summary>读取控制器指定物理轴的单位、软限位和当前运动参数。</summary>
+        public Task<ZMotionPhysicalAxisParameters> ReadPhysicalAxisParametersAsync(
+            int axisNumber,
+            CancellationToken cancellationToken)
+        {
+            ValidatePhysicalAxisNumber(axisNumber);
+            return Task.Run(() =>
+            {
+                lock (_nativeLock)
+                {
+                    var handle = GetConnectedHandle();
+                    var axisName = GetPhysicalAxisName(axisNumber);
+                    var parameters = new ZMotionPhysicalAxisParameters
+                    {
+                        AxisNumber = axisNumber
+                    };
+
+                    ReadAxisParameter(
+                        handle,
+                        axisNumber,
+                        axisName,
+                        "UNITS",
+                        zmcaux.ZAux_Direct_GetUnits,
+                        value => parameters.UnitsPerEngineeringUnit = value);
+                    ReadAxisParameter(
+                        handle,
+                        axisNumber,
+                        axisName,
+                        "RS_LIMIT",
+                        zmcaux.ZAux_Direct_GetRsLimit,
+                        value => parameters.MinimumPosition = value);
+                    ReadAxisParameter(
+                        handle,
+                        axisNumber,
+                        axisName,
+                        "FS_LIMIT",
+                        zmcaux.ZAux_Direct_GetFsLimit,
+                        value => parameters.MaximumPosition = value);
+                    ReadAxisParameter(
+                        handle,
+                        axisNumber,
+                        axisName,
+                        "SPEED",
+                        zmcaux.ZAux_Direct_GetSpeed,
+                        value => parameters.Speed = value);
+                    ReadAxisParameter(
+                        handle,
+                        axisNumber,
+                        axisName,
+                        "CREEP",
+                        zmcaux.ZAux_Direct_GetCreep,
+                        value => parameters.CreepSpeed = value);
+                    ReadAxisParameter(
+                        handle,
+                        axisNumber,
+                        axisName,
+                        "ACCEL",
+                        zmcaux.ZAux_Direct_GetAccel,
+                        value => parameters.Acceleration = value);
+                    ReadAxisParameter(
+                        handle,
+                        axisNumber,
+                        axisName,
+                        "DECEL",
+                        zmcaux.ZAux_Direct_GetDecel,
+                        value => parameters.Deceleration = value);
+
+                    return parameters;
+                }
+            }, cancellationToken);
+        }
+
+        /// <summary>空闲时把指定物理轴参数写入控制器，不会启动轴运动或伺服。</summary>
+        public Task WritePhysicalAxisParametersAsync(
+            ZMotionPhysicalAxisParameters parameters,
+            CancellationToken cancellationToken)
+        {
+            if (parameters == null)
+            {
+                throw new ArgumentNullException(nameof(parameters));
+            }
+
+            ValidatePhysicalAxisParameters(parameters);
+            return Task.Run(() =>
+            {
+                lock (_nativeLock)
+                {
+                    var handle = GetConnectedHandle();
+                    var axisName = GetPhysicalAxisName(parameters.AxisNumber);
+                    EnsureAxisIdle(handle, parameters.AxisNumber, axisName);
+
+                    CheckResult(
+                        zmcaux.ZAux_Direct_SetUnits(handle, parameters.AxisNumber, (float)parameters.UnitsPerEngineeringUnit),
+                        "写入 UNITS 单位换算",
+                        axisName);
+                    CheckResult(
+                        zmcaux.ZAux_Direct_SetRsLimit(handle, parameters.AxisNumber, (float)parameters.MinimumPosition),
+                        "写入 RS_LIMIT 负向软限位",
+                        axisName);
+                    CheckResult(
+                        zmcaux.ZAux_Direct_SetFsLimit(handle, parameters.AxisNumber, (float)parameters.MaximumPosition),
+                        "写入 FS_LIMIT 正向软限位",
+                        axisName);
+                    CheckResult(
+                        zmcaux.ZAux_Direct_SetSpeed(handle, parameters.AxisNumber, (float)parameters.Speed),
+                        "写入 SPEED 速度",
+                        axisName);
+                    CheckResult(
+                        zmcaux.ZAux_Direct_SetCreep(handle, parameters.AxisNumber, (float)parameters.CreepSpeed),
+                        "写入 CREEP 爬行速度",
+                        axisName);
+                    CheckResult(
+                        zmcaux.ZAux_Direct_SetAccel(handle, parameters.AxisNumber, (float)parameters.Acceleration),
+                        "写入 ACCEL 加速度",
+                        axisName);
+                    CheckResult(
+                        zmcaux.ZAux_Direct_SetDecel(handle, parameters.AxisNumber, (float)parameters.Deceleration),
+                        "写入 DECEL 减速度",
+                        axisName);
+                }
+            }, cancellationToken);
         }
 
         /// <summary>按逻辑名称读取数字输入，并转换为配置的有效电平。</summary>
@@ -1038,16 +1157,85 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         /// <summary>读取控制卡状态并确认指定逻辑轴当前空闲。</summary>
         private void EnsureAxisIdle(IntPtr handle, ZMotionAxis axis)
         {
+            EnsureAxisIdle(handle, axis.AxisNumber, axis.Name);
+        }
+
+        /// <summary>读取控制器状态并确认指定物理轴当前空闲。</summary>
+        private void EnsureAxisIdle(IntPtr handle, int axisNumber, string axisName)
+        {
             int idle = 1;
             CheckResult(
-                zmcaux.ZAux_Direct_GetIfIdle(handle, axis.AxisNumber, ref idle),
+                zmcaux.ZAux_Direct_GetIfIdle(handle, axisNumber, ref idle),
                 "确认轴空闲",
-                axis.Name);
+                axisName);
             if (idle == 0)
             {
                 throw new InvalidOperationException(
-                    "正运动逻辑轴 '" + axis.Name + "' 正在运动，不能应用参数或清零坐标。");
+                    "正运动物理轴 '" + axisName + "' 正在运动，不能应用参数或清零坐标。");
             }
+        }
+
+        /// <summary>使用正运动 API 读取一个浮点轴参数，并保留参数名和轴号。</summary>
+        private void ReadAxisParameter(
+            IntPtr handle,
+            int axisNumber,
+            string axisName,
+            string parameterName,
+            AxisFloatParameterReader readParameter,
+            Action<double> saveValue)
+        {
+            float value = 0;
+            CheckResult(
+                readParameter(handle, axisNumber, ref value),
+                "读取 " + parameterName,
+                axisName);
+            saveValue(value);
+        }
+
+        /// <summary>检查物理轴通道范围，防止访问超过当前适配器支持范围的轴。</summary>
+        private static void ValidatePhysicalAxisNumber(int axisNumber)
+        {
+            if (axisNumber < 0 || axisNumber >= 64)
+            {
+                throw new ArgumentOutOfRangeException(nameof(axisNumber), "正运动物理轴号必须在 0 到 63 之间。");
+            }
+        }
+
+        /// <summary>检查下发的单位换算、限位和运动速度参数有效且范围合理。</summary>
+        private static void ValidatePhysicalAxisParameters(ZMotionPhysicalAxisParameters parameters)
+        {
+            ValidatePhysicalAxisNumber(parameters.AxisNumber);
+            if (!IsFinite(parameters.UnitsPerEngineeringUnit) || parameters.UnitsPerEngineeringUnit <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(parameters), "UNITS 必须是大于零的有限数值。");
+            }
+
+            if (!IsFinite(parameters.MinimumPosition)
+                || !IsFinite(parameters.MaximumPosition)
+                || parameters.MinimumPosition >= parameters.MaximumPosition)
+            {
+                throw new ArgumentOutOfRangeException(nameof(parameters), "软限位必须是有限数值，且下限小于上限。");
+            }
+
+            if (!IsFinite(parameters.Speed) || parameters.Speed <= 0
+                || !IsFinite(parameters.CreepSpeed) || parameters.CreepSpeed <= 0
+                || !IsFinite(parameters.Acceleration) || parameters.Acceleration <= 0
+                || !IsFinite(parameters.Deceleration) || parameters.Deceleration <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(parameters), "速度、爬行速度、加速度和减速度必须是大于零的有限数值。");
+            }
+        }
+
+        /// <summary>判断数值是否为有限数值。</summary>
+        private static bool IsFinite(double value)
+        {
+            return !double.IsNaN(value) && !double.IsInfinity(value);
+        }
+
+        /// <summary>把物理轴号转换为便于诊断的 AxisN 名称。</summary>
+        private static string GetPhysicalAxisName(int axisNumber)
+        {
+            return "Axis" + axisNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
 
         /// <summary>确认指定逻辑轴已使能伺服后才允许下发运动命令。</summary>
