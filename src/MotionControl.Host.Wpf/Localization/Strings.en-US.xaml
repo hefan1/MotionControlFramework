@@ -48,6 +48,7 @@
     <sys:String x:Key="使用说明">User Guide</sys:String>
 
     <sys:String x:Key="单机运行控制卡未连接">Single-machine mode · Motion card not connected</sys:String>
+    <sys:String x:Key="单机运行控制卡已连接">Single-machine mode · Motion card connected</sys:String>
     <sys:String x:Key="启动">▶ Start</sys:String>
     <sys:String x:Key="暂停">Ⅱ Pause</sys:String>
     <sys:String x:Key="停止">■ Stop</sys:String>
@@ -64,6 +65,7 @@
     <sys:String x:Key="具体页面与内容后续逐项开发并接入此区域">Specific pages and content will be added here later.</sys:String>
     <sys:String x:Key="未登录">Not logged in</sys:String>
     <sys:String x:Key="控制卡未连接">Motion card: not connected</sys:String>
+    <sys:String x:Key="控制卡已连接">Motion card: connected</sys:String>
     <sys:String x:Key="通讯未连接">Communication: not connected</sys:String>
     <sys:String x:Key="数据库未接入">Database: not connected</sys:String>
     <sys:String x:Key="MES未配置">MES: not configured</sys:String>

@@ -112,6 +112,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                     outputs.Select(point => point.Name));
                 var hostWindow = new MainWindow();
                 hostWindow.SetManualMotionDebugPage(manualPage);
+                hostWindow.SetMotionCardConnectionStatus(card.IsConnected);
                 hostWindow.Closed += (sender, eventArgs) =>
                     runtime.DisconnectAsync(CancellationToken.None).GetAwaiter().GetResult();
                 application.MainWindow = hostWindow;

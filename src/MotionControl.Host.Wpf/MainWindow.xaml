@@ -233,7 +233,7 @@
                             Orientation="Horizontal"
                             VerticalAlignment="Center">
                     <Border Margin="2,0" Padding="8,3" Background="#ECEFF1" CornerRadius="2">
-                        <TextBlock Text="{DynamicResource 控制卡未连接}" FontSize="12" Foreground="#5E666B" />
+                        <TextBlock x:Name="MotionCardConnectionStatus" Text="{DynamicResource 控制卡未连接}" FontSize="12" Foreground="#5E666B" />
                     </Border>
                     <Border Margin="2,0" Padding="8,3" Background="#ECEFF1" CornerRadius="2">
                         <TextBlock Text="{DynamicResource 通讯未连接}" FontSize="12" Foreground="#5E666B" />

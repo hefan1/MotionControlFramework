@@ -173,6 +173,16 @@ namespace MotionControl.Host.Wpf
             UpdatePageContent();
         }
 
+        /// <summary>由 Host 组合根按运行时连接结果更新顶部和底栏的控制卡状态。</summary>
+        public void SetMotionCardConnectionStatus(bool isConnected)
+        {
+            string headerResourceKey = isConnected ? "单机运行控制卡已连接" : "单机运行控制卡未连接";
+            string footerResourceKey = isConnected ? "控制卡已连接" : "控制卡未连接";
+
+            HeaderMessage.SetResourceReference(TextBlock.TextProperty, headerResourceKey);
+            MotionCardConnectionStatus.SetResourceReference(TextBlock.TextProperty, footerResourceKey);
+        }
+
         /// <summary>仅在手动分区的轴手动或 IO 手动页面显示通用调试控件。</summary>
         private void UpdatePageContent()
         {

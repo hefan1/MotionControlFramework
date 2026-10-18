@@ -55,6 +55,7 @@
 
     <!-- 外壳状态与提示 -->
     <sys:String x:Key="单机运行控制卡未连接">单机运行 · 控制卡未连接</sys:String>
+    <sys:String x:Key="单机运行控制卡已连接">单机运行 · 控制卡已连接</sys:String>
     <sys:String x:Key="启动">▶ 启动</sys:String>
     <sys:String x:Key="暂停">Ⅱ 暂停</sys:String>
     <sys:String x:Key="停止">■ 停止</sys:String>
@@ -71,6 +72,7 @@
     <sys:String x:Key="具体页面与内容后续逐项开发并接入此区域">具体页面与内容后续逐项开发并接入此区域。</sys:String>
     <sys:String x:Key="未登录">未登录</sys:String>
     <sys:String x:Key="控制卡未连接">控制卡 未连接</sys:String>
+    <sys:String x:Key="控制卡已连接">控制卡 已连接</sys:String>
     <sys:String x:Key="通讯未连接">通讯 未连接</sys:String>
     <sys:String x:Key="数据库未接入">数据库 未接入</sys:String>
     <sys:String x:Key="MES未配置">MES 未配置</sys:String>

@@ -88,6 +88,7 @@ namespace MotionControl.ZMotionSimulatorCheck
 
                 var hostWindow = new MainWindow();
                 hostWindow.SetManualMotionDebugPage(page);
+                VerifyMotionCardConnectionStatus(application, hostWindow, englishResources, chineseResources);
                 var primaryNavigation = (StackPanel)hostWindow.FindName("PrimaryNavigation");
                 var manualNavigation = primaryNavigation.Children
                     .OfType<ToggleButton>()
@@ -127,6 +128,34 @@ namespace MotionControl.ZMotionSimulatorCheck
             {
                 throw new InvalidOperationException(message);
             }
+        }
+
+        /// <summary>确认 Host 顶部和底栏的卡连接状态支持中英文并能切换连接结果。</summary>
+        private static void VerifyMotionCardConnectionStatus(
+            Application application,
+            MainWindow hostWindow,
+            ResourceDictionary englishResources,
+            ResourceDictionary chineseResources)
+        {
+            var headerMessage = (TextBlock)hostWindow.FindName("HeaderMessage");
+            var footerStatus = (TextBlock)hostWindow.FindName("MotionCardConnectionStatus");
+
+            hostWindow.SetMotionCardConnectionStatus(true);
+            Ensure(headerMessage.Text.Contains("控制卡已连接"), "Host 顶部没有显示控制卡已连接。");
+            Ensure(footerStatus.Text.Contains("控制卡 已连接"), "Host 底栏没有显示控制卡已连接。");
+
+            application.Resources.MergedDictionaries[0] = englishResources;
+            Ensure(headerMessage.Text.Contains("Motion card connected"), "Host 顶部连接状态没有切换为英文。");
+            Ensure(footerStatus.Text.Contains("Motion card: connected"), "Host 底栏连接状态没有切换为英文。");
+
+            hostWindow.SetMotionCardConnectionStatus(false);
+            Ensure(headerMessage.Text.Contains("Motion card not connected"), "Host 顶部没有显示未连接状态。");
+            Ensure(footerStatus.Text.Contains("Motion card: not connected"), "Host 底栏没有显示未连接状态。");
+
+            application.Resources.MergedDictionaries[0] = chineseResources;
+            hostWindow.SetMotionCardConnectionStatus(false);
+            Ensure(headerMessage.Text.Contains("控制卡未连接"), "Host 顶部未恢复中文未连接状态。");
+            Ensure(footerStatus.Text.Contains("控制卡 未连接"), "Host 底栏未恢复中文未连接状态。");
         }
 
         /// <summary>确认断开状态下点击轴和 DO 控件不会向设备发送命令。</summary>
