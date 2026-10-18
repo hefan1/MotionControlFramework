@@ -126,13 +126,14 @@
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
                             <Button x:Name="AddInputButton" Content="{DynamicResource 添加DI}" Click="AddInputButton_Click"
                                     Style="{StaticResource IoMappingButton}" Margin="4,0,0,0" />
-                            <Button Content="{DynamicResource 删除所选}" Click="RemoveInputButton_Click"
+                            <Button x:Name="RemoveInputButton" Content="{DynamicResource 删除所选}" Click="RemoveInputButton_Click"
                                     Style="{StaticResource IoMappingButton}" Margin="4,0,0,0" />
                         </StackPanel>
                     </DockPanel>
                     <DataGrid x:Name="DigitalInputsGrid" Grid.Row="1" ItemsSource="{Binding DigitalInputs}"
                               Style="{StaticResource IoMappingGrid}" SelectionMode="Single" SelectionUnit="FullRow"
-                              CellEditEnding="DigitalInputsGrid_CellEditEnding">
+                              CellEditEnding="DigitalInputsGrid_CellEditEnding"
+                              SelectionChanged="MappingGrid_SelectionChanged">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="{DynamicResource 逻辑名称}" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
                                                 Width="1.2*" ElementStyle="{StaticResource IoMappingCellText}" />
@@ -181,13 +182,14 @@
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
                             <Button x:Name="AddOutputButton" Content="{DynamicResource 添加DO}" Click="AddOutputButton_Click"
                                     Style="{StaticResource IoMappingButton}" Margin="4,0,0,0" />
-                            <Button Content="{DynamicResource 删除所选}" Click="RemoveOutputButton_Click"
+                            <Button x:Name="RemoveOutputButton" Content="{DynamicResource 删除所选}" Click="RemoveOutputButton_Click"
                                     Style="{StaticResource IoMappingButton}" Margin="4,0,0,0" />
                         </StackPanel>
                     </DockPanel>
                     <DataGrid x:Name="DigitalOutputsGrid" Grid.Row="1" ItemsSource="{Binding DigitalOutputs}"
                               Style="{StaticResource IoMappingGrid}" SelectionMode="Single" SelectionUnit="FullRow"
-                              CellEditEnding="DigitalOutputsGrid_CellEditEnding">
+                              CellEditEnding="DigitalOutputsGrid_CellEditEnding"
+                              SelectionChanged="MappingGrid_SelectionChanged">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="{DynamicResource 逻辑名称}" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
                                                 Width="1.2*" ElementStyle="{StaticResource IoMappingCellText}" />

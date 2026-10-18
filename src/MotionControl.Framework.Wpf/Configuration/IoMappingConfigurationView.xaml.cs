@@ -98,6 +98,14 @@ namespace MotionControl.Framework.Wpf.Configuration
             DigitalOutputsGrid.IsEnabled = canEdit;
             AddInputButton.IsEnabled = canEdit && ControllerIds.Count > 0;
             AddOutputButton.IsEnabled = canEdit && ControllerIds.Count > 0;
+            UpdateRemoveButtons(canEdit);
+        }
+
+        /// <summary>仅在控制卡已连接且选中映射行时启用对应删除按钮。</summary>
+        private void UpdateRemoveButtons(bool canEdit)
+        {
+            RemoveInputButton.IsEnabled = canEdit && DigitalInputsGrid.SelectedItem != null;
+            RemoveOutputButton.IsEnabled = canEdit && DigitalOutputsGrid.SelectedItem != null;
         }
 
         /// <summary>读取设备卡清单，并将可用卡标识提供给 DI/DO 下拉框。</summary>
@@ -403,6 +411,13 @@ namespace MotionControl.Framework.Wpf.Configuration
         private void DigitalOutputsGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
         {
             MarkConfigurationAsChanged();
+        }
+
+        /// <summary>DI 或 DO 行选择变化后，更新对应删除按钮的可用状态。</summary>
+        private void MappingGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            bool canEdit = _cardConnection.IsConnected && _configurationCanBeSaved;
+            UpdateRemoveButtons(canEdit);
         }
 
         /// <summary>更新页面底部状态，避免已编辑数据仍显示为“已读取”。</summary>
