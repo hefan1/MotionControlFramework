@@ -2,9 +2,27 @@
   <PropertyGroup>
     <AssemblyName>MotionControl.Adapter.MotionCard.ZMotion</AssemblyName>
     <RootNamespace>MotionControl.Adapter.MotionCard.ZMotion</RootNamespace>
+    <ZMotionRuntimeArchitecture Condition="'$(PlatformTarget)' == 'x86'">x86</ZMotionRuntimeArchitecture>
+    <ZMotionRuntimeArchitecture Condition="'$(ZMotionRuntimeArchitecture)' == ''">x64</ZMotionRuntimeArchitecture>
+    <ZMotionNativeRuntimeDirectory>$(MSBuildThisFileDirectory)Runtime\$(ZMotionRuntimeArchitecture)</ZMotionNativeRuntimeDirectory>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\MotionControl.Framework.Contracts\MotionControl.Framework.Contracts.csproj" />
     <ProjectReference Include="..\VendorApi\MotionControl.VendorApi.ZMotion.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="$(ZMotionNativeRuntimeDirectory)\zauxdll.dll"
+          Link="zauxdll.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('$(ZMotionNativeRuntimeDirectory)\zauxdll.dll')" />
+    <None Include="$(ZMotionNativeRuntimeDirectory)\zmotion.dll"
+          Link="zmotion.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('$(ZMotionNativeRuntimeDirectory)\zmotion.dll')" />
+  </ItemGroup>
+  <Target Name="WarnWhenZMotionNativeRuntimeIsMissing"
+          BeforeTargets="Build"
+          Condition="!Exists('$(ZMotionNativeRuntimeDirectory)\zauxdll.dll') or !Exists('$(ZMotionNativeRuntimeDirectory)\zmotion.dll')">
+    <Warning Text="未找到正运动 $(ZMotionRuntimeArchitecture) 原生运行库。请将 zauxdll.dll 和 zmotion.dll 放入 $(ZMotionNativeRuntimeDirectory)，否则 Host 无法连接正运动控制器或仿真器。" />
+  </Target>
 </Project>

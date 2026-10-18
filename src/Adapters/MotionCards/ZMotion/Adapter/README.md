@@ -38,7 +38,9 @@
 
 ## SDK 部署
 
-仓库包含适配器源代码和托管 P/Invoke 声明，不包含正运动原生 SDK。运行时需由用户按正运动 SDK 许可与位数要求提供 `zauxdll.dll` 及其依赖库。当前解决方案没有配置特定进程位数；Host 的进程位数必须与实际部署 DLL 相符。
+仓库包含适配器源代码和托管 P/Invoke 声明，不把正运动原生 SDK DLL 提交到 Git。请按正运动 SDK 许可，把匹配位数的 `zauxdll.dll` 与 `zmotion.dll` 放到本项目的 `Runtime/x64/` 目录。Host 默认以 x64 运行；适配器项目会在构建时把这两个文件复制到 Host 和引用该适配器的验证工具输出目录，避免重建后仍依赖旧输出目录里手动放置的 DLL。
+
+若将来需要使用 x86 SDK，应使用 `Runtime/x86/` 中对应的厂商 DLL，并在构建时显式设置 `PlatformTarget=x86`。不可把 x86 与 x64 的 DLL 混放或混用。`Runtime/` 下的厂商 DLL 已加入 Git 忽略规则，不会被意外提交。
 
 ## 限位与报警恢复
 
@@ -52,7 +54,7 @@
 
 ## 仿真连接检查
 
-`tools/MotionControl.ZMotionSimulatorCheck` 提供可重复运行的连接验证。默认仅连接并读取控制器身份，不移动轴，也不写 IO。使用时将与程序位数匹配的 `zauxdll.dll` 和 `zmotion.dll` 放到检查程序目录，或放入 `PATH` 可搜索的目录，然后运行检查程序。
+`tools/MotionControl.ZMotionSimulatorCheck` 提供可重复运行的连接验证。默认仅连接并读取控制器身份，不移动轴，也不写 IO。把 SDK DLL 放入上述 `Runtime/x64/` 目录后，构建检查程序会自动把它们复制到检查程序输出目录；如果没有找到 SDK DLL，适配器构建会显示明确警告。
 
 若连接阶段返回 SDK 错误码 `20008`，检查器会报告“本次命令行会话未建立”，而不会将它归类为轴、IO 或回零功能失败。该结果也不能证明 ZDevelop 中的仿真控制器不可用；若仿真器正由 ZDevelop 会话承载，应优先在该桌面会话中验证，并避免为了重试而断开 ZDevelop。
 
