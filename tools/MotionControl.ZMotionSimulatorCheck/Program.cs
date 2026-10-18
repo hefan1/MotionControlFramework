@@ -29,6 +29,11 @@ namespace MotionControl.ZMotionSimulatorCheck
                 return ManualDebugSmokeCheck.Run();
             }
 
+            if (args.Any(argument => string.Equals(argument, "--manual-ui-simulator", StringComparison.OrdinalIgnoreCase)))
+            {
+                return LiveSimulatorManualCheck.Run(args);
+            }
+
             return MainAsync(args).GetAwaiter().GetResult();
         }
 
@@ -598,6 +603,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             Console.WriteLine("  --runtime-regression 不连接仿真器，回归检查连接回滚、报警和步骤保留");
             Console.WriteLine("  --validate-config   校验指定目录中的卡、轴、IO 和急停映射，不连接仿真器");
             Console.WriteLine("  --manual-ui-smoke   检查通用手动页 XAML、轴/IO 行和 Host 导航注入，不连接硬件");
+            Console.WriteLine("  --manual-ui-simulator [--home-mode N] 连接正运动仿真器并打开实时手动调试页");
             Console.WriteLine("  --help               显示帮助");
         }
 
