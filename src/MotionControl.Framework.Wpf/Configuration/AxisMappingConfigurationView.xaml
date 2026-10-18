@@ -391,7 +391,7 @@
                                      Style="{StaticResource AxisMappingTextBox}" />
                             <TextBlock Grid.Row="6" Grid.Column="2" Text="{Binding SelectedAxis.EngineeringUnit}"
                                        VerticalAlignment="Center" Margin="8,0,0,0" FontSize="11" Foreground="#718096" />
-                            <TextBlock Grid.Row="7" Text="{DynamicResource 手动速度}" Style="{StaticResource AxisMappingFieldLabel}" />
+                            <TextBlock Grid.Row="7" Text="{DynamicResource 手动调试速度}" Style="{StaticResource AxisMappingFieldLabel}" />
                             <TextBox Grid.Row="7" Grid.Column="1" Text="{Binding SelectedAxis.ManualSpeed, StringFormat={}{0:0.000}}"
                                      Style="{StaticResource AxisMappingTextBox}" />
                             <TextBlock Grid.Row="7" Grid.Column="2" Text="{Binding SelectedAxis.EngineeringUnit, StringFormat={}{0}/s}"
@@ -399,16 +399,29 @@
                             <TextBlock Grid.Row="8" Text="{DynamicResource 回零模式}" Style="{StaticResource AxisMappingFieldLabel}" />
                             <ComboBox Grid.Row="8" Grid.Column="1" x:Name="HomeModeComboBox"
                                       Style="{StaticResource AxisMappingComboBox}" SelectionChanged="HomeModeComboBox_SelectionChanged">
-                                <ComboBoxItem Tag="3" Content="{DynamicResource 回零模式3短名称}" />
-                                <ComboBoxItem Tag="4" Content="{DynamicResource 回零模式4短名称}" />
-                                <ComboBoxItem Tag="13" Content="{DynamicResource 回零模式13短名称}" />
+                                <ComboBoxItem Tag="1" Content="1" />
+                                <ComboBoxItem Tag="2" Content="2" />
+                                <ComboBoxItem Tag="3" Content="3" />
+                                <ComboBoxItem Tag="4" Content="4" />
+                                <ComboBoxItem Tag="5" Content="5" />
+                                <ComboBoxItem Tag="6" Content="6" />
+                                <ComboBoxItem Tag="8" Content="8" />
+                                <ComboBoxItem Tag="9" Content="9" />
+                                <ComboBoxItem Tag="11" Content="11" />
+                                <ComboBoxItem Tag="12" Content="12" />
+                                <ComboBoxItem Tag="13" Content="13" />
+                                <ComboBoxItem Tag="14" Content="14" />
+                                <ComboBoxItem Tag="15" Content="15" />
+                                <ComboBoxItem Tag="16" Content="16" />
+                                <ComboBoxItem Tag="18" Content="18" />
+                                <ComboBoxItem Tag="19" Content="19" />
                             </ComboBox>
                             <Border Grid.Row="9" Grid.ColumnSpan="3" Padding="8,5" Margin="0,3"
                                     Background="#F1F7FF" BorderBrush="#D5E6FC" BorderThickness="1" CornerRadius="4">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="ⓘ" FontSize="15" Foreground="#2475D0" Margin="0,0,7,0"
                                                VerticalAlignment="Top" />
-                                    <TextBlock x:Name="HomeModeDescriptionTextBlock" Text="{DynamicResource 请选择回零模式}"
+                                    <TextBlock x:Name="HomeModeHintTextBlock" Text="{DynamicResource 回零模式手册提示}"
                                                TextWrapping="Wrap" FontSize="11" Foreground="#526A86" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Border>
@@ -426,10 +439,10 @@
                                         <RowDefinition Height="34" /><RowDefinition Height="34" />
                                         <RowDefinition Height="34" /><RowDefinition Height="34" />
                                     </Grid.RowDefinitions>
-                                    <TextBlock Grid.Row="0" Text="{DynamicResource 手动加速度}" Style="{StaticResource AxisMappingFieldLabel}" />
+                                    <TextBlock Grid.Row="0" Text="{DynamicResource 手动定位加速度}" Style="{StaticResource AxisMappingFieldLabel}" />
                                     <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding SelectedAxis.ManualAcceleration, StringFormat={}{0:0.000}}"
                                              Style="{StaticResource AxisMappingTextBox}" />
-                                    <TextBlock Grid.Row="1" Text="{DynamicResource 手动减速度}" Style="{StaticResource AxisMappingFieldLabel}" />
+                                    <TextBlock Grid.Row="1" Text="{DynamicResource 手动定位减速度}" Style="{StaticResource AxisMappingFieldLabel}" />
                                     <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding SelectedAxis.ManualDeceleration, StringFormat={}{0:0.000}}"
                                              Style="{StaticResource AxisMappingTextBox}" />
                                     <TextBlock Grid.Row="2" Text="{DynamicResource 回零搜索速度}" Style="{StaticResource AxisMappingFieldLabel}" />

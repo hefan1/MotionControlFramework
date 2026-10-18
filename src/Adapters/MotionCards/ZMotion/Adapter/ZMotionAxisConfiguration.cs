@@ -42,7 +42,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         /// <summary>连续点动使用的减速度，单位为工程单位/秒²。</summary>
         public double JogDeceleration { get; set; }
 
-        /// <summary>正运动 DATUM 模式号：3 正向找原点、反向慢速离开；4 反向找原点、正向慢速离开；13 正向碰限位后反向找原点。</summary>
+        /// <summary>正运动控制卡手册定义的 DATUM 原始模式编号；框架按原编号调用厂商接口，不转换成其他厂商含义。</summary>
         public int HomeMode { get; set; }
 
         /// <summary>回零搜索速度，单位为工程单位/秒。</summary>
@@ -101,7 +101,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 || !IsFinite(ManualDeceleration) || ManualDeceleration <= 0)
             {
                 throw new InvalidOperationException(
-                    "轴 '" + Name + "' 的手动速度、加速度和减速度必须是大于 0 的有限数值。");
+                    "轴 '" + Name + "' 的手动调试速度、加速度和减速度必须是大于 0 的有限数值。");
             }
         }
 

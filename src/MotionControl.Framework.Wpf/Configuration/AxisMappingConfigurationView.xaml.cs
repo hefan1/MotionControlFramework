@@ -886,7 +886,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
         }
 
-        /// <summary>按已选控制卡厂商显示回零选项，并阻止把一种厂商的编号套到另一家。</summary>
+        /// <summary>按已选控制卡厂商选择回零编号，并阻止把一种厂商的编号套到另一家。</summary>
         private void UpdateHomeModeEditor(AxisMappingEntry axis)
         {
             string selectedVendor = _cardConfiguration == null ? null : _cardConfiguration.MotionCardVendor;
@@ -899,7 +899,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             if (!supportsZMotionHomeModes)
             {
                 HomeModeComboBox.SelectedIndex = -1;
-                HomeModeDescriptionTextBlock.SetResourceReference(
+                HomeModeHintTextBlock.SetResourceReference(
                     TextBlock.TextProperty,
                     "回零模式厂商未接入");
                 return;
@@ -908,16 +908,16 @@ namespace MotionControl.Framework.Wpf.Configuration
             if (axis == null || !axis.HomeMode.HasValue)
             {
                 HomeModeComboBox.SelectedIndex = -1;
-                HomeModeDescriptionTextBlock.SetResourceReference(
+                HomeModeHintTextBlock.SetResourceReference(
                     TextBlock.TextProperty,
-                    "请选择回零模式");
+                    "回零模式手册提示");
                 return;
             }
 
             if (!string.Equals(axis.HomeModeVendor, selectedVendor, StringComparison.Ordinal))
             {
                 HomeModeComboBox.SelectedIndex = -1;
-                HomeModeDescriptionTextBlock.SetResourceReference(
+                HomeModeHintTextBlock.SetResourceReference(
                     TextBlock.TextProperty,
                     "回零模式属于其他厂商");
                 return;
@@ -926,7 +926,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             if (!IsSupportedZMotionHomeMode(axis.HomeMode))
             {
                 HomeModeComboBox.SelectedIndex = -1;
-                HomeModeDescriptionTextBlock.SetResourceReference(
+                HomeModeHintTextBlock.SetResourceReference(
                     TextBlock.TextProperty,
                     "回零模式不受支持");
                 return;
@@ -939,16 +939,15 @@ namespace MotionControl.Framework.Wpf.Configuration
                     && itemMode == axis.HomeMode.Value)
                 {
                     HomeModeComboBox.SelectedItem = item;
-                    string descriptionResourceKey = "回零模式" + itemMode.ToString(CultureInfo.InvariantCulture);
-                    HomeModeDescriptionTextBlock.SetResourceReference(
+                    HomeModeHintTextBlock.SetResourceReference(
                         TextBlock.TextProperty,
-                        descriptionResourceKey);
+                        "回零模式手册提示");
                     return;
                 }
             }
 
             HomeModeComboBox.SelectedIndex = -1;
-            HomeModeDescriptionTextBlock.SetResourceReference(
+            HomeModeHintTextBlock.SetResourceReference(
                 TextBlock.TextProperty,
                 "回零模式不受支持");
         }
@@ -966,10 +965,13 @@ namespace MotionControl.Framework.Wpf.Configuration
             UpdateHomeModeEditor(SelectedAxis);
         }
 
-        /// <summary>判断编号是否属于当前已接入的正运动 DATUM 模式。</summary>
+        /// <summary>判断编号是否属于页面列出的正运动常规 DATUM 模式。</summary>
         private static bool IsSupportedZMotionHomeMode(int? homeMode)
         {
-            return homeMode == 3 || homeMode == 4 || homeMode == 13;
+            return homeMode == 1 || homeMode == 2 || homeMode == 3 || homeMode == 4
+                || homeMode == 5 || homeMode == 6 || homeMode == 8 || homeMode == 9
+                || homeMode == 11 || homeMode == 12 || homeMode == 13 || homeMode == 14
+                || homeMode == 15 || homeMode == 16 || homeMode == 18 || homeMode == 19;
         }
 
         /// <summary>检查设备轴名称、单位换算、软限位、速度和加减速度参数。</summary>
@@ -1114,7 +1116,7 @@ namespace MotionControl.Framework.Wpf.Configuration
 
                 if (!IsFinite(axis.ManualSpeed) || axis.ManualSpeed.Value <= 0)
                 {
-                    errors.Add(string.Format((string)FindResource("轴参数大于零格式"), axisName, (string)FindResource("手动速度")));
+                    errors.Add(string.Format((string)FindResource("轴参数大于零格式"), axisName, (string)FindResource("手动调试速度")));
                 }
 
                 if (!IsFinite(axis.ManualAcceleration) || axis.ManualAcceleration.Value <= 0
