@@ -24,6 +24,9 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>控制卡设置 JSON 在 MachineId 目录中的相对路径。</summary>
         private const string MotionCardsFilePath = "HardwareConfig/MotionCards.json";
 
+        /// <summary>目前已接入并验证回零选项说明的控制卡厂商。</summary>
+        private const string ZMotionVendorName = "正运动";
+
         /// <summary>按 MachineId 读取和备份保存设备配置。</summary>
         private readonly MachineConfigurationStore _configurationStore;
 
@@ -191,7 +194,7 @@ namespace MotionControl.Framework.Wpf.Configuration
                 {
                     SelectComboBoxItem(AxisTypeComboBox, axis.AxisType);
                     SelectComboBoxItem(EngineeringUnitComboBox, axis.EngineeringUnit);
-                    SelectHomeMode(axis.HomeMode);
+                    UpdateHomeModeEditor(axis);
                 }
             }
             finally
@@ -299,6 +302,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             axis.JogAcceleration = null;
             axis.JogDeceleration = null;
             axis.HomeMode = null;
+            axis.HomeModeVendor = null;
             axis.HomeSearchSpeed = null;
             axis.HomeCreepSpeed = null;
             axis.HomeAcceleration = null;
@@ -388,6 +392,14 @@ namespace MotionControl.Framework.Wpf.Configuration
                 visibleAxis.JogAcceleration = configuredAxis.JogAcceleration;
                 visibleAxis.JogDeceleration = configuredAxis.JogDeceleration;
                 visibleAxis.HomeMode = configuredAxis.HomeMode;
+                visibleAxis.HomeModeVendor = configuredAxis.HomeModeVendor;
+                if (string.IsNullOrWhiteSpace(visibleAxis.HomeModeVendor)
+                    && string.Equals(_cardConfiguration.MotionCardVendor, ZMotionVendorName, StringComparison.Ordinal)
+                    && IsSupportedZMotionHomeMode(visibleAxis.HomeMode))
+                {
+                    // 旧版 JSON 只保存模式数字；当时页面选项属于正运动，因此补上厂商归属。
+                    visibleAxis.HomeModeVendor = ZMotionVendorName;
+                }
                 visibleAxis.HomeSearchSpeed = configuredAxis.HomeSearchSpeed;
                 visibleAxis.HomeCreepSpeed = configuredAxis.HomeCreepSpeed;
                 visibleAxis.HomeAcceleration = configuredAxis.HomeAcceleration;
@@ -489,7 +501,7 @@ namespace MotionControl.Framework.Wpf.Configuration
 
             SelectComboBoxItem(AxisTypeComboBox, axis.AxisType);
             SelectComboBoxItem(EngineeringUnitComboBox, axis.EngineeringUnit);
-            SelectHomeMode(axis.HomeMode);
+            UpdateHomeModeEditor(axis);
         }
 
         /// <summary>根据物理轴号选择当前编辑行。</summary>
@@ -816,6 +828,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             if (!_loadingConfiguration && _cardConfiguration != null)
             {
                 _cardConfiguration.MotionCardVendor = GetSelectedTag(CardVendorComboBox);
+                UpdateHomeModeEditor(SelectedAxis);
             }
         }
 
@@ -873,12 +886,49 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
         }
 
-        /// <summary>显示当前控制卡厂商对应的回零模式选项。</summary>
-        private void SelectHomeMode(int? homeMode)
+        /// <summary>按已选控制卡厂商显示回零选项，并阻止把一种厂商的编号套到另一家。</summary>
+        private void UpdateHomeModeEditor(AxisMappingEntry axis)
         {
-            if (!homeMode.HasValue)
+            string selectedVendor = _cardConfiguration == null ? null : _cardConfiguration.MotionCardVendor;
+            bool supportsZMotionHomeModes = string.Equals(
+                selectedVendor,
+                ZMotionVendorName,
+                StringComparison.Ordinal);
+
+            HomeModeComboBox.IsEnabled = supportsZMotionHomeModes;
+            if (!supportsZMotionHomeModes)
             {
                 HomeModeComboBox.SelectedIndex = -1;
+                HomeModeDescriptionTextBlock.SetResourceReference(
+                    TextBlock.TextProperty,
+                    "回零模式厂商未接入");
+                return;
+            }
+
+            if (axis == null || !axis.HomeMode.HasValue)
+            {
+                HomeModeComboBox.SelectedIndex = -1;
+                HomeModeDescriptionTextBlock.SetResourceReference(
+                    TextBlock.TextProperty,
+                    "请选择回零模式");
+                return;
+            }
+
+            if (!string.Equals(axis.HomeModeVendor, selectedVendor, StringComparison.Ordinal))
+            {
+                HomeModeComboBox.SelectedIndex = -1;
+                HomeModeDescriptionTextBlock.SetResourceReference(
+                    TextBlock.TextProperty,
+                    "回零模式属于其他厂商");
+                return;
+            }
+
+            if (!IsSupportedZMotionHomeMode(axis.HomeMode))
+            {
+                HomeModeComboBox.SelectedIndex = -1;
+                HomeModeDescriptionTextBlock.SetResourceReference(
+                    TextBlock.TextProperty,
+                    "回零模式不受支持");
                 return;
             }
 
@@ -886,14 +936,21 @@ namespace MotionControl.Framework.Wpf.Configuration
             {
                 int itemMode;
                 if (int.TryParse(item.Tag as string, NumberStyles.Integer, CultureInfo.InvariantCulture, out itemMode)
-                    && itemMode == homeMode)
+                    && itemMode == axis.HomeMode.Value)
                 {
                     HomeModeComboBox.SelectedItem = item;
+                    string descriptionResourceKey = "回零模式" + itemMode.ToString(CultureInfo.InvariantCulture);
+                    HomeModeDescriptionTextBlock.SetResourceReference(
+                        TextBlock.TextProperty,
+                        descriptionResourceKey);
                     return;
                 }
             }
 
             HomeModeComboBox.SelectedIndex = -1;
+            HomeModeDescriptionTextBlock.SetResourceReference(
+                TextBlock.TextProperty,
+                "回零模式不受支持");
         }
 
         /// <summary>将回零模式下拉框选择写入当前物理轴。</summary>
@@ -905,6 +962,14 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
 
             SelectedAxis.HomeMode = int.Parse(GetSelectedTag(HomeModeComboBox), CultureInfo.InvariantCulture);
+            SelectedAxis.HomeModeVendor = _cardConfiguration.MotionCardVendor;
+            UpdateHomeModeEditor(SelectedAxis);
+        }
+
+        /// <summary>判断编号是否属于当前已接入的正运动 DATUM 模式。</summary>
+        private static bool IsSupportedZMotionHomeMode(int? homeMode)
+        {
+            return homeMode == 3 || homeMode == 4 || homeMode == 13;
         }
 
         /// <summary>检查设备轴名称、单位换算、软限位、速度和加减速度参数。</summary>
@@ -1068,10 +1133,14 @@ namespace MotionControl.Framework.Wpf.Configuration
                     errors.Add(string.Format((string)FindResource("轴回零速度无效格式"), axisName));
                 }
 
-                if (!axis.HomeMode.HasValue
-                    || (axis.HomeMode.Value != 3 && axis.HomeMode.Value != 4 && axis.HomeMode.Value != 13))
+                if (string.Equals(_cardConfiguration.MotionCardVendor, ZMotionVendorName, StringComparison.Ordinal)
+                    && (!IsSupportedZMotionHomeMode(axis.HomeMode)
+                        || !string.Equals(axis.HomeModeVendor, ZMotionVendorName, StringComparison.Ordinal)))
                 {
-                    errors.Add(string.Format((string)FindResource("轴回零模式无效格式"), axisName));
+                    errors.Add(string.Format(
+                        (string)FindResource("轴回零模式无效格式"),
+                        axisName,
+                        _cardConfiguration.MotionCardVendor));
                 }
             }
 

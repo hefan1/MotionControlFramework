@@ -213,11 +213,14 @@
     <sys:String x:Key="回零模式3">模式 3：正向找原点，触发后反向慢速离开</sys:String>
     <sys:String x:Key="回零模式4">模式 4：反向找原点，触发后正向慢速离开</sys:String>
     <sys:String x:Key="回零模式13">模式 13：正向碰限位后，反向找原点</sys:String>
-    <sys:String x:Key="回零模式3短名称">正向找原点</sys:String>
-    <sys:String x:Key="回零模式4短名称">反向找原点</sys:String>
-    <sys:String x:Key="回零模式13短名称">先找正限位</sys:String>
+    <sys:String x:Key="回零模式3短名称">3：正向找原点</sys:String>
+    <sys:String x:Key="回零模式4短名称">4：反向找原点</sys:String>
+    <sys:String x:Key="回零模式13短名称">13：先找正限位</sys:String>
     <sys:String x:Key="更多轴参数">更多轴参数</sys:String>
-    <sys:String x:Key="回零模式厂商提示">回零模式由控制卡厂商定义。以上模式说明按正运动 DATUM 编号解释；其他厂商接入时需确认对应设置。</sys:String>
+    <sys:String x:Key="回零模式厂商提示">回零编号由控制卡厂商定义；正运动 DATUM 编号不能直接套用于其他厂商，相同数字也不代表相同动作。</sys:String>
+    <sys:String x:Key="回零模式厂商未接入">当前厂商的回零模式尚未接入，不能套用正运动的模式编号。</sys:String>
+    <sys:String x:Key="回零模式属于其他厂商">当前保存的回零编号属于其他厂商；切回对应厂商才会显示，不会自动套用。</sys:String>
+    <sys:String x:Key="回零模式不受支持">该编号不在当前适配器已支持的范围内，请重新选择。</sys:String>
     <sys:String x:Key="轴映射尚未保存">当前修改尚未保存。</sys:String>
     <sys:String x:Key="轴映射保存位置">控制卡参数与轴映射分别保存到设备 JSON 配置。</sys:String>
     <sys:String x:Key="轴映射保存路径格式">MotionCards.json：{0}；AxisParameters.json：{1}</sys:String>
@@ -241,5 +244,5 @@
     <sys:String x:Key="轴软限位无效格式">{0} 的软限位下限必须小于上限，且两项必须是有效数值。</sys:String>
     <sys:String x:Key="轴加减速度无效格式">{0} 的手动、点动和回零加减速度必须是大于零的有效数值。</sys:String>
     <sys:String x:Key="轴回零速度无效格式">{0} 的回零搜索速度和爬行速度必须是大于零的有效数值。</sys:String>
-    <sys:String x:Key="轴回零模式无效格式">{0} 的回零模式无效，请选择模式 3、4 或 13。</sys:String>
+    <sys:String x:Key="轴回零模式无效格式">{0} 尚未配置 {1} 支持的回零模式，或编号属于其他厂商。请重新选择。</sys:String>
 </ResourceDictionary>

@@ -408,21 +408,8 @@
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="ⓘ" FontSize="15" Foreground="#2475D0" Margin="0,0,7,0"
                                                VerticalAlignment="Top" />
-                                    <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#526A86" VerticalAlignment="Center">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Text" Value="{DynamicResource 请选择回零模式}" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding SelectedItem.Tag, ElementName=HomeModeComboBox}" Value="4">
-                                                        <Setter Property="Text" Value="{DynamicResource 回零模式4}" />
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding SelectedItem.Tag, ElementName=HomeModeComboBox}" Value="13">
-                                                        <Setter Property="Text" Value="{DynamicResource 回零模式13}" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
+                                    <TextBlock x:Name="HomeModeDescriptionTextBlock" Text="{DynamicResource 请选择回零模式}"
+                                               TextWrapping="Wrap" FontSize="11" Foreground="#526A86" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Border>
                             <Expander Grid.Row="10" Grid.ColumnSpan="3" Header="{DynamicResource 更多轴参数}"

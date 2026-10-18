@@ -61,6 +61,9 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>保存控制卡厂商使用的回零模式编号；未配置时为空。</summary>
         private int? _homeMode;
 
+        /// <summary>记录该回零编号所属的控制卡厂商，防止换厂商后误用相同数字。</summary>
+        private string _homeModeVendor;
+
         /// <summary>保存回零搜索速度；未配置时为空。</summary>
         private double? _homeSearchSpeed;
 
@@ -171,6 +174,17 @@ namespace MotionControl.Framework.Wpf.Configuration
         {
             get { return _homeMode; }
             set { SetValue(ref _homeMode, value, "HomeMode"); }
+        }
+
+        /// <summary>回零模式编号所属的控制卡厂商；旧配置没有此项时由页面按已选厂商迁移。</summary>
+        public string HomeModeVendor
+        {
+            get { return _homeModeVendor; }
+            set
+            {
+                string normalizedVendor = string.IsNullOrWhiteSpace(value) ? null : value;
+                SetValue(ref _homeModeVendor, normalizedVendor, "HomeModeVendor");
+            }
         }
 
         /// <summary>回零搜索速度，单位为工程单位每秒；未配置时为空。</summary>
