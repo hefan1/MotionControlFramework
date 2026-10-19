@@ -35,8 +35,11 @@ namespace MotionControl.Host.Wpf
         /// <summary>由当前连接卡创建的设备运行时，仅用于手动调试页的状态和操作保护。</summary>
         private MachineRuntime _machineRuntime;
 
-        /// <summary>当前已映射轴和 DI/DO 对应的手动调试页面。</summary>
+        /// <summary>当前已映射逻辑轴对应的手动调试页面。</summary>
         private ManualMotionDebugView _manualMotionDebugPage;
+
+        /// <summary>当前设备已映射 DI/DO 对应的 IO 手动页面。</summary>
+        private ManualIoDebugView _manualIoDebugPage;
 
         /// <summary>当前 Host 主窗口，用于显示控制卡的统一连接状态。</summary>
         private MainWindow _mainWindow;
@@ -86,7 +89,9 @@ namespace MotionControl.Host.Wpf
             {
                 _machineRuntime = null;
                 _manualMotionDebugPage = null;
+                _manualIoDebugPage = null;
                 _mainWindow.SetManualMotionDebugPage(null);
+                _mainWindow.SetManualIoDebugPage(null);
                 return;
             }
 
@@ -110,22 +115,28 @@ namespace MotionControl.Host.Wpf
                 ManualMotionDebugView manualPage = new ManualMotionDebugView(
                     machineRuntime,
                     motionCards,
-                    connectedCard,
                     _cardConnection.AxisHardwareDefinitions,
-                    _cardConnection.DigitalInputs.Select(point => point.Name),
-                    _cardConnection.DigitalOutputs.Select(point => point.Name),
                     _configurationStore,
                     "Machine01");
+                ManualIoDebugView ioManualPage = new ManualIoDebugView(
+                    machineRuntime,
+                    connectedCard,
+                    _cardConnection.DigitalInputs.Select(point => point.Name),
+                    _cardConnection.DigitalOutputs.Select(point => point.Name));
 
                 _machineRuntime = machineRuntime;
                 _manualMotionDebugPage = manualPage;
+                _manualIoDebugPage = ioManualPage;
                 _mainWindow.SetManualMotionDebugPage(manualPage);
+                _mainWindow.SetManualIoDebugPage(ioManualPage);
             }
             catch (Exception error)
             {
                 _machineRuntime = null;
                 _manualMotionDebugPage = null;
+                _manualIoDebugPage = null;
                 _mainWindow.SetManualMotionDebugPage(null);
+                _mainWindow.SetManualIoDebugPage(null);
                 MessageBox.Show(
                     "控制卡已连接，但创建轴手动页面失败：" + error.Message,
                     "轴手动页面",

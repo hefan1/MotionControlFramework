@@ -12,6 +12,9 @@ namespace MotionControl.Framework.Contracts.Configuration
         /// <summary>厂商控制卡上的物理轴号。</summary>
         public int AxisNumber { get; set; }
 
+        /// <summary>轴位置显示使用的工程单位，例如 mm 或 deg；未提供时页面显示工程单位。</summary>
+        public string EngineeringUnit { get; set; }
+
         /// <summary>逻辑轴允许的最小工程位置。</summary>
         public double MinimumPosition { get; set; }
 

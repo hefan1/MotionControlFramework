@@ -112,14 +112,17 @@ namespace MotionControl.ZMotionSimulatorCheck
                 var manualPage = new ManualMotionDebugView(
                     runtime,
                     cardGroup,
-                    card,
                     axisConfigurations.Select(CreateAxisHardwareDefinition),
-                    inputs.Select(point => point.Name),
-                    outputs.Select(point => point.Name),
                     manualPositionConfigurationStore,
                     cardDefinition.ControllerId);
+                var ioManualPage = new ManualIoDebugView(
+                    runtime,
+                    card,
+                    inputs.Select(point => point.Name),
+                    outputs.Select(point => point.Name));
                 var hostWindow = new MainWindow();
                 hostWindow.SetManualMotionDebugPage(manualPage);
+                hostWindow.SetManualIoDebugPage(ioManualPage);
                 hostWindow.SetMotionCardConnectionStatus(card.IsConnected);
                 hostWindow.Closed += (sender, eventArgs) =>
                     runtime.DisconnectAsync(CancellationToken.None).GetAwaiter().GetResult();
@@ -128,7 +131,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Console.WriteLine(
                     "[通过] 已连接 " + card.ActualControllerType + "，身份 " + card.ActualControllerId
                     + "，DATUM 模式 " + axisConfigurations[0].HomeMode
-                    + "。Host 手动调试页已加载，请在屏幕中进入“手动”并验证轴/IO操作；关闭窗口会断开仿真器连接。");
+                    + "。Host 轴手动和 IO 手动页已分开加载，请在屏幕中分别检查；关闭窗口会断开仿真器连接。");
                 return application.Run(hostWindow);
             }
             catch (Exception error)

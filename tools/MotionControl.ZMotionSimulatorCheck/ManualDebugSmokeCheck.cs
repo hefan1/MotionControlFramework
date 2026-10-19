@@ -23,7 +23,7 @@ using MotionControl.Host.Wpf;
 
 namespace MotionControl.ZMotionSimulatorCheck
 {
-    /// <summary>离屏检查手动调试页 XAML 加载、轴/IO 行构建和 Host 导航注入。</summary>
+    /// <summary>检查轴手动和 IO 手动页面控件构建及 Host 导航注入。</summary>
     internal static class ManualDebugSmokeCheck
     {
         /// <summary>建立 WPF 应用上下文并检查页面控件与 Host 导航入口。</summary>
@@ -56,7 +56,6 @@ namespace MotionControl.ZMotionSimulatorCheck
                 var page = new ManualMotionDebugView(
                     runtime,
                     cards,
-                    card.LogicalIo,
                     new[]
                     {
                         new AxisHardwareDefinition
@@ -64,6 +63,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                             Name = "X",
                             ControllerId = card.ControllerId,
                             AxisNumber = 0,
+                            EngineeringUnit = "mm",
                             MinimumPosition = -100,
                             MaximumPosition = 100,
                             SoftLimitEnabled = true,
@@ -72,36 +72,43 @@ namespace MotionControl.ZMotionSimulatorCheck
                             ManualDeceleration = 45
                         }
                     },
-                    new[] { "EmergencyStop", "PartPresent" },
-                    new[] { "Vacuum", "Clamp" },
                     positionConfigurationStore,
                     "ManualDebugSmoke");
+                var ioPage = new ManualIoDebugView(
+                    runtime,
+                    card.LogicalIo,
+                    new[] { "EmergencyStop", "PartPresent" },
+                    new[] { "Vacuum", "Clamp" });
 
                 var axisCards = (WrapPanel)page.FindName("AxisCardsPanel");
                 Ensure(axisCards.Children.Count == 1, "已映射一个轴时没有生成对应的单轴调试卡片。");
                 var axisControl = (ManualAxisControl)axisCards.Children[0];
-                Ensure(axisControl.FindName("AxisStatusText") is TextBlock, "轴卡片没有加载轴状态显示。");
+                Ensure(axisControl.FindName("FeedbackPositionText") is TextBlock, "轴卡片没有加载反馈位置显示。");
                 Ensure(((TextBox)axisControl.FindName("SpeedTextBox")).Text == "23", "轴卡片没有从轴配置加载手动速度。");
                 Ensure(((TextBox)axisControl.FindName("AccelerationTextBox")).Text == "34", "轴卡片没有从轴配置加载手动加速度。");
                 Ensure(((TextBox)axisControl.FindName("DecelerationTextBox")).Text == "45", "轴卡片没有从轴配置加载手动减速度。");
                 Ensure(((ItemsControl)axisControl.FindName("PositionsList")).Items.Count == 0, "新轴自动出现了默认示教位置。");
                 Ensure(((TextBlock)axisControl.FindName("EmptyPositionsText")).Visibility == Visibility.Visible, "空位置列表没有显示添加提示。");
-                Ensure(((StackPanel)page.FindName("DigitalInputsPanel")).Children.Count == 2, "DI 列表行数与配置数量不一致。");
-                Ensure(((StackPanel)page.FindName("DigitalOutputsPanel")).Children.Count == 2, "DO 列表行数与配置数量不一致。");
+                Ensure(page.FindName("DigitalInputsPanel") == null, "轴手动页仍混入 DI 操作面板。");
+                Ensure(page.FindName("DigitalOutputsPanel") == null, "轴手动页仍混入 DO 操作面板。");
+                Ensure(((StackPanel)ioPage.FindName("DigitalInputsPanel")).Children.Count == 2, "IO 手动页 DI 列表行数与配置数量不一致。");
+                Ensure(((StackPanel)ioPage.FindName("DigitalOutputsPanel")).Children.Count == 2, "IO 手动页 DO 列表行数与配置数量不一致。");
                 VerifyMachineStateLocalization(application, chineseResources, englishResources, page);
                 VerifyDisconnectedControlsDoNotSendCommands(
                     application,
                     chineseResources,
                     englishResources,
                     page,
+                    ioPage,
                     card);
 
                 runtime.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
                 runtime.ResetAsync(CancellationToken.None).GetAwaiter().GetResult();
-                VerifyConnectedControlsUseCommonContracts(page, card);
+                VerifyConnectedControlsUseCommonContracts(page, ioPage, card);
 
                 var hostWindow = new MainWindow();
                 hostWindow.SetManualMotionDebugPage(page);
+                hostWindow.SetManualIoDebugPage(ioPage);
                 VerifyMotionCardConnectionStatus(application, hostWindow, englishResources, chineseResources);
                 VerifyAxisMappingStartupConnection();
                 var primaryNavigation = (StackPanel)hostWindow.FindName("PrimaryNavigation");
@@ -113,6 +120,12 @@ namespace MotionControl.ZMotionSimulatorCheck
                 var manualContent = (ContentControl)hostWindow.FindName("ManualDebugContent");
                 Ensure(ReferenceEquals(manualContent.Content, page), "Host 手动页面没有显示注入的通用调试页。");
                 Ensure(manualContent.Visibility == Visibility.Visible, "Host 手动调试内容当前不可见。");
+                var sidebar = (StackPanel)hostWindow.FindName("SidebarNavigation");
+                var ioManualNavigation = sidebar.Children
+                    .OfType<ToggleButton>()
+                    .Single(button => string.Equals(button.Tag as string, "IO手动", StringComparison.Ordinal));
+                ioManualNavigation.RaiseEvent(new RoutedEventArgs(ToggleButton.ClickEvent, ioManualNavigation));
+                Ensure(ReferenceEquals(manualContent.Content, ioPage), "Host 的 IO 手动导航没有显示独立 IO 页面。");
 
                 application.Shutdown();
                 Console.WriteLine("[通过] 手动调试页与轴映射页离屏检查完成：启动连接策略、轴参数读回、Host底栏卡状态、中英资源及手动调试控件；使用内存测试卡。");
@@ -367,19 +380,20 @@ namespace MotionControl.ZMotionSimulatorCheck
             ResourceDictionary chineseResources,
             ResourceDictionary englishResources,
             ManualMotionDebugView page,
+            ManualIoDebugView ioPage,
             SmokeMotionCard card)
         {
             var axisControl = GetFirstAxisControl(page);
-            var servoButton = (Button)axisControl.FindName("ServoEnableButton");
+            var servoButton = (Button)axisControl.FindName("ServoToggleButton");
             servoButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, servoButton));
             var axisOperationMessage = (TextBlock)axisControl.FindName("OperationMessageText");
             Ensure(axisOperationMessage.Text.Contains("运动控制卡未连接"), "中文界面没有显示未连接保护信息。");
 
-            var outputRows = (StackPanel)page.FindName("DigitalOutputsPanel");
+            var outputRows = (StackPanel)ioPage.FindName("DigitalOutputsPanel");
             var firstOutputRow = (StackPanel)outputRows.Children[0];
-            var outputOnButton = (Button)firstOutputRow.Children[2];
+            var outputOnButton = (Button)firstOutputRow.Children[3];
             outputOnButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, outputOnButton));
-            var operationMessage = (TextBlock)page.FindName("OperationMessageText");
+            var operationMessage = (TextBlock)ioPage.FindName("OperationMessageText");
             Ensure(operationMessage.Text.Contains("运动控制卡未连接"), "中文界面没有拦截断开状态下的 DO 命令。");
 
             application.Resources.MergedDictionaries[0] = englishResources;
@@ -416,13 +430,13 @@ namespace MotionControl.ZMotionSimulatorCheck
         /// <summary>用内存测试卡检查已连接时的轴操作、软限位拦截和 DO 读回。</summary>
         private static void VerifyConnectedControlsUseCommonContracts(
             ManualMotionDebugView page,
+            ManualIoDebugView ioPage,
             SmokeMotionCard card)
         {
             var axis = (SmokeAxis)card.Axes.Single();
             var initialCommandCount = axis.CommandCount;
             ManualAxisControl axisControl = GetFirstAxisControl(page);
-            ClickButton(axisControl, "ServoEnableButton");
-            ClickButton(axisControl, "ServoDisableButton");
+            ClickButton(axisControl, "ServoToggleButton");
             ClickButton(axisControl, "HomeButton");
             ClickButton(axisControl, "ResetAxisAlarmButton");
             ClickButton(axisControl, "StopButton");
@@ -434,23 +448,30 @@ namespace MotionControl.ZMotionSimulatorCheck
             Ensure(axis.LastMotionProfile.Speed == 23, "手动定位没有使用轴配置的默认速度。");
             Ensure(axis.LastMotionProfile.Acceleration == 34, "手动定位没有使用轴配置的默认加速度。");
             Ensure(axis.LastMotionProfile.Deceleration == 45, "手动定位没有使用轴配置的默认减速度。");
-            targetPosition.Text = "1";
-            ClickButton(axisControl, "MoveRelativeButton");
-            Ensure(axis.CommandCount == initialCommandCount + 7, "已连接时轴按钮没有通过 IAxis 调用预期的操作。");
+            var jogMode = (ToggleButton)axisControl.FindName("JogModeToggleButton");
+            jogMode.IsChecked = false;
+            var stepJogButton = (Button)axisControl.FindName("PositiveJogButton");
+            stepJogButton.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
+            {
+                RoutedEvent = UIElement.PreviewMouseLeftButtonDownEvent
+            });
+            Ensure(axis.LastMotionProfile != null, "寸动没有使用当前运动参数配置。");
+            Ensure(axis.CommandCount == initialCommandCount + 6, "手动按钮没有通过 IAxis 执行预期的定位、回零和伺服操作。");
 
             var operationMessage = (TextBlock)axisControl.FindName("OperationMessageText");
             targetPosition.Text = "101";
             ClickButton(axisControl, "MoveAbsoluteButton");
-            Ensure(axis.CommandCount == initialCommandCount + 7, "绝对定位超出软限位时仍然调用了轴。");
+            Ensure(axis.CommandCount == initialCommandCount + 6, "绝对定位超出软限位时仍然调用了轴。");
             Ensure(operationMessage.Text.Contains("软限位"), "软限位拒绝原因没有显示在页面上。");
 
+            jogMode.IsChecked = true;
             VerifyJogButtonsStartAndStop(axisControl, axis);
 
-            var outputRows = (StackPanel)page.FindName("DigitalOutputsPanel");
+            var outputRows = (StackPanel)ioPage.FindName("DigitalOutputsPanel");
             var firstOutputRow = (StackPanel)outputRows.Children[0];
-            var outputStatusText = (TextBlock)firstOutputRow.Children[1];
-            var outputOnButton = (Button)firstOutputRow.Children[2];
-            var outputOffButton = (Button)firstOutputRow.Children[3];
+            var outputStatusText = (TextBlock)firstOutputRow.Children[2];
+            var outputOnButton = (Button)firstOutputRow.Children[3];
+            var outputOffButton = (Button)firstOutputRow.Children[4];
             outputOnButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, outputOnButton));
             Ensure(outputStatusText.Text == "输出已开", "DO 开启后页面没有显示读回状态。");
             outputOffButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, outputOffButton));

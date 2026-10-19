@@ -1125,6 +1125,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             {
                 var handle = GetConnectedHandle();
                 float actualPosition = 0;
+                float commandPosition = 0;
                 float velocity = 0;
                 int servoEnabled = 0;
                 int idle = 1;
@@ -1132,6 +1133,10 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 CheckResult(
                     zmcaux.ZAux_Direct_GetMpos(handle, axis.AxisNumber, ref actualPosition),
                     "读取反馈位置",
+                    axis.Name);
+                CheckResult(
+                    zmcaux.ZAux_Direct_GetDpos(handle, axis.AxisNumber, ref commandPosition),
+                    "读取指令位置",
                     axis.Name);
                 CheckResult(
                     zmcaux.ZAux_Direct_GetMspeed(handle, axis.AxisNumber, ref velocity),
@@ -1147,6 +1152,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     axis.Name);
 
                 var statusBits = ReadAxisStatusBits(handle, axis, "读取轴状态字");
+                bool? originInputActive = ReadOriginInputActive(handle, axis);
                 var stopReasonCode = ReadAxisStopReason(handle, axis, "读取轴历史停止原因");
                 var activeAlarmBits = statusBits & ActiveAlarmStatusMask;
                 var alarmActive = activeAlarmBits != 0;
@@ -1167,8 +1173,40 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     alarmCode,
                     alarmMessage,
                     stopReasonCode,
-                    axis.RequiresHomingAfterLimitAlarm);
+                    axis.RequiresHomingAfterLimitAlarm,
+                    commandPosition,
+                    originInputActive);
             }
+        }
+
+        /// <summary>读取 DATUM_IN 对应输入及其反相设置，得到控制器识别的原点信号状态。</summary>
+        private bool? ReadOriginInputActive(IntPtr handle, ZMotionAxis axis)
+        {
+            int inputNumber = -1;
+            CheckResult(
+                zmcaux.ZAux_Direct_GetDatumIn(handle, axis.AxisNumber, ref inputNumber),
+                "读取 DATUM_IN 原点输入通道",
+                axis.Name);
+
+            if (inputNumber < 0)
+            {
+                return null;
+            }
+
+            uint inputValue = 0;
+            CheckResult(
+                zmcaux.ZAux_Direct_GetIn(handle, inputNumber, ref inputValue),
+                "读取原点输入通道 " + inputNumber,
+                axis.Name);
+
+            int inputInverted = 0;
+            CheckResult(
+                zmcaux.ZAux_Direct_GetInvertIn(handle, inputNumber, ref inputInverted),
+                "读取原点输入通道 " + inputNumber + " 的反相设置",
+                axis.Name);
+
+            bool inputActive = inputValue != 0;
+            return inputInverted != 0 ? !inputActive : inputActive;
         }
 
         /// <summary>读取正运动控制器的实时轴状态字。</summary>

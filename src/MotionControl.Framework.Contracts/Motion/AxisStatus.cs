@@ -18,7 +18,9 @@ namespace MotionControl.Framework.Contracts.Motion
             string alarmCode,
             string alarmMessage,
             int stopReasonCode,
-            bool requiresHomingAfterLimitAlarm)
+            bool requiresHomingAfterLimitAlarm,
+            double? commandPosition = null,
+            bool? originInputActive = null)
         {
             Position = position;
             Velocity = velocity;
@@ -34,6 +36,8 @@ namespace MotionControl.Framework.Contracts.Motion
             AlarmMessage = alarmMessage;
             StopReasonCode = stopReasonCode;
             RequiresHomingAfterLimitAlarm = requiresHomingAfterLimitAlarm;
+            CommandPosition = commandPosition;
+            OriginInputActive = originInputActive;
         }
 
         /// <summary>轴当前位置，使用该轴配置的工程单位。</summary>
@@ -77,5 +81,11 @@ namespace MotionControl.Framework.Contracts.Motion
 
         /// <summary>硬限位恢复后，是否必须重新回零才能启动自动流程或执行定位。</summary>
         public bool RequiresHomingAfterLimitAlarm { get; private set; }
+
+        /// <summary>控制器当前指令位置；适配器无法读取时为空，单位为轴工程单位。</summary>
+        public double? CommandPosition { get; private set; }
+
+        /// <summary>控制器配置的原点输入当前是否有效；适配器无法读取或未配置时为空。</summary>
+        public bool? OriginInputActive { get; private set; }
     }
 }

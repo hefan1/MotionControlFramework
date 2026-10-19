@@ -83,7 +83,10 @@
     <sys:String x:Key="English">English</sys:String>
 
     <!-- 通用手动调试页 -->
-    <sys:String x:Key="手动调试说明">此页面通过逻辑轴和逻辑 DI/DO 操作；自动流程运行时会拒绝手动命令。</sys:String>
+    <sys:String x:Key="手动调试说明">轴手动与 IO 手动分开操作；自动流程运行时会拒绝手动命令。</sys:String>
+    <sys:String x:Key="轴手动页面说明">每个已映射轴显示为独立调试卡片；支持连续点动、寸动、定位和示教位置。</sys:String>
+    <sys:String x:Key="IO手动页面说明">按已映射的逻辑名称查看 DI 状态，并手动写入 DO；自动流程运行期间禁止操作。</sys:String>
+    <sys:String x:Key="IO手动标题">IO 手动</sys:String>
     <sys:String x:Key="逻辑轴">逻辑轴：</sys:String>
     <sys:String x:Key="伺服使能">伺服使能</sys:String>
     <sys:String x:Key="伺服关闭">伺服关闭</sys:String>
@@ -100,6 +103,27 @@
     <sys:String x:Key="按住点动">按住按钮点动：</sys:String>
     <sys:String x:Key="负向点动">负向 -</sys:String>
     <sys:String x:Key="正向点动">正向 +</sys:String>
+    <sys:String x:Key="连续点动">连续</sys:String>
+    <sys:String x:Key="寸动模式">寸动</sys:String>
+    <sys:String x:Key="寸动步长">寸动步长</sys:String>
+    <sys:String x:Key="定位位置">定位位置</sys:String>
+    <sys:String x:Key="指令位置">当前指令位置</sys:String>
+    <sys:String x:Key="反馈位置">当前反馈位置</sys:String>
+    <sys:String x:Key="原点输入状态">原点输入当前状态</sys:String>
+    <sys:String x:Key="原点输入未配置">控制器没有配置原点输入，或当前适配器无法读取该状态</sys:String>
+    <sys:String x:Key="运动曲线参数">运动曲线参数</sys:String>
+    <sys:String x:Key="安全条件">安全条件</sys:String>
+    <sys:String x:Key="软件限位当前有效">软限位当前有效。</sys:String>
+    <sys:String x:Key="寸动步长必须大于零">寸动步长必须大于零。</sys:String>
+    <sys:String x:Key="轴报警有效">轴报警有效。</sys:String>
+    <sys:String x:Key="伺服未使能">伺服未使能。</sys:String>
+    <sys:String x:Key="轴仍在运动">轴仍在运动。</sys:String>
+    <sys:String x:Key="硬限位有效">硬限位有效。</sys:String>
+    <sys:String x:Key="软件手动条件通过">当前软件状态检查通过；请继续确认设备现场安全条件。</sys:String>
+    <sys:String x:Key="软件手动条件未通过">软件状态检查未通过： </sys:String>
+    <sys:String x:Key="没有配置DI">尚未配置 DI。</sys:String>
+    <sys:String x:Key="没有配置DO">尚未配置 DO。</sys:String>
+    <sys:String x:Key="IO读取失败">读取失败：{0}</sys:String>
     <sys:String x:Key="数字输入">数字输入（DI）</sys:String>
     <sys:String x:Key="数字输出">数字输出（DO）</sys:String>
     <sys:String x:Key="输出打开">打开</sys:String>

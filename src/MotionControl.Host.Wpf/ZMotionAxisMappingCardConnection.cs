@@ -284,6 +284,7 @@ namespace MotionControl.Host.Wpf
                         Name = axis.Name,
                         ControllerId = axis.ControllerId,
                         AxisNumber = axis.AxisNumber,
+                        EngineeringUnit = axis.EngineeringUnit,
                         MinimumPosition = axis.MinimumPosition.Value,
                         MaximumPosition = axis.MaximumPosition.Value,
                         SoftLimitEnabled = axis.SoftLimitEnabled.Value,

@@ -45,8 +45,11 @@ namespace MotionControl.Host.Wpf
         /// <summary>当前选中的左侧页面中文资源键。</summary>
         private string _currentPageResourceKey;
 
-        /// <summary>由组合根注入的通用轴和 IO 手动调试页面。</summary>
+        /// <summary>由组合根注入的通用轴手动调试页面。</summary>
         private UserControl _manualMotionDebugPage;
+
+        /// <summary>由组合根注入的通用 IO 手动调试页面。</summary>
+        private UserControl _manualIoDebugPage;
 
         /// <summary>由 Host 组合根注入的通用轴映射配置页面。</summary>
         private UserControl _axisMappingConfigurationPage;
@@ -189,6 +192,13 @@ namespace MotionControl.Host.Wpf
             UpdatePageContent();
         }
 
+        /// <summary>由 Host 组合根注入设备映射对应的 IO 手动调试页面。</summary>
+        public void SetManualIoDebugPage(UserControl manualIoDebugPage)
+        {
+            _manualIoDebugPage = manualIoDebugPage;
+            UpdatePageContent();
+        }
+
         /// <summary>由 Host 组合根注入按设备配置存储创建的轴映射页面。</summary>
         public void SetAxisMappingConfigurationPage(UserControl axisMappingConfigurationPage)
         {
@@ -240,17 +250,29 @@ namespace MotionControl.Host.Wpf
                 return;
             }
 
-            var isManualDebugPage = _manualMotionDebugPage != null
+            var isAxisManualPage = _manualMotionDebugPage != null
                 && string.Equals(_currentSectionKey, "Manual", StringComparison.Ordinal)
-                && (string.Equals(_currentPageResourceKey, "轴手动", StringComparison.Ordinal)
-                    || string.Equals(_currentPageResourceKey, "IO手动", StringComparison.Ordinal));
+                && string.Equals(_currentPageResourceKey, "轴手动", StringComparison.Ordinal);
 
-            if (isManualDebugPage)
+            if (isAxisManualPage)
             {
                 ManualDebugContent.Content = _manualMotionDebugPage;
                 ManualDebugContent.Visibility = Visibility.Visible;
                 PagePlaceholder.Visibility = Visibility.Collapsed;
-                PageDescription.SetResourceReference(TextBlock.TextProperty, "手动调试说明");
+                PageDescription.SetResourceReference(TextBlock.TextProperty, "轴手动页面说明");
+                return;
+            }
+
+            var isIoManualPage = _manualIoDebugPage != null
+                && string.Equals(_currentSectionKey, "Manual", StringComparison.Ordinal)
+                && string.Equals(_currentPageResourceKey, "IO手动", StringComparison.Ordinal);
+
+            if (isIoManualPage)
+            {
+                ManualDebugContent.Content = _manualIoDebugPage;
+                ManualDebugContent.Visibility = Visibility.Visible;
+                PagePlaceholder.Visibility = Visibility.Collapsed;
+                PageDescription.SetResourceReference(TextBlock.TextProperty, "IO手动页面说明");
                 return;
             }
 

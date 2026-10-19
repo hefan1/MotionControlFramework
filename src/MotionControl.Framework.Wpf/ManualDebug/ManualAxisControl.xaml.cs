@@ -11,6 +11,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using MotionControl.Framework.Contracts.Configuration;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Runtime.Machine;
@@ -98,6 +99,10 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 GetText("轴卡片物理通道格式"),
                 axisConfiguration.ControllerId,
                 axisConfiguration.AxisNumber);
+            PositionUnitText.Text = string.IsNullOrWhiteSpace(axisConfiguration.EngineeringUnit)
+                ? GetText("工程单位")
+                : axisConfiguration.EngineeringUnit;
+            SpeedUnitText.Text = PositionUnitText.Text + "/s";
             SpeedTextBox.Text = axisConfiguration.ManualSpeed.ToString(CultureInfo.CurrentCulture);
             AccelerationTextBox.Text = axisConfiguration.ManualAcceleration > 0
                 ? axisConfiguration.ManualAcceleration.ToString(CultureInfo.CurrentCulture)
@@ -116,26 +121,42 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             UpdateEmptyPositionsText();
         }
 
-        /// <summary>读取并显示此轴的位置、速度、伺服、回零、限位和报警状态。</summary>
+        /// <summary>读取并显示指令位置、反馈位置、伺服、回零、限位和报警状态。</summary>
         public async Task RefreshStatusAsync()
         {
             if (_machineRuntime.State == MachineRunState.Disconnected)
             {
-                AxisStatusText.Text = GetText("控制卡未连接");
+                CommandPositionText.Text = GetText("控制卡未连接");
+                FeedbackPositionText.Text = "—";
+                UpdateIndicator(AlarmIndicator, false, false);
+                UpdateIndicator(HomedIndicator, false, false);
+                UpdateIndicator(PositiveLimitIndicator, false, false);
+                UpdateIndicator(NegativeLimitIndicator, false, false);
+                UpdateIndicator(OriginIndicator, false, false);
+                OriginStatusText.ToolTip = GetText("控制卡未连接");
+                MotionStateText.Text = GetText("状态未连接");
+                ServoToggleButton.Content = GetText("伺服使能");
                 return;
             }
 
             AxisStatus status = await _axis.ReadStatusAsync(CancellationToken.None).ConfigureAwait(true);
-            AxisStatusText.Text = GetText("当前位置") + "：" + status.Position.ToString("F3", CultureInfo.CurrentCulture)
-                + "    " + GetText("当前速度") + "：" + status.Velocity.ToString("F3", CultureInfo.CurrentCulture)
-                + "    " + GetText("伺服状态") + "：" + GetBooleanText(status.ServoEnabled, "已使能", "未使能")
-                + "    " + GetText("运动状态") + "：" + GetBooleanText(status.Moving, "运动中", "已停止")
-                + "    " + GetText("回零状态") + "：" + GetBooleanText(status.Homed, "已回零", "未回零")
-                + "    " + GetText("正限位") + "：" + GetBooleanText(status.PositiveLimitActive, "有效", "无效")
-                + "    " + GetText("负限位") + "：" + GetBooleanText(status.NegativeLimitActive, "有效", "无效")
-                + "    " + GetText("报警状态") + "：" + GetBooleanText(status.AlarmActive, "有效", "无效")
-                + "    " + GetText("报警信息") + "："
-                + (string.IsNullOrWhiteSpace(status.AlarmMessage) ? status.AlarmCode : status.AlarmMessage);
+            CommandPositionText.Text = status.CommandPosition.HasValue
+                ? status.CommandPosition.Value.ToString("F3", CultureInfo.CurrentCulture)
+                : "—";
+            FeedbackPositionText.Text = status.Position.ToString("F3", CultureInfo.CurrentCulture);
+            UpdateIndicator(AlarmIndicator, status.AlarmActive, status.AlarmActive);
+            UpdateIndicator(HomedIndicator, status.Homed, false);
+            UpdateIndicator(PositiveLimitIndicator, status.PositiveLimitActive, status.PositiveLimitActive);
+            UpdateIndicator(NegativeLimitIndicator, status.NegativeLimitActive, status.NegativeLimitActive);
+            UpdateIndicator(OriginIndicator, status.OriginInputActive == true, false);
+            OriginStatusText.ToolTip = GetText(status.OriginInputActive.HasValue ? "原点输入状态" : "原点输入未配置");
+            MotionStateText.Text = GetText(status.Moving ? "运动中" : "已停止");
+            ServoToggleButton.Content = GetText(status.ServoEnabled ? "伺服关闭" : "伺服使能");
+            AlarmMessageText.Text = status.AlarmActive
+                ? (string.IsNullOrWhiteSpace(status.AlarmMessage) ? status.AlarmCode : status.AlarmMessage)
+                : status.PositiveSoftLimitActive || status.NegativeSoftLimitActive
+                    ? GetText("软件限位当前有效")
+                    : string.Empty;
         }
 
         /// <summary>显示当前轴状态读取失败的具体原因，不影响其他轴卡片刷新。</summary>
@@ -146,7 +167,17 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 throw new ArgumentNullException(nameof(error));
             }
 
-            AxisStatusText.Text = string.Format(GetText("读取轴状态失败"), error.Message);
+            CommandPositionText.Text = "—";
+            FeedbackPositionText.Text = "—";
+            AlarmMessageText.Text = string.Format(GetText("读取轴状态失败"), error.Message);
+        }
+
+        /// <summary>按当前状态设置指示灯颜色，并给有效报警或限位使用醒目颜色。</summary>
+        private static void UpdateIndicator(Ellipse indicator, bool active, bool warning)
+        {
+            indicator.Fill = warning
+                ? Brushes.Firebrick
+                : active ? Brushes.ForestGreen : Brushes.DarkGray;
         }
 
         /// <summary>页面离开时停止此卡片可能仍在运行的按住式点动。</summary>
@@ -318,18 +349,21 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
-        /// <summary>执行当前轴伺服使能。</summary>
-        private async void ServoEnableButton_Click(object sender, RoutedEventArgs e)
+        /// <summary>按当前伺服状态切换使能或关闭。</summary>
+        private async void ServoToggleButton_Click(object sender, RoutedEventArgs e)
         {
-            await RunAxisActionAsync(GetText("伺服使能"), () => _axis.EnableServoAsync(CancellationToken.None))
-                .ConfigureAwait(true);
-        }
-
-        /// <summary>关闭当前轴伺服。</summary>
-        private async void ServoDisableButton_Click(object sender, RoutedEventArgs e)
-        {
-            await RunAxisActionAsync(GetText("伺服关闭"), () => _axis.DisableServoAsync(CancellationToken.None))
-                .ConfigureAwait(true);
+            await RunAxisActionAsync(GetText("伺服状态"), async () =>
+            {
+                AxisStatus status = await _axis.ReadStatusAsync(CancellationToken.None).ConfigureAwait(true);
+                if (status.ServoEnabled)
+                {
+                    await _axis.DisableServoAsync(CancellationToken.None).ConfigureAwait(true);
+                }
+                else
+                {
+                    await _axis.EnableServoAsync(CancellationToken.None).ConfigureAwait(true);
+                }
+            }).ConfigureAwait(true);
         }
 
         /// <summary>使用当前轴映射中保存的回零参数启动回零。</summary>
@@ -357,36 +391,29 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>校验目标位置和运动曲线后执行绝对定位。</summary>
         private async void MoveAbsoluteButton_Click(object sender, RoutedEventArgs e)
         {
-            await RunAxisActionAsync(GetText("绝对定位"), async () =>
+            await RunAxisActionAsync(GetText("定位"), async () =>
             {
-                double targetPosition = ReadNumber(TargetPositionTextBox, GetText("目标位置"));
+                double targetPosition = ReadNumber(TargetPositionTextBox, GetText("定位位置"));
                 EnsurePositionWithinLimits(targetPosition);
                 AxisMotionProfile profile = ReadMotionProfile();
                 await _axis.MoveAbsoluteAsync(targetPosition, profile, CancellationToken.None).ConfigureAwait(true);
             }).ConfigureAwait(true);
         }
 
-        /// <summary>根据当前轴位置和相对距离检查目标范围后执行相对移动。</summary>
-        private async void MoveRelativeButton_Click(object sender, RoutedEventArgs e)
+        /// <summary>切换按住连续点动和按一次走固定寸动步长。</summary>
+        private void JogModeToggleButton_Click(object sender, RoutedEventArgs e)
         {
-            await RunAxisActionAsync(GetText("相对移动"), async () =>
-            {
-                double distance = ReadNumber(TargetPositionTextBox, GetText("相对距离"));
-                AxisStatus status = await _axis.ReadStatusAsync(CancellationToken.None).ConfigureAwait(true);
-                EnsurePositionWithinLimits(status.Position + distance);
-                AxisMotionProfile profile = ReadMotionProfile();
-                await _axis.MoveRelativeAsync(distance, profile, CancellationToken.None).ConfigureAwait(true);
-            }).ConfigureAwait(true);
+            JogModeToggleButton.Content = GetText(JogModeToggleButton.IsChecked == true ? "连续点动" : "寸动模式");
         }
 
-        /// <summary>按住负向点动按钮时，以当前手动速度启动连续点动。</summary>
+        /// <summary>按下负向点动按钮时，按连续或寸动模式执行负向动作。</summary>
         private async void NegativeJogButton_MouseDown(object sender, MouseButtonEventArgs e)
         {
             e.Handled = true;
             await BeginJogAsync(MotionDirection.Negative, sender as Button).ConfigureAwait(true);
         }
 
-        /// <summary>按住正向点动按钮时，以当前手动速度启动连续点动。</summary>
+        /// <summary>按下正向点动按钮时，按连续或寸动模式执行正向动作。</summary>
         private async void PositiveJogButton_MouseDown(object sender, MouseButtonEventArgs e)
         {
             e.Handled = true;
@@ -406,10 +433,11 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             await StopJogAsync().ConfigureAwait(true);
         }
 
-        /// <summary>验证运行状态后启动按住式点动，并捕获鼠标以便松开时停止。</summary>
+        /// <summary>连续模式启动按住式点动；寸动模式按当前步长执行一次相对定位。</summary>
         private async Task BeginJogAsync(MotionDirection direction, Button jogButton)
         {
-            await RunAxisActionAsync(GetText("点动"), async () =>
+            bool continuousJog = JogModeToggleButton.IsChecked == true;
+            await RunAxisActionAsync(GetText(continuousJog ? "连续点动" : "寸动模式"), async () =>
             {
                 if (jogButton == null)
                 {
@@ -421,11 +449,84 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                     await StopJogAsync().ConfigureAwait(true);
                 }
 
-                double jogSpeed = ReadNumber(SpeedTextBox, GetText("速度"));
-                await _axis.StartJogAsync(direction, jogSpeed, CancellationToken.None).ConfigureAwait(true);
-                _joggingAxis = _axis;
-                Mouse.Capture(jogButton);
+                if (continuousJog)
+                {
+                    double jogSpeed = ReadNumber(SpeedTextBox, GetText("手动调试速度"));
+                    await _axis.StartJogAsync(direction, jogSpeed, CancellationToken.None).ConfigureAwait(true);
+                    _joggingAxis = _axis;
+                    Mouse.Capture(jogButton);
+                    return;
+                }
+
+                double stepDistance = ReadNumber(JogStepTextBox, GetText("寸动步长"));
+                if (stepDistance <= 0)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(stepDistance), GetText("寸动步长必须大于零"));
+                }
+
+                AxisStatus status = await _axis.ReadStatusAsync(CancellationToken.None).ConfigureAwait(true);
+                double currentPosition = status.CommandPosition ?? status.Position;
+                double distance = direction == MotionDirection.Positive ? stepDistance : -stepDistance;
+                EnsurePositionWithinLimits(currentPosition + distance);
+                AxisMotionProfile profile = ReadMotionProfile();
+                await _axis.MoveRelativeAsync(distance, profile, CancellationToken.None).ConfigureAwait(true);
             }).ConfigureAwait(true);
+        }
+
+        /// <summary>显示本软件能核对的连接、伺服、运动、报警和限位条件，不替代硬件安全检查。</summary>
+        private async void SafetyCheckButton_Click(object sender, RoutedEventArgs e)
+        {
+            var issues = new List<string>();
+            MachineRunState machineState = _machineRuntime.State;
+            if (machineState == MachineRunState.Disconnected)
+            {
+                issues.Add(GetText("运动卡未连接操作被拒绝"));
+            }
+            else
+            {
+                if (machineState == MachineRunState.Running || machineState == MachineRunState.Pausing)
+                {
+                    issues.Add(GetText("自动流程期间禁止手动操作"));
+                }
+
+                if (_machineRuntime.AlarmService.Alarms.Any(
+                    alarm => string.Equals(alarm.Definition.Code, "EMERGENCY_STOP", StringComparison.OrdinalIgnoreCase)))
+                {
+                    issues.Add(GetText("急停报警未复位禁止手动动作"));
+                }
+
+                try
+                {
+                    AxisStatus status = await _axis.ReadStatusAsync(CancellationToken.None).ConfigureAwait(true);
+                    if (status.AlarmActive)
+                    {
+                        issues.Add(GetText("轴报警有效"));
+                    }
+
+                    if (!status.ServoEnabled)
+                    {
+                        issues.Add(GetText("伺服未使能"));
+                    }
+
+                    if (status.Moving)
+                    {
+                        issues.Add(GetText("轴仍在运动"));
+                    }
+
+                    if (status.PositiveLimitActive || status.NegativeLimitActive)
+                    {
+                        issues.Add(GetText("硬限位有效"));
+                    }
+                }
+                catch (Exception error)
+                {
+                    issues.Add(string.Format(GetText("读取轴状态失败"), error.Message));
+                }
+            }
+
+            OperationMessageText.Text = issues.Count == 0
+                ? GetText("软件手动条件通过")
+                : GetText("软件手动条件未通过") + string.Join("；", issues);
         }
 
         /// <summary>若当前卡片有活动点动，则受控停止并清除活动轴引用。</summary>
