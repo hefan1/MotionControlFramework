@@ -10,6 +10,7 @@ namespace MotionControl.Framework.Contracts.Motion
         /// <summary>来自本机硬件配置的稳定控制卡标识。</summary>
         string ControllerId { get; }
 
+        /// <summary>控制卡当前是否已成功建立连接。</summary>
         bool IsConnected { get; }
 
         /// <summary>
@@ -17,8 +18,10 @@ namespace MotionControl.Framework.Contracts.Motion
         /// </summary>
         IReadOnlyCollection<IAxis> Axes { get; }
 
+        /// <summary>建立控制卡连接；连接失败或操作被取消时报告错误，不返回假成功。</summary>
         Task ConnectAsync(CancellationToken cancellationToken);
 
+        /// <summary>断开控制卡连接并释放适配器持有的厂商资源。</summary>
         Task DisconnectAsync(CancellationToken cancellationToken);
     }
 }

@@ -532,7 +532,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             public Task<AxisStatus> ReadStatusAsync(CancellationToken cancellationToken)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                return Task.FromResult(new AxisStatus(0, 0, true, false, true, false, false, false, false, false, null, null, 0, false));
+                return Task.FromResult(new AxisStatus(0, 0, true, false, true, false, false, false, false, false, null, false));
             }
 
             /// <summary>模拟伺服使能。</summary>

@@ -1117,10 +1117,8 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
 
                 var statusBits = ReadAxisStatusBits(handle, axis, "读取轴状态字");
                 bool? originInputActive = ReadOriginInputActive(handle, axis);
-                var stopReasonCode = ReadAxisStopReason(handle, axis, "读取轴历史停止原因");
                 var activeAlarmBits = statusBits & ActiveAlarmStatusMask;
                 var alarmActive = activeAlarmBits != 0;
-                var alarmCode = alarmActive ? "0x" + activeAlarmBits.ToString("X8") : null;
                 var alarmMessage = alarmActive ? BuildAxisAlarmMessage(statusBits) : null;
 
                 return new AxisStatus(
@@ -1134,9 +1132,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     (statusBits & PositiveSoftLimitMask) != 0,
                     (statusBits & NegativeSoftLimitMask) != 0,
                     alarmActive,
-                    alarmCode,
                     alarmMessage,
-                    stopReasonCode,
                     axis.RequiresHomingAfterLimitAlarm,
                     commandPosition,
                     originInputActive);

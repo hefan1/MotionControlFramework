@@ -3,7 +3,7 @@ namespace MotionControl.Framework.Contracts.Motion
     /// <summary>运动卡适配器返回的一次轴状态快照。</summary>
     public sealed class AxisStatus
     {
-        /// <summary>创建包含轴位置、速度、伺服、限位、报警、历史停止原因和回零要求的状态快照。</summary>
+        /// <summary>创建包含轴位置、速度、伺服、限位、报警说明和回零要求的状态快照。</summary>
         public AxisStatus(
             double position,
             double velocity,
@@ -15,9 +15,7 @@ namespace MotionControl.Framework.Contracts.Motion
             bool positiveSoftLimitActive,
             bool negativeSoftLimitActive,
             bool alarmActive,
-            string alarmCode,
             string alarmMessage,
-            int stopReasonCode,
             bool requiresHomingAfterLimitAlarm,
             double? commandPosition = null,
             bool? originInputActive = null)
@@ -32,9 +30,7 @@ namespace MotionControl.Framework.Contracts.Motion
             PositiveSoftLimitActive = positiveSoftLimitActive;
             NegativeSoftLimitActive = negativeSoftLimitActive;
             AlarmActive = alarmActive;
-            AlarmCode = alarmCode;
             AlarmMessage = alarmMessage;
-            StopReasonCode = stopReasonCode;
             RequiresHomingAfterLimitAlarm = requiresHomingAfterLimitAlarm;
             CommandPosition = commandPosition;
             OriginInputActive = originInputActive;
@@ -67,17 +63,11 @@ namespace MotionControl.Framework.Contracts.Motion
         /// <summary>负向软件限位当前是否触发。</summary>
         public bool NegativeSoftLimitActive { get; private set; }
 
-        /// <summary>控制器当前是否报告轴报警或驱动报警。</summary>
+        /// <summary>适配器是否检测到轴报警或驱动报警。</summary>
         public bool AlarmActive { get; private set; }
 
-        /// <summary>适配器识别出的报警代码；没有报警时为空。</summary>
-        public string AlarmCode { get; private set; }
-
-        /// <summary>适配器提供的报警说明；没有报警时为空。</summary>
+        /// <summary>适配器转换出的通用报警说明；没有报警或无法判断时为空。</summary>
         public string AlarmMessage { get; private set; }
-
-        /// <summary>控制卡锁存的历史停止原因位掩码；0 表示没有历史原因。</summary>
-        public int StopReasonCode { get; private set; }
 
         /// <summary>硬限位恢复后，是否必须重新回零才能启动自动流程或执行定位。</summary>
         public bool RequiresHomingAfterLimitAlarm { get; private set; }

@@ -12,10 +12,13 @@ namespace MotionControl.Framework.Contracts.Motion
         /// <summary>设备中的逻辑名称，例如 "X" 或 "FeederLift"。</summary>
         string Name { get; }
 
+        /// <summary>读取轴当前状态快照；位置和速度均使用该逻辑轴配置的工程单位。</summary>
         Task<AxisStatus> ReadStatusAsync(CancellationToken cancellationToken);
 
+        /// <summary>使能当前轴的伺服；控制卡拒绝使能或调用被取消时报告错误。</summary>
         Task EnableServoAsync(CancellationToken cancellationToken);
 
+        /// <summary>关闭当前轴的伺服；调用方应先确认轴已停止并处于允许断使能的状态。</summary>
         Task DisableServoAsync(CancellationToken cancellationToken);
 
         /// <summary>使用轴配置中的回零参数执行回零。</summary>

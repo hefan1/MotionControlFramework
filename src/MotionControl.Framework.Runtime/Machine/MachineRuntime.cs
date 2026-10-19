@@ -471,9 +471,7 @@ namespace MotionControl.Framework.Runtime.Machine
                     || status.PositiveSoftLimitActive
                     || status.NegativeSoftLimitActive)
                 {
-                    var reason = string.IsNullOrWhiteSpace(status.AlarmMessage)
-                        ? status.AlarmCode
-                        : status.AlarmMessage;
+                    var reason = status.AlarmMessage;
                     throw new InvalidOperationException(
                         "逻辑轴 '" + axis.Name + "' 当前存在报警或限位，禁止启动自动流程。"
                         + (string.IsNullOrWhiteSpace(reason) ? string.Empty : "原因：" + reason + "。"));

@@ -217,14 +217,32 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(firstRunConnection.ConnectCount == 0, "首次运行没有已保存的卡配置，却自动连接了控制卡。");
                 Ensure(((Grid)firstRunPage.FindName("AxisDetailsGrid")).IsEnabled, "未连接控制卡时不能编辑轴映射配置。");
                 Ensure(
-                    ((ComboBox)firstRunPage.FindName("CardVendorComboBox")).Items.Count == 1,
-                    "轴映射页没有按连接提供者显示厂商选项。");
+                    ((ComboBox)firstRunPage.FindName("CardVendorComboBox")).Items.Count == 2,
+                    "轴映射页没有按连接提供者显示不同厂商的选项。");
                 Ensure(
                     ((ComboBox)firstRunPage.FindName("CardTypeComboBox")).Items.Count == 1,
                     "轴映射页没有按连接提供者显示卡类型选项。");
                 Ensure(
                     ((ComboBox)firstRunPage.FindName("AxisCountComboBox")).Items.Count == 4,
                     "轴映射页没有按连接提供者显示可配置的轴通道数量。");
+
+                ComboBox cardVendorEditor = (ComboBox)firstRunPage.FindName("CardVendorComboBox");
+                ComboBoxItem testVendorItem = cardVendorEditor.Items
+                    .OfType<ComboBoxItem>()
+                    .Single(item => string.Equals(item.Tag as string, "测试厂商", StringComparison.Ordinal));
+                cardVendorEditor.SelectedItem = testVendorItem;
+
+                Ensure(
+                    string.Equals(
+                        ((ComboBoxItem)((ComboBox)firstRunPage.FindName("CardTypeComboBox")).SelectedItem).Tag as string,
+                        "脉冲型",
+                        StringComparison.Ordinal),
+                    "切换到测试厂商后，轴映射页没有使用该厂商提供的卡类型。");
+                Ensure(
+                    ((ComboBox)firstRunPage.FindName("AxisCountComboBox")).Items
+                        .OfType<ComboBoxItem>()
+                        .Any(item => string.Equals(item.Tag as string, "8", StringComparison.Ordinal)),
+                    "切换到测试厂商后，轴映射页没有显示该卡型支持的轴数量。");
 
                 var savedCardSettings = new MotionCardSettingsDocument
                 {
@@ -335,6 +353,24 @@ namespace MotionControl.ZMotionSimulatorCheck
                     validationErrors.Any(error => error.Contains("尚未选择是否启用软限位")),
                     "尚未选择软限位启停状态时没有报告对应的配置错误。当前错误："
                     + string.Join("；", validationErrors));
+
+                Button disconnectCardButton = (Button)savedRunPage.FindName("DisconnectCardButton");
+                disconnectCardButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, disconnectCardButton));
+                ComboBox savedRunVendorEditor = (ComboBox)savedRunPage.FindName("CardVendorComboBox");
+                ComboBoxItem alternateVendorItem = savedRunVendorEditor.Items
+                    .OfType<ComboBoxItem>()
+                    .Single(item => string.Equals(item.Tag as string, "测试厂商", StringComparison.Ordinal));
+                savedRunVendorEditor.SelectedItem = alternateVendorItem;
+
+                MotionCardConnectionDefinition changedConnection = savedRunConnection.LastConnectedSettings
+                    .MotionCards
+                    .Single();
+                Ensure(
+                    string.Equals(changedConnection.AdapterType, "TestPulseAdapter", StringComparison.Ordinal),
+                    "切换厂商后没有把新的适配器标识写入连接配置。");
+                Ensure(
+                    string.IsNullOrWhiteSpace(changedConnection.ConnectionConfigurationFile),
+                    "切换厂商后仍沿用了旧适配器的连接配置文件路径。");
             }
             finally
             {
@@ -364,6 +400,16 @@ namespace MotionControl.ZMotionSimulatorCheck
                             AdapterType = "ZMotion",
                             SupportedAxisCounts = new[] { 8, 16, 32, 64 },
                             DefaultAxisCount = 64
+                        },
+                        new MotionCardSelectionOption
+                        {
+                            VendorCode = "测试厂商",
+                            VendorDisplayResourceKey = "测试厂商",
+                            CardTypeCode = "脉冲型",
+                            CardTypeDisplayResourceKey = "脉冲型",
+                            AdapterType = "TestPulseAdapter",
+                            SupportedAxisCounts = new[] { 4, 8 },
+                            DefaultAxisCount = 8
                         }
                     }.AsReadOnly();
                 }
@@ -375,6 +421,9 @@ namespace MotionControl.ZMotionSimulatorCheck
             /// <summary>测试中收到的连接请求数量。</summary>
             public int ConnectCount { get; private set; }
 
+            /// <summary>保存最近一次连接调用收到的配置，供测试检查页面选择结果。</summary>
+            public MotionCardSettingsDocument LastConnectedSettings { get; private set; }
+
             /// <summary>返回固定的测试控制器型号。</summary>
             public string ActualControllerType { get { return "内存测试控制器"; } }
 
@@ -385,6 +434,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             public Task ConnectAsync(MotionCardSettingsDocument settings, CancellationToken cancellationToken)
             {
                 ConnectCount++;
+                LastConnectedSettings = settings;
                 IsConnected = true;
                 return Task.CompletedTask;
             }
@@ -650,7 +700,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             /// <summary>返回固定无报警状态，不读取真实设备。</summary>
             public Task<AxisStatus> ReadStatusAsync(CancellationToken cancellationToken)
             {
-                return Task.FromResult(new AxisStatus(0, 0, false, false, false, false, false, false, false, false, null, null, 0, false));
+                return Task.FromResult(new AxisStatus(0, 0, false, false, false, false, false, false, false, false, null, false));
             }
 
             /// <summary>本次离屏检查不发出轴使能命令。</summary>

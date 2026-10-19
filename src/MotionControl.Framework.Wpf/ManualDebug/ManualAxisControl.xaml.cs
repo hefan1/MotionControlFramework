@@ -157,7 +157,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             MotionStateText.Text = GetText(status.Moving ? "运动中" : "已停止");
             ServoToggleButton.Content = GetText(status.ServoEnabled ? "伺服关闭" : "伺服使能");
             AlarmMessageText.Text = status.AlarmActive
-                ? (string.IsNullOrWhiteSpace(status.AlarmMessage) ? status.AlarmCode : status.AlarmMessage)
+                ? (string.IsNullOrWhiteSpace(status.AlarmMessage) ? GetText("轴报警有效") : status.AlarmMessage)
                 : status.PositiveSoftLimitActive || status.NegativeSoftLimitActive
                     ? GetText("软件限位当前有效")
                     : string.Empty;

@@ -148,7 +148,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             return motionCard;
         }
 
-        /// <summary>当用户选择了新的卡型时，同步更新已有控制卡连接记录的适配器标识。</summary>
+        /// <summary>切换适配器时更新连接标识并清除旧适配器的连接配置文件路径。</summary>
         private void UpdateExistingConnectionAdapterType(MotionCardSelectionOption motionCard)
         {
             if (motionCard == null || _cardConfiguration.MotionCards == null)
@@ -159,6 +159,11 @@ namespace MotionControl.Framework.Wpf.Configuration
             MotionCardConnectionDefinition connection = _cardConfiguration.MotionCards.FirstOrDefault();
             if (connection != null)
             {
+                if (!string.Equals(connection.AdapterType, motionCard.AdapterType, StringComparison.Ordinal))
+                {
+                    connection.ConnectionConfigurationFile = null;
+                }
+
                 connection.AdapterType = motionCard.AdapterType;
             }
         }
