@@ -29,6 +29,9 @@ namespace MotionControl.Host.Wpf
         /// <summary>当前由本页面连接并维护的正运动仿真器实例。</summary>
         private ZMotionCard _card;
 
+        /// <summary>控制卡连接成功后预扫描并缓存的 I/O 能力。</summary>
+        private MotionCardIoCapabilities _cachedIoCapabilities;
+
         /// <summary>创建使用指定 MachineId 保存连接资料的正运动连接服务。</summary>
         public ZMotionAxisMappingCardConnection(MachineConfigurationStore configurationStore, string machineId)
         {
@@ -114,6 +117,17 @@ namespace MotionControl.Host.Wpf
                     connectionConfiguration);
                 _configurationStore.SaveJson(_machineId, MotionCardsFilePath, settings);
                 _card = newCard;
+
+                try
+                {
+                    _cachedIoCapabilities = await newCard.ReadIoCapabilitiesAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception capabilityError)
+                {
+                    System.Diagnostics.Trace.TraceError(
+                        "正运动控制卡已连接，但启动时 I/O 能力扫描失败：" + capabilityError);
+                }
             }
             catch (Exception connectionError)
             {
@@ -147,6 +161,7 @@ namespace MotionControl.Host.Wpf
             ZMotionCard currentCard = _card;
             await currentCard.DisconnectAsync(cancellationToken).ConfigureAwait(false);
             _card = null;
+            _cachedIoCapabilities = null;
         }
 
         /// <summary>读取指定物理轴的 UNITS、软限位、速度、爬行速度和加减速度。</summary>
@@ -172,11 +187,26 @@ namespace MotionControl.Host.Wpf
             };
         }
 
-        /// <summary>通过正运动只读 API 查询控制器本体和已扫描总线上的 DI/DO 数量。</summary>
+        /// <summary>委托正运动适配器查询控制器规格、连续可映射通道和总线 DI/DO 能力。</summary>
         public Task<MotionCardIoCapabilities> ReadIoCapabilitiesAsync(CancellationToken cancellationToken)
         {
             EnsureConnected();
+            if (_cachedIoCapabilities != null)
+            {
+                return Task.FromResult(_cachedIoCapabilities);
+            }
+
             return _card.ReadIoCapabilitiesAsync(cancellationToken);
+        }
+
+        /// <summary>重新调用当前正运动控制器 API，并替换连接期间缓存的 I/O 能力。</summary>
+        public async Task<MotionCardIoCapabilities> RefreshIoCapabilitiesAsync(CancellationToken cancellationToken)
+        {
+            EnsureConnected();
+            _cachedIoCapabilities = null;
+            _cachedIoCapabilities = await _card.RefreshIoCapabilitiesAsync(cancellationToken)
+                .ConfigureAwait(false);
+            return _cachedIoCapabilities;
         }
 
         /// <summary>显式下发选中物理轴的单位换算、软限位和当前运动参数。</summary>

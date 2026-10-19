@@ -22,6 +22,9 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
 
         public const string SimulationControllerType = "VPLC5xx-Simu";
 
+        /// <summary>单次 I/O 能力查询最多逐路读取的通道数量，避免异常规格值造成无界扫描。</summary>
+        private const int MaximumIoChannelsToProbe = 65536;
+
         private const int RemoteAxisCommunicationErrorBit = 2;
         private const int RemoteDriveErrorBit = 3;
         private const int PositiveLimitBit = 4;
@@ -294,7 +297,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             }, cancellationToken);
         }
 
-        /// <summary>只读查询正运动控制器自带、最大支持和总线扩展 DI/DO 数量。</summary>
+        /// <summary>只读查询正运动控制器规格和总线能力，并按 API 逐路探测实际 DI/DO 通道。</summary>
         public Task<MotionCardIoCapabilities> ReadIoCapabilitiesAsync(CancellationToken cancellationToken)
         {
             return Task.Run(() =>
@@ -327,16 +330,66 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
 
                     var capabilities = new MotionCardIoCapabilities
                     {
+                        ControllerId = ControllerId,
                         BuiltInDigitalInputCount = builtInInputs,
                         BuiltInDigitalOutputCount = builtInOutputs,
                         MaximumDigitalInputCount = maximumInputs,
                         MaximumDigitalOutputCount = maximumOutputs
                     };
 
+                    capabilities.DigitalInputChannelRange = ReadMappableIoChannelRange(
+                        handle,
+                        true,
+                        cancellationToken);
+                    capabilities.DigitalOutputChannelRange = ReadMappableIoChannelRange(
+                        handle,
+                        false,
+                        cancellationToken);
                     ReadScannedBusIoCapabilities(handle, busSlotCount, capabilities, cancellationToken);
                     return capabilities;
                 }
             }, cancellationToken);
+        }
+
+        /// <summary>重新调用正运动只读 API，刷新控制器规格、DI/DO 通道范围和总线能力。</summary>
+        public Task<MotionCardIoCapabilities> RefreshIoCapabilitiesAsync(CancellationToken cancellationToken)
+        {
+            return ReadIoCapabilitiesAsync(cancellationToken);
+        }
+
+        /// <summary>从通道 0 起逐路读取 DI 或 DO，首个非零返回码作为实际通道范围边界。</summary>
+        private MotionCardIoChannelRange ReadMappableIoChannelRange(
+            IntPtr handle,
+            bool input,
+            CancellationToken cancellationToken)
+        {
+            int readableChannelCount = 0;
+            for (int channel = 0; channel < MaximumIoChannelsToProbe; channel++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                uint physicalValue = 0;
+                int result = input
+                    ? zmcaux.ZAux_Direct_GetIn(handle, channel, ref physicalValue)
+                    : zmcaux.ZAux_Direct_GetOp(handle, channel, ref physicalValue);
+
+                if (result != 0)
+                {
+                    return new MotionCardIoChannelRange
+                    {
+                        MappableChannelCount = readableChannelCount,
+                        FirstUnavailableChannel = channel,
+                        FirstUnavailableReturnCode = result
+                    };
+                }
+
+                readableChannelCount++;
+            }
+
+            return new MotionCardIoChannelRange
+            {
+                MappableChannelCount = readableChannelCount,
+                ReachedProbeLimit = true
+            };
         }
 
         /// <summary>空闲时把指定物理轴参数写入控制器，不会启动轴运动或伺服。</summary>

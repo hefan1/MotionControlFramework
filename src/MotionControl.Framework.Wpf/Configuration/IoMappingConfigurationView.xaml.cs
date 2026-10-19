@@ -35,6 +35,9 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>当前适配器提供的可选 I/O 能力查询接口。</summary>
         private readonly IMotionCardIoCapabilityProvider _ioCapabilityProvider;
 
+        /// <summary>当前连接卡最近一次读取到的能力，用于显示范围和校验物理通道。</summary>
+        private MotionCardIoCapabilities _lastIoCapabilities;
+
         /// <summary>阻止 I/O 能力查询期间重复提交厂商 API 请求。</summary>
         private bool _isReadingIoCapabilities;
 
@@ -97,7 +100,7 @@ namespace MotionControl.Framework.Wpf.Configuration
         {
             LoadControllerIds();
             UpdateConnectionState();
-            await RefreshIoCapabilitiesAsync();
+            await RefreshIoCapabilitiesAsync(false);
         }
 
         /// <summary>根据轴映射页共用的实时连接状态锁定或开放 IO 配置控件。</summary>
@@ -107,8 +110,14 @@ namespace MotionControl.Framework.Wpf.Configuration
             EmergencyStopInputComboBox.IsEnabled = canEdit;
             DigitalInputsGrid.IsEnabled = canEdit;
             DigitalOutputsGrid.IsEnabled = canEdit;
-            AddInputButton.IsEnabled = canEdit && ControllerIds.Count > 0;
-            AddOutputButton.IsEnabled = canEdit && ControllerIds.Count > 0;
+            bool hasInputInventory = GetKnownChannelCount(_lastIoCapabilities, true).HasValue;
+            bool hasOutputInventory = GetKnownChannelCount(_lastIoCapabilities, false).HasValue;
+            AddInputButton.Visibility = hasInputInventory ? Visibility.Collapsed : Visibility.Visible;
+            AddOutputButton.Visibility = hasOutputInventory ? Visibility.Collapsed : Visibility.Visible;
+            AddInputButton.IsEnabled = canEdit && !_isReadingIoCapabilities
+                && ControllerIds.Count > 0 && !hasInputInventory;
+            AddOutputButton.IsEnabled = canEdit && !_isReadingIoCapabilities
+                && ControllerIds.Count > 0 && !hasOutputInventory;
             RefreshIoCapabilitiesButton.IsEnabled = _cardConnection.IsConnected
                 && _ioCapabilityProvider != null
                 && !_isReadingIoCapabilities;
@@ -118,12 +127,13 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>页面按钮触发一次控制卡 I/O 数量读取。</summary>
         private async void RefreshIoCapabilitiesButton_Click(object sender, RoutedEventArgs e)
         {
-            await RefreshIoCapabilitiesAsync();
+            await RefreshIoCapabilitiesAsync(true);
         }
 
-        /// <summary>连接后读取控制器本体、最大支持和总线扩展 DI/DO 数量。</summary>
-        private async Task RefreshIoCapabilitiesAsync()
+        /// <summary>显示连接后缓存的 I/O 能力，或按用户要求重新读取控制器 API。</summary>
+        private async Task RefreshIoCapabilitiesAsync(bool forceRefresh)
         {
+            _lastIoCapabilities = null;
             if (!_cardConnection.IsConnected)
             {
                 IoCapabilityStatusText.Text = (string)FindResource("控制卡Io数量未连接");
@@ -144,13 +154,16 @@ namespace MotionControl.Framework.Wpf.Configuration
 
             try
             {
-                MotionCardIoCapabilities capabilities = await _ioCapabilityProvider
-                    .ReadIoCapabilitiesAsync(CancellationToken.None);
+                MotionCardIoCapabilities capabilities = forceRefresh
+                    ? await _ioCapabilityProvider.RefreshIoCapabilitiesAsync(CancellationToken.None)
+                    : await _ioCapabilityProvider.ReadIoCapabilitiesAsync(CancellationToken.None);
                 if (capabilities == null)
                 {
                     throw new InvalidOperationException("控制卡适配器没有返回 I/O 能力信息。");
                 }
 
+                _lastIoCapabilities = capabilities;
+                AddReportedChannelRows(capabilities);
                 IoCapabilityStatusText.Text = string.Format(
                     CultureInfo.CurrentCulture,
                     (string)FindResource("控制卡Io数量读取结果格式"),
@@ -158,6 +171,8 @@ namespace MotionControl.Framework.Wpf.Configuration
                     FormatIoCount(capabilities.BuiltInDigitalOutputCount),
                     FormatIoCount(capabilities.MaximumDigitalInputCount),
                     FormatIoCount(capabilities.MaximumDigitalOutputCount),
+                    FormatMappableIoRange(capabilities.DigitalInputChannelRange),
+                    FormatMappableIoRange(capabilities.DigitalOutputChannelRange),
                     FormatIoCount(capabilities.ScannedBusNodeCount),
                     FormatIoCount(capabilities.ScannedBusDigitalInputCount),
                     FormatIoCount(capabilities.ScannedBusDigitalOutputCount));
@@ -190,6 +205,33 @@ namespace MotionControl.Framework.Wpf.Configuration
             return count.HasValue
                 ? count.Value.ToString(CultureInfo.CurrentCulture)
                 : (string)FindResource("控制卡Io数量未读取");
+        }
+
+        /// <summary>把 API 连续读取成功的通道数和首个失败地址整理成页面提示。</summary>
+        private string FormatMappableIoRange(MotionCardIoChannelRange range)
+        {
+            if (range == null || !range.MappableChannelCount.HasValue)
+            {
+                return (string)FindResource("控制卡Io数量未读取");
+            }
+
+            string countText = range.ReachedProbeLimit
+                ? "至少 " + range.MappableChannelCount.Value.ToString(CultureInfo.CurrentCulture)
+                : range.MappableChannelCount.Value.ToString(CultureInfo.CurrentCulture);
+
+            if (!range.FirstUnavailableChannel.HasValue)
+            {
+                return countText + " 路";
+            }
+
+            return string.Format(
+                CultureInfo.CurrentCulture,
+                (string)FindResource("控制卡Io通道探测边界格式"),
+                countText,
+                range.FirstUnavailableChannel.Value,
+                range.FirstUnavailableReturnCode.HasValue
+                    ? range.FirstUnavailableReturnCode.Value.ToString(CultureInfo.CurrentCulture)
+                    : (string)FindResource("控制卡Io数量未读取"));
         }
 
         /// <summary>仅在控制卡已连接且选中映射行时启用对应删除按钮。</summary>
@@ -376,25 +418,25 @@ namespace MotionControl.Framework.Wpf.Configuration
             return ControllerIds.Count == 0 ? string.Empty : ControllerIds[0];
         }
 
-        /// <summary>删除当前选中的 DI 映射行。</summary>
+        /// <summary>清空选中 DI 的逻辑名称，通道行保留在自动探测清单中。</summary>
         private void RemoveInputButton_Click(object sender, RoutedEventArgs e)
         {
             DigitalIoHardwareDefinition selectedPoint = DigitalInputsGrid.SelectedItem as DigitalIoHardwareDefinition;
             if (selectedPoint != null)
             {
-                DigitalInputs.Remove(selectedPoint);
+                selectedPoint.Name = string.Empty;
                 RefreshEmergencyStopInputNames();
                 MarkConfigurationAsChanged();
             }
         }
 
-        /// <summary>删除当前选中的 DO 映射行。</summary>
+        /// <summary>清空选中 DO 的逻辑名称，通道行保留在自动探测清单中。</summary>
         private void RemoveOutputButton_Click(object sender, RoutedEventArgs e)
         {
             DigitalIoHardwareDefinition selectedPoint = DigitalOutputsGrid.SelectedItem as DigitalIoHardwareDefinition;
             if (selectedPoint != null)
             {
-                DigitalOutputs.Remove(selectedPoint);
+                selectedPoint.Name = string.Empty;
                 MarkConfigurationAsChanged();
             }
         }
@@ -443,8 +485,14 @@ namespace MotionControl.Framework.Wpf.Configuration
             var configuration = new IoMappingConfigurationDocument
             {
                 EmergencyStopInputName = EmergencyStopInputName.Trim(),
-                DigitalInputs = DigitalInputs.Select(CopyPoint).ToList(),
-                DigitalOutputs = DigitalOutputs.Select(CopyPoint).ToList()
+                DigitalInputs = DigitalInputs
+                    .Where(point => !string.IsNullOrWhiteSpace(point.Name))
+                    .Select(CopyPoint)
+                    .ToList(),
+                DigitalOutputs = DigitalOutputs
+                    .Where(point => !string.IsNullOrWhiteSpace(point.Name))
+                    .Select(CopyPoint)
+                    .ToList()
             };
 
             try
@@ -466,6 +514,127 @@ namespace MotionControl.Framework.Wpf.Configuration
         {
             LoadConfiguration();
             LoadControllerIds();
+            if (_lastIoCapabilities != null)
+            {
+                AddReportedChannelRows(_lastIoCapabilities);
+            }
+        }
+
+        /// <summary>按当前 API 探测结果重建未命名 DI/DO 清单，并保留已有的命名映射。</summary>
+        private void AddReportedChannelRows(MotionCardIoCapabilities capabilities)
+        {
+            if (capabilities == null)
+            {
+                return;
+            }
+
+            string controllerId = capabilities.ControllerId;
+            if (string.IsNullOrWhiteSpace(controllerId) || !ControllerIds.Contains(controllerId))
+            {
+                controllerId = GetFirstControllerId();
+            }
+
+            if (string.IsNullOrWhiteSpace(controllerId))
+            {
+                return;
+            }
+
+            AddReportedChannelRows(
+                DigitalInputs,
+                controllerId,
+                GetKnownChannelCount(capabilities, true));
+            AddReportedChannelRows(
+                DigitalOutputs,
+                controllerId,
+                GetKnownChannelCount(capabilities, false));
+
+            RefreshEmergencyStopInputNames();
+            UpdateConnectionState();
+        }
+
+        /// <summary>逐路生成空名称行；名称留空表示该通道暂未用于设备流程。</summary>
+        private static void AddReportedChannelRows(
+            ObservableCollection<DigitalIoHardwareDefinition> points,
+            string controllerId,
+            int? channelCount)
+        {
+            if (!channelCount.HasValue)
+            {
+                return;
+            }
+
+            // 刷新前先移除当前控制卡的空白草稿，避免重复刷新时把旧通道清单越叠越多。
+            // 已命名的逻辑映射是用户配置，必须保留。
+            List<DigitalIoHardwareDefinition> unnamedRows = points
+                .Where(point => string.Equals(
+                    point.ControllerId,
+                    controllerId,
+                    StringComparison.OrdinalIgnoreCase)
+                    && string.IsNullOrWhiteSpace(point.Name))
+                .ToList();
+            foreach (DigitalIoHardwareDefinition unnamedRow in unnamedRows)
+            {
+                points.Remove(unnamedRow);
+            }
+
+            if (channelCount.Value <= 0)
+            {
+                return;
+            }
+
+            var existingChannels = new HashSet<int>(points
+                .Where(point => string.Equals(
+                    point.ControllerId,
+                    controllerId,
+                    StringComparison.OrdinalIgnoreCase))
+                .Select(point => point.Channel));
+
+            for (int channel = 0; channel < channelCount.Value; channel++)
+            {
+                if (existingChannels.Add(channel))
+                {
+                    points.Add(new DigitalIoHardwareDefinition
+                    {
+                        Name = string.Empty,
+                        ControllerId = controllerId,
+                        Channel = channel,
+                        ActiveHigh = true
+                    });
+                }
+            }
+        }
+
+        /// <summary>优先使用逐路 API 读取成功的实际通道数；适配器直接报告数量时使用板载与总线数量之和。</summary>
+        private static int? GetKnownChannelCount(MotionCardIoCapabilities capabilities, bool input)
+        {
+            if (capabilities == null)
+            {
+                return null;
+            }
+
+            MotionCardIoChannelRange range = input
+                ? capabilities.DigitalInputChannelRange
+                : capabilities.DigitalOutputChannelRange;
+            if (range != null && range.MappableChannelCount.HasValue)
+            {
+                return range.MappableChannelCount.Value >= 0
+                    ? range.MappableChannelCount
+                    : null;
+            }
+
+            int? builtInCount = input
+                ? capabilities.BuiltInDigitalInputCount
+                : capabilities.BuiltInDigitalOutputCount;
+            int? busCount = input
+                ? capabilities.ScannedBusDigitalInputCount
+                : capabilities.ScannedBusDigitalOutputCount;
+            if (!builtInCount.HasValue && !busCount.HasValue)
+            {
+                return null;
+            }
+
+            int totalCount = builtInCount.GetValueOrDefault() + busCount.GetValueOrDefault();
+            return totalCount >= 0 ? (int?)totalCount : null;
         }
 
         /// <summary>结束两个表格当前单元格和行编辑，确保校验读取到最新输入值。</summary>
@@ -565,12 +734,12 @@ namespace MotionControl.Framework.Wpf.Configuration
                 return false;
             }
 
-            if (!ValidatePoints(DigitalInputs, (string)FindResource("数字输入"), out errorMessage))
+            if (!ValidatePoints(DigitalInputs, (string)FindResource("数字输入"), true, out errorMessage))
             {
                 return false;
             }
 
-            if (!ValidatePoints(DigitalOutputs, (string)FindResource("数字输出"), out errorMessage))
+            if (!ValidatePoints(DigitalOutputs, (string)FindResource("数字输出"), false, out errorMessage))
             {
                 return false;
             }
@@ -593,6 +762,7 @@ namespace MotionControl.Framework.Wpf.Configuration
         private bool ValidatePoints(
             IEnumerable<DigitalIoHardwareDefinition> points,
             string pointTypeName,
+            bool input,
             out string errorMessage)
         {
             var logicalNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -600,6 +770,11 @@ namespace MotionControl.Framework.Wpf.Configuration
 
             foreach (DigitalIoHardwareDefinition point in points)
             {
+                if (string.IsNullOrEmpty(point.Name))
+                {
+                    continue;
+                }
+
                 if (string.IsNullOrWhiteSpace(point.Name) || point.Name != point.Name.Trim())
                 {
                     errorMessage = string.Format(
@@ -640,6 +815,19 @@ namespace MotionControl.Framework.Wpf.Configuration
                     return false;
                 }
 
+                int? mappableChannelCount = GetMappableChannelCount(point.ControllerId, input);
+                if (mappableChannelCount.HasValue && point.Channel >= mappableChannelCount.Value)
+                {
+                    errorMessage = string.Format(
+                        CultureInfo.CurrentCulture,
+                        (string)FindResource("IO映射通道超出可映射范围格式"),
+                        pointTypeName,
+                        point.Name,
+                        point.Channel,
+                        mappableChannelCount.Value);
+                    return false;
+                }
+
                 string physicalAddress = point.ControllerId + "/" + point.Channel.ToString(CultureInfo.InvariantCulture);
                 if (!physicalChannels.Add(physicalAddress))
                 {
@@ -654,6 +842,24 @@ namespace MotionControl.Framework.Wpf.Configuration
 
             errorMessage = string.Empty;
             return true;
+        }
+
+        /// <summary>只对当前能力查询对应的控制卡返回 DI 或 DO API 确认通道数。</summary>
+        private int? GetMappableChannelCount(string controllerId, bool input)
+        {
+            if (_lastIoCapabilities == null
+                || !string.Equals(
+                    _lastIoCapabilities.ControllerId,
+                    controllerId,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            MotionCardIoChannelRange range = input
+                ? _lastIoCapabilities.DigitalInputChannelRange
+                : _lastIoCapabilities.DigitalOutputChannelRange;
+            return range == null ? (int?)null : range.MappableChannelCount;
         }
 
         /// <summary>复制一个逻辑点位并保留其控制卡、通道和有效电平。</summary>

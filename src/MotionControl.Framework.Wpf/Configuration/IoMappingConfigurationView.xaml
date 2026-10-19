@@ -42,20 +42,166 @@
             <Setter Property="AutoGenerateColumns" Value="False" />
             <Setter Property="CanUserAddRows" Value="False" />
             <Setter Property="CanUserDeleteRows" Value="False" />
+            <Setter Property="EnableRowVirtualization" Value="True" />
+            <Setter Property="EnableColumnVirtualization" Value="True" />
+            <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
+            <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+            <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
             <Setter Property="CanUserReorderColumns" Value="False" />
             <Setter Property="CanUserResizeRows" Value="False" />
             <Setter Property="HeadersVisibility" Value="Column" />
-            <Setter Property="GridLinesVisibility" Value="Horizontal" />
-            <Setter Property="HorizontalGridLinesBrush" Value="#E5EAF0" />
-            <Setter Property="VerticalGridLinesBrush" Value="#E5EAF0" />
-            <Setter Property="RowHeight" Value="40" />
-            <Setter Property="ColumnHeaderHeight" Value="36" />
+            <Setter Property="GridLinesVisibility" Value="All" />
+            <Setter Property="HorizontalGridLinesBrush" Value="#E6EBF1" />
+            <Setter Property="VerticalGridLinesBrush" Value="#E6EBF1" />
+            <Setter Property="RowHeight" Value="32" />
+            <Setter Property="ColumnHeaderHeight" Value="33" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#293B50" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="RowHeaderWidth" Value="0" />
+            <Setter Property="IsReadOnly" Value="False" />
+        </Style>
+        <Style x:Key="IoMappingGridHeader" TargetType="DataGridColumnHeader">
+            <Setter Property="Height" Value="33" />
+            <Setter Property="Background" Value="#EEF3F8" />
+            <Setter Property="Foreground" Value="#34465A" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="5,5" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="BorderThickness" Value="0,0,1,1" />
+            <Setter Property="BorderBrush" Value="#DCE4ED" />
+        </Style>
+        <Style x:Key="IoMappingGridRow" TargetType="DataGridRow">
+            <Setter Property="Background" Value="White" />
+            <Setter Property="Foreground" Value="#293B50" />
+            <Setter Property="BorderBrush" Value="#E6EBF1" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Name}" Value="">
+                    <Setter Property="Background" Value="#F5F7FA" />
+                    <Setter Property="Foreground" Value="#8793A1" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Name}" Value="{x:Null}">
+                    <Setter Property="Background" Value="#F5F7FA" />
+                    <Setter Property="Foreground" Value="#8793A1" />
+                </DataTrigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#F0F6FD" />
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#DDEBFC" />
+                    <Setter Property="Foreground" Value="#213F62" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="IoMappingGridCell" TargetType="DataGridCell">
+            <Setter Property="Padding" Value="5,3" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#DDEBFC" />
+                    <Setter Property="Foreground" Value="#213F62" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="IoMappingGridCellText" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="TextAlignment" Value="Center" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="Padding" Value="2,0" />
+        </Style>
+        <Style x:Key="IoMappingGridTextBox" TargetType="TextBox">
+            <Setter Property="Height" Value="27" />
+            <Setter Property="Padding" Value="7,3" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Foreground" Value="#26384D" />
             <Setter Property="Background" Value="White" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="AlternationCount" Value="2" />
-            <Setter Property="AlternatingRowBackground" Value="#F8FAFD" />
+            <Setter Property="BorderBrush" Value="#CAD5E2" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="Chrome" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#2475D0" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IoMappingGridComboBox" TargetType="ComboBox">
+            <Setter Property="Height" Value="27" />
+            <Setter Property="Padding" Value="7,2" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#26384D" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="#CAD5E2" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <Border x:Name="Chrome" Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="3" />
+                            <ToggleButton Focusable="False" ClickMode="Press" Background="Transparent" BorderThickness="0"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton"><Border Background="Transparent" /></ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter IsHitTestVisible="False" Margin="{TemplateBinding Padding}"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                              VerticalAlignment="Center" HorizontalAlignment="Center" />
+                            <Path Margin="0,0,8,0" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                  Width="8" Height="4" Stretch="Fill" Fill="#66788C"
+                                  Data="M 0 0 L 4 4 L 8 0 Z" IsHitTestVisible="False" />
+                            <Popup x:Name="PART_Popup" AllowsTransparency="True" Focusable="False"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom"
+                                   PlacementTarget="{Binding RelativeSource={RelativeSource TemplatedParent}}" PopupAnimation="Fade">
+                                <Border Background="White" BorderBrush="#CAD5E2" BorderThickness="1"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                        MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                    <ScrollViewer CanContentScroll="True">
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#2475D0" />
+                            </Trigger>
+                            <Trigger Property="IsDropDownOpen" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#2475D0" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Background" Value="#F2F5F9" />
+                                <Setter Property="Foreground" Value="#8A96A5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style x:Key="IoMappingCellText" TargetType="TextBlock">
             <Setter Property="VerticalAlignment" Value="Center" />
@@ -141,13 +287,13 @@
                                        Foreground="#24364B" />
                             <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
                                 <TextBlock Text="{Binding DigitalInputs.Count}" FontSize="11" Foreground="#718096" />
-                                <TextBlock Text="{DynamicResource 个输入点}" FontSize="11" Foreground="#718096" />
+                                <TextBlock Text="{DynamicResource 个通道}" FontSize="11" Foreground="#718096" />
                             </StackPanel>
                         </StackPanel>
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
-                            <Button x:Name="AddInputButton" Content="{DynamicResource 添加DI}" Click="AddInputButton_Click"
+                            <Button x:Name="AddInputButton" Content="{DynamicResource 添加其他DI}" Click="AddInputButton_Click"
                                     Style="{StaticResource IoMappingButton}" Margin="4,0,0,0" />
-                            <Button x:Name="RemoveInputButton" Content="{DynamicResource 删除所选}" Click="RemoveInputButton_Click"
+                            <Button x:Name="RemoveInputButton" Content="{DynamicResource 清空逻辑名}" Click="RemoveInputButton_Click"
                                     Style="{StaticResource IoMappingButton}" Margin="4,0,0,0" />
                         </StackPanel>
                     </DockPanel>
@@ -155,20 +301,32 @@
                               Style="{StaticResource IoMappingGrid}" SelectionMode="Single" SelectionUnit="FullRow"
                               CellEditEnding="DigitalInputsGrid_CellEditEnding"
                               SelectionChanged="MappingGrid_SelectionChanged">
+                        <DataGrid.Resources>
+                            <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource IoMappingGridHeader}" />
+                            <Style TargetType="DataGridRow" BasedOn="{StaticResource IoMappingGridRow}" />
+                            <Style TargetType="DataGridCell" BasedOn="{StaticResource IoMappingGridCell}" />
+                        </DataGrid.Resources>
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="{DynamicResource 逻辑名称}" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
-                                                Width="1.2*" ElementStyle="{StaticResource IoMappingCellText}" />
+                                                Width="1.2*" ElementStyle="{StaticResource IoMappingGridCellText}"
+                                                EditingElementStyle="{StaticResource IoMappingGridTextBox}" />
                             <DataGridTemplateColumn Header="{DynamicResource 控制卡编号}" Width="1.1*">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <ComboBox ItemsSource="{Binding DataContext.ControllerIds, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                                  SelectedItem="{Binding ControllerId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                  Style="{StaticResource IoMappingComboBox}" Margin="3,2" />
+                                        <TextBlock Text="{Binding ControllerId}" Style="{StaticResource IoMappingGridCellText}" />
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
+                                <DataGridTemplateColumn.CellEditingTemplate>
+                                    <DataTemplate>
+                                        <ComboBox ItemsSource="{Binding DataContext.ControllerIds, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                  SelectedItem="{Binding ControllerId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  Style="{StaticResource IoMappingGridComboBox}" Margin="2,1" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellEditingTemplate>
                             </DataGridTemplateColumn>
                             <DataGridTextColumn Header="{DynamicResource 物理通道}" Binding="{Binding Channel, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}"
-                                                Width="78" ElementStyle="{StaticResource IoMappingCellText}" />
+                                                Width="78" ElementStyle="{StaticResource IoMappingGridCellText}"
+                                                EditingElementStyle="{StaticResource IoMappingGridTextBox}" />
                             <DataGridTemplateColumn Header="{DynamicResource 有效电平}" Width="105">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
@@ -197,13 +355,13 @@
                                        Foreground="#24364B" />
                             <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
                                 <TextBlock Text="{Binding DigitalOutputs.Count}" FontSize="11" Foreground="#718096" />
-                                <TextBlock Text="{DynamicResource 个输出点}" FontSize="11" Foreground="#718096" />
+                                <TextBlock Text="{DynamicResource 个通道}" FontSize="11" Foreground="#718096" />
                             </StackPanel>
                         </StackPanel>
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
-                            <Button x:Name="AddOutputButton" Content="{DynamicResource 添加DO}" Click="AddOutputButton_Click"
+                            <Button x:Name="AddOutputButton" Content="{DynamicResource 添加其他DO}" Click="AddOutputButton_Click"
                                     Style="{StaticResource IoMappingButton}" Margin="4,0,0,0" />
-                            <Button x:Name="RemoveOutputButton" Content="{DynamicResource 删除所选}" Click="RemoveOutputButton_Click"
+                            <Button x:Name="RemoveOutputButton" Content="{DynamicResource 清空逻辑名}" Click="RemoveOutputButton_Click"
                                     Style="{StaticResource IoMappingButton}" Margin="4,0,0,0" />
                         </StackPanel>
                     </DockPanel>
@@ -211,20 +369,32 @@
                               Style="{StaticResource IoMappingGrid}" SelectionMode="Single" SelectionUnit="FullRow"
                               CellEditEnding="DigitalOutputsGrid_CellEditEnding"
                               SelectionChanged="MappingGrid_SelectionChanged">
+                        <DataGrid.Resources>
+                            <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource IoMappingGridHeader}" />
+                            <Style TargetType="DataGridRow" BasedOn="{StaticResource IoMappingGridRow}" />
+                            <Style TargetType="DataGridCell" BasedOn="{StaticResource IoMappingGridCell}" />
+                        </DataGrid.Resources>
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="{DynamicResource 逻辑名称}" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
-                                                Width="1.2*" ElementStyle="{StaticResource IoMappingCellText}" />
+                                                Width="1.2*" ElementStyle="{StaticResource IoMappingGridCellText}"
+                                                EditingElementStyle="{StaticResource IoMappingGridTextBox}" />
                             <DataGridTemplateColumn Header="{DynamicResource 控制卡编号}" Width="1.1*">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <ComboBox ItemsSource="{Binding DataContext.ControllerIds, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                                  SelectedItem="{Binding ControllerId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                  Style="{StaticResource IoMappingComboBox}" Margin="3,2" />
+                                        <TextBlock Text="{Binding ControllerId}" Style="{StaticResource IoMappingGridCellText}" />
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
+                                <DataGridTemplateColumn.CellEditingTemplate>
+                                    <DataTemplate>
+                                        <ComboBox ItemsSource="{Binding DataContext.ControllerIds, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                  SelectedItem="{Binding ControllerId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  Style="{StaticResource IoMappingGridComboBox}" Margin="2,1" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellEditingTemplate>
                             </DataGridTemplateColumn>
                             <DataGridTextColumn Header="{DynamicResource 物理通道}" Binding="{Binding Channel, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}"
-                                                Width="78" ElementStyle="{StaticResource IoMappingCellText}" />
+                                                Width="78" ElementStyle="{StaticResource IoMappingGridCellText}"
+                                                EditingElementStyle="{StaticResource IoMappingGridTextBox}" />
                             <DataGridTemplateColumn Header="{DynamicResource 有效电平}" Width="105">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
