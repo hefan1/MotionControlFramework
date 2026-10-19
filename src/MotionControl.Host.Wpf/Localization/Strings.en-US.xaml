@@ -194,12 +194,12 @@
     <sys:String x:Key="IO映射页面说明">Map the logical DI/DO names used by machine sequences to physical card channels.</sys:String>
     <sys:String x:Key="急停输入名称">Emergency Stop Input Name</sys:String>
     <sys:String x:Key="IO映射急停输入提示">Select a configured DI name or enter it manually.</sys:String>
-    <sys:String x:Key="IO映射说明">After connection, DI/DO channels are listed from the current adapter's probe result. Logical names are used by machine sequences; unnamed channels are omitted when saving.</sys:String>
+    <sys:String x:Key="IO映射说明">After connection, this page shows onboard counts, specification ranges, and bus expansion counts. Add and name the DI/DO points used by the equipment.</sys:String>
     <sys:String x:Key="IO映射连接与输出说明">Connect on the Axis Mapping page first. This page saves configuration only and never switches outputs.</sys:String>
-    <sys:String x:Key="控制卡Io数量未连接">Motion card disconnected. Connect it to read onboard counts, specifications, DI/DO channels confirmed by consecutive API reads, and bus scan results.</sys:String>
+    <sys:String x:Key="控制卡Io数量未连接">Motion card disconnected. Connect it to read onboard counts, specification limits, mappable DI/DO address ranges, and bus scan results.</sys:String>
     <sys:String x:Key="控制卡Io数量能力不支持">The current card adapter does not provide I/O count queries.</sys:String>
     <sys:String x:Key="控制卡Io数量读取中">Reading motion card I/O counts…</sys:String>
-    <sys:String x:Key="控制卡Io数量读取结果格式">Onboard DI {0} / DO {1}; specification max DI {2} / DO {3}; DI {4} / DO {5} addresses read successfully in sequence from 0 (used as the actual channel inventory; simulators may expose virtual ranges); bus nodes {6}, expansion DI {7} / DO {8}.</sys:String>
+    <sys:String x:Key="控制卡Io数量读取结果格式">Onboard DI {0} / DO {1}; specification max DI {2} / DO {3}; mappable DI {4} / DO {5} address ranges; bus nodes {6}, expansion DI {7} / DO {8}.</sys:String>
     <sys:String x:Key="控制卡Io通道数量格式">{0} channels</sys:String>
     <sys:String x:Key="控制卡Io通道数量下限格式">at least {0} channels</sys:String>
     <sys:String x:Key="控制卡Io通道探测边界格式">{0} (first unreadable address {1}, details: {2})</sys:String>
@@ -230,7 +230,7 @@
     <sys:String x:Key="IO映射名称重复格式">Duplicate {0} name: {1}</sys:String>
     <sys:String x:Key="IO映射控制卡无效格式">{0} “{1}” has an invalid controller ID.</sys:String>
     <sys:String x:Key="IO映射通道无效格式">{0} “{1}” cannot use a negative physical channel.</sys:String>
-    <sys:String x:Key="IO映射通道超出可映射范围格式">{0} “{1}” channel {2} is outside the connected card’s actual range confirmed by consecutive API reads ({3} channels, starting at channel 0).</sys:String>
+    <sys:String x:Key="IO映射通道超出可映射范围格式">{0} “{1}” channel {2} is outside the controller's allowed number range ({3} channels, starting at 0).</sys:String>
     <sys:String x:Key="IO映射通道重复格式">{0} maps physical channel {1} more than once.</sys:String>
     <sys:String x:Key="IO映射急停必须关联DI">The emergency stop input name must match a configured DI logical name.</sys:String>
     <sys:String x:Key="IO映射检查通过">DI/DO mappings and the emergency stop input passed validation.</sys:String>

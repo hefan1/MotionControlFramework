@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -14,7 +13,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
     /// <summary>正运动适配器中负责逻辑 DI/DO 与控制卡 IO 能力读取的实现部分。</summary>
     public sealed partial class ZMotionCard
     {
-        /// <summary>读取正运动控制器规格，并在控制器报告的数量范围内逐路探测 DI/DO 通道。</summary>
+        /// <summary>读取正运动控制器的板载点数、最大可用编号范围和总线扩展点数。</summary>
         public Task<MotionCardIoCapabilities> ReadIoCapabilitiesAsync(CancellationToken cancellationToken)
         {
             return Task.Run(() =>
@@ -54,16 +53,14 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                         MaximumDigitalOutputCount = maximumOutputs
                     };
 
-                    capabilities.DigitalInputChannelRange = ReadMappableIoChannelRange(
-                        handle,
-                        true,
-                        maximumInputs,
-                        cancellationToken);
-                    capabilities.DigitalOutputChannelRange = ReadMappableIoChannelRange(
-                        handle,
-                        false,
-                        maximumOutputs,
-                        cancellationToken);
+                    capabilities.DigitalInputChannelRange = new MotionCardIoChannelRange
+                    {
+                        MappableChannelCount = maximumInputs
+                    };
+                    capabilities.DigitalOutputChannelRange = new MotionCardIoChannelRange
+                    {
+                        MappableChannelCount = maximumOutputs
+                    };
                     ReadScannedBusIoCapabilities(handle, busSlotCount, capabilities, cancellationToken);
                     return capabilities;
                 }
@@ -74,48 +71,6 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         public Task<MotionCardIoCapabilities> RefreshIoCapabilitiesAsync(CancellationToken cancellationToken)
         {
             return ReadIoCapabilitiesAsync(cancellationToken);
-        }
-
-        /// <summary>从通道 0 起探测 DI 或 DO；遵守卡报告的最大数量和本机安全探测上限。</summary>
-        private MotionCardIoChannelRange ReadMappableIoChannelRange(
-            IntPtr handle,
-            bool input,
-            int reportedMaximumChannelCount,
-            CancellationToken cancellationToken)
-        {
-            int readableChannelCount = 0;
-            int channelCountToProbe = Math.Min(reportedMaximumChannelCount, MaximumIoChannelsToProbe);
-            for (int channel = 0; channel < channelCountToProbe; channel++)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                uint physicalValue = 0;
-                int result = input
-                    ? zmcaux.ZAux_Direct_GetIn(handle, channel, ref physicalValue)
-                    : zmcaux.ZAux_Direct_GetOp(handle, channel, ref physicalValue);
-
-                if (result != 0)
-                {
-                    return new MotionCardIoChannelRange
-                    {
-                        MappableChannelCount = readableChannelCount,
-                        FirstUnavailableChannel = channel,
-                        FirstUnavailableMessage = string.Format(
-                            CultureInfo.InvariantCulture,
-                            "{0}(channel={1}, returnCode={2})",
-                            input ? "ZAux_Direct_GetIn" : "ZAux_Direct_GetOp",
-                            channel,
-                            result)
-                    };
-                }
-
-                readableChannelCount++;
-            }
-
-            return new MotionCardIoChannelRange
-            {
-                MappableChannelCount = readableChannelCount,
-                ReachedProbeLimit = reportedMaximumChannelCount > MaximumIoChannelsToProbe
-            };
         }
 
         /// <summary>按逻辑名称读取数字输入，并转换为配置的有效电平。</summary>

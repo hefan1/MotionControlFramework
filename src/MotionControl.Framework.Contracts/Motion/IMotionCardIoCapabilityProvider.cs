@@ -31,10 +31,10 @@ namespace MotionControl.Framework.Contracts.Motion
         /// <summary>控制器规格声明的最大 DO 输出点数；厂商未提供时为空。</summary>
         public int? MaximumDigitalOutputCount { get; set; }
 
-        /// <summary>从通道 0 起按厂商 API 确认的连续 DI 实际通道范围；仿真器可能返回虚拟地址范围。</summary>
+        /// <summary>DI 可映射编号范围；该范围可能包含尚未安装扩展模块的地址段。</summary>
         public MotionCardIoChannelRange DigitalInputChannelRange { get; set; }
 
-        /// <summary>从通道 0 起按厂商 API 确认的连续 DO 实际通道范围；仿真器可能返回虚拟地址范围。</summary>
+        /// <summary>DO 可映射编号范围；该范围可能包含尚未安装扩展模块的地址段。</summary>
         public MotionCardIoChannelRange DigitalOutputChannelRange { get; set; }
 
         /// <summary>成功扫描到的总线从站节点数；扫描失败时为空。</summary>
@@ -50,19 +50,19 @@ namespace MotionControl.Framework.Contracts.Motion
         public string BusScanError { get; set; }
     }
 
-    /// <summary>记录从通道 0 起按 API 连续读取成功的实际数字 I/O 通道范围及探测边界。</summary>
+    /// <summary>记录控制卡允许配置的数字 I/O 编号范围，以及适配器提供的探测诊断。</summary>
     public sealed class MotionCardIoChannelRange
     {
-        /// <summary>从通道 0 起连续读取成功的通道数；真实控制卡用作实际通道清单，仿真器可能返回虚拟范围。</summary>
+        /// <summary>允许配置的通道编号数量；实际板载和扩展点数应读取能力结果中的数量字段。</summary>
         public int? MappableChannelCount { get; set; }
 
-        /// <summary>首个读取失败的通道号；厂商直接返回数量时为空。</summary>
+        /// <summary>适配器探测时遇到的首个不可读通道号；没有逐路探测时为空。</summary>
         public int? FirstUnavailableChannel { get; set; }
 
-        /// <summary>首个探测失败通道的可读说明；适配器可在说明中保留接口名和错误码。</summary>
+        /// <summary>首个探测失败通道的说明；适配器可保留接口名和错误码。</summary>
         public string FirstUnavailableMessage { get; set; }
 
-        /// <summary>是否因安全探测上限而停止；为真时数量表示至少可映射这么多通道。</summary>
+        /// <summary>是否因安全探测上限而停止；为真时允许数量至少达到已探测的数量。</summary>
         public bool ReachedProbeLimit { get; set; }
     }
 }

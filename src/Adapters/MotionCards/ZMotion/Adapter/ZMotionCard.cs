@@ -24,9 +24,6 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         /// <summary>当前适配器允许连接的 ZDevelop 仿真控制器型号。</summary>
         public const string SimulationControllerType = "VPLC5xx-Simu";
 
-        /// <summary>单次 I/O 能力查询最多逐路读取的通道数量，避免异常规格值造成无界扫描。</summary>
-        private const int MaximumIoChannelsToProbe = 65536;
-
         /// <summary>AXISSTATUS 第 2 位，表示总线轴通讯错误。</summary>
         private const int RemoteAxisCommunicationErrorBit = 2;
         /// <summary>AXISSTATUS 第 3 位，表示总线伺服驱动器报警。</summary>
