@@ -168,9 +168,11 @@
     <sys:String x:Key="参数不能为无穷或NaN">{0} cannot be infinity or NaN.</sys:String>
     <sys:String x:Key="目标位置超出软限位范围">Target position must be between {0} and {1}.</sys:String>
     <sys:String x:Key="轴卡片物理通道格式">Card {0} · physical axis Axis{1}</sys:String>
+    <sys:String x:Key="手动轴卡片标题格式">Axis {0}: {1} Manual Control</sys:String>
     <sys:String x:Key="添加位置">Add Position</sys:String>
     <sys:String x:Key="示教位置">Taught Positions</sys:String>
     <sys:String x:Key="位置名称">Position Name</sys:String>
+    <sys:String x:Key="写入短标签">Teach</sys:String>
     <sys:String x:Key="写入当前位置">Teach Current</sys:String>
     <sys:String x:Key="定位">Move</sys:String>
     <sys:String x:Key="删除位置">Delete</sys:String>

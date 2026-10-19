@@ -93,7 +93,11 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             _createPosition = createPosition;
             _savePositions = savePositions;
 
-            AxisTitleText.Text = "Axis" + axisConfiguration.AxisNumber + " · " + axis.Name;
+            AxisTitleText.Text = string.Format(
+                CultureInfo.CurrentCulture,
+                GetText("手动轴卡片标题格式"),
+                axisConfiguration.AxisNumber + 1,
+                axis.Name);
             AxisHardwareText.Text = string.Format(
                 CultureInfo.CurrentCulture,
                 GetText("轴卡片物理通道格式"),
