@@ -11,6 +11,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using MotionControl.Adapter.MotionCard.ZMotion;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Configuration;
 using MotionControl.Framework.Contracts.Flow;
@@ -41,6 +42,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 var chineseResources = CreateLanguageResources("zh-CN");
                 application.Resources.MergedDictionaries.Add(chineseResources);
                 var englishResources = CreateLanguageResources("en-US");
+                VerifyHomeModeLocalizationResources(chineseResources, englishResources);
                 Ensure(
                     string.Equals(englishResources["伺服使能"] as string, "Servo On", StringComparison.Ordinal),
                     "英文手动调试资源没有正确加载。 ");
@@ -120,7 +122,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 hostWindow.SetManualMotionDebugPage(page);
                 hostWindow.SetManualIoDebugPage(ioPage);
                 VerifyMotionCardConnectionStatus(application, hostWindow, englishResources, chineseResources);
-                VerifyAxisMappingStartupConnection();
+                VerifyAxisMappingStartupConnection(application, englishResources, chineseResources);
                 VerifyIoCapabilityDiagnosticDisplay(application, englishResources, chineseResources);
                 var primaryNavigation = (StackPanel)hostWindow.FindName("PrimaryNavigation");
                 var manualNavigation = primaryNavigation.Children
@@ -139,7 +141,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(ReferenceEquals(manualContent.Content, ioPage), "Host 的 IO 手动导航没有显示独立 IO 页面。");
 
                 application.Shutdown();
-                Console.WriteLine("[通过] 手动调试页与硬件配置页离屏检查完成：位置坐标精度与编辑保存、轴参数读回、I/O 能力诊断、Host 底栏卡状态和中英资源；使用内存测试卡。");
+                Console.WriteLine("[通过] 手动调试页与硬件配置页离屏检查完成：位置坐标精度与编辑保存、轴参数读回、I/O 能力诊断、回零模式中英资源和 Host 底栏状态；使用内存测试卡。");
                 return 0;
             }
             catch (Exception error)
@@ -209,6 +211,31 @@ namespace MotionControl.ZMotionSimulatorCheck
             Ensure(saveCount == 1, "手动编辑目标位置后没有且仅有一次保存配置。");
         }
 
+        /// <summary>确认每个可选正运动回零模式在中文和英文资源中都有名称与说明。</summary>
+        private static void VerifyHomeModeLocalizationResources(
+            ResourceDictionary chineseResources,
+            ResourceDictionary englishResources)
+        {
+            foreach (int modeNumber in ZMotionHomeModeCatalog.SupportedModeNumbers)
+            {
+                string nameKey = "正运动DATUM模式" + modeNumber + "名称";
+                string descriptionKey = "正运动DATUM模式" + modeNumber + "说明";
+
+                Ensure(
+                    !string.IsNullOrWhiteSpace(chineseResources[nameKey] as string),
+                    "正运动模式 " + modeNumber + " 缺少中文名称。");
+                Ensure(
+                    !string.IsNullOrWhiteSpace(chineseResources[descriptionKey] as string),
+                    "正运动模式 " + modeNumber + " 缺少中文动作说明。");
+                Ensure(
+                    !string.IsNullOrWhiteSpace(englishResources[nameKey] as string),
+                    "正运动模式 " + modeNumber + " 缺少英文名称。");
+                Ensure(
+                    !string.IsNullOrWhiteSpace(englishResources[descriptionKey] as string),
+                    "正运动模式 " + modeNumber + " 缺少英文动作说明。");
+            }
+        }
+
         /// <summary>加载 Host 的指定语言资源字典供页面和导航解析 DynamicResource。</summary>
         private static ResourceDictionary CreateLanguageResources(string languageCode)
         {
@@ -267,8 +294,11 @@ namespace MotionControl.ZMotionSimulatorCheck
             Ensure(footerStatus.Text.Contains("控制卡 未连接"), "Host 底栏未恢复中文未连接状态。");
         }
 
-        /// <summary>确认首次运行等待用户连接，已有控制卡配置时启动流程会自动重连。</summary>
-        private static void VerifyAxisMappingStartupConnection()
+        /// <summary>确认首次运行等待连接、已保存卡自动重连，并验证回零名称和说明的中英文切换。</summary>
+        private static void VerifyAxisMappingStartupConnection(
+            Application application,
+            ResourceDictionary englishResources,
+            ResourceDictionary chineseResources)
         {
             string configurationRoot = Path.Combine(
                 AppDomain.CurrentDomain.BaseDirectory,
@@ -379,6 +409,25 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(
                     string.Equals(((ComboBoxItem)homeModeEditor.SelectedItem).Tag as string, "3", StringComparison.Ordinal),
                     "旧版厂商回零模式没有按已保存的适配器标识迁移。");
+                Ensure(
+                    ((ComboBoxItem)homeModeEditor.SelectedItem).Content.ToString().Contains("正向快找原点"),
+                    "回零模式名称显示不正确，实际内容："
+                    + ((ComboBoxItem)homeModeEditor.SelectedItem).Content);
+                TextBlock homeModeHint = (TextBlock)savedRunPage.FindName("HomeModeHintTextBlock");
+                Ensure(
+                    homeModeHint.Text.Contains("CREEP 反向重新找原点信号"),
+                    "已选回零模式没有显示大白话动作说明。");
+
+                application.Resources.MergedDictionaries[0] = englishResources;
+                savedRunPage.RefreshLocalizedText();
+                Ensure(
+                    ((ComboBoxItem)homeModeEditor.SelectedItem).Content.ToString().Contains("Fast forward home search"),
+                    "回零模式名称没有随界面切换为英文。");
+                Ensure(
+                    homeModeHint.Text.Contains("searches backward at CREEP"),
+                    "回零模式说明没有随界面切换为英文。");
+                application.Resources.MergedDictionaries[0] = chineseResources;
+                savedRunPage.RefreshLocalizedText();
 
                 var softLimitEditor = (ComboBox)savedRunPage.FindName("SoftLimitEnabledComboBox");
                 Ensure(softLimitEditor != null, "轴参数编辑区没有软限位启用下拉框。");
@@ -671,7 +720,12 @@ namespace MotionControl.ZMotionSimulatorCheck
 
                 return new List<AxisHomeModeOption>
                 {
-                    new AxisHomeModeOption { ModeNumber = 3 }
+                    new AxisHomeModeOption
+                    {
+                        ModeNumber = 3,
+                        DisplayNameResourceKey = "正运动DATUM模式3名称",
+                        DescriptionResourceKey = "正运动DATUM模式3说明"
+                    }
                 }.AsReadOnly();
             }
 

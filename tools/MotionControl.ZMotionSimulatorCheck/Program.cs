@@ -109,7 +109,23 @@ namespace MotionControl.ZMotionSimulatorCheck
                     "正运动适配器把模式 0 或未列入首期的模式 7 标记为可执行回零模式。");
             }
 
-            Console.WriteLine("[ZMotion通过] 回零模式 3、4、13 可选；模式 0 和 7 被拒绝。");
+            var cardConnection = new ZMotionAxisMappingCardConnection(
+                new MachineConfigurationStore(Path.GetTempPath()),
+                "HomeModeCatalogSmoke");
+            var motionCard = cardConnection.SupportedMotionCards.Single();
+            var modeOptions = cardConnection.GetSupportedHomeModes(motionCard, 0);
+            foreach (var modeOption in modeOptions)
+            {
+                if (string.IsNullOrWhiteSpace(modeOption.DisplayNameResourceKey)
+                    || string.IsNullOrWhiteSpace(modeOption.DescriptionResourceKey))
+                {
+                    throw new InvalidOperationException(
+                        "正运动回零模式没有提供可读名称或动作说明资源键：" + modeOption.ModeNumber + "。");
+                }
+            }
+
+            Console.WriteLine(
+                "[ZMotion通过] 已验证模式 3、4、13 保留在清单中；模式 0 和 7 被拒绝；所有可选模式均提供说明资源键。");
         }
 
         /// <summary>从命令行读取配置目录、轴参数往返、运动检查和 IO 输出检查选项。</summary>

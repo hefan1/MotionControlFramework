@@ -524,7 +524,7 @@ namespace MotionControl.Host.Wpf
             };
         }
 
-        /// <summary>按正运动适配器清单返回当前物理轴可选择的 DATUM 模式。</summary>
+        /// <summary>按正运动适配器清单返回 DATUM 编号及中英文名称、动作说明的资源键。</summary>
         public IReadOnlyList<AxisHomeModeOption> GetSupportedHomeModes(
             MotionCardSelectionOption motionCard,
             int axisNumber)
@@ -541,7 +541,12 @@ namespace MotionControl.Host.Wpf
             var options = new List<AxisHomeModeOption>();
             foreach (int modeNumber in ZMotionHomeModeCatalog.SupportedModeNumbers)
             {
-                options.Add(new AxisHomeModeOption { ModeNumber = modeNumber });
+                options.Add(new AxisHomeModeOption
+                {
+                    ModeNumber = modeNumber,
+                    DisplayNameResourceKey = "正运动DATUM模式" + modeNumber + "名称",
+                    DescriptionResourceKey = "正运动DATUM模式" + modeNumber + "说明"
+                });
             }
 
             return options.AsReadOnly();

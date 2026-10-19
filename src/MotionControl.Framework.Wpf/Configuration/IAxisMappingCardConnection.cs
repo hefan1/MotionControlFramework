@@ -31,7 +31,7 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>读取指定物理轴的单位换算、软限位和当前运动参数。</summary>
         Task<AxisMappingCardParameters> ReadAxisParametersAsync(int axisNumber, CancellationToken cancellationToken);
 
-        /// <summary>按当前卡型和物理轴返回适配器支持的回零模式编号。</summary>
+        /// <summary>按当前卡型和物理轴返回回零编号及由适配器提供的显示文字资源键。</summary>
         IReadOnlyList<AxisHomeModeOption> GetSupportedHomeModes(
             MotionCardSelectionOption motionCard,
             int axisNumber);
