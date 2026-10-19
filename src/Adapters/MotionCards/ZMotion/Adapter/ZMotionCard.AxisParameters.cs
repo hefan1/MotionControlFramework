@@ -274,9 +274,12 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         /// <summary>检查物理轴通道范围，防止访问超过当前适配器支持范围的轴。</summary>
         private static void ValidatePhysicalAxisNumber(int axisNumber)
         {
-            if (axisNumber < 0 || axisNumber >= 64)
+            if (axisNumber < 0 || axisNumber >= ZMotionAxisConfiguration.SupportedPhysicalAxisCount)
             {
-                throw new ArgumentOutOfRangeException(nameof(axisNumber), "正运动物理轴号必须在 0 到 63 之间。");
+                throw new ArgumentOutOfRangeException(
+                    nameof(axisNumber),
+                    "正运动物理轴号必须在 0 到 "
+                    + (ZMotionAxisConfiguration.SupportedPhysicalAxisCount - 1) + " 之间。");
             }
         }
 

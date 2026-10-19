@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using MotionControl.Adapter.MotionCard.ZMotion;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Configuration;
 using MotionControl.Framework.Contracts.Flow;
@@ -32,7 +33,42 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("急停有效时禁止复位和启动，运行期间触发会暂停流程", EmergencyStopBlocksAndStopsMachineAsync, failures);
             await RunCheckAsync("急停状态通过配置的逻辑 DI 读取", EmergencyStopStatusUsesConfiguredInputAsync, failures);
             await RunCheckAsync("设备硬件配置关联和急停输入校验", HardwareConfigurationValidationAsync, failures);
+            await RunCheckAsync("正运动轴号超出控制器范围时在连接前被拒绝", ZMotionAxisNumberOutsideControllerRangeIsRejectedAsync, failures);
             return failures.AsReadOnly();
+        }
+
+        /// <summary>确认正运动物理轴号 64 在创建适配器时被拒绝，不会等到连接后才调用 SDK。</summary>
+        private static Task ZMotionAxisNumberOutsideControllerRangeIsRejectedAsync()
+        {
+            var invalidAxis = new ZMotionAxisConfiguration
+            {
+                ControllerId = "CardA",
+                Name = "OutOfRangeAxis",
+                AxisNumber = 64,
+                UnitsPerEngineeringUnit = 1,
+                MinimumPosition = -10,
+                MaximumPosition = 10,
+                ManualSpeed = 1
+            };
+
+            try
+            {
+                new ZMotionCard(
+                    "CardA",
+                    new ZMotionCardConfiguration(),
+                    new[] { invalidAxis },
+                    new ZMotionIoPointConfiguration[0],
+                    new ZMotionIoPointConfiguration[0]);
+            }
+            catch (InvalidOperationException error)
+            {
+                Ensure(
+                    error.Message.Contains("0 到 63") && error.Message.Contains("64"),
+                    "越界轴号的错误信息没有同时说明有效范围和实际值。 " + error.Message);
+                return Task.CompletedTask;
+            }
+
+            throw new InvalidOperationException("正运动物理轴号 64 在适配器创建时没有被拒绝。");
         }
 
         /// <summary>执行一个回归用例并保存带有用例名称的异常信息。</summary>

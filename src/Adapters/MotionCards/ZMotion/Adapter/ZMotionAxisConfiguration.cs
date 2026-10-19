@@ -5,6 +5,9 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
     /// <summary>一个 ZDevelop 仿真轴的逻辑名称、通道和工程单位范围。</summary>
     public sealed class ZMotionAxisConfiguration
     {
+        /// <summary>VPLC5xx-Simu 控制器支持的物理轴数量，轴号从 0 开始。</summary>
+        internal const int SupportedPhysicalAxisCount = 64;
+
         /// <summary>设置仿真轴调试参数的可用初始值；设备配置可按轴覆盖。</summary>
         public ZMotionAxisConfiguration()
         {
@@ -64,9 +67,12 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 throw new InvalidOperationException("正运动逻辑轴名称不能为空或包含首尾空格。");
             }
 
-            if (AxisNumber < 0)
+            if (AxisNumber < 0 || AxisNumber >= SupportedPhysicalAxisCount)
             {
-                throw new InvalidOperationException("正运动物理轴号不能小于 0：" + Name + "。");
+                throw new InvalidOperationException(
+                    "正运动物理轴号必须在 0 到 "
+                    + (SupportedPhysicalAxisCount - 1) + " 之间："
+                    + Name + "。实际值：" + AxisNumber + "。");
             }
 
             if (!IsFinite(UnitsPerEngineeringUnit) || UnitsPerEngineeringUnit <= 0)
