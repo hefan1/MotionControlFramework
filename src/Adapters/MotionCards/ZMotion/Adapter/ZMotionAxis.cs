@@ -8,8 +8,13 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
     /// <summary>正运动控制卡上的一个逻辑轴，负责将框架动作交给所属卡实例。</summary>
     public sealed class ZMotionAxis : IAxis
     {
+        /// <summary>所属的正运动卡实例；轴操作通过该实例调用控制器。</summary>
         private readonly ZMotionCard _card;
+
+        /// <summary>记录控制器是否已完成该轴的回零。</summary>
         private bool _isHomed;
+
+        /// <summary>硬限位报警后标记该轴必须重新回零才能定位。</summary>
         private bool _requiresHomingAfterLimitAlarm;
 
         /// <summary>绑定所属运动卡和设备配置中的逻辑轴参数。</summary>
@@ -19,18 +24,22 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             Configuration = configuration;
         }
 
+        /// <summary>设备流程使用的逻辑轴名称。</summary>
         public string Name
         {
             get { return Configuration.Name; }
         }
 
+        /// <summary>正运动控制器上的物理轴通道号。</summary>
         public int AxisNumber
         {
             get { return Configuration.AxisNumber; }
         }
 
+        /// <summary>该轴对应的设备参数，包括工程单位、限位和回零设置。</summary>
         internal ZMotionAxisConfiguration Configuration { get; private set; }
 
+        /// <summary>记录本次控制器连接期间是否已完成回零。</summary>
         internal bool IsHomed
         {
             get { return _isHomed; }

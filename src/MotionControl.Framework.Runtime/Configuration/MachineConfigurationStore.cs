@@ -16,6 +16,7 @@ namespace MotionControl.Framework.Runtime.Configuration
     /// </summary>
     public sealed class MachineConfigurationStore
     {
+        /// <summary>所有设备独立配置目录的根路径，构造时已转换为绝对路径。</summary>
         private readonly string _configurationRootDirectory;
 
         /// <summary>创建按 MachineId 隔离的 JSON 配置存储。</summary>

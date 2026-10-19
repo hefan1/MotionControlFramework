@@ -14,9 +14,16 @@ namespace MotionControl.Framework.Runtime.Machine
     /// </summary>
     public sealed class MotionCardGroup
     {
+        /// <summary>设备配置的运动卡只读集合。</summary>
         private readonly ReadOnlyCollection<IMotionCard> _cards;
+
+        /// <summary>设备全部控制卡上的逻辑轴只读集合。</summary>
         private readonly ReadOnlyCollection<IAxis> _axes;
+
+        /// <summary>按逻辑轴名称查找轴实例，名称比较不区分大小写。</summary>
         private readonly Dictionary<string, IAxis> _axesByName;
+
+        /// <summary>串行化多卡连接和断开，避免生命周期操作互相交错。</summary>
         private readonly SemaphoreSlim _lifecycleLock = new SemaphoreSlim(1, 1);
 
         /// <summary>检查并保存本设备配置的运动卡及其逻辑轴。</summary>

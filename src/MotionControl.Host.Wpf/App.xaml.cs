@@ -7,6 +7,7 @@ using MotionControl.Framework.Wpf.Configuration;
 
 namespace MotionControl.Host.Wpf
 {
+    /// <summary>Host 应用启动入口，负责创建配置服务、页面和控制卡连接。</summary>
     public partial class App : Application
     {
         /// <summary>由 Host 创建并在应用退出时释放的正运动连接服务。</summary>

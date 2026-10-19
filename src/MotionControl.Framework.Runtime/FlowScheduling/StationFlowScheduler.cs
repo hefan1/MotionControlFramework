@@ -10,9 +10,16 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
     /// <summary>并行运行设备项目提供的各工位步骤，并在暂停时等待所有当前步骤退出。</summary>
     internal sealed class StationFlowScheduler
     {
+        /// <summary>本设备需要并行执行的工位流程，构造后不再变更。</summary>
         private readonly IReadOnlyList<IStationFlow> _stationFlows;
+
+        /// <summary>保护当前运行任务和取消令牌，避免重复启动或并发暂停。</summary>
         private readonly object _runSync = new object();
+
+        /// <summary>当前这一轮所有工位共用的暂停令牌。</summary>
         private CancellationTokenSource _runCancellation;
+
+        /// <summary>当前并行工位任务；全部退出后由暂停流程清空。</summary>
         private Task _runTask;
 
         /// <summary>检查并保存本设备需要并行运行的工位流程。</summary>
@@ -53,11 +60,13 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
             _stationFlows = flowList.AsReadOnly();
         }
 
+        /// <summary>返回按配置顺序排列的工位流程只读列表。</summary>
         public IReadOnlyList<IStationFlow> StationFlows
         {
             get { return _stationFlows; }
         }
 
+        /// <summary>至少一个工位流程任务仍未结束时返回 true。</summary>
         public bool IsRunning
         {
             get

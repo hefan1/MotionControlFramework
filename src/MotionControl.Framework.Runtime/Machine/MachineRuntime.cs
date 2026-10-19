@@ -17,26 +17,55 @@ namespace MotionControl.Framework.Runtime.Machine
     /// </summary>
     public sealed class MachineRuntime
     {
+        /// <summary>暂停时默认最多等待工位流程 30 秒退出当前步骤。</summary>
         private static readonly TimeSpan DefaultPauseTimeout = TimeSpan.FromSeconds(30);
+
+        /// <summary>整机运行期间默认每 100 毫秒读取一次急停输入。</summary>
         private static readonly TimeSpan DefaultSafetyPollInterval = TimeSpan.FromMilliseconds(100);
+
+        /// <summary>整机急停输入触发或读取失败时使用的停机报警定义。</summary>
         private static readonly MachineAlarmDefinition EmergencyStopAlarm = new MachineAlarmDefinition(
             "EMERGENCY_STOP",
             "急停输入已触发或无法读取",
             MachineAlarmKind.StopMachine);
 
+        /// <summary>本设备配置的控制卡集合及逻辑轴入口。</summary>
         private readonly MotionCardGroup _motionCards;
+
+        /// <summary>负责并行调度本设备的各工位流程。</summary>
         private readonly StationFlowScheduler _flowScheduler;
+
+        /// <summary>保存、查询和复位设备报警的服务。</summary>
         private readonly IMachineAlarmService _alarmService;
+
+        /// <summary>提供急停回路状态的读取入口。</summary>
         private readonly IMachineSafetyStatus _safetyStatus;
+
+        /// <summary>请求暂停后等待流程退出当前步骤的最长时间。</summary>
         private readonly TimeSpan _pauseTimeout;
+
+        /// <summary>运行时轮询急停输入时两次读取之间的间隔。</summary>
         private readonly TimeSpan _safetyPollInterval;
+
+        /// <summary>串行化连接、复位、启动、暂停和断开等整机命令。</summary>
         private readonly SemaphoreSlim _commandLock = new SemaphoreSlim(1, 1);
+
+        /// <summary>保护整机状态及最近错误，供不同线程安全读取和更新。</summary>
         private readonly object _statusLock = new object();
 
+        /// <summary>当前整机运行状态。</summary>
         private MachineRunState _state;
+
+        /// <summary>最近一次整机操作或流程故障；无错误时为 null。</summary>
         private Exception _lastError;
+
+        /// <summary>观察并回收当前整机流程任务的后台任务。</summary>
         private Task _flowObserverTask = Task.CompletedTask;
+
+        /// <summary>周期监控急停输入的后台任务。</summary>
         private Task _safetyMonitorTask = Task.CompletedTask;
+
+        /// <summary>取消当前急停监控任务的令牌源。</summary>
         private CancellationTokenSource _safetyMonitorCancellation;
 
         /// <summary>创建单机运行上下文，并设置流程暂停时限和急停状态轮询间隔。</summary>
@@ -96,6 +125,7 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>报警列表变化时通知界面刷新。</summary>
         public event EventHandler AlarmsChanged;
 
+        /// <summary>返回受锁保护的当前整机状态。</summary>
         public MachineRunState State
         {
             get
@@ -119,16 +149,19 @@ namespace MotionControl.Framework.Runtime.Machine
             }
         }
 
+        /// <summary>返回本设备使用的运动卡集合和逻辑轴入口。</summary>
         public MotionCardGroup MotionCards
         {
             get { return _motionCards; }
         }
 
+        /// <summary>返回本设备使用的报警服务。</summary>
         public IMachineAlarmService AlarmService
         {
             get { return _alarmService; }
         }
 
+        /// <summary>返回本设备配置的工位流程只读列表。</summary>
         public IReadOnlyList<IStationFlow> StationFlows
         {
             get { return _flowScheduler.StationFlows; }

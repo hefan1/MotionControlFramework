@@ -8,6 +8,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         /// <summary>设备硬件配置中所属的控制卡标识。</summary>
         public string ControllerId { get; set; }
 
+        /// <summary>设备流程使用的逻辑 DI 或 DO 名称。</summary>
         public string Name { get; set; }
 
         /// <summary>从 0 开始的正运动 IO 点号；映射到 IN/OP 的单个物理点位。</summary>

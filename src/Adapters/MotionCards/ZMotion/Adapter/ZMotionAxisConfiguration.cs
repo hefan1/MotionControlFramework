@@ -15,15 +15,19 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         /// <summary>设备硬件配置中所属的控制卡标识。</summary>
         public string ControllerId { get; set; }
 
+        /// <summary>流程代码使用的逻辑轴名称，设备内不可重复。</summary>
         public string Name { get; set; }
 
+        /// <summary>正运动控制器上的物理轴通道号，从 0 开始。</summary>
         public int AxisNumber { get; set; }
 
         /// <summary>控制器 UNITS：每个工程单位对应的脉冲数。</summary>
         public double UnitsPerEngineeringUnit { get; set; }
 
+        /// <summary>启用软件限位时允许到达的最小工程位置。</summary>
         public double MinimumPosition { get; set; }
 
+        /// <summary>启用软件限位时允许到达的最大工程位置。</summary>
         public double MaximumPosition { get; set; }
 
         /// <summary>控制卡和适配器是否启用正负软限位，默认启用以保持保护。</summary>

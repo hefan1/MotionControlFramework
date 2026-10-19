@@ -30,10 +30,13 @@ namespace MotionControl.Framework.Contracts.Motion
             Deceleration = deceleration;
         }
 
+        /// <summary>本次运动的目标速度，使用轴工程单位/秒。</summary>
         public double Speed { get; private set; }
 
+        /// <summary>本次运动的加速度，使用轴工程单位/秒²。</summary>
         public double Acceleration { get; private set; }
 
+        /// <summary>本次运动的减速度，使用轴工程单位/秒²。</summary>
         public double Deceleration { get; private set; }
     }
 }

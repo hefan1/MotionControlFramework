@@ -19,20 +19,40 @@ namespace MotionControl.Framework.Wpf.ManualDebug
     /// <summary>按通用轴和逻辑 IO 契约提供单轴及数字 IO 手动调试页面。</summary>
     public partial class ManualMotionDebugView : UserControl
     {
+        /// <summary>定时刷新轴、输入和输出状态的 WPF 计时器。</summary>
         private readonly DispatcherTimer _refreshTimer;
+
+        /// <summary>按逻辑 DI 名称查找界面状态文字控件。</summary>
         private readonly Dictionary<string, TextBlock> _inputStatusTextByName =
             new Dictionary<string, TextBlock>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>按逻辑 DO 名称查找界面状态文字控件。</summary>
         private readonly Dictionary<string, TextBlock> _outputStatusTextByName =
             new Dictionary<string, TextBlock>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>按逻辑轴名称保存硬件配置，用于显示软限位等参数。</summary>
         private readonly Dictionary<string, AxisHardwareDefinition> _axisConfigurationByName =
             new Dictionary<string, AxisHardwareDefinition>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>提供复位、启停和整机状态的运行上下文。</summary>
         private readonly MachineRuntime _machineRuntime;
+
+        /// <summary>提供本设备的逻辑轴及运动卡状态。</summary>
         private readonly MotionCardGroup _motionCards;
+
+        /// <summary>按逻辑名称读写数字输入和输出的服务。</summary>
         private readonly ILogicalIo _logicalIo;
+
+        /// <summary>当前页面展示的逻辑 DI 名称列表。</summary>
         private IReadOnlyList<string> _inputNames = new string[0];
+
+        /// <summary>当前页面展示的逻辑 DO 名称列表。</summary>
         private IReadOnlyList<string> _outputNames = new string[0];
+
+        /// <summary>当前按住点动按钮、尚需在松开时停止的轴。</summary>
         private IAxis _joggingAxis;
+
+        /// <summary>防止上一次状态刷新未完成时再次启动刷新。</summary>
         private bool _refreshInProgress;
 
         /// <summary>创建通用手动调试页面，并保存本设备 Runtime、轴、IO 与限位配置。</summary>
@@ -676,8 +696,10 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 Value = value;
             }
 
+            /// <summary>要写入的设备逻辑 DO 名称。</summary>
             public string OutputName { get; private set; }
 
+            /// <summary>要写入的逻辑输出值；true 表示有效，具体电平由适配层处理。</summary>
             public bool Value { get; private set; }
         }
     }

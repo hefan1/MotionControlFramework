@@ -31,14 +31,19 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             ErrorCode = errorCode;
         }
 
+        /// <summary>发生调用错误的控制卡标识，便于区分多卡设备中的故障来源。</summary>
         public string ControllerId { get; private set; }
 
+        /// <summary>失败的控制器操作名称。</summary>
         public string Operation { get; private set; }
 
+        /// <summary>错误上下文的类别，例如逻辑轴或数字输入。</summary>
         public string ContextType { get; private set; }
 
+        /// <summary>发生错误的逻辑对象名称；没有具体对象时为空。</summary>
         public string ContextName { get; private set; }
 
+        /// <summary>正运动 SDK 返回的原始错误码。</summary>
         public int ErrorCode { get; private set; }
 
         /// <summary>生成包含控制卡、操作、上下文和厂商错误码的中文说明。</summary>

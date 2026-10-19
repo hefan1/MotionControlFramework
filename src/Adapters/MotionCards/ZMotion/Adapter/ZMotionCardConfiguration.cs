@@ -15,10 +15,13 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             MotionTimeoutMilliseconds = 120000;
         }
 
+        /// <summary>连接配置文件格式版本；当前适配器支持版本 1。</summary>
         public int SchemaVersion { get; set; }
 
+        /// <summary>正运动 ZDevelop 仿真器地址；当前仅支持本机地址 127.0.0.1。</summary>
         public string Address { get; set; }
 
+        /// <summary>轴运动等待控制器完成的超时时间，单位为毫秒。</summary>
         public int MotionTimeoutMilliseconds { get; set; }
 
         /// <summary>检查连接参数是否符合本机 ZDevelop 仿真器的支持范围。</summary>

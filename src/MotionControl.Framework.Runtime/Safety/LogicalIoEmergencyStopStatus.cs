@@ -9,7 +9,10 @@ namespace MotionControl.Framework.Runtime.Safety
     /// <summary>通过设备配置的逻辑 DI 读取急停状态。</summary>
     public sealed class LogicalIoEmergencyStopStatus : IMachineSafetyStatus
     {
+        /// <summary>负责将逻辑输入名称映射到控制卡 DI 的读取服务。</summary>
         private readonly ILogicalIo _logicalIo;
+
+        /// <summary>设备配置中代表急停回路状态的逻辑 DI 名称。</summary>
         private readonly string _emergencyStopInputName;
 
         /// <summary>创建急停输入读取器，并保存已校验的逻辑输入名称。</summary>

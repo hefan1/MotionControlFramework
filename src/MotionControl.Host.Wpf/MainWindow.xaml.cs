@@ -7,6 +7,7 @@ using System.Windows.Threading;
 
 namespace MotionControl.Host.Wpf
 {
+    /// <summary>提供设备操作外壳、功能导航、语言切换及状态栏显示。</summary>
     public partial class MainWindow : Window
     {
         // 这里保存的是语言资源键。键使用中文界面原文，方便开发时按画面文字搜索。
@@ -22,6 +23,7 @@ namespace MotionControl.Host.Wpf
             { "Help", "帮助" }
         };
 
+        /// <summary>按导航分区保存左侧子页面的中文资源键。</summary>
         private readonly Dictionary<string, string[]> _pagesBySection = new Dictionary<string, string[]>
         {
             { "Home", new[] { "设备总览", "轴状态", "IO状态", "运行日志" } },
@@ -34,9 +36,16 @@ namespace MotionControl.Host.Wpf
             { "Help", new[] { "软件信息", "使用说明" } }
         };
 
+        /// <summary>每秒更新主窗口顶部时间显示的计时器。</summary>
         private readonly DispatcherTimer _clockTimer;
+
+        /// <summary>当前选中的顶部导航分区资源键。</summary>
         private string _currentSectionKey;
+
+        /// <summary>当前选中的左侧页面中文资源键。</summary>
         private string _currentPageResourceKey;
+
+        /// <summary>由组合根注入的通用轴和 IO 手动调试页面。</summary>
         private UserControl _manualMotionDebugPage;
 
         /// <summary>由 Host 组合根注入的通用轴映射配置页面。</summary>
@@ -45,6 +54,7 @@ namespace MotionControl.Host.Wpf
         /// <summary>由 Host 组合根注入的通用 DI/DO 映射配置页面。</summary>
         private UserControl _ioMappingConfigurationPage;
 
+        /// <summary>当前界面语言代码；支持 zh-CN 和 en-US。</summary>
         public string CurrentLanguage { get; private set; }
 
         /// <summary>

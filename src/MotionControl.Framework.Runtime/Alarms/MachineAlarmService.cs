@@ -8,14 +8,20 @@ namespace MotionControl.Framework.Runtime.Alarms
     /// <summary>按设备报警规则保存当前报警，并处理条件恢复和人工复位。</summary>
     public sealed class MachineAlarmService : IMachineAlarmService
     {
+        /// <summary>保护报警集合，避免流程线程与界面线程同时读写。</summary>
         private readonly object _sync = new object();
+
+        /// <summary>按报警来源和报警代码保存当前报警记录。</summary>
         private readonly Dictionary<string, Dictionary<string, MachineAlarmRecord>> _alarmsBySource =
             new Dictionary<string, Dictionary<string, MachineAlarmRecord>>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>新停机报警首次出现时触发，供整机运行时立即暂停流程。</summary>
         public event EventHandler<MachineAlarmRaisedEventArgs> StopAlarmRaised;
 
+        /// <summary>报警新增、条件变化或清除后触发，供界面刷新报警列表。</summary>
         public event EventHandler AlarmsChanged;
 
+        /// <summary>返回按报警来源和代码排序的当前报警只读快照。</summary>
         public IReadOnlyCollection<MachineAlarmRecord> Alarms
         {
             get
@@ -32,6 +38,7 @@ namespace MotionControl.Framework.Runtime.Alarms
             }
         }
 
+        /// <summary>存在需要人工复位的停机报警时返回 true。</summary>
         public bool HasLatchedStopAlarm
         {
             get

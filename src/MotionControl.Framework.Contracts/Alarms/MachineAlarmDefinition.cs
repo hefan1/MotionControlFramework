@@ -28,10 +28,13 @@ namespace MotionControl.Framework.Contracts.Alarms
             Kind = kind;
         }
 
+        /// <summary>设备项目定义的稳定报警代码，用于程序判断和历史记录查询。</summary>
         public string Code { get; private set; }
 
+        /// <summary>显示给操作人员的报警说明。</summary>
         public string Message { get; private set; }
 
+        /// <summary>报警类型；停机报警要求整机暂停，非停机报警在条件恢复后清除。</summary>
         public MachineAlarmKind Kind { get; private set; }
     }
 }
