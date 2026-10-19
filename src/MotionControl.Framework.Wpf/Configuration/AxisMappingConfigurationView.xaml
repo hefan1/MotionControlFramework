@@ -173,34 +173,21 @@
                     <TextBlock Text="{DynamicResource 控制卡厂商}" VerticalAlignment="Center" Margin="0,0,7,0"
                                FontSize="12" Foreground="#40536A" />
                     <ComboBox x:Name="CardVendorComboBox" Width="120" Style="{StaticResource AxisMappingComboBox}"
-                              SelectionChanged="CardVendorComboBox_SelectionChanged">
-                        <ComboBoxItem Tag="正运动" Content="正运动" />
-                        <ComboBoxItem Tag="雷赛" Content="雷赛" />
-                        <ComboBoxItem Tag="凌华" Content="凌华" />
-                        <ComboBoxItem Tag="其他" Content="{DynamicResource 其他厂商}" />
-                    </ComboBox>
+                              SelectionChanged="CardVendorComboBox_SelectionChanged" />
                     <Border Width="1" Height="24" Margin="10,0,0,0" Background="#D7E0EA" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0">
                     <TextBlock Text="{DynamicResource 控制卡类型}" VerticalAlignment="Center" Margin="0,0,7,0"
                                FontSize="12" Foreground="#40536A" />
                     <ComboBox x:Name="CardTypeComboBox" Width="102" Style="{StaticResource AxisMappingComboBox}"
-                              SelectionChanged="CardTypeComboBox_SelectionChanged">
-                        <ComboBoxItem Tag="总线型" Content="{DynamicResource 总线型}" />
-                        <ComboBoxItem Tag="脉冲型" Content="{DynamicResource 脉冲型}" />
-                    </ComboBox>
+                              SelectionChanged="CardTypeComboBox_SelectionChanged" />
                     <Border Width="1" Height="24" Margin="10,0,0,0" Background="#D7E0EA" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
                     <TextBlock Text="{DynamicResource 控制卡轴数量}" VerticalAlignment="Center" Margin="0,0,7,0"
                                FontSize="12" Foreground="#40536A" />
                     <ComboBox x:Name="AxisCountComboBox" Width="72" Style="{StaticResource AxisMappingComboBox}"
-                              SelectionChanged="AxisCountComboBox_SelectionChanged">
-                        <ComboBoxItem Tag="8" Content="8" />
-                        <ComboBoxItem Tag="16" Content="16" />
-                        <ComboBoxItem Tag="32" Content="32" />
-                        <ComboBoxItem Tag="64" Content="64" />
-                    </ComboBox>
+                              SelectionChanged="AxisCountComboBox_SelectionChanged" />
                     <Border Width="1" Height="24" Margin="10,0,0,0" Background="#D7E0EA" />
                 </StackPanel>
                 <TextBlock x:Name="ConfiguredAxisCountText" VerticalAlignment="Center" Margin="0,0,14,0"
@@ -407,24 +394,7 @@
                                        VerticalAlignment="Center" Margin="8,0,0,0" FontSize="11" Foreground="#718096" />
                             <TextBlock Grid.Row="9" Text="{DynamicResource 回零模式}" Style="{StaticResource AxisMappingFieldLabel}" />
                             <ComboBox Grid.Row="9" Grid.Column="1" x:Name="HomeModeComboBox"
-                                      Style="{StaticResource AxisMappingComboBox}" SelectionChanged="HomeModeComboBox_SelectionChanged">
-                                <ComboBoxItem Tag="1" Content="1" />
-                                <ComboBoxItem Tag="2" Content="2" />
-                                <ComboBoxItem Tag="3" Content="3" />
-                                <ComboBoxItem Tag="4" Content="4" />
-                                <ComboBoxItem Tag="5" Content="5" />
-                                <ComboBoxItem Tag="6" Content="6" />
-                                <ComboBoxItem Tag="8" Content="8" />
-                                <ComboBoxItem Tag="9" Content="9" />
-                                <ComboBoxItem Tag="11" Content="11" />
-                                <ComboBoxItem Tag="12" Content="12" />
-                                <ComboBoxItem Tag="13" Content="13" />
-                                <ComboBoxItem Tag="14" Content="14" />
-                                <ComboBoxItem Tag="15" Content="15" />
-                                <ComboBoxItem Tag="16" Content="16" />
-                                <ComboBoxItem Tag="18" Content="18" />
-                                <ComboBoxItem Tag="19" Content="19" />
-                            </ComboBox>
+                                      Style="{StaticResource AxisMappingComboBox}" SelectionChanged="HomeModeComboBox_SelectionChanged" />
                             <Border Grid.Row="10" Grid.ColumnSpan="3" Padding="8,5" Margin="0,3"
                                     Background="#F1F7FF" BorderBrush="#D5E6FC" BorderThickness="1" CornerRadius="4">
                                 <StackPanel Orientation="Horizontal">

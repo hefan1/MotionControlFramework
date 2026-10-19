@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -158,6 +159,16 @@ namespace MotionControl.ZMotionSimulatorCheck
             }
         }
 
+        /// <summary>读取轴映射页校验结果，避免测试无效配置时打开阻塞式提示框。</summary>
+        private static List<string> GetAxisMappingValidationErrors(AxisMappingConfigurationView page)
+        {
+            MethodInfo validationMethod = typeof(AxisMappingConfigurationView).GetMethod(
+                "ValidateConfiguredAxes",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Ensure(validationMethod != null, "轴映射页没有找到配置校验入口。");
+            return (List<string>)validationMethod.Invoke(page, null);
+        }
+
         /// <summary>确认 Host 顶部显示设备状态，底栏独立显示中英文控制卡连接状态。</summary>
         private static void VerifyMotionCardConnectionStatus(
             Application application,
@@ -204,10 +215,22 @@ namespace MotionControl.ZMotionSimulatorCheck
                 firstRunPage.InitializeSavedCardConnectionAsync().GetAwaiter().GetResult();
 
                 Ensure(firstRunConnection.ConnectCount == 0, "首次运行没有已保存的卡配置，却自动连接了控制卡。");
-                Ensure(!((Grid)firstRunPage.FindName("AxisDetailsGrid")).IsEnabled, "未连接时轴映射编辑区没有锁定。");
+                Ensure(((Grid)firstRunPage.FindName("AxisDetailsGrid")).IsEnabled, "未连接控制卡时不能编辑轴映射配置。");
+                Ensure(
+                    ((ComboBox)firstRunPage.FindName("CardVendorComboBox")).Items.Count == 1,
+                    "轴映射页没有按连接提供者显示厂商选项。");
+                Ensure(
+                    ((ComboBox)firstRunPage.FindName("CardTypeComboBox")).Items.Count == 1,
+                    "轴映射页没有按连接提供者显示卡类型选项。");
+                Ensure(
+                    ((ComboBox)firstRunPage.FindName("AxisCountComboBox")).Items.Count == 4,
+                    "轴映射页没有按连接提供者显示可配置的轴通道数量。");
 
                 var savedCardSettings = new MotionCardSettingsDocument
                 {
+                    MotionCardVendor = "正运动",
+                    MotionCardType = "总线型",
+                    AxisCount = 64,
                     MotionCards = new List<MotionCardConnectionDefinition>
                     {
                         new MotionCardConnectionDefinition
@@ -261,8 +284,13 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(savedRunConnection.ConnectCount == 1, "启动时没有按已保存的控制卡配置自动连接。");
                 Ensure(((Grid)savedRunPage.FindName("AxisDetailsGrid")).IsEnabled, "自动连接成功后轴映射编辑区没有启用。");
                 Ensure(
-                    ((TextBlock)savedRunPage.FindName("CardReadbackText")).Text.Contains("UNITS=1"),
+                    ((TextBlock)savedRunPage.FindName("CardReadbackText")).Text.Contains("单位换算=1"),
                     "自动连接成功后没有读取所选物理轴的当前参数。");
+                ComboBox homeModeEditor = (ComboBox)savedRunPage.FindName("HomeModeComboBox");
+                Ensure(homeModeEditor.Items.Count == 1, "回零模式选项没有来自当前连接提供者。");
+                Ensure(
+                    string.Equals(((ComboBoxItem)homeModeEditor.SelectedItem).Tag as string, "3", StringComparison.Ordinal),
+                    "旧版厂商回零模式没有按已保存的适配器标识迁移。");
 
                 var softLimitEditor = (ComboBox)savedRunPage.FindName("SoftLimitEnabledComboBox");
                 Ensure(softLimitEditor != null, "轴参数编辑区没有软限位启用下拉框。");
@@ -276,14 +304,16 @@ namespace MotionControl.ZMotionSimulatorCheck
                     savedRunPage.SelectedAxis.HomeDeceleration == 9,
                     "卡上 DECEL=0 覆盖了原有有效的回零减速度配置。");
                 Ensure(
-                    ((TextBlock)savedRunPage.FindName("CardReadbackText")).Text.Contains("DECEL=0"),
-                    "卡上无效 DECEL=0 没有保留在只读参数读回区显示。");
+                    ((TextBlock)savedRunPage.FindName("CardReadbackText")).Text.Contains("减速度=0"),
+                    "卡上无效减速度读数没有保留在只读参数读回区显示。");
                 Ensure(
-                    ((TextBlock)savedRunPage.FindName("ConfigurationStatusText")).Text.Contains("DECEL"),
-                    "读卡后没有说明 DECEL=0 未回填到编辑区。");
+                    ((TextBlock)savedRunPage.FindName("ConfigurationStatusText")).Text.Contains("回零减速度"),
+                    "读卡后没有说明无效的回零减速度未回填到编辑区。");
+                var checkMappingButton = (Button)savedRunPage.FindName("CheckMappingButton");
+                checkMappingButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, checkMappingButton));
                 Ensure(
-                    ((Button)savedRunPage.FindName("WriteAxisParametersButton")).IsEnabled,
-                    "忽略无效 DECEL=0 后，已有完整有效配置仍不能写卡。");
+                    ((TextBlock)savedRunPage.FindName("ConfigurationStatusText")).Text.Contains("检查通过"),
+                    "保留有效回零减速度后，完整轴配置没有通过检查。");
 
                 ComboBoxItem disabledSoftLimitItem = softLimitEditor.Items
                     .OfType<ComboBoxItem>()
@@ -291,7 +321,6 @@ namespace MotionControl.ZMotionSimulatorCheck
                 softLimitEditor.SelectedItem = disabledSoftLimitItem;
                 savedRunPage.SelectedAxis.MinimumPosition = null;
                 savedRunPage.SelectedAxis.MaximumPosition = null;
-                var checkMappingButton = (Button)savedRunPage.FindName("CheckMappingButton");
                 checkMappingButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, checkMappingButton));
                 Ensure(
                     ((TextBlock)savedRunPage.FindName("ConfigurationStatusText")).Text.Contains("检查通过"),
@@ -301,9 +330,11 @@ namespace MotionControl.ZMotionSimulatorCheck
                     .OfType<ComboBoxItem>()
                     .Single(item => string.IsNullOrWhiteSpace(item.Tag as string));
                 softLimitEditor.SelectedItem = unsetSoftLimitItem;
+                List<string> validationErrors = GetAxisMappingValidationErrors(savedRunPage);
                 Ensure(
-                    !((Button)savedRunPage.FindName("WriteAxisParametersButton")).IsEnabled,
-                    "尚未选择软限位启停状态时仍允许写入控制卡。");
+                    validationErrors.Any(error => error.Contains("尚未选择是否启用软限位")),
+                    "尚未选择软限位启停状态时没有报告对应的配置错误。当前错误："
+                    + string.Join("；", validationErrors));
             }
             finally
             {
@@ -317,6 +348,27 @@ namespace MotionControl.ZMotionSimulatorCheck
         /// <summary>提供无硬件的轴映射页连接替身，记录自动连接及参数读取调用。</summary>
         private sealed class SmokeAxisMappingCardConnection : IAxisMappingCardConnection
         {
+            /// <summary>返回内存测试卡提供的卡型及轴数量选项。</summary>
+            public IReadOnlyList<MotionCardSelectionOption> SupportedMotionCards
+            {
+                get
+                {
+                    return new List<MotionCardSelectionOption>
+                    {
+                        new MotionCardSelectionOption
+                        {
+                            VendorCode = "正运动",
+                            VendorDisplayResourceKey = "厂商正运动",
+                            CardTypeCode = "总线型",
+                            CardTypeDisplayResourceKey = "卡类型总线",
+                            AdapterType = "ZMotion",
+                            SupportedAxisCounts = new[] { 8, 16, 32, 64 },
+                            DefaultAxisCount = 64
+                        }
+                    }.AsReadOnly();
+                }
+            }
+
             /// <summary>当前内存测试卡的连接状态。</summary>
             public bool IsConnected { get; private set; }
 
@@ -342,6 +394,29 @@ namespace MotionControl.ZMotionSimulatorCheck
             {
                 IsConnected = false;
                 return Task.CompletedTask;
+            }
+
+            /// <summary>重新连接测试卡，模拟 Host 按已保存配置恢复控制器。</summary>
+            public Task ReconnectAsync(MotionCardSettingsDocument settings, CancellationToken cancellationToken)
+            {
+                return ConnectAsync(settings, cancellationToken);
+            }
+
+            /// <summary>返回测试卡唯一支持的回零模式，用于验证页面读取适配器选项。</summary>
+            public IReadOnlyList<AxisHomeModeOption> GetSupportedHomeModes(
+                MotionCardSelectionOption motionCard,
+                int axisNumber)
+            {
+                if (motionCard == null || axisNumber < 0 || axisNumber >= 64
+                    || !string.Equals(motionCard.AdapterType, "ZMotion", StringComparison.Ordinal))
+                {
+                    return new List<AxisHomeModeOption>().AsReadOnly();
+                }
+
+                return new List<AxisHomeModeOption>
+                {
+                    new AxisHomeModeOption { ModeNumber = 3 }
+                }.AsReadOnly();
             }
 
             /// <summary>返回固定 Axis0 参数，供自动连接后验证页面读回显示。</summary>
@@ -391,7 +466,7 @@ namespace MotionControl.ZMotionSimulatorCheck
 
             var outputRows = (StackPanel)ioPage.FindName("DigitalOutputsPanel");
             var firstOutputRow = (StackPanel)outputRows.Children[0];
-            var outputOnButton = (Button)firstOutputRow.Children[3];
+            var outputOnButton = (Button)firstOutputRow.Children[2];
             outputOnButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, outputOnButton));
             var operationMessage = (TextBlock)ioPage.FindName("OperationMessageText");
             Ensure(operationMessage.Text.Contains("运动控制卡未连接"), "中文界面没有拦截断开状态下的 DO 命令。");
@@ -469,9 +544,9 @@ namespace MotionControl.ZMotionSimulatorCheck
 
             var outputRows = (StackPanel)ioPage.FindName("DigitalOutputsPanel");
             var firstOutputRow = (StackPanel)outputRows.Children[0];
-            var outputStatusText = (TextBlock)firstOutputRow.Children[2];
-            var outputOnButton = (Button)firstOutputRow.Children[3];
-            var outputOffButton = (Button)firstOutputRow.Children[4];
+            var outputStatusText = (TextBlock)firstOutputRow.Children[1];
+            var outputOnButton = (Button)firstOutputRow.Children[2];
+            var outputOffButton = (Button)firstOutputRow.Children[3];
             outputOnButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, outputOnButton));
             Ensure(outputStatusText.Text == "输出已开", "DO 开启后页面没有显示读回状态。");
             outputOffButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, outputOffButton));

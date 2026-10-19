@@ -49,10 +49,13 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>保存手动调试速度；未配置时为空。</summary>
         private double? _manualSpeed;
 
-        /// <summary>保存控制卡厂商使用的回零模式编号；未配置时为空。</summary>
+        /// <summary>保存当前驱动适配器使用的回零模式编号；未配置时为空。</summary>
         private int? _homeMode;
 
-        /// <summary>记录该回零编号所属的控制卡厂商，防止换厂商后误用相同数字。</summary>
+        /// <summary>记录回零模式编号所属的驱动适配器，防止更换 API 家族后误用相同数字。</summary>
+        private string _homeModeAdapterType;
+
+        /// <summary>保留早期配置使用的回零模式厂商标记。</summary>
         private string _homeModeVendor;
 
         /// <summary>保存回零搜索速度；未配置时为空。</summary>
@@ -146,7 +149,18 @@ namespace MotionControl.Framework.Wpf.Configuration
             set { SetValue(ref _homeMode, value, "HomeMode"); }
         }
 
-        /// <summary>回零模式编号所属的控制卡厂商，避免不同厂商相同编号被误认为同一模式。</summary>
+        /// <summary>回零模式编号所属的驱动适配器稳定标识。</summary>
+        public string HomeModeAdapterType
+        {
+            get { return _homeModeAdapterType; }
+            set
+            {
+                string normalizedAdapterType = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+                SetValue(ref _homeModeAdapterType, normalizedAdapterType, "HomeModeAdapterType");
+            }
+        }
+
+        /// <summary>旧版 JSON 使用的厂商标记；新配置以 HomeModeAdapterType 判断编号归属。</summary>
         public string HomeModeVendor
         {
             get { return _homeModeVendor; }

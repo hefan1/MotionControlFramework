@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "motionCardVendor": "正运动",
-  "motionCardType": "总线型",
-  "axisCount": 64,
+  "motionCardVendor": "",
+  "motionCardType": "",
+  "axisCount": 0,
   "motionCards": []
 }

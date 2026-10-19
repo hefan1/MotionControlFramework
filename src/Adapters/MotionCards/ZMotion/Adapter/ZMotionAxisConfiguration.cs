@@ -94,9 +94,10 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         /// <summary>检查回零模式、速度和加减速度，避免向控制器下发无效回零参数。</summary>
         internal void ValidateHomeParameters()
         {
-            if (HomeMode < 0)
+            if (!ZMotionHomeModeCatalog.IsSupported(HomeMode))
             {
-                throw new InvalidOperationException("轴 '" + Name + "' 的正运动回零模式号不能小于 0。");
+                throw new InvalidOperationException(
+                    "轴 '" + Name + "' 的 ZMotion DATUM 回零模式未受支持：" + HomeMode + "。");
             }
 
             if (!IsFinite(HomeSearchSpeed) || HomeSearchSpeed <= 0

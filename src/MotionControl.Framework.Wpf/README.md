@@ -6,11 +6,11 @@
 
 `ManualDebug/ManualIoDebugView` 单独处理逻辑 DI/DO 状态和手动输出。Host 将它注入“IO 手动”导航，避免在轴手动卡片下方重复放置 IO 面板。
 
-`Configuration/AxisMappingConfigurationView` 提供控制卡厂商、卡类型、轴通道数量和物理轴映射配置。控制卡选项保存到 `HardwareConfig/MotionCards.json`，设备轴名称和轴参数保存到 `HardwareConfig/AxisParameters.json`；两个文件按 MachineId 独立保存并由 Runtime 配置存储备份。
+`Configuration/AxisMappingConfigurationView` 提供控制卡选择、轴通道数量和物理轴映射配置。厂商、卡类型、适配器和通道数量选项由 Host 注入的连接实现提供；通用页面不维护厂商清单。控制卡选项保存到 `HardwareConfig/MotionCards.json`，设备轴名称和轴参数保存到 `HardwareConfig/AxisParameters.json`；两个文件按 MachineId 独立保存并由 Runtime 配置存储备份。
 
 `Configuration/IoMappingConfigurationView` 编辑 `HardwareConfig/IoMapping.json` 中的逻辑 DI/DO 名称、控制卡标识、物理通道、有效电平和急停输入名称。此页面与轴映射页共用控制卡连接状态；断开时锁定编辑，检查和保存只修改配置文件，不会直接切换物理输出。
 
-回零模式编号由控制卡厂商定义，不是跨厂商通用值。轴参数中的 `HomeMode` 要和 `HomeModeVendor` 一起理解；当前页面只为正运动显示并校验 DATUM 模式 3、4、13，选择其他厂商时会清空可见选择并保留原厂商设置，不会把同一个数字自动套用过去。接入新厂商时，应根据该适配器和控制器手册增加它自己的中文选项与参数处理；例如雷赛参考代码把 `home_dir` 和 `mode` 分开传给 API，不能仅凭模式编号推断搜索方向。
+回零模式编号由具体适配器提供并在该适配器内校验；通用页面只显示连接实现返回的编号。轴参数用 `HomeModeAdapterType` 记录编号所属的 API 适配器，避免更换适配器后误用相同数字；旧配置中的 `HomeModeVendor` 只用于兼容迁移。需要额外回零方向或特殊参数的卡型，应由对应 Host/适配器配置负责，不能强塞进单一通用模式编号。当前 Host 只注册 ZMotion 总线仿真选项，其他厂商和实体卡适配器尚未接入。
 
 设备项目完成硬件配置校验并创建 `MachineRuntime`、`MotionCardGroup`、`ILogicalIo` 和 `MachineConfigurationStore` 后，由 Host 组合根分别创建两个手动页面并注入 `MainWindow`。轴页面还需传入本设备 `MachineId` 以保存示教位置。页面不负责选择或创建厂商驱动；设备自动流程运行期间会拒绝手动操作，急停报警未复位时也会拒绝动作。
 

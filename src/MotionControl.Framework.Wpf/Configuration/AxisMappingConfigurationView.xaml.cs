@@ -24,14 +24,17 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>控制卡设置 JSON 在 MachineId 目录中的相对路径。</summary>
         private const string MotionCardsFilePath = "HardwareConfig/MotionCards.json";
 
-        /// <summary>目前已接入并验证回零选项说明的控制卡厂商。</summary>
-        private const string ZMotionVendorName = "正运动";
-
         /// <summary>按 MachineId 读取和备份保存设备配置。</summary>
         private readonly MachineConfigurationStore _configurationStore;
 
         /// <summary>由 Host 按所选厂商建立的控制卡连接及轴参数读写入口。</summary>
         private readonly IAxisMappingCardConnection _cardConnection;
+
+        /// <summary>由当前 Host 适配器提供的可选控制卡及通道数量清单。</summary>
+        private readonly IReadOnlyList<MotionCardSelectionOption> _supportedMotionCards;
+
+        /// <summary>当前 Host 卡型支持清单中的最大物理轴数量。</summary>
+        private readonly int _maximumSupportedAxisCount;
 
         /// <summary>当前页面对应的物理设备编号。</summary>
         private readonly string _machineId;
@@ -109,19 +112,15 @@ namespace MotionControl.Framework.Wpf.Configuration
             InitializeComponent();
             _configurationStore = configurationStore;
             _cardConnection = cardConnection;
+            _supportedMotionCards = new List<MotionCardSelectionOption>(
+                cardConnection.SupportedMotionCards ?? new MotionCardSelectionOption[0]).AsReadOnly();
+            _maximumSupportedAxisCount = GetMaximumSupportedAxisCount(_supportedMotionCards);
             _machineId = machineId;
             VisibleAxes = new ObservableCollection<AxisMappingEntry>();
             DataContext = this;
 
-            for (int axisNumber = 0; axisNumber < 64; axisNumber++)
-            {
-                AxisMappingEntry axis = new AxisMappingEntry
-                {
-                    AxisNumber = axisNumber
-                };
-                axis.PropertyChanged += Axis_PropertyChanged;
-                _allAxes.Add(axis);
-            }
+            EnsureAxisCapacity(_maximumSupportedAxisCount);
+            InitializeSupportedCardVendorItems();
 
             LoadConfiguration();
             Loaded += AxisMappingConfigurationView_Loaded;
@@ -238,14 +237,18 @@ namespace MotionControl.Framework.Wpf.Configuration
                         _machineId,
                         AxisParametersFilePath);
                     ValidateLoadedAxisConfiguration(_configuration);
+                    EnsureAxisCapacity(GetRequiredAxisCount(_cardConfiguration.AxisCount, _configuration.Axes));
                     ApplyLoadedAxes(_configuration.Axes);
                 }
 
+                ApplyDefaultCardSelectionIfEmpty();
+                PopulateCardTypeItems(_cardConfiguration.MotionCardVendor, _cardConfiguration.MotionCardType);
+                UpdateAxisCountOptions(GetSelectedMotionCardOption(), _cardConfiguration.AxisCount);
                 SelectComboBoxItem(CardVendorComboBox, _cardConfiguration.MotionCardVendor);
                 SelectComboBoxItem(CardTypeComboBox, _cardConfiguration.MotionCardType);
                 SelectAxisCount(_cardConfiguration.AxisCount);
                 RefreshVisibleAxes();
-                SelectAxis(_allAxes[0]);
+                SelectAxis(_allAxes.FirstOrDefault());
                 ConfigurationStatusText.Text = (string)FindResource("轴映射读取完成");
             }
             catch (Exception error)
@@ -253,11 +256,14 @@ namespace MotionControl.Framework.Wpf.Configuration
                 ResetAxesToUnconfigured();
                 _configuration = new AxisMappingConfigurationDocument();
                 _cardConfiguration = new MotionCardSettingsDocument();
+                ApplyDefaultCardSelectionIfEmpty();
+                PopulateCardTypeItems(_cardConfiguration.MotionCardVendor, _cardConfiguration.MotionCardType);
+                UpdateAxisCountOptions(GetSelectedMotionCardOption(), _cardConfiguration.AxisCount);
                 SelectComboBoxItem(CardVendorComboBox, _cardConfiguration.MotionCardVendor);
                 SelectComboBoxItem(CardTypeComboBox, _cardConfiguration.MotionCardType);
                 SelectAxisCount(_cardConfiguration.AxisCount);
                 RefreshVisibleAxes();
-                SelectAxis(_allAxes[0]);
+                SelectAxis(_allAxes.FirstOrDefault());
                 _configurationCanBeSaved = false;
                 SaveConfigurationButton.IsEnabled = false;
                 ConfigurationStatusText.Text = string.Format(
@@ -273,7 +279,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
         }
 
-        /// <summary>把 64 个物理轴通道恢复为空配置，不为未映射轴伪造运动参数。</summary>
+        /// <summary>把当前页面已有的物理轴通道恢复为空配置，不伪造未映射轴参数。</summary>
         private void ResetAxesToUnconfigured()
         {
             foreach (AxisMappingEntry axis in _allAxes)
@@ -294,6 +300,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             axis.SoftLimitEnabled = null;
             axis.ManualSpeed = null;
             axis.HomeMode = null;
+            axis.HomeModeAdapterType = null;
             axis.HomeModeVendor = null;
             axis.HomeSearchSpeed = null;
             axis.HomeCreepSpeed = null;
@@ -315,18 +322,18 @@ namespace MotionControl.Framework.Wpf.Configuration
                 throw new InvalidOperationException("MotionCards.json 缺少 motionCards 列表。未保存原配置。");
             }
 
-            if (configuration.AxisCount != 8
-                && configuration.AxisCount != 16
-                && configuration.AxisCount != 32
-                && configuration.AxisCount != 64)
+            if (configuration.AxisCount < 0 || configuration.AxisCount > 1024)
             {
-                throw new InvalidOperationException("控制卡轴数量只支持 8、16、32 或 64。未保存原配置。");
+                throw new InvalidOperationException("MotionCards.json 中的轴数量必须在 0 到 1024 之间。未保存原配置。");
             }
 
-            if (string.IsNullOrWhiteSpace(configuration.MotionCardVendor)
-                || string.IsNullOrWhiteSpace(configuration.MotionCardType))
+            bool hasVendor = !string.IsNullOrWhiteSpace(configuration.MotionCardVendor);
+            bool hasCardType = !string.IsNullOrWhiteSpace(configuration.MotionCardType);
+            bool isEmptyTemplate = !hasVendor && !hasCardType
+                && configuration.AxisCount == 0 && configuration.MotionCards.Count == 0;
+            if (!isEmptyTemplate && (!hasVendor || !hasCardType || configuration.AxisCount == 0))
             {
-                throw new InvalidOperationException("MotionCards.json 缺少控制卡厂商或卡类型。未保存原配置。");
+                throw new InvalidOperationException("MotionCards.json 的厂商、卡类型或轴数量配置不完整。未保存原配置。");
             }
         }
 
@@ -346,7 +353,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             var usedAxisNumbers = new HashSet<int>();
             foreach (AxisMappingEntry axis in configuration.Axes)
             {
-                if (axis == null || axis.AxisNumber < 0 || axis.AxisNumber >= 64)
+                if (axis == null || axis.AxisNumber < 0 || axis.AxisNumber >= 1024)
                 {
                     throw new InvalidOperationException("AxisParameters.json 中存在无效的物理轴号。未保存该文件。");
                 }
@@ -382,11 +389,39 @@ namespace MotionControl.Framework.Wpf.Configuration
                 visibleAxis.ManualSpeed = configuredAxis.ManualSpeed;
                 visibleAxis.HomeMode = configuredAxis.HomeMode;
                 visibleAxis.HomeModeVendor = configuredAxis.HomeModeVendor;
+                visibleAxis.HomeModeAdapterType = string.IsNullOrWhiteSpace(configuredAxis.HomeModeAdapterType)
+                    ? GetLegacyHomeModeAdapterType(configuredAxis)
+                    : configuredAxis.HomeModeAdapterType;
                 visibleAxis.HomeSearchSpeed = configuredAxis.HomeSearchSpeed;
                 visibleAxis.HomeCreepSpeed = configuredAxis.HomeCreepSpeed;
                 visibleAxis.HomeAcceleration = configuredAxis.HomeAcceleration;
                 visibleAxis.HomeDeceleration = configuredAxis.HomeDeceleration;
             }
+        }
+
+        /// <summary>仅在旧配置能从卡清单确认适配器时，补全原有回零模式归属字段。</summary>
+        private string GetLegacyHomeModeAdapterType(AxisMappingEntry configuredAxis)
+        {
+            if (configuredAxis == null || !configuredAxis.HomeMode.HasValue
+                || !string.Equals(
+                    configuredAxis.HomeModeVendor,
+                    _cardConfiguration.MotionCardVendor,
+                    StringComparison.Ordinal)
+                || _cardConfiguration.MotionCards == null)
+            {
+                return null;
+            }
+
+            string controllerId = string.IsNullOrWhiteSpace(configuredAxis.ControllerId)
+                ? "MotionCard01"
+                : configuredAxis.ControllerId;
+            MotionCardConnectionDefinition definition = _cardConfiguration.MotionCards.FirstOrDefault(
+                card => card != null && string.Equals(
+                    card.ControllerId,
+                    controllerId,
+                    StringComparison.OrdinalIgnoreCase));
+
+            return definition == null ? null : definition.AdapterType;
         }
 
         /// <summary>设置卡选项下拉框的选中项，并保留配置文件中的厂商文字。</summary>
@@ -416,7 +451,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             comboBox.SelectedItem = addedItem;
         }
 
-        /// <summary>按已保存的轴通道数量选择 8、16、32 或 64 轴。</summary>
+        /// <summary>按已保存的轴通道数量恢复下拉框选择，并保留当前 Host 未提供的旧值。</summary>
         private void SelectAxisCount(int axisCount)
         {
             foreach (ComboBoxItem item in AxisCountComboBox.Items)
@@ -428,14 +463,21 @@ namespace MotionControl.Framework.Wpf.Configuration
                 }
             }
 
-            throw new InvalidOperationException("找不到已保存的控制卡轴数量选项。");
+            ComboBoxItem savedValueItem = new ComboBoxItem
+            {
+                Tag = axisCount.ToString(CultureInfo.InvariantCulture),
+                Content = axisCount.ToString(CultureInfo.InvariantCulture)
+            };
+            AxisCountComboBox.Items.Add(savedValueItem);
+            AxisCountComboBox.SelectedItem = savedValueItem;
         }
 
         /// <summary>根据当前控制卡轴数量刷新左侧物理通道表格。</summary>
         private void RefreshVisibleAxes()
         {
             VisibleAxes.Clear();
-            for (int axisNumber = 0; axisNumber < _cardConfiguration.AxisCount; axisNumber++)
+            int visibleAxisCount = Math.Min(_cardConfiguration.AxisCount, _allAxes.Count);
+            for (int axisNumber = 0; axisNumber < visibleAxisCount; axisNumber++)
             {
                 VisibleAxes.Add(_allAxes[axisNumber]);
             }
@@ -558,6 +600,13 @@ namespace MotionControl.Framework.Wpf.Configuration
                 return;
             }
 
+            if (GetSelectedMotionCardOption() == null)
+            {
+                CardConnectionStatusText.Text = (string)FindResource("控制卡选项未接入");
+                UpdateCardConnectionUiState();
+                return;
+            }
+
             _connectionInProgress = true;
             CardConnectionStatusText.Text = (string)FindResource("正在连接控制卡");
             UpdateCardConnectionUiState();
@@ -603,13 +652,14 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
 
             bool connected = _cardConnection.IsConnected;
+            bool hasSupportedCard = GetSelectedMotionCardOption() != null;
             ConnectionIndicator.Fill = connected ? new SolidColorBrush(Color.FromRgb(35, 153, 85)) : new SolidColorBrush(Color.FromRgb(135, 151, 168));
             CardConnectionStatusBadge.Background = connected ? new SolidColorBrush(Color.FromRgb(232, 247, 237)) : new SolidColorBrush(Color.FromRgb(239, 244, 249));
             CardConnectionStatusText.Foreground = connected ? new SolidColorBrush(Color.FromRgb(28, 126, 70)) : new SolidColorBrush(Color.FromRgb(89, 107, 125));
             CardVendorComboBox.IsEnabled = !connected && !_connectionInProgress;
             CardTypeComboBox.IsEnabled = !connected && !_connectionInProgress;
             AxisCountComboBox.IsEnabled = !connected && !_connectionInProgress;
-            ConnectCardButton.IsEnabled = !connected && !_connectionInProgress;
+            ConnectCardButton.IsEnabled = !connected && !_connectionInProgress && hasSupportedCard;
             DisconnectCardButton.IsEnabled = connected && !_connectionInProgress;
             AxisMappingGrid.IsEnabled = !_connectionInProgress;
             AxisDetailsGrid.IsEnabled = !_connectionInProgress;
@@ -708,7 +758,11 @@ namespace MotionControl.Framework.Wpf.Configuration
                 }
 
                 var invalidValues = new List<string>();
-                CopyPositiveValue(parameters.UnitsPerEngineeringUnit, value => axis.UnitsPerEngineeringUnit = value, "UNITS", invalidValues);
+                CopyPositiveValue(
+                    parameters.UnitsPerEngineeringUnit,
+                    value => axis.UnitsPerEngineeringUnit = value,
+                    (string)FindResource("单位换算"),
+                    invalidValues);
 
                 bool? controllerSoftLimitEnabled = GetCombinedSoftLimitState(parameters);
                 if (controllerSoftLimitEnabled.HasValue)
@@ -723,7 +777,9 @@ namespace MotionControl.Framework.Wpf.Configuration
                         }
                         else
                         {
-                            invalidValues.Add("RS_LIMIT/FS_LIMIT");
+                            invalidValues.Add(
+                                (string)FindResource("软限位下限") + " / "
+                                + (string)FindResource("软限位上限"));
                         }
                     }
                 }
@@ -733,10 +789,26 @@ namespace MotionControl.Framework.Wpf.Configuration
                 }
                 UpdateSoftLimitEnabledEditor(axis);
 
-                CopyPositiveValue(parameters.Speed, value => axis.HomeSearchSpeed = value, "SPEED", invalidValues);
-                CopyPositiveValue(parameters.CreepSpeed, value => axis.HomeCreepSpeed = value, "CREEP", invalidValues);
-                CopyPositiveValue(parameters.Acceleration, value => axis.HomeAcceleration = value, "ACCEL", invalidValues);
-                CopyPositiveValue(parameters.Deceleration, value => axis.HomeDeceleration = value, "DECEL", invalidValues);
+                CopyPositiveValue(
+                    parameters.Speed,
+                    value => axis.HomeSearchSpeed = value,
+                    (string)FindResource("回零搜索速度"),
+                    invalidValues);
+                CopyPositiveValue(
+                    parameters.CreepSpeed,
+                    value => axis.HomeCreepSpeed = value,
+                    (string)FindResource("回零爬行速度"),
+                    invalidValues);
+                CopyPositiveValue(
+                    parameters.Acceleration,
+                    value => axis.HomeAcceleration = value,
+                    (string)FindResource("回零加速度"),
+                    invalidValues);
+                CopyPositiveValue(
+                    parameters.Deceleration,
+                    value => axis.HomeDeceleration = value,
+                    (string)FindResource("回零减速度"),
+                    invalidValues);
 
                 if (invalidValues.Count == 0)
                 {
@@ -766,23 +838,74 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
         }
 
-        /// <summary>记录控制卡厂商下拉框的当前值。</summary>
+        /// <summary>保存当前厂商选择，并刷新该厂商实际接入的卡型和轴数量。</summary>
         private void CardVendorComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (!_loadingConfiguration && _cardConfiguration != null)
+            if (_loadingConfiguration || _cardConfiguration == null)
+            {
+                return;
+            }
+
+            bool wasLoadingConfiguration = _loadingConfiguration;
+            _loadingConfiguration = true;
+            try
             {
                 _cardConfiguration.MotionCardVendor = GetSelectedTag(CardVendorComboBox);
-                UpdateHomeModeEditor(SelectedAxis);
+                MotionCardSelectionOption option = FindSupportedMotionCardOption(
+                    _cardConfiguration.MotionCardVendor,
+                    _cardConfiguration.MotionCardType);
+                if (option == null)
+                {
+                    option = _supportedMotionCards.FirstOrDefault(card => string.Equals(
+                        card.VendorCode,
+                        _cardConfiguration.MotionCardVendor,
+                        StringComparison.Ordinal));
+                }
+
+                if (option != null)
+                {
+                    _cardConfiguration.MotionCardType = option.CardTypeCode;
+                }
+
+                PopulateCardTypeItems(_cardConfiguration.MotionCardVendor, _cardConfiguration.MotionCardType);
+                UpdateAxisCountOptions(option, _cardConfiguration.AxisCount);
+                UpdateExistingConnectionAdapterType(option);
             }
+            finally
+            {
+                _loadingConfiguration = wasLoadingConfiguration;
+            }
+
+            UpdateHomeModeEditor(SelectedAxis);
+            UpdateCardConnectionUiState();
         }
 
         /// <summary>记录控制卡类型下拉框的当前值。</summary>
         private void CardTypeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (!_loadingConfiguration && _cardConfiguration != null)
+            if (_loadingConfiguration || _cardConfiguration == null)
             {
-                _cardConfiguration.MotionCardType = GetSelectedTag(CardTypeComboBox);
+                return;
             }
+
+            _cardConfiguration.MotionCardType = GetSelectedTag(CardTypeComboBox);
+            MotionCardSelectionOption option = FindSupportedMotionCardOption(
+                _cardConfiguration.MotionCardVendor,
+                _cardConfiguration.MotionCardType);
+            UpdateExistingConnectionAdapterType(option);
+            bool wasLoadingConfiguration = _loadingConfiguration;
+            _loadingConfiguration = true;
+            try
+            {
+                UpdateAxisCountOptions(option, _cardConfiguration.AxisCount);
+            }
+            finally
+            {
+                _loadingConfiguration = wasLoadingConfiguration;
+            }
+
+            UpdateHomeModeEditor(SelectedAxis);
+            UpdateCardConnectionUiState();
         }
 
         /// <summary>切换可配置的物理轴通道数量，并避免隐藏仍在使用的轴。</summary>
@@ -809,8 +932,9 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
 
             _cardConfiguration.AxisCount = selectedAxisCount;
+            EnsureAxisCapacity(selectedAxisCount);
             RefreshVisibleAxes();
-            SelectAxis(_allAxes[0]);
+            SelectAxis(_allAxes.FirstOrDefault());
         }
 
         /// <summary>将轴类型下拉框选择写入当前物理轴。</summary>
@@ -871,94 +995,6 @@ namespace MotionControl.Framework.Wpf.Configuration
             {
                 _loadingConfiguration = wasLoadingConfiguration;
             }
-        }
-
-        /// <summary>按已选控制卡厂商选择回零编号，并阻止把一种厂商的编号套到另一家。</summary>
-        private void UpdateHomeModeEditor(AxisMappingEntry axis)
-        {
-            string selectedVendor = _cardConfiguration == null ? null : _cardConfiguration.MotionCardVendor;
-            bool supportsZMotionHomeModes = string.Equals(
-                selectedVendor,
-                ZMotionVendorName,
-                StringComparison.Ordinal);
-
-            HomeModeComboBox.IsEnabled = supportsZMotionHomeModes;
-            if (!supportsZMotionHomeModes)
-            {
-                HomeModeComboBox.SelectedIndex = -1;
-                HomeModeHintTextBlock.SetResourceReference(
-                    TextBlock.TextProperty,
-                    "回零模式厂商未接入");
-                return;
-            }
-
-            if (axis == null || !axis.HomeMode.HasValue)
-            {
-                HomeModeComboBox.SelectedIndex = -1;
-                HomeModeHintTextBlock.SetResourceReference(
-                    TextBlock.TextProperty,
-                    "回零模式手册提示");
-                return;
-            }
-
-            if (!string.Equals(axis.HomeModeVendor, selectedVendor, StringComparison.Ordinal))
-            {
-                HomeModeComboBox.SelectedIndex = -1;
-                HomeModeHintTextBlock.SetResourceReference(
-                    TextBlock.TextProperty,
-                    "回零模式属于其他厂商");
-                return;
-            }
-
-            if (!IsSupportedZMotionHomeMode(axis.HomeMode))
-            {
-                HomeModeComboBox.SelectedIndex = -1;
-                HomeModeHintTextBlock.SetResourceReference(
-                    TextBlock.TextProperty,
-                    "回零模式不受支持");
-                return;
-            }
-
-            foreach (ComboBoxItem item in HomeModeComboBox.Items)
-            {
-                int itemMode;
-                if (int.TryParse(item.Tag as string, NumberStyles.Integer, CultureInfo.InvariantCulture, out itemMode)
-                    && itemMode == axis.HomeMode.Value)
-                {
-                    HomeModeComboBox.SelectedItem = item;
-                    HomeModeHintTextBlock.SetResourceReference(
-                        TextBlock.TextProperty,
-                        "回零模式手册提示");
-                    return;
-                }
-            }
-
-            HomeModeComboBox.SelectedIndex = -1;
-            HomeModeHintTextBlock.SetResourceReference(
-                TextBlock.TextProperty,
-                "回零模式不受支持");
-        }
-
-        /// <summary>将回零模式下拉框选择写入当前物理轴。</summary>
-        private void HomeModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (_loadingConfiguration || SelectedAxis == null || HomeModeComboBox.SelectedItem == null)
-            {
-                return;
-            }
-
-            SelectedAxis.HomeMode = int.Parse(GetSelectedTag(HomeModeComboBox), CultureInfo.InvariantCulture);
-            SelectedAxis.HomeModeVendor = _cardConfiguration.MotionCardVendor;
-            UpdateHomeModeEditor(SelectedAxis);
-        }
-
-        /// <summary>判断编号是否属于页面列出的正运动常规 DATUM 模式。</summary>
-        private static bool IsSupportedZMotionHomeMode(int? homeMode)
-        {
-            return homeMode == 1 || homeMode == 2 || homeMode == 3 || homeMode == 4
-                || homeMode == 5 || homeMode == 6 || homeMode == 8 || homeMode == 9
-                || homeMode == 11 || homeMode == 12 || homeMode == 13 || homeMode == 14
-                || homeMode == 15 || homeMode == 16 || homeMode == 18 || homeMode == 19;
         }
 
         /// <summary>检查设备轴名称、单位换算、软限位、速度和加减速度参数。</summary>
@@ -1123,6 +1159,19 @@ namespace MotionControl.Framework.Wpf.Configuration
         private List<string> ValidateConfiguredAxes()
         {
             var errors = new List<string>();
+            MotionCardSelectionOption selectedMotionCard = GetSelectedMotionCardOption();
+            if (selectedMotionCard == null)
+            {
+                errors.Add((string)FindResource("控制卡选项未接入"));
+            }
+            else if (selectedMotionCard.SupportedAxisCounts == null
+                || !selectedMotionCard.SupportedAxisCounts.Contains(_cardConfiguration.AxisCount))
+            {
+                errors.Add(string.Format(
+                    (string)FindResource("卡轴数量不受支持格式"),
+                    _cardConfiguration.AxisCount));
+            }
+
             foreach (AxisMappingEntry axis in _allAxes.Where(axis =>
                 axis.AxisNumber < _cardConfiguration.AxisCount
                 && !axis.IsConfigured
@@ -1197,14 +1246,13 @@ namespace MotionControl.Framework.Wpf.Configuration
                     errors.Add(string.Format((string)FindResource("轴回零速度无效格式"), axisName));
                 }
 
-                if (string.Equals(_cardConfiguration.MotionCardVendor, ZMotionVendorName, StringComparison.Ordinal)
-                    && (!IsSupportedZMotionHomeMode(axis.HomeMode)
-                        || !string.Equals(axis.HomeModeVendor, ZMotionVendorName, StringComparison.Ordinal)))
+                IReadOnlyList<AxisHomeModeOption> supportedHomeModes = selectedMotionCard == null
+                    ? null
+                    : _cardConnection.GetSupportedHomeModes(selectedMotionCard, axis.AxisNumber);
+                if (supportedHomeModes != null && supportedHomeModes.Count > 0
+                    && !IsHomeModeSupported(axis, selectedMotionCard))
                 {
-                    errors.Add(string.Format(
-                        (string)FindResource("轴回零模式无效格式"),
-                        axisName,
-                        _cardConfiguration.MotionCardVendor));
+                    errors.Add(string.Format((string)FindResource("轴回零模式无效格式"), axisName));
                 }
             }
 
@@ -1222,6 +1270,7 @@ namespace MotionControl.Framework.Wpf.Configuration
                 || axis.SoftLimitEnabled.HasValue
                 || axis.ManualSpeed.HasValue
                 || axis.HomeMode.HasValue
+                || !string.IsNullOrWhiteSpace(axis.HomeModeAdapterType)
                 || !string.IsNullOrWhiteSpace(axis.HomeModeVendor)
                 || axis.HomeSearchSpeed.HasValue
                 || axis.HomeCreepSpeed.HasValue

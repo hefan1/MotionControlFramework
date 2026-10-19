@@ -255,9 +255,10 @@
     <sys:String x:Key="控制卡类型">卡类型</sys:String>
     <sys:String x:Key="控制卡轴数量">轴数量</sys:String>
     <sys:String x:Key="其他厂商">其他</sys:String>
+    <sys:String x:Key="厂商正运动">正运动</sys:String>
     <sys:String x:Key="总线型">总线型</sys:String>
     <sys:String x:Key="脉冲型">脉冲型</sys:String>
-    <sys:String x:Key="已配置轴数量默认">已配置 0 / 64 个轴通道</sys:String>
+    <sys:String x:Key="已配置轴数量默认">已配置 0 / 0 个轴通道</sys:String>
     <sys:String x:Key="已配置轴数量格式">已配置 {0} / {1} 个轴通道</sys:String>
     <sys:String x:Key="卡适配器由Host指定">具体运动卡适配器由 Host 项目选择。</sys:String>
     <sys:String x:Key="物理轴映射">物理轴映射</sys:String>
@@ -278,12 +279,12 @@
     <sys:String x:Key="已配置">已配置</sys:String>
     <sys:String x:Key="未配置">未配置</sys:String>
     <sys:String x:Key="轴参数配置">轴参数配置</sys:String>
-    <sys:String x:Key="控制器参数说明">连接后显示所选物理轴的卡上实时参数。DATUM 回零模式和设备轴名称保存在软件配置中。</sys:String>
+    <sys:String x:Key="控制器参数说明">连接后显示所选物理轴的卡上实时参数。回零模式和设备轴名称保存在软件配置中。</sys:String>
     <sys:String x:Key="控制器参数未读取">尚未读取控制卡参数。</sys:String>
-    <sys:String x:Key="控制器参数读回格式">控制器当前值：UNITS={0}，RS_LIMIT={1}，FS_LIMIT={2}，SPEED={3}，CREEP={4}，ACCEL={5}，DECEL={6}</sys:String>
+    <sys:String x:Key="控制器参数读回格式">卡上参数：单位换算={0}，负限位={1}，正限位={2}，速度={3}，爬行速度={4}，加速度={5}，减速度={6}</sys:String>
     <sys:String x:Key="控制器软限位状态未读取">卡上软限位状态：尚未读取。</sys:String>
     <sys:String x:Key="控制器软限位状态读取失败">卡上软限位状态：读取失败。</sys:String>
-    <sys:String x:Key="控制器软限位状态格式">软限位当前生效状态（正运动按 FS_LIMIT/RS_LIMIT 与 REP_DIST 判断）：正向{0}，负向{1}。</sys:String>
+    <sys:String x:Key="控制器软限位状态格式">卡上软限位当前生效状态：正向{0}，负向{1}。</sys:String>
     <sys:String x:Key="软限位状态无法判断">无法判断</sys:String>
     <sys:String x:Key="软限位已启用">生效</sys:String>
     <sys:String x:Key="软限位未启用">未生效</sys:String>
@@ -303,9 +304,12 @@
     <sys:String x:Key="回零加速度">回零加速度</sys:String>
     <sys:String x:Key="回零减速度">回零减速度</sys:String>
     <sys:String x:Key="更多轴参数">更多轴参数</sys:String>
-    <sys:String x:Key="回零模式厂商未接入">当前控制卡厂商尚未接入，不能使用正运动回零编号。</sys:String>
-    <sys:String x:Key="回零模式属于其他厂商">当前保存的回零编号属于其他厂商；切回对应厂商才会显示，不会自动套用。</sys:String>
+    <sys:String x:Key="回零模式适配器未提供">当前 Host 适配器没有提供可选择的回零模式。</sys:String>
+    <sys:String x:Key="回零模式属于其他适配器">当前保存的回零模式属于其他适配器；不会自动套用到当前控制卡。</sys:String>
     <sys:String x:Key="回零模式不受支持">该编号不在当前页面提供的模式范围内，请核对控制卡型号和手册。</sys:String>
+    <sys:String x:Key="回零模式编号格式">模式 {0}</sys:String>
+    <sys:String x:Key="控制卡选项未接入">当前 Host 未接入所选厂商和卡类型的适配器。</sys:String>
+    <sys:String x:Key="卡轴数量不受支持格式">当前控制卡适配器不支持 {0} 个轴通道，请选择 Host 提供的数量。</sys:String>
     <sys:String x:Key="轴映射尚未保存">当前修改尚未保存。</sys:String>
     <sys:String x:Key="轴映射保存位置">控制卡参数与轴映射分别保存到设备 JSON 配置。</sys:String>
     <sys:String x:Key="轴映射保存路径格式">MotionCards.json：{0}；AxisParameters.json：{1}</sys:String>
@@ -335,5 +339,5 @@
     <sys:String x:Key="轴加减速度无效格式">{0} 的回零加速度和回零减速度必须是大于零的有效数值。</sys:String>
     <sys:String x:Key="轴软限位启用未选择格式">{0} 尚未选择是否启用软限位。</sys:String>
     <sys:String x:Key="轴回零速度无效格式">{0} 的回零搜索速度和爬行速度必须是大于零的有效数值。</sys:String>
-    <sys:String x:Key="轴回零模式无效格式">{0} 尚未配置 {1} 支持的回零模式，或编号属于其他厂商。请重新选择。</sys:String>
+    <sys:String x:Key="轴回零模式无效格式">{0} 尚未配置当前适配器支持的回零模式，或编号属于其他适配器。请重新选择。</sys:String>
 </ResourceDictionary>

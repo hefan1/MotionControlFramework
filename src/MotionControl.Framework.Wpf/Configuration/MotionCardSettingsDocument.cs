@@ -14,19 +14,19 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>当前设备选择的控制卡类型。</summary>
         public string MotionCardType { get; set; }
 
-        /// <summary>当前控制卡可使用的轴通道数量。</summary>
+        /// <summary>当前控制卡可使用的轴通道数量；0 表示模板尚未选择卡型。</summary>
         public int AxisCount { get; set; }
 
         /// <summary>保留 Host 配置的控制卡标识、适配器和连接文件。</summary>
         public List<MotionCardConnectionDefinition> MotionCards { get; set; }
 
-        /// <summary>创建首版控制卡设置及其默认值。</summary>
+        /// <summary>创建空白控制卡设置；具体卡型默认值由 Host 已接入的适配器提供。</summary>
         public MotionCardSettingsDocument()
         {
             SchemaVersion = 1;
-            MotionCardVendor = "正运动";
-            MotionCardType = "总线型";
-            AxisCount = 64;
+            MotionCardVendor = string.Empty;
+            MotionCardType = string.Empty;
+            AxisCount = 0;
             MotionCards = new List<MotionCardConnectionDefinition>();
         }
     }

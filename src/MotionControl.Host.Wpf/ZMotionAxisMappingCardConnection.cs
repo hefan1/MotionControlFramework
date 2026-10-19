@@ -27,6 +27,28 @@ namespace MotionControl.Host.Wpf
         /// <summary>设备逻辑 DI/DO 名称和物理通道映射配置文件。</summary>
         private const string IoMappingFilePath = "HardwareConfig/IoMapping.json";
 
+        /// <summary>正运动适配器在设备硬件配置中使用的稳定标识。</summary>
+        private const string ZMotionAdapterType = "ZMotion";
+
+        /// <summary>早期轴参数 JSON 保存的正运动厂商文字，用于识别旧版回零配置。</summary>
+        private const string ZMotionVendorCode = "正运动";
+
+        /// <summary>当前正运动连接支持的控制卡选项，由通用页面读取显示。</summary>
+        private static readonly IReadOnlyList<MotionCardSelectionOption> SupportedCardOptions =
+            new List<MotionCardSelectionOption>
+            {
+                new MotionCardSelectionOption
+                {
+                    VendorCode = ZMotionVendorCode,
+                    VendorDisplayResourceKey = "厂商正运动",
+                    CardTypeCode = "总线型",
+                    CardTypeDisplayResourceKey = "总线型",
+                    AdapterType = ZMotionAdapterType,
+                    SupportedAxisCounts = Array.AsReadOnly(new[] { 8, 16, 32, 64 }),
+                    DefaultAxisCount = 64
+                }
+            }.AsReadOnly();
+
         /// <summary>当前 Host 所属设备的 JSON 配置存储。</summary>
         private readonly MachineConfigurationStore _configurationStore;
 
@@ -75,6 +97,12 @@ namespace MotionControl.Host.Wpf
         public bool IsConnected
         {
             get { return _card != null && _card.IsConnected; }
+        }
+
+        /// <summary>返回当前 Host 选择的正运动卡型及其轴数量选项。</summary>
+        public IReadOnlyList<MotionCardSelectionOption> SupportedMotionCards
+        {
+            get { return SupportedCardOptions; }
         }
 
         /// <summary>提供给 Host 运行时和手动调试页共用的当前控制卡实例。</summary>
@@ -127,15 +155,13 @@ namespace MotionControl.Host.Wpf
                 throw new ArgumentNullException(nameof(settings));
             }
 
-            if (!string.Equals(settings.MotionCardVendor, "正运动", StringComparison.Ordinal))
+            MotionCardSelectionOption selectedCard = SupportedCardOptions.FirstOrDefault(option =>
+                string.Equals(option.VendorCode, settings.MotionCardVendor, StringComparison.Ordinal)
+                && string.Equals(option.CardTypeCode, settings.MotionCardType, StringComparison.Ordinal));
+            if (selectedCard == null)
             {
                 throw new NotSupportedException(
-                    "当前 Host 已接入正运动仿真适配器；雷赛、凌华和其他厂商尚未接入可连接的卡适配器。");
-            }
-
-            if (!string.Equals(settings.MotionCardType, "总线型", StringComparison.Ordinal))
-            {
-                throw new NotSupportedException("当前正运动适配器只支持总线型 ZDevelop 仿真控制器。");
+                    "所选控制卡不在当前 Host 已接入的卡型清单中。请检查厂商、卡类型及 Host 适配器配置。");
             }
 
             if (IsConnected)
@@ -144,7 +170,15 @@ namespace MotionControl.Host.Wpf
             }
 
             MotionCardConnectionDefinition connectionDefinition = GetConnectionDefinition(settings);
-            connectionDefinition.AdapterType = "ZMotion";
+            if (!string.IsNullOrWhiteSpace(connectionDefinition.AdapterType)
+                && !string.Equals(connectionDefinition.AdapterType, selectedCard.AdapterType, StringComparison.Ordinal))
+            {
+                throw new NotSupportedException(
+                    "设备配置要求适配器 '" + connectionDefinition.AdapterType
+                    + "'，当前 Host 选择的是 '" + selectedCard.AdapterType + "'。");
+            }
+
+            connectionDefinition.AdapterType = selectedCard.AdapterType;
             if (string.IsNullOrWhiteSpace(connectionDefinition.ConnectionConfigurationFile))
             {
                 connectionDefinition.ConnectionConfigurationFile = DefaultConnectionConfigurationFile;
@@ -154,7 +188,9 @@ namespace MotionControl.Host.Wpf
                 connectionDefinition.ConnectionConfigurationFile);
             connectionConfiguration.Validate();
 
-            LoadedMotionMappings mappings = LoadMotionMappings(connectionDefinition.ControllerId);
+            LoadedMotionMappings mappings = LoadMotionMappings(
+                connectionDefinition.ControllerId,
+                connectionDefinition.AdapterType);
 
             var newCard = new ZMotionCard(
                 connectionDefinition.ControllerId,
@@ -252,7 +288,7 @@ namespace MotionControl.Host.Wpf
         }
 
         /// <summary>把设备已保存的轴和 DI/DO 映射转换成当前正运动卡实例所需的对象。</summary>
-        private LoadedMotionMappings LoadMotionMappings(string controllerId)
+        private LoadedMotionMappings LoadMotionMappings(string controllerId, string adapterType)
         {
             var result = new LoadedMotionMappings();
             string axisPath = GetConfigurationPath(AxisParametersFilePath);
@@ -286,6 +322,16 @@ namespace MotionControl.Host.Wpf
                     {
                         throw new InvalidOperationException(
                             "逻辑轴 '" + axis.Name + "' 的单位换算、软限位或手动速度尚未配置完整。");
+                    }
+
+                    string homeModeAdapterType = GetEffectiveHomeModeAdapterType(axis, adapterType);
+                    if (!axis.HomeMode.HasValue
+                        || !string.Equals(homeModeAdapterType, adapterType, StringComparison.Ordinal)
+                        || !ZMotionHomeModeCatalog.IsSupported(axis.HomeMode.Value))
+                    {
+                        throw new InvalidOperationException(
+                            "逻辑轴 '" + axis.Name
+                            + "' 的回零模式未配置，或其模式编号不属于当前运动卡适配器。");
                     }
 
                     result.AxisConfigurations.Add(new ZMotionAxisConfiguration
@@ -336,6 +382,28 @@ namespace MotionControl.Host.Wpf
             AddIoMappings(result, ioDocument.DigitalInputs, controllerId, true);
             AddIoMappings(result, ioDocument.DigitalOutputs, controllerId, false);
             return result;
+        }
+
+        /// <summary>为旧版 ZMotion 轴配置补全适配器标识，其他情况不跨适配器推断。</summary>
+        private static string GetEffectiveHomeModeAdapterType(AxisMappingEntry axis, string adapterType)
+        {
+            if (axis == null)
+            {
+                return null;
+            }
+
+            if (!string.IsNullOrWhiteSpace(axis.HomeModeAdapterType))
+            {
+                return axis.HomeModeAdapterType;
+            }
+
+            if (string.Equals(adapterType, ZMotionAdapterType, StringComparison.Ordinal)
+                && string.Equals(axis.HomeModeVendor, ZMotionVendorCode, StringComparison.Ordinal))
+            {
+                return ZMotionAdapterType;
+            }
+
+            return null;
         }
 
         /// <summary>把同一张卡的逻辑 DI 或 DO 映射复制到适配器和手动页配置中。</summary>
@@ -447,6 +515,29 @@ namespace MotionControl.Host.Wpf
                 Acceleration = currentParameters.Acceleration,
                 Deceleration = currentParameters.Deceleration
             };
+        }
+
+        /// <summary>按正运动适配器清单返回当前物理轴可选择的 DATUM 模式。</summary>
+        public IReadOnlyList<AxisHomeModeOption> GetSupportedHomeModes(
+            MotionCardSelectionOption motionCard,
+            int axisNumber)
+        {
+            if (motionCard == null || axisNumber < 0 || axisNumber >= 64
+                || !SupportedCardOptions.Any(option =>
+                    string.Equals(option.AdapterType, motionCard.AdapterType, StringComparison.Ordinal)
+                    && string.Equals(option.VendorCode, motionCard.VendorCode, StringComparison.Ordinal)
+                    && string.Equals(option.CardTypeCode, motionCard.CardTypeCode, StringComparison.Ordinal)))
+            {
+                return new List<AxisHomeModeOption>().AsReadOnly();
+            }
+
+            var options = new List<AxisHomeModeOption>();
+            foreach (int modeNumber in ZMotionHomeModeCatalog.SupportedModeNumbers)
+            {
+                options.Add(new AxisHomeModeOption { ModeNumber = modeNumber });
+            }
+
+            return options.AsReadOnly();
         }
 
         /// <summary>委托正运动适配器查询控制器规格、连续可映射通道和总线 DI/DO 能力。</summary>

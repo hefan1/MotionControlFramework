@@ -57,6 +57,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                         throw new InvalidOperationException("Runtime 回归检查失败：" + string.Join("；", failures));
                     }
 
+                    CheckZMotionHomeModeCatalog();
                     Console.WriteLine("Runtime 回归检查全部通过，不需要连接仿真器。");
                     return 0;
                 }
@@ -87,6 +88,30 @@ namespace MotionControl.ZMotionSimulatorCheck
             }
         }
 
+        /// <summary>离线确认首期正运动回零模式清单包含已验证模式并排除非回零编号。</summary>
+        private static void CheckZMotionHomeModeCatalog()
+        {
+            IReadOnlyCollection<int> supportedModes = ZMotionHomeModeCatalog.SupportedModeNumbers;
+            int[] verifiedModes = { 3, 4, 13 };
+            foreach (int modeNumber in verifiedModes)
+            {
+                if (!supportedModes.Contains(modeNumber)
+                    || !ZMotionHomeModeCatalog.IsSupported(modeNumber))
+                {
+                    throw new InvalidOperationException(
+                        "正运动适配器回零模式清单缺少已验证模式：" + modeNumber + "。");
+                }
+            }
+
+            if (ZMotionHomeModeCatalog.IsSupported(0) || ZMotionHomeModeCatalog.IsSupported(7))
+            {
+                throw new InvalidOperationException(
+                    "正运动适配器把模式 0 或未列入首期的模式 7 标记为可执行回零模式。");
+            }
+
+            Console.WriteLine("[ZMotion通过] 回零模式 3、4、13 可选；模式 0 和 7 被拒绝。");
+        }
+
         /// <summary>从命令行读取配置目录、轴参数往返、运动检查和 IO 输出检查选项。</summary>
         private static CheckOptions ParseOptions(string[] args)
         {
@@ -114,14 +139,15 @@ namespace MotionControl.ZMotionSimulatorCheck
                 {
                     options.ReadStatus = true;
                 }
-                else if (string.Equals(argument, "--axis-parameter-roundtrip", StringComparison.OrdinalIgnoreCase))
+                else if (string.Equals(argument, "--apply-axis-parameters", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(argument, "--axis-parameter-roundtrip", StringComparison.OrdinalIgnoreCase))
                 {
                     if (index + 1 >= args.Length
                         || !int.TryParse(args[++index], out var axisNumber)
                         || axisNumber < 0
                         || axisNumber >= 64)
                     {
-                        throw new ArgumentException("--axis-parameter-roundtrip 后面必须提供 0 到 63 之间的物理轴号。");
+                        throw new ArgumentException("--apply-axis-parameters 后面必须提供 0 到 63 之间的物理轴号。");
                     }
 
                     options.AxisParameterRoundTripNumber = axisNumber;
@@ -343,23 +369,27 @@ namespace MotionControl.ZMotionSimulatorCheck
                 if (options.AxisParameterRoundTripNumber.HasValue)
                 {
                     int axisNumber = options.AxisParameterRoundTripNumber.Value;
-                    ZMotionPhysicalAxisParameters originalParameters = await card
-                        .ReadPhysicalAxisParametersAsync(axisNumber, cancellationToken)
-                        .ConfigureAwait(false);
-                    await card.WritePhysicalAxisParametersAsync(originalParameters, cancellationToken)
-                        .ConfigureAwait(false);
+                    ZMotionAxisConfiguration configuredAxis = axisConfigurations.FirstOrDefault(axis =>
+                        axis.AxisNumber == axisNumber);
+                    if (configuredAxis == null)
+                    {
+                        throw new InvalidOperationException(
+                            "Axis" + axisNumber + " 没有逻辑轴映射，无法应用已保存的轴参数。");
+                    }
+
+                    await card.ApplyAxisParametersAsync(cancellationToken).ConfigureAwait(false);
                     ZMotionPhysicalAxisParameters verifiedParameters = await card
                         .ReadPhysicalAxisParametersAsync(axisNumber, cancellationToken)
                         .ConfigureAwait(false);
 
-                    if (!PhysicalAxisParametersMatch(originalParameters, verifiedParameters))
+                    if (!ConfiguredAxisParametersMatch(configuredAxis, verifiedParameters))
                     {
                         throw new InvalidOperationException(
-                            "Axis" + axisNumber + " 参数写回后读数不一致。");
+                            "Axis" + axisNumber + " 应用已保存的轴参数后，读回值与配置不一致。");
                     }
 
                     Console.WriteLine(
-                        "[通过] Axis" + axisNumber + " 参数原值写回并读回一致：UNITS="
+                        "[通过] 已应用映射轴参数，并确认 Axis" + axisNumber + " 读回一致：UNITS="
                         + verifiedParameters.UnitsPerEngineeringUnit
                         + "，RS_LIMIT=" + verifiedParameters.MinimumPosition
                         + "，FS_LIMIT=" + verifiedParameters.MaximumPosition
@@ -441,9 +471,9 @@ namespace MotionControl.ZMotionSimulatorCheck
             }
         }
 
-        /// <summary>比较轴参数写回前后的数值，容忍控制器浮点单精度转换误差。</summary>
-        private static bool PhysicalAxisParametersMatch(
-            ZMotionPhysicalAxisParameters expected,
+        /// <summary>比较配置中的轴参数和控制器读回值，容忍浮点单精度转换误差。</summary>
+        private static bool ConfiguredAxisParametersMatch(
+            ZMotionAxisConfiguration expected,
             ZMotionPhysicalAxisParameters actual)
         {
             if (expected == null || actual == null || expected.AxisNumber != actual.AxisNumber)
@@ -451,13 +481,16 @@ namespace MotionControl.ZMotionSimulatorCheck
                 return false;
             }
 
+            bool softLimitPositionsMatch = !expected.SoftLimitEnabled
+                || (AreParameterValuesEqual(expected.MinimumPosition, actual.MinimumPosition)
+                    && AreParameterValuesEqual(expected.MaximumPosition, actual.MaximumPosition));
+
             return AreParameterValuesEqual(expected.UnitsPerEngineeringUnit, actual.UnitsPerEngineeringUnit)
-                && AreParameterValuesEqual(expected.MinimumPosition, actual.MinimumPosition)
-                && AreParameterValuesEqual(expected.MaximumPosition, actual.MaximumPosition)
-                && AreParameterValuesEqual(expected.Speed, actual.Speed)
-                && AreParameterValuesEqual(expected.CreepSpeed, actual.CreepSpeed)
-                && AreParameterValuesEqual(expected.Acceleration, actual.Acceleration)
-                && AreParameterValuesEqual(expected.Deceleration, actual.Deceleration);
+                && softLimitPositionsMatch
+                && AreParameterValuesEqual(expected.HomeSearchSpeed, actual.Speed)
+                && AreParameterValuesEqual(expected.HomeCreepSpeed, actual.CreepSpeed)
+                && AreParameterValuesEqual(expected.HomeAcceleration, actual.Acceleration)
+                && AreParameterValuesEqual(expected.HomeDeceleration, actual.Deceleration);
         }
 
         /// <summary>使用相对误差和最小误差限值比较一个正运动轴参数。</summary>
@@ -662,7 +695,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             Console.WriteLine("  --config-dir <目录>  指定 MotionCards、AxisParameters、IoMapping 和连接配置目录");
             Console.WriteLine("  默认只连接仿真器并读取控制器身份，不发送运动或 IO 写入命令");
             Console.WriteLine("  --read-status         读取逻辑轴、DI 和 DO 状态，不写入硬件值");
-            Console.WriteLine("  --axis-parameter-roundtrip <轴号>  将指定轴当前参数原值写回并读回核对，不发运动或 IO 命令");
+            Console.WriteLine("  --apply-axis-parameters <轴号>  应用所有已映射轴的配置参数，并读回核对指定轴；旧名称 --axis-parameter-roundtrip 仍可用");
             Console.WriteLine("  --exercise-motion    在仿真软限位内执行一个工程单位的轴往返定位");
             Console.WriteLine("  --exercise-home      按样例轴参数执行真实 DATUM 回零（要求先确认仿真器输入映射）");
             Console.WriteLine("  --home-mode <模式号> 指定本次验证的 DATUM 模式并执行回零，例如 3、4 或 13");
@@ -688,7 +721,7 @@ namespace MotionControl.ZMotionSimulatorCheck
 
             public bool ReadStatus { get; set; }
 
-            /// <summary>需要按原值写回并读回核对的物理轴号。</summary>
+            /// <summary>需要在应用轴配置后读回核对的物理轴号。</summary>
             public int? AxisParameterRoundTripNumber { get; set; }
 
             public bool ExerciseIo { get; set; }

@@ -246,9 +246,10 @@
     <sys:String x:Key="控制卡类型">Card type</sys:String>
     <sys:String x:Key="控制卡轴数量">Axis count</sys:String>
     <sys:String x:Key="其他厂商">Other</sys:String>
+    <sys:String x:Key="厂商正运动">ZMotion</sys:String>
     <sys:String x:Key="总线型">Bus</sys:String>
     <sys:String x:Key="脉冲型">Pulse</sys:String>
-    <sys:String x:Key="已配置轴数量默认">Configured 0 / 64 channels</sys:String>
+    <sys:String x:Key="已配置轴数量默认">Configured 0 / 0 channels</sys:String>
     <sys:String x:Key="已配置轴数量格式">Configured {0} / {1} channels</sys:String>
     <sys:String x:Key="卡适配器由Host指定">The Host project selects the motion card adapter.</sys:String>
     <sys:String x:Key="物理轴映射">Physical Axis Mapping</sys:String>
@@ -269,12 +270,12 @@
     <sys:String x:Key="已配置">Configured</sys:String>
     <sys:String x:Key="未配置">Not configured</sys:String>
     <sys:String x:Key="轴参数配置">Axis Parameters</sys:String>
-    <sys:String x:Key="控制器参数说明">After connection, the selected physical axis shows live card values. The DATUM home mode and machine axis name are kept in software configuration.</sys:String>
+    <sys:String x:Key="控制器参数说明">After connection, the selected physical axis shows live card values. The home mode and machine axis name are kept in software configuration.</sys:String>
     <sys:String x:Key="控制器参数未读取">Controller parameters have not been read.</sys:String>
-    <sys:String x:Key="控制器参数读回格式">Current card values: UNITS={0}, RS_LIMIT={1}, FS_LIMIT={2}, SPEED={3}, CREEP={4}, ACCEL={5}, DECEL={6}</sys:String>
+    <sys:String x:Key="控制器参数读回格式">Card values: units per engineering unit={0}, negative limit={1}, positive limit={2}, speed={3}, creep speed={4}, acceleration={5}, deceleration={6}</sys:String>
     <sys:String x:Key="控制器软限位状态未读取">Card soft-limit state: not read.</sys:String>
     <sys:String x:Key="控制器软限位状态读取失败">Card soft-limit state: read failed.</sys:String>
-    <sys:String x:Key="控制器软限位状态格式">Effective soft-limit state (ZMotion uses FS_LIMIT/RS_LIMIT and REP_DIST): positive {0}, negative {1}.</sys:String>
+    <sys:String x:Key="控制器软限位状态格式">Current card soft-limit state: positive {0}, negative {1}.</sys:String>
     <sys:String x:Key="软限位状态无法判断">unknown</sys:String>
     <sys:String x:Key="软限位已启用">effective</sys:String>
     <sys:String x:Key="软限位未启用">inactive</sys:String>
@@ -294,9 +295,12 @@
     <sys:String x:Key="回零加速度">Home Acceleration</sys:String>
     <sys:String x:Key="回零减速度">Home Deceleration</sys:String>
     <sys:String x:Key="更多轴参数">More axis parameters</sys:String>
-    <sys:String x:Key="回零模式厂商未接入">The selected controller vendor is not integrated. ZMotion home mode numbers cannot be used.</sys:String>
-    <sys:String x:Key="回零模式属于其他厂商">The saved home mode belongs to another vendor. Switch back to that vendor to view it; it will not be reused automatically.</sys:String>
+    <sys:String x:Key="回零模式适配器未提供">The Host adapter has not provided home mode choices.</sys:String>
+    <sys:String x:Key="回零模式属于其他适配器">The saved home mode belongs to another adapter and will not be reused by this card.</sys:String>
     <sys:String x:Key="回零模式不受支持">This number is not listed by the current page. Check the controller model and manual.</sys:String>
+    <sys:String x:Key="回零模式编号格式">Mode {0}</sys:String>
+    <sys:String x:Key="控制卡选项未接入">The selected vendor and card type are not connected to an adapter in this Host.</sys:String>
+    <sys:String x:Key="卡轴数量不受支持格式">The selected card adapter does not support {0} axes. Choose a count provided by this Host.</sys:String>
     <sys:String x:Key="轴映射尚未保存">Current changes are not saved.</sys:String>
     <sys:String x:Key="轴映射保存位置">Card settings and axis mappings use separate device JSON files.</sys:String>
     <sys:String x:Key="轴映射保存路径格式">MotionCards.json: {0}; AxisParameters.json: {1}</sys:String>
@@ -326,5 +330,5 @@
     <sys:String x:Key="轴加减速度无效格式">{0} home acceleration and deceleration must be valid numbers greater than zero.</sys:String>
     <sys:String x:Key="轴软限位启用未选择格式">{0} must specify whether soft limits are enabled.</sys:String>
     <sys:String x:Key="轴回零速度无效格式">{0} home search and creep speeds must be valid numbers greater than zero.</sys:String>
-    <sys:String x:Key="轴回零模式无效格式">{0} has no valid {1} home mode configured, or its number belongs to another vendor. Select the mode again.</sys:String>
+    <sys:String x:Key="轴回零模式无效格式">{0} has no supported home mode configured for the current adapter, or its number belongs to another adapter. Select the mode again.</sys:String>
 </ResourceDictionary>

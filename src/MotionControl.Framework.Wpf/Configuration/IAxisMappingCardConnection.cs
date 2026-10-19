@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -6,6 +7,9 @@ namespace MotionControl.Framework.Wpf.Configuration
     /// <summary>供轴映射页面连接控制卡并读取当前物理轴参数。</summary>
     public interface IAxisMappingCardConnection
     {
+        /// <summary>返回当前 Host 已接入且轴映射页允许选择的控制卡选项。</summary>
+        IReadOnlyList<MotionCardSelectionOption> SupportedMotionCards { get; }
+
         /// <summary>当前控制卡是否已经连接成功。</summary>
         bool IsConnected { get; }
 
@@ -27,6 +31,10 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>读取指定物理轴的单位换算、软限位和当前运动参数。</summary>
         Task<AxisMappingCardParameters> ReadAxisParametersAsync(int axisNumber, CancellationToken cancellationToken);
 
+        /// <summary>按当前卡型和物理轴返回适配器支持的回零模式编号。</summary>
+        IReadOnlyList<AxisHomeModeOption> GetSupportedHomeModes(
+            MotionCardSelectionOption motionCard,
+            int axisNumber);
     }
 
     /// <summary>轴映射页面从控制卡读取的一组轴参数。</summary>
