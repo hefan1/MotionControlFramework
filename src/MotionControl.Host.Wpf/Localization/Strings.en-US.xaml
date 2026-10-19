@@ -143,6 +143,25 @@
     <sys:String x:Key="参数必须为有效数字">{0} must be a valid number.</sys:String>
     <sys:String x:Key="参数不能为无穷或NaN">{0} cannot be infinity or NaN.</sys:String>
     <sys:String x:Key="目标位置超出软限位范围">Target position must be between {0} and {1}.</sys:String>
+    <sys:String x:Key="轴卡片物理通道格式">Card {0} · physical axis Axis{1}</sys:String>
+    <sys:String x:Key="示教位置">Taught Positions</sys:String>
+    <sys:String x:Key="位置名称">Position Name</sys:String>
+    <sys:String x:Key="写入当前位置">Teach Current</sys:String>
+    <sys:String x:Key="定位">Move</sys:String>
+    <sys:String x:Key="删除位置">Delete</sys:String>
+    <sys:String x:Key="暂无示教位置">No positions yet. Select Add Position to create one.</sys:String>
+    <sys:String x:Key="默认示教位置名称">Position {0}</sys:String>
+    <sys:String x:Key="位置已添加">Added {0}. Teach the current position before moving to it.</sys:String>
+    <sys:String x:Key="位置配置保存失败">Failed to save axis positions: {0}</sys:String>
+    <sys:String x:Key="示教位置配置读取失败">Failed to read axis positions: {0}. The original file will not be overwritten.</sys:String>
+    <sys:String x:Key="示教位置配置禁止覆盖">Saving is disabled because the position configuration could not be read.</sys:String>
+    <sys:String x:Key="位置名称不能为空">Position name cannot be empty.</sys:String>
+    <sys:String x:Key="同一轴的位置名称不能重复">Position names must be unique on the same axis.</sys:String>
+    <sys:String x:Key="无法读取示教位置">Unable to read the selected position.</sys:String>
+    <sys:String x:Key="当前位置已写入位置">Current position {1} was saved to “{0}”.</sys:String>
+    <sys:String x:Key="定位到示教位置">Move to taught position</sys:String>
+    <sys:String x:Key="请先写入当前位置">This position has no saved coordinate. Select Teach Current first.</sys:String>
+    <sys:String x:Key="位置已删除">Deleted position “{0}”.</sys:String>
 
     <sys:String x:Key="轴映射页面说明">Select the motion card basics and map machine axis names to physical channels.</sys:String>
     <sys:String x:Key="IO映射页面说明">Map the logical DI/DO names used by machine sequences to physical card channels.</sys:String>

@@ -10,6 +10,7 @@ using MotionControl.Framework.Contracts.Configuration;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Runtime.Alarms;
+using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Runtime.Machine;
 using MotionControl.Framework.Runtime.Safety;
 using MotionControl.Framework.Wpf.ManualDebug;
@@ -103,13 +104,20 @@ namespace MotionControl.ZMotionSimulatorCheck
                         UriKind.Relative)
                 });
 
+                string manualPositionConfigurationRoot = Path.Combine(
+                    Path.GetTempPath(),
+                    "MotionControl.ZMotionSimulatorCheck",
+                    Guid.NewGuid().ToString("N"));
+                var manualPositionConfigurationStore = new MachineConfigurationStore(manualPositionConfigurationRoot);
                 var manualPage = new ManualMotionDebugView(
                     runtime,
                     cardGroup,
                     card,
                     axisConfigurations.Select(CreateAxisHardwareDefinition),
                     inputs.Select(point => point.Name),
-                    outputs.Select(point => point.Name));
+                    outputs.Select(point => point.Name),
+                    manualPositionConfigurationStore,
+                    cardDefinition.ControllerId);
                 var hostWindow = new MainWindow();
                 hostWindow.SetManualMotionDebugPage(manualPage);
                 hostWindow.SetMotionCardConnectionStatus(card.IsConnected);

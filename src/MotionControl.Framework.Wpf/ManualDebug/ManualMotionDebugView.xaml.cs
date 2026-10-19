@@ -1,24 +1,28 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using MotionControl.Framework.Contracts.Configuration;
 using MotionControl.Framework.Contracts.IO;
 using MotionControl.Framework.Contracts.Motion;
+using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Runtime.Machine;
 
 namespace MotionControl.Framework.Wpf.ManualDebug
 {
-    /// <summary>按通用轴和逻辑 IO 契约提供单轴及数字 IO 手动调试页面。</summary>
+    /// <summary>按已映射逻辑轴生成手动调试卡片，并提供数字 IO 手动查看和操作。</summary>
     public partial class ManualMotionDebugView : UserControl
     {
+        /// <summary>人工示教位置配置在单台设备目录中的相对路径。</summary>
+        private const string ManualAxisPositionsFilePath = "Parameters/ManualAxisPositions.json";
+
         /// <summary>定时刷新轴、输入和输出状态的 WPF 计时器。</summary>
         private readonly DispatcherTimer _refreshTimer;
 
@@ -30,9 +34,16 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         private readonly Dictionary<string, TextBlock> _outputStatusTextByName =
             new Dictionary<string, TextBlock>(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>按逻辑轴名称保存硬件配置，用于显示软限位等参数。</summary>
+        /// <summary>按逻辑轴名称保存硬件配置，用于显示物理通道并检查软限位。</summary>
         private readonly Dictionary<string, AxisHardwareDefinition> _axisConfigurationByName =
             new Dictionary<string, AxisHardwareDefinition>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>按控制卡和物理轴标识保存该轴的人工示教位置组。</summary>
+        private readonly Dictionary<string, ManualAxisPositionGroup> _positionGroupByAxisKey =
+            new Dictionary<string, ManualAxisPositionGroup>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>页面当前显示的轴卡片，用于轮询状态和离开页面时停止点动。</summary>
+        private readonly List<ManualAxisControl> _axisControls = new List<ManualAxisControl>();
 
         /// <summary>提供复位、启停和整机状态的运行上下文。</summary>
         private readonly MachineRuntime _machineRuntime;
@@ -43,29 +54,38 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>按逻辑名称读写数字输入和输出的服务。</summary>
         private readonly ILogicalIo _logicalIo;
 
+        /// <summary>按 MachineId 读取和备份保存本设备的位置配置。</summary>
+        private readonly MachineConfigurationStore _configurationStore;
+
+        /// <summary>当前页面所属的设备编号。</summary>
+        private readonly string _machineId;
+
         /// <summary>当前页面展示的逻辑 DI 名称列表。</summary>
-        private IReadOnlyList<string> _inputNames = new string[0];
+        private readonly IReadOnlyList<string> _inputNames;
 
         /// <summary>当前页面展示的逻辑 DO 名称列表。</summary>
-        private IReadOnlyList<string> _outputNames = new string[0];
+        private readonly IReadOnlyList<string> _outputNames;
 
-        /// <summary>当前按住点动按钮、尚需在松开时停止的轴。</summary>
-        private IAxis _joggingAxis;
+        /// <summary>当前设备所有轴的示教位置配置。</summary>
+        private ManualAxisPositionConfigurationDocument _positionConfiguration;
+
+        /// <summary>位置配置读取失败时禁止保存，避免覆盖现场原配置。</summary>
+        private bool _positionConfigurationCanBeSaved = true;
 
         /// <summary>防止上一次状态刷新未完成时再次启动刷新。</summary>
         private bool _refreshInProgress;
 
-        /// <summary>创建通用手动调试页面，并保存本设备 Runtime、轴、IO 与限位配置。</summary>
+        /// <summary>创建通用手动调试页，并为每个已映射轴创建独立卡片。</summary>
         public ManualMotionDebugView(
             MachineRuntime machineRuntime,
             MotionCardGroup motionCards,
             ILogicalIo logicalIo,
             IEnumerable<AxisHardwareDefinition> axisConfigurations,
             IEnumerable<string> inputNames,
-            IEnumerable<string> outputNames)
+            IEnumerable<string> outputNames,
+            MachineConfigurationStore configurationStore,
+            string machineId)
         {
-            InitializeComponent();
-
             if (machineRuntime == null)
             {
                 throw new ArgumentNullException(nameof(machineRuntime));
@@ -96,36 +116,53 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 throw new ArgumentNullException(nameof(outputNames));
             }
 
+            if (configurationStore == null)
+            {
+                throw new ArgumentNullException(nameof(configurationStore));
+            }
+
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                throw new ArgumentException("设备编号不能为空。", nameof(machineId));
+            }
+
+            InitializeComponent();
             _machineRuntime = machineRuntime;
             _motionCards = motionCards;
             _logicalIo = logicalIo;
             _inputNames = inputNames.ToList().AsReadOnly();
             _outputNames = outputNames.ToList().AsReadOnly();
+            _configurationStore = configurationStore;
+            _machineId = machineId;
+
             LoadAxisConfigurations(axisConfigurations);
+            LoadPositionConfiguration();
+            BuildAxisControls();
             BuildInputRows();
             BuildOutputRows();
 
-            AxisSelector.ItemsSource = _motionCards.Axes.OrderBy(axis => axis.Name).ToList();
-            AxisSelector.DisplayMemberPath = "Name";
-            AxisSelector.SelectedIndex = _motionCards.Axes.Count == 0 ? -1 : 0;
-
             _refreshTimer = new DispatcherTimer
             {
-                Interval = TimeSpan.FromMilliseconds(300)
+                Interval = TimeSpan.FromMilliseconds(1000)
             };
             _refreshTimer.Tick += RefreshTimer_Tick;
             Loaded += ManualMotionDebugView_Loaded;
             Unloaded += ManualMotionDebugView_Unloaded;
         }
 
-        /// <summary>把各轴软限位配置按逻辑名称保存，供手动定位前检查目标范围。</summary>
+        /// <summary>把各轴软限位配置按逻辑名称保存，并确认每个运行轴都有配置。</summary>
         private void LoadAxisConfigurations(IEnumerable<AxisHardwareDefinition> axisConfigurations)
         {
-            foreach (var axisConfiguration in axisConfigurations)
+            foreach (AxisHardwareDefinition axisConfiguration in axisConfigurations)
             {
                 if (axisConfiguration == null)
                 {
                     throw new ArgumentException("手动调试页的轴配置包含空对象。", nameof(axisConfigurations));
+                }
+
+                if (string.IsNullOrWhiteSpace(axisConfiguration.Name))
+                {
+                    throw new ArgumentException("手动调试页的轴配置缺少逻辑轴名称。", nameof(axisConfigurations));
                 }
 
                 if (_axisConfigurationByName.ContainsKey(axisConfiguration.Name))
@@ -136,7 +173,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 _axisConfigurationByName.Add(axisConfiguration.Name, axisConfiguration);
             }
 
-            foreach (var axis in _motionCards.Axes)
+            foreach (IAxis axis in _motionCards.Axes)
             {
                 if (!_axisConfigurationByName.ContainsKey(axis.Name))
                 {
@@ -145,12 +182,173 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
-        /// <summary>为逻辑 DI 建立一行名称和当前状态显示。</summary>
+        /// <summary>读取当前设备的示教位置；文件首次不存在时保持所有轴的位置列表为空。</summary>
+        private void LoadPositionConfiguration()
+        {
+            string configurationPath = Path.Combine(
+                _configurationStore.GetMachineDirectory(_machineId),
+                ManualAxisPositionsFilePath.Replace('/', Path.DirectorySeparatorChar));
+
+            if (!File.Exists(configurationPath))
+            {
+                _positionConfiguration = new ManualAxisPositionConfigurationDocument();
+                return;
+            }
+
+            try
+            {
+                _positionConfiguration = _configurationStore.LoadJson<ManualAxisPositionConfigurationDocument>(
+                    _machineId,
+                    ManualAxisPositionsFilePath);
+                ValidatePositionConfiguration(_positionConfiguration);
+                foreach (ManualAxisPositionGroup group in _positionConfiguration.Axes)
+                {
+                    _positionGroupByAxisKey.Add(group.AxisKey, group);
+                }
+            }
+            catch (Exception error)
+            {
+                _positionConfigurationCanBeSaved = false;
+                _positionConfiguration = new ManualAxisPositionConfigurationDocument();
+                OperationMessageText.Text = string.Format(GetText("示教位置配置读取失败"), error.Message);
+            }
+        }
+
+        /// <summary>检查示教位置配置版本、轴名称、位置编号和数值，防止错误覆盖文件。</summary>
+        private static void ValidatePositionConfiguration(ManualAxisPositionConfigurationDocument configuration)
+        {
+            if (configuration == null || configuration.SchemaVersion != 1 || configuration.Axes == null)
+            {
+                throw new InvalidOperationException("ManualAxisPositions.json 格式无效或版本不受支持。未覆盖原文件。");
+            }
+
+            var axisNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (ManualAxisPositionGroup group in configuration.Axes)
+            {
+                if (group == null || string.IsNullOrWhiteSpace(group.AxisKey) || group.Positions == null
+                    || group.NextPositionNumber < 1 || !axisNames.Add(group.AxisKey))
+                {
+                    throw new InvalidOperationException("示教位置配置中的轴信息无效或重复。未覆盖原文件。");
+                }
+
+                var positionIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var positionNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (ManualAxisPosition position in group.Positions)
+                {
+                    if (position == null || string.IsNullOrWhiteSpace(position.Id)
+                        || string.IsNullOrWhiteSpace(position.Name) || !positionIds.Add(position.Id)
+                        || !positionNames.Add(position.Name.Trim()))
+                    {
+                        throw new InvalidOperationException("轴 '" + group.AxisKey + "' 的位置编号或名称无效、重复。未覆盖原文件。");
+                    }
+
+                    if (position.Position.HasValue
+                        && (double.IsNaN(position.Position.Value) || double.IsInfinity(position.Position.Value)))
+                    {
+                        throw new InvalidOperationException("轴 '" + group.AxisKey + "' 的位置数值不是有效有限数。未覆盖原文件。");
+                    }
+                }
+            }
+        }
+
+        /// <summary>按物理轴号排列已映射轴，并为每个轴创建一个手动调试卡片。</summary>
+        private void BuildAxisControls()
+        {
+            List<IAxis> configuredAxes = _motionCards.Axes
+                .OrderBy(axis => _axisConfigurationByName[axis.Name].ControllerId, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(axis => _axisConfigurationByName[axis.Name].AxisNumber)
+                .ToList();
+
+            NoMappedAxesText.Visibility = configuredAxes.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            foreach (IAxis axis in configuredAxes)
+            {
+                AxisHardwareDefinition axisConfiguration = _axisConfigurationByName[axis.Name];
+                string axisKey = GetAxisPositionKey(axisConfiguration);
+                ManualAxisPositionGroup positionGroup = GetOrCreatePositionGroup(axisKey);
+                var axisControl = new ManualAxisControl(
+                    axis,
+                    axisConfiguration,
+                    _machineRuntime,
+                    positionGroup.Positions,
+                    () => AddAxisPosition(axisKey),
+                    SavePositionConfiguration);
+                _axisControls.Add(axisControl);
+                AxisCardsPanel.Children.Add(axisControl);
+            }
+        }
+
+        /// <summary>按控制卡和物理轴号生成稳定键，避免改设备显示名称后丢失示教位置。</summary>
+        private static string GetAxisPositionKey(AxisHardwareDefinition axisConfiguration)
+        {
+            return axisConfiguration.ControllerId + ".Axis"
+                + axisConfiguration.AxisNumber.ToString(CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>读取或在内存中建立指定物理轴的位置组；新增位置前不会写文件。</summary>
+        private ManualAxisPositionGroup GetOrCreatePositionGroup(string axisKey)
+        {
+            ManualAxisPositionGroup group;
+            if (_positionGroupByAxisKey.TryGetValue(axisKey, out group))
+            {
+                return group;
+            }
+
+            group = new ManualAxisPositionGroup { AxisKey = axisKey };
+            _positionConfiguration.Axes.Add(group);
+            _positionGroupByAxisKey.Add(axisKey, group);
+            return group;
+        }
+
+        /// <summary>创建 PositionN 稳定编号和可编辑的默认中文名称，并登记到当前物理轴。</summary>
+        private ManualAxisPosition AddAxisPosition(string axisKey)
+        {
+            ManualAxisPositionGroup group = GetOrCreatePositionGroup(axisKey);
+            int positionNumber = group.NextPositionNumber;
+            string positionId = "Position" + positionNumber.ToString(CultureInfo.InvariantCulture);
+            while (group.Positions.Any(item => string.Equals(item.Id, positionId, StringComparison.OrdinalIgnoreCase)))
+            {
+                if (positionNumber == int.MaxValue)
+                {
+                    throw new InvalidOperationException("位置编号已达到允许的最大值，不能继续添加。");
+                }
+
+                positionNumber++;
+                positionId = "Position" + positionNumber.ToString(CultureInfo.InvariantCulture);
+            }
+
+            if (positionNumber == int.MaxValue)
+            {
+                throw new InvalidOperationException("位置编号已达到允许的最大值，不能继续添加。");
+            }
+
+            group.NextPositionNumber = positionNumber + 1;
+            var position = new ManualAxisPosition
+            {
+                Id = positionId,
+                Name = string.Format(GetText("默认示教位置名称"), positionNumber),
+                Position = null
+            };
+            group.Positions.Add(position);
+            return position;
+        }
+
+        /// <summary>保存当前设备全部轴的示教位置，并拒绝覆盖无法读取的原配置。</summary>
+        private void SavePositionConfiguration()
+        {
+            if (!_positionConfigurationCanBeSaved)
+            {
+                throw new InvalidOperationException(GetText("示教位置配置禁止覆盖"));
+            }
+
+            _configurationStore.SaveJson(_machineId, ManualAxisPositionsFilePath, _positionConfiguration);
+        }
+
+        /// <summary>为每个逻辑 DI 建立一行名称和当前状态显示。</summary>
         private void BuildInputRows()
         {
-            foreach (var inputName in _inputNames)
+            foreach (string inputName in _inputNames)
             {
-                var row = CreateIoRow(inputName);
+                StackPanel row = CreateIoRow(inputName);
                 var statusText = new TextBlock
                 {
                     Text = "—",
@@ -163,12 +361,12 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
-        /// <summary>为逻辑 DO 建立状态显示及明确的打开、关闭按钮。</summary>
+        /// <summary>为每个逻辑 DO 建立状态显示及明确的打开、关闭按钮。</summary>
         private void BuildOutputRows()
         {
-            foreach (var outputName in _outputNames)
+            foreach (string outputName in _outputNames)
             {
-                var row = CreateIoRow(outputName);
+                StackPanel row = CreateIoRow(outputName);
                 var stateText = new TextBlock
                 {
                     Text = "—",
@@ -178,11 +376,8 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 };
                 row.Children.Add(stateText);
                 _outputStatusTextByName.Add(outputName, stateText);
-
-                var openButton = CreateOutputButton("输出打开", outputName, true);
-                var closeButton = CreateOutputButton("输出关闭", outputName, false);
-                row.Children.Add(openButton);
-                row.Children.Add(closeButton);
+                row.Children.Add(CreateOutputButton("输出打开", outputName, true));
+                row.Children.Add(CreateOutputButton("输出关闭", outputName, false));
                 DigitalOutputsPanel.Children.Add(row);
             }
         }
@@ -233,14 +428,17 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
-        /// <summary>页面离开视觉树时停止轮询，并停止可能仍按住的点动轴。</summary>
+        /// <summary>页面离开视觉树时停止轮询，并停止所有卡片上可能仍按住的点动轴。</summary>
         private async void ManualMotionDebugView_Unloaded(object sender, RoutedEventArgs e)
         {
             _refreshTimer.Stop();
-            await StopJogAsync().ConfigureAwait(true);
+            foreach (ManualAxisControl axisControl in _axisControls)
+            {
+                await axisControl.StopJogIfActiveAsync().ConfigureAwait(true);
+            }
         }
 
-        /// <summary>定时刷新所选轴、DI/DO 和整机状态，并把通信错误显示在页面上。</summary>
+        /// <summary>定时刷新所有轴卡片、DI/DO 和整机状态。</summary>
         private async void RefreshTimer_Tick(object sender, EventArgs e)
         {
             if (_refreshInProgress)
@@ -263,310 +461,104 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
-        /// <summary>更新整机状态、当前轴状态和所有配置 DI/DO 状态。</summary>
+        /// <summary>更新整机状态、各轴状态和全部已配置 DI/DO 状态。</summary>
         private async Task RefreshAllStatusAsync()
         {
-            MachineStateText.Text = GetText("整机状态") + GetText("状态分隔符") + GetMachineStateText(_machineRuntime.State);
+            MachineStateText.Text = GetText("整机状态") + GetText("状态分隔符")
+                + GetMachineStateText(_machineRuntime.State);
+
+            foreach (ManualAxisControl axisControl in _axisControls)
+            {
+                try
+                {
+                    await axisControl.RefreshStatusAsync().ConfigureAwait(true);
+                }
+                catch (Exception error)
+                {
+                    axisControl.ShowStatusReadError(error);
+                }
+            }
+
             if (_machineRuntime.State == MachineRunState.Disconnected)
             {
-                AxisStatusText.Text = GetText("控制卡未连接");
                 ShowIoDisconnected();
                 return;
             }
 
-            await RefreshSelectedAxisStatusAsync().ConfigureAwait(true);
             await RefreshIoStatusAsync().ConfigureAwait(true);
         }
 
         /// <summary>控制卡断开时把所有 DI/DO 行标记为未连接。</summary>
         private void ShowIoDisconnected()
         {
-            foreach (var statusText in _inputStatusTextByName.Values)
+            foreach (TextBlock statusText in _inputStatusTextByName.Values)
             {
                 statusText.Text = GetText("控制卡未连接");
                 statusText.Foreground = Brushes.Gray;
             }
 
-            foreach (var statusText in _outputStatusTextByName.Values)
+            foreach (TextBlock statusText in _outputStatusTextByName.Values)
             {
                 statusText.Text = GetText("控制卡未连接");
                 statusText.Foreground = Brushes.Gray;
             }
-        }
-
-        /// <summary>读取当前选中轴的位置、伺服、运动、回零、限位和报警状态。</summary>
-        private async Task RefreshSelectedAxisStatusAsync()
-        {
-            var axis = AxisSelector.SelectedItem as IAxis;
-            if (axis == null)
-            {
-                AxisStatusText.Text = GetText("尚未配置轴");
-                return;
-            }
-
-            if (_machineRuntime.State == MachineRunState.Disconnected)
-            {
-                AxisStatusText.Text = GetText("控制卡未连接");
-                return;
-            }
-
-            var status = await axis.ReadStatusAsync(CancellationToken.None).ConfigureAwait(true);
-            AxisStatusText.Text = GetText("当前位置") + "：" + status.Position.ToString("F3", CultureInfo.CurrentCulture)
-                + "    " + GetText("当前速度") + "：" + status.Velocity.ToString("F3", CultureInfo.CurrentCulture)
-                + "    " + GetText("伺服状态") + "：" + GetBooleanText(status.ServoEnabled, "已使能", "未使能")
-                + "    " + GetText("运动状态") + "：" + GetBooleanText(status.Moving, "运动中", "已停止")
-                + "    " + GetText("回零状态") + "：" + GetBooleanText(status.Homed, "已回零", "未回零")
-                + "    " + GetText("正限位") + "：" + GetBooleanText(status.PositiveLimitActive, "有效", "无效")
-                + "    " + GetText("负限位") + "：" + GetBooleanText(status.NegativeLimitActive, "有效", "无效")
-                + "    " + GetText("报警状态") + "：" + GetBooleanText(status.AlarmActive, "有效", "无效")
-                + "    " + GetText("报警信息") + "："
-                + (string.IsNullOrWhiteSpace(status.AlarmMessage) ? status.AlarmCode : status.AlarmMessage);
         }
 
         /// <summary>逐个读取已配置的逻辑 DI/DO 状态并更新对应行文字。</summary>
         private async Task RefreshIoStatusAsync()
         {
-            foreach (var inputName in _inputNames)
+            foreach (string inputName in _inputNames)
             {
-                var active = await _logicalIo.ReadInputAsync(inputName, CancellationToken.None).ConfigureAwait(true);
+                bool active = await _logicalIo.ReadInputAsync(inputName, CancellationToken.None).ConfigureAwait(true);
                 _inputStatusTextByName[inputName].Text = GetBooleanText(active, "有效", "无效");
                 _inputStatusTextByName[inputName].Foreground = active ? Brushes.ForestGreen : Brushes.Gray;
             }
 
-            foreach (var outputName in _outputNames)
+            foreach (string outputName in _outputNames)
             {
-                var active = await _logicalIo.ReadOutputAsync(outputName, CancellationToken.None).ConfigureAwait(true);
+                bool active = await _logicalIo.ReadOutputAsync(outputName, CancellationToken.None).ConfigureAwait(true);
                 _outputStatusTextByName[outputName].Text = GetBooleanText(active, "输出已开", "输出已关");
                 _outputStatusTextByName[outputName].Foreground = active ? Brushes.ForestGreen : Brushes.Gray;
             }
         }
 
-        /// <summary>切换轴选择后立即刷新新轴的状态。</summary>
-        private async void AxisSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            ApplySelectedAxisMotionProfile();
-            if (!IsLoaded || _refreshInProgress)
-            {
-                return;
-            }
-
-            try
-            {
-                await RefreshSelectedAxisStatusAsync().ConfigureAwait(true);
-            }
-            catch (Exception error)
-            {
-                OperationMessageText.Text = string.Format(GetText("读取轴状态失败"), error.Message);
-            }
-        }
-
-        /// <summary>切换逻辑轴时填入手动默认速度，并按需显示可选的定位加减速度初始值。</summary>
-        private void ApplySelectedAxisMotionProfile()
-        {
-            var axis = AxisSelector.SelectedItem as IAxis;
-            if (axis == null)
-            {
-                return;
-            }
-
-            AxisHardwareDefinition configuration;
-            if (!_axisConfigurationByName.TryGetValue(axis.Name, out configuration))
-            {
-                return;
-            }
-
-            SpeedTextBox.Text = configuration.ManualSpeed.ToString(CultureInfo.CurrentCulture);
-            AccelerationTextBox.Text = configuration.ManualAcceleration > 0
-                ? configuration.ManualAcceleration.ToString(CultureInfo.CurrentCulture)
-                : string.Empty;
-            DecelerationTextBox.Text = configuration.ManualDeceleration > 0
-                ? configuration.ManualDeceleration.ToString(CultureInfo.CurrentCulture)
-                : string.Empty;
-        }
-
-        /// <summary>执行伺服使能操作，并把操作结果显示在页面上。</summary>
-        private async void ServoEnableButton_Click(object sender, RoutedEventArgs e)
-        {
-        await RunSelectedAxisActionAsync(GetText("伺服使能"), (axis, token) => axis.EnableServoAsync(token)).ConfigureAwait(true);
-        }
-
-        /// <summary>关闭当前选中轴伺服。</summary>
-        private async void ServoDisableButton_Click(object sender, RoutedEventArgs e)
-        {
-        await RunSelectedAxisActionAsync(GetText("伺服关闭"), (axis, token) => axis.DisableServoAsync(token)).ConfigureAwait(true);
-        }
-
-        /// <summary>使用轴配置执行回零。</summary>
-        private async void HomeButton_Click(object sender, RoutedEventArgs e)
-        {
-        await RunSelectedAxisActionAsync(GetText("回零"), (axis, token) => axis.HomeAsync(token)).ConfigureAwait(true);
-        }
-
-        /// <summary>清除当前选中轴的驱动报警。</summary>
-        private async void ResetAxisAlarmButton_Click(object sender, RoutedEventArgs e)
-        {
-        await RunSelectedAxisActionAsync(GetText("轴报警复位"), (axis, token) => axis.ResetAlarmAsync(token)).ConfigureAwait(true);
-        }
-
-        /// <summary>按受控停止方式停止当前选中轴。</summary>
-        private async void StopButton_Click(object sender, RoutedEventArgs e)
-        {
-            await RunSelectedAxisActionAsync(
-                GetText("受控停止"),
-                (axis, token) => axis.StopAsync(AxisStopMode.Controlled, token)).ConfigureAwait(true);
-        }
-
-        /// <summary>检查目标位置和速度参数后执行轴绝对定位。</summary>
-        private async void MoveAbsoluteButton_Click(object sender, RoutedEventArgs e)
-        {
-            await RunUiActionAsync(GetText("绝对定位"), async () =>
-            {
-                var axis = GetSelectedAxis();
-                var target = ReadNumber(TargetPositionTextBox, GetText("目标位置"));
-                var configuration = _axisConfigurationByName[axis.Name];
-                EnsurePositionWithinLimits(configuration, target);
-                var profile = ReadMotionProfile();
-                await axis.MoveAbsoluteAsync(target, profile, CancellationToken.None).ConfigureAwait(true);
-            }).ConfigureAwait(true);
-        }
-
-        /// <summary>检查相对移动后的目标位置和速度参数后执行轴相对定位。</summary>
-        private async void MoveRelativeButton_Click(object sender, RoutedEventArgs e)
-        {
-            await RunUiActionAsync(GetText("相对移动"), async () =>
-            {
-                var axis = GetSelectedAxis();
-                var distance = ReadNumber(TargetPositionTextBox, GetText("相对距离"));
-                var status = await axis.ReadStatusAsync(CancellationToken.None).ConfigureAwait(true);
-                var target = status.Position + distance;
-                EnsurePositionWithinLimits(_axisConfigurationByName[axis.Name], target);
-                var profile = ReadMotionProfile();
-                await axis.MoveRelativeAsync(distance, profile, CancellationToken.None).ConfigureAwait(true);
-            }).ConfigureAwait(true);
-        }
-
-        /// <summary>按住负向点动按钮时启动连续低速点动。</summary>
-        private async void NegativeJogButton_MouseDown(object sender, MouseButtonEventArgs e)
-        {
-            e.Handled = true;
-            await BeginJogAsync(MotionDirection.Negative, sender as Button).ConfigureAwait(true);
-        }
-
-        /// <summary>按住正向点动按钮时启动连续低速点动。</summary>
-        private async void PositiveJogButton_MouseDown(object sender, MouseButtonEventArgs e)
-        {
-            e.Handled = true;
-            await BeginJogAsync(MotionDirection.Positive, sender as Button).ConfigureAwait(true);
-        }
-
-        /// <summary>点动按钮松开时停止轴运动。</summary>
-        private async void JogButton_MouseUp(object sender, MouseButtonEventArgs e)
-        {
-            e.Handled = true;
-            await StopJogAsync().ConfigureAwait(true);
-        }
-
-        /// <summary>点动按钮失去鼠标捕获时停止轴，防止界面离开后轴继续点动。</summary>
-        private async void JogButton_LostMouseCapture(object sender, MouseEventArgs e)
-        {
-            await StopJogAsync().ConfigureAwait(true);
-        }
-
-        /// <summary>读取手动速度后启动按住式点动，并捕获鼠标以便松开时停止轴。</summary>
-        private async Task BeginJogAsync(MotionDirection direction, Button jogButton)
-        {
-            await RunUiActionAsync(GetText("点动"), async () =>
-            {
-                if (jogButton == null)
-                {
-                    throw new InvalidOperationException(GetText("当前点动按钮不存在"));
-                }
-
-                if (_joggingAxis != null)
-                {
-                    await StopJogAsync().ConfigureAwait(true);
-                }
-
-                var axis = GetSelectedAxis();
-                var jogSpeed = ReadNumber(SpeedTextBox, GetText("速度"));
-                await axis.StartJogAsync(direction, jogSpeed, CancellationToken.None).ConfigureAwait(true);
-                _joggingAxis = axis;
-                Mouse.Capture(jogButton);
-            }).ConfigureAwait(true);
-        }
-
-        /// <summary>若页面当前有活动点动轴，则发送受控停止并清除活动轴引用。</summary>
-        private async Task StopJogAsync()
-        {
-            var axis = _joggingAxis;
-            if (axis == null)
-            {
-                return;
-            }
-
-            _joggingAxis = null;
-            try
-            {
-                await axis.StopAsync(AxisStopMode.Controlled, CancellationToken.None).ConfigureAwait(true);
-            }
-            catch (Exception error)
-            {
-                OperationMessageText.Text = string.Format(GetText("停止点动失败"), error.Message);
-            }
-        }
-
-        /// <summary>读取逻辑 DO 当前值并写入按钮指定的打开或关闭状态。</summary>
+        /// <summary>读取逻辑 DO 并在允许手动操作时写入按钮要求的状态。</summary>
         private async void OutputButton_Click(object sender, RoutedEventArgs e)
         {
-            var button = sender as Button;
-            var command = button == null ? null : button.Tag as OutputCommand;
+            Button button = sender as Button;
+            OutputCommand command = button == null ? null : button.Tag as OutputCommand;
             if (command == null)
             {
                 OperationMessageText.Text = GetText("无法读取当前DO操作参数");
                 return;
             }
 
-            await RunUiActionAsync(GetText("写入DO") + " " + command.OutputName, async () =>
+            await RunIoActionAsync(GetText("写入DO") + " " + command.OutputName, async () =>
             {
                 await _logicalIo.WriteOutputAsync(command.OutputName, command.Value, CancellationToken.None)
                     .ConfigureAwait(true);
-                var actualValue = await _logicalIo.ReadOutputAsync(command.OutputName, CancellationToken.None)
+                bool actualValue = await _logicalIo.ReadOutputAsync(command.OutputName, CancellationToken.None)
                     .ConfigureAwait(true);
                 if (actualValue != command.Value)
                 {
                     throw new InvalidOperationException(GetText("DO写入后读回不一致"));
                 }
 
-                _outputStatusTextByName[command.OutputName].Text = actualValue
-                    ? GetText("输出已开")
-                    : GetText("输出已关");
-                _outputStatusTextByName[command.OutputName].Foreground = actualValue ? Brushes.ForestGreen : Brushes.Gray;
+                TextBlock statusText = _outputStatusTextByName[command.OutputName];
+                statusText.Text = actualValue ? GetText("输出已开") : GetText("输出已关");
+                statusText.Foreground = actualValue ? Brushes.ForestGreen : Brushes.Gray;
             }).ConfigureAwait(true);
         }
 
-        /// <summary>在设备非自动运行状态下执行指定的逻辑轴操作。</summary>
-        private async Task RunSelectedAxisActionAsync(
-            string operationName,
-            Func<IAxis, CancellationToken, Task> operation)
+        /// <summary>执行手动 IO 命令并显示操作结果或异常原因。</summary>
+        private async Task RunIoActionAsync(string operationName, Func<Task> operation)
         {
-            await RunUiActionAsync(operationName, async () =>
-            {
-                var axis = GetSelectedAxis();
-                await operation(axis, CancellationToken.None).ConfigureAwait(true);
-            }).ConfigureAwait(true);
-        }
-
-        /// <summary>执行手动命令并将成功或完整异常信息写入页面状态栏。</summary>
-        private async Task RunUiActionAsync(string operationName, Func<Task> operation)
-        {
-            // 新操作开始时清除旧结果，状态轮询期间保留本次操作的成功或失败信息。
             OperationMessageText.Text = string.Empty;
             try
             {
                 EnsureManualOperationAllowed();
                 await operation().ConfigureAwait(true);
                 OperationMessageText.Text = string.Format(GetText("操作完成"), operationName);
-                await RefreshAllStatusAsync().ConfigureAwait(true);
             }
             catch (Exception error)
             {
@@ -574,10 +566,10 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
-        /// <summary>确认当前 Runtime 不在自动流程中，避免手动命令与工艺流程争用轴。</summary>
+        /// <summary>确认控制卡已连接且当前没有运行自动流程或未复位的急停报警。</summary>
         private void EnsureManualOperationAllowed()
         {
-            var state = _machineRuntime.State;
+            MachineRunState state = _machineRuntime.State;
             if (state == MachineRunState.Disconnected)
             {
                 throw new InvalidOperationException(GetText("运动卡未连接操作被拒绝"));
@@ -595,64 +587,10 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
-        /// <summary>返回当前选中逻辑轴；没有选择时报告可理解的错误。</summary>
-        private IAxis GetSelectedAxis()
-        {
-            var axis = AxisSelector.SelectedItem as IAxis;
-            if (axis == null)
-            {
-                throw new InvalidOperationException(GetText("请先选择一个逻辑轴"));
-            }
-
-            return axis;
-        }
-
-        /// <summary>读取速度、加速度和减速度，并检查均为有效正数。</summary>
-        private AxisMotionProfile ReadMotionProfile()
-        {
-            return new AxisMotionProfile(
-                ReadNumber(SpeedTextBox, GetText("速度")),
-                ReadNumber(AccelerationTextBox, GetText("加速度")),
-                ReadNumber(DecelerationTextBox, GetText("减速度")));
-        }
-
-        /// <summary>按当前系统小数格式或小数点格式读取文本框数值。</summary>
-        private double ReadNumber(TextBox textBox, string parameterName)
-        {
-            double value;
-            if (!double.TryParse(textBox.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out value)
-                && !double.TryParse(textBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out value))
-            {
-                throw new ArgumentException(string.Format(GetText("参数必须为有效数字"), parameterName));
-            }
-
-            if (double.IsNaN(value) || double.IsInfinity(value))
-            {
-                throw new ArgumentException(string.Format(GetText("参数不能为无穷或NaN"), parameterName));
-            }
-
-            return value;
-        }
-
-        /// <summary>拒绝超出轴配置软限位范围的手动定位目标。</summary>
-        private void EnsurePositionWithinLimits(AxisHardwareDefinition configuration, double targetPosition)
-        {
-            if (configuration.SoftLimitEnabled != false
-                && (targetPosition < configuration.MinimumPosition || targetPosition > configuration.MaximumPosition))
-            {
-                throw new ArgumentOutOfRangeException(
-                    nameof(targetPosition),
-                    string.Format(
-                        GetText("目标位置超出软限位范围"),
-                        configuration.MinimumPosition,
-                        configuration.MaximumPosition));
-            }
-        }
-
-        /// <summary>读取当前语言资源；资源缺失时返回中文键名供开发者定位。</summary>
+        /// <summary>从 Host 当前语言资源中读取界面文字，资源缺失时返回键名供开发者定位。</summary>
         private string GetText(string resourceKey)
         {
-            var resourceValue = TryFindResource(resourceKey);
+            object resourceValue = TryFindResource(resourceKey);
             return resourceValue == null ? resourceKey : resourceValue.ToString();
         }
 
@@ -680,13 +618,13 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
-        /// <summary>根据当前语言返回真或假对应的界面文字。</summary>
+        /// <summary>根据当前语言返回逻辑 IO 布尔值对应的界面文字。</summary>
         private string GetBooleanText(bool value, string trueResourceKey, string falseResourceKey)
         {
             return GetText(value ? trueResourceKey : falseResourceKey);
         }
 
-        /// <summary>读取按钮中的输出命令对象，保存逻辑名称和要写入的值。</summary>
+        /// <summary>保存逻辑 DO 名称和要写入的值，避免按钮事件依赖物理通道号。</summary>
         private sealed class OutputCommand
         {
             /// <summary>创建一个明确的逻辑 DO 写入命令。</summary>
@@ -699,7 +637,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             /// <summary>要写入的设备逻辑 DO 名称。</summary>
             public string OutputName { get; private set; }
 
-            /// <summary>要写入的逻辑输出值；true 表示有效，具体电平由适配层处理。</summary>
+            /// <summary>要写入的逻辑输出值；true 表示有效，电平转换由适配层处理。</summary>
             public bool Value { get; private set; }
         }
     }

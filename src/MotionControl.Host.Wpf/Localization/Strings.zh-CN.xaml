@@ -151,6 +151,25 @@
     <sys:String x:Key="参数必须为有效数字">{0}必须是有效数字。</sys:String>
     <sys:String x:Key="参数不能为无穷或NaN">{0}不能是无穷大或 NaN。</sys:String>
     <sys:String x:Key="目标位置超出软限位范围">目标位置超出软限位范围：{0} 到 {1}。</sys:String>
+    <sys:String x:Key="轴卡片物理通道格式">控制卡 {0} · 物理轴 Axis{1}</sys:String>
+    <sys:String x:Key="示教位置">示教位置</sys:String>
+    <sys:String x:Key="位置名称">位置名称</sys:String>
+    <sys:String x:Key="写入当前位置">写入当前位置</sys:String>
+    <sys:String x:Key="定位">定位</sys:String>
+    <sys:String x:Key="删除位置">删除</sys:String>
+    <sys:String x:Key="暂无示教位置">还没有位置，点击“添加位置”创建。</sys:String>
+    <sys:String x:Key="默认示教位置名称">位置{0}</sys:String>
+    <sys:String x:Key="位置已添加">已添加 {0}，写入当前位置后即可定位。</sys:String>
+    <sys:String x:Key="位置配置保存失败">保存轴位置失败：{0}</sys:String>
+    <sys:String x:Key="示教位置配置读取失败">读取轴位置配置失败：{0}；原文件不会被覆盖。</sys:String>
+    <sys:String x:Key="示教位置配置禁止覆盖">位置配置读取失败，为避免覆盖原文件，当前禁止保存。</sys:String>
+    <sys:String x:Key="位置名称不能为空">位置名称不能为空。</sys:String>
+    <sys:String x:Key="同一轴的位置名称不能重复">同一轴的位置名称不能重复。</sys:String>
+    <sys:String x:Key="无法读取示教位置">无法读取当前示教位置。</sys:String>
+    <sys:String x:Key="当前位置已写入位置">已将当前位置 {1} 写入“{0}”。</sys:String>
+    <sys:String x:Key="定位到示教位置">定位到示教位置</sys:String>
+    <sys:String x:Key="请先写入当前位置">该位置还没有保存坐标，请先点击“写入当前位置”。</sys:String>
+    <sys:String x:Key="位置已删除">已删除位置“{0}”。</sys:String>
 
     <!-- 轴映射配置页 -->
     <sys:String x:Key="轴映射页面说明">设置控制卡基本类型，并把设备轴名称对应到物理轴通道。</sys:String>

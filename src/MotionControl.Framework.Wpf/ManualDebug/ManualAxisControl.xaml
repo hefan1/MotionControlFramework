@@ -1,0 +1,153 @@
+<UserControl x:Class="MotionControl.Framework.Wpf.ManualDebug.ManualAxisControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Border Width="520"
+            Margin="0,0,12,12"
+            Padding="12"
+            Background="White"
+            BorderBrush="#D9DDE0"
+            BorderThickness="1"
+            CornerRadius="4">
+        <StackPanel>
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock x:Name="AxisTitleText" FontSize="17" FontWeight="SemiBold" />
+                    <TextBlock x:Name="AxisHardwareText" Margin="0,2,0,0" FontSize="11" Foreground="#68737B" />
+                </StackPanel>
+                <Button Grid.Column="1"
+                        Content="＋ 添加位置"
+                        Click="AddPositionButton_Click"
+                        Padding="10,5"
+                        VerticalAlignment="Center" />
+            </Grid>
+
+            <TextBlock x:Name="AxisStatusText"
+                       Margin="0,0,0,8"
+                       Padding="7,6"
+                       Background="#F3F6F9"
+                       Foreground="#38434C"
+                       TextWrapping="Wrap" />
+
+            <WrapPanel Margin="0,0,0,4">
+                <Button x:Name="ServoEnableButton" Content="{DynamicResource 伺服使能}" Click="ServoEnableButton_Click" Margin="0,0,6,6" Padding="9,5" />
+                <Button x:Name="ServoDisableButton" Content="{DynamicResource 伺服关闭}" Click="ServoDisableButton_Click" Margin="0,0,6,6" Padding="9,5" />
+                <Button x:Name="HomeButton" Content="{DynamicResource 回零}" Click="HomeButton_Click" Margin="0,0,6,6" Padding="9,5" />
+                <Button x:Name="ResetAxisAlarmButton" Content="{DynamicResource 轴报警复位}" Click="ResetAxisAlarmButton_Click" Margin="0,0,6,6" Padding="9,5" />
+                <Button x:Name="StopButton" Content="{DynamicResource 受控停止}" Click="StopButton_Click" Margin="0,0,6,6" Padding="9,5" />
+            </WrapPanel>
+
+            <Grid Margin="0,0,0,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="72" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="72" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="72" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="78" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{DynamicResource 速度}" VerticalAlignment="Center" Margin="0,0,5,0" />
+                <TextBox x:Name="SpeedTextBox" Grid.Column="1" Padding="4" />
+                <TextBlock Grid.Column="2" Text="{DynamicResource 加速度}" VerticalAlignment="Center" Margin="7,0,5,0" />
+                <TextBox x:Name="AccelerationTextBox" Grid.Column="3" Padding="4" />
+                <TextBlock Grid.Column="4" Text="{DynamicResource 减速度}" VerticalAlignment="Center" Margin="7,0,5,0" />
+                <TextBox x:Name="DecelerationTextBox" Grid.Column="5" Padding="4" />
+                <TextBlock Grid.Column="6" Text="{DynamicResource 目标位置}" VerticalAlignment="Center" Margin="7,0,5,0" />
+                <TextBox x:Name="TargetPositionTextBox" Grid.Column="7" Text="0" Padding="4" />
+            </Grid>
+
+            <WrapPanel Margin="0,0,0,6">
+                <Button x:Name="MoveAbsoluteButton" Content="{DynamicResource 绝对定位}" Click="MoveAbsoluteButton_Click" Margin="0,0,6,6" Padding="9,5" />
+                <Button x:Name="MoveRelativeButton" Content="{DynamicResource 相对移动}" Click="MoveRelativeButton_Click" Margin="0,0,6,6" Padding="9,5" />
+                <TextBlock Text="{DynamicResource 按住点动}" VerticalAlignment="Center" Margin="4,0,8,6" />
+                <Button x:Name="NegativeJogButton"
+                        Content="{DynamicResource 负向点动}"
+                        PreviewMouseLeftButtonDown="NegativeJogButton_MouseDown"
+                        PreviewMouseLeftButtonUp="JogButton_MouseUp"
+                        LostMouseCapture="JogButton_LostMouseCapture"
+                        Margin="0,0,6,6" Padding="9,5" />
+                <Button x:Name="PositiveJogButton"
+                        Content="{DynamicResource 正向点动}"
+                        PreviewMouseLeftButtonDown="PositiveJogButton_MouseDown"
+                        PreviewMouseLeftButtonUp="JogButton_MouseUp"
+                        LostMouseCapture="JogButton_LostMouseCapture"
+                        Margin="0,0,6,6" Padding="9,5" />
+            </WrapPanel>
+
+            <Border BorderBrush="#E1E6EA" BorderThickness="0,1,0,0" Padding="0,8,0,0">
+                <StackPanel>
+                    <TextBlock Text="{DynamicResource 示教位置}" FontWeight="SemiBold" Margin="0,0,0,5" />
+                    <Grid Margin="0,0,0,3">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1.2*" />
+                            <ColumnDefinition Width="1*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{DynamicResource 位置名称}" Foreground="#68737B" />
+                        <TextBlock Grid.Column="1" Text="{DynamicResource 目标位置}" Foreground="#68737B" />
+                        <TextBlock Grid.Column="2" Text="" Width="62" />
+                        <TextBlock Grid.Column="3" Text="" Width="62" />
+                        <TextBlock Grid.Column="4" Text="" Width="44" />
+                    </Grid>
+                    <ItemsControl x:Name="PositionsList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Padding="3" BorderBrush="#E6EAED" BorderThickness="0,1,0,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="1.2*" />
+                                            <ColumnDefinition Width="1*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Text="{Binding Name, UpdateSourceTrigger=LostFocus}"
+                                                 LostFocus="PositionNameTextBox_LostFocus"
+                                                 Padding="4"
+                                                 VerticalContentAlignment="Center" />
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding Position, StringFormat={}{0:F3}}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="8,0" />
+                                        <Button Grid.Column="2"
+                                                Content="{DynamicResource 写入当前位置}"
+                                                Click="TeachPositionButton_Click"
+                                                Margin="3,0"
+                                                Padding="7,4" />
+                                        <Button Grid.Column="3"
+                                                Content="{DynamicResource 定位}"
+                                                Click="MoveToPositionButton_Click"
+                                                Margin="3,0"
+                                                Padding="7,4" />
+                                        <Button Grid.Column="4"
+                                                Content="{DynamicResource 删除位置}"
+                                                Click="DeletePositionButton_Click"
+                                                Margin="3,0"
+                                                Padding="7,4" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock x:Name="EmptyPositionsText"
+                               Text="{DynamicResource 暂无示教位置}"
+                               Margin="2,4,0,0"
+                               Foreground="#7A858D" />
+                </StackPanel>
+            </Border>
+
+            <TextBlock x:Name="OperationMessageText"
+                       Margin="0,7,0,0"
+                       Foreground="#9B322C"
+                       TextWrapping="Wrap" />
+        </StackPanel>
+    </Border>
+</UserControl>

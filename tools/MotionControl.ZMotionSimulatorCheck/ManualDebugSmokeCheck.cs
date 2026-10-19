@@ -49,6 +49,10 @@ namespace MotionControl.ZMotionSimulatorCheck
                     new IStationFlow[] { new SmokeStationFlow() },
                     new MachineAlarmService(),
                     new SmokeSafetyStatus());
+                string positionConfigurationRoot = Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory,
+                    "ManualAxisPositionsSmokeData_" + Guid.NewGuid().ToString("N"));
+                var positionConfigurationStore = new MachineConfigurationStore(positionConfigurationRoot);
                 var page = new ManualMotionDebugView(
                     runtime,
                     cards,
@@ -69,13 +73,19 @@ namespace MotionControl.ZMotionSimulatorCheck
                         }
                     },
                     new[] { "EmergencyStop", "PartPresent" },
-                    new[] { "Vacuum", "Clamp" });
+                    new[] { "Vacuum", "Clamp" },
+                    positionConfigurationStore,
+                    "ManualDebugSmoke");
 
-                Ensure(page.FindName("AxisSelector") is ComboBox, "页面没有加载逻辑轴选择框。");
-                Ensure(page.FindName("AxisStatusText") is TextBlock, "页面没有加载轴状态显示。");
-                Ensure(((TextBox)page.FindName("SpeedTextBox")).Text == "23", "页面没有从轴配置加载手动速度。");
-                Ensure(((TextBox)page.FindName("AccelerationTextBox")).Text == "34", "页面没有从轴配置加载手动加速度。");
-                Ensure(((TextBox)page.FindName("DecelerationTextBox")).Text == "45", "页面没有从轴配置加载手动减速度。");
+                var axisCards = (WrapPanel)page.FindName("AxisCardsPanel");
+                Ensure(axisCards.Children.Count == 1, "已映射一个轴时没有生成对应的单轴调试卡片。");
+                var axisControl = (ManualAxisControl)axisCards.Children[0];
+                Ensure(axisControl.FindName("AxisStatusText") is TextBlock, "轴卡片没有加载轴状态显示。");
+                Ensure(((TextBox)axisControl.FindName("SpeedTextBox")).Text == "23", "轴卡片没有从轴配置加载手动速度。");
+                Ensure(((TextBox)axisControl.FindName("AccelerationTextBox")).Text == "34", "轴卡片没有从轴配置加载手动加速度。");
+                Ensure(((TextBox)axisControl.FindName("DecelerationTextBox")).Text == "45", "轴卡片没有从轴配置加载手动减速度。");
+                Ensure(((ItemsControl)axisControl.FindName("PositionsList")).Items.Count == 0, "新轴自动出现了默认示教位置。");
+                Ensure(((TextBlock)axisControl.FindName("EmptyPositionsText")).Visibility == Visibility.Visible, "空位置列表没有显示添加提示。");
                 Ensure(((StackPanel)page.FindName("DigitalInputsPanel")).Children.Count == 2, "DI 列表行数与配置数量不一致。");
                 Ensure(((StackPanel)page.FindName("DigitalOutputsPanel")).Children.Count == 2, "DO 列表行数与配置数量不一致。");
                 VerifyMachineStateLocalization(application, chineseResources, englishResources, page);
@@ -359,20 +369,22 @@ namespace MotionControl.ZMotionSimulatorCheck
             ManualMotionDebugView page,
             SmokeMotionCard card)
         {
-            var servoButton = (Button)page.FindName("ServoEnableButton");
+            var axisControl = GetFirstAxisControl(page);
+            var servoButton = (Button)axisControl.FindName("ServoEnableButton");
             servoButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, servoButton));
-            var operationMessage = (TextBlock)page.FindName("OperationMessageText");
-            Ensure(operationMessage.Text.Contains("运动控制卡未连接"), "中文界面没有显示未连接保护信息。");
+            var axisOperationMessage = (TextBlock)axisControl.FindName("OperationMessageText");
+            Ensure(axisOperationMessage.Text.Contains("运动控制卡未连接"), "中文界面没有显示未连接保护信息。");
 
             var outputRows = (StackPanel)page.FindName("DigitalOutputsPanel");
             var firstOutputRow = (StackPanel)outputRows.Children[0];
             var outputOnButton = (Button)firstOutputRow.Children[2];
             outputOnButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, outputOnButton));
+            var operationMessage = (TextBlock)page.FindName("OperationMessageText");
             Ensure(operationMessage.Text.Contains("运动控制卡未连接"), "中文界面没有拦截断开状态下的 DO 命令。");
 
             application.Resources.MergedDictionaries[0] = englishResources;
             servoButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, servoButton));
-            Ensure(operationMessage.Text.Contains("Motion card is disconnected"), "英文界面没有显示未连接保护信息。");
+            Ensure(axisOperationMessage.Text.Contains("Motion card is disconnected"), "英文界面没有显示未连接保护信息。");
 
             outputOnButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, outputOnButton));
             Ensure(operationMessage.Text.Contains("Motion card is disconnected"), "英文界面没有拦截断开状态下的 DO 命令。");
@@ -408,30 +420,31 @@ namespace MotionControl.ZMotionSimulatorCheck
         {
             var axis = (SmokeAxis)card.Axes.Single();
             var initialCommandCount = axis.CommandCount;
-            ClickButton(page, "ServoEnableButton");
-            ClickButton(page, "ServoDisableButton");
-            ClickButton(page, "HomeButton");
-            ClickButton(page, "ResetAxisAlarmButton");
-            ClickButton(page, "StopButton");
+            ManualAxisControl axisControl = GetFirstAxisControl(page);
+            ClickButton(axisControl, "ServoEnableButton");
+            ClickButton(axisControl, "ServoDisableButton");
+            ClickButton(axisControl, "HomeButton");
+            ClickButton(axisControl, "ResetAxisAlarmButton");
+            ClickButton(axisControl, "StopButton");
 
-            var targetPosition = (TextBox)page.FindName("TargetPositionTextBox");
+            var targetPosition = (TextBox)axisControl.FindName("TargetPositionTextBox");
             targetPosition.Text = "50";
-            ClickButton(page, "MoveAbsoluteButton");
+            ClickButton(axisControl, "MoveAbsoluteButton");
             Ensure(axis.LastMotionProfile != null, "手动定位没有使用运动参数配置。");
             Ensure(axis.LastMotionProfile.Speed == 23, "手动定位没有使用轴配置的默认速度。");
             Ensure(axis.LastMotionProfile.Acceleration == 34, "手动定位没有使用轴配置的默认加速度。");
             Ensure(axis.LastMotionProfile.Deceleration == 45, "手动定位没有使用轴配置的默认减速度。");
             targetPosition.Text = "1";
-            ClickButton(page, "MoveRelativeButton");
+            ClickButton(axisControl, "MoveRelativeButton");
             Ensure(axis.CommandCount == initialCommandCount + 7, "已连接时轴按钮没有通过 IAxis 调用预期的操作。");
 
-            var operationMessage = (TextBlock)page.FindName("OperationMessageText");
+            var operationMessage = (TextBlock)axisControl.FindName("OperationMessageText");
             targetPosition.Text = "101";
-            ClickButton(page, "MoveAbsoluteButton");
+            ClickButton(axisControl, "MoveAbsoluteButton");
             Ensure(axis.CommandCount == initialCommandCount + 7, "绝对定位超出软限位时仍然调用了轴。");
             Ensure(operationMessage.Text.Contains("软限位"), "软限位拒绝原因没有显示在页面上。");
 
-            VerifyJogButtonsStartAndStop(page, axis);
+            VerifyJogButtonsStartAndStop(axisControl, axis);
 
             var outputRows = (StackPanel)page.FindName("DigitalOutputsPanel");
             var firstOutputRow = (StackPanel)outputRows.Children[0];
@@ -447,28 +460,36 @@ namespace MotionControl.ZMotionSimulatorCheck
         }
 
         /// <summary>通过页面名称点击指定按钮，便于检查页面到契约的命令连接。</summary>
-        private static void ClickButton(ManualMotionDebugView page, string controlName)
+        private static void ClickButton(FrameworkElement control, string controlName)
         {
-            var button = page.FindName(controlName) as Button;
-            Ensure(button != null, "页面缺少按钮控件：" + controlName + "。");
+            var button = control.FindName(controlName) as Button;
+            Ensure(button != null, "轴卡片缺少按钮控件：" + controlName + "。");
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, button));
         }
 
-        /// <summary>模拟按下和松开两个方向点动按钮，确认页面调用对应点动与受控停止。</summary>
-        private static void VerifyJogButtonsStartAndStop(ManualMotionDebugView page, SmokeAxis axis)
+        /// <summary>返回手动页中的第一张轴卡片，供单轴内存卡检查使用。</summary>
+        private static ManualAxisControl GetFirstAxisControl(ManualMotionDebugView page)
         {
-            VerifyJogButtonStartAndStop(page, axis, "NegativeJogButton", MotionDirection.Negative);
-            VerifyJogButtonStartAndStop(page, axis, "PositiveJogButton", MotionDirection.Positive);
+            var axisCards = page.FindName("AxisCardsPanel") as WrapPanel;
+            Ensure(axisCards != null && axisCards.Children.Count > 0, "手动页没有生成轴调试卡片。");
+            return (ManualAxisControl)axisCards.Children[0];
         }
 
-        /// <summary>检查指定方向点动按钮按下启动对应方向，松开后发送受控停止。</summary>
+        /// <summary>模拟按下和松开两个方向点动按钮，确认轴卡片调用点动与受控停止。</summary>
+        private static void VerifyJogButtonsStartAndStop(ManualAxisControl axisControl, SmokeAxis axis)
+        {
+            VerifyJogButtonStartAndStop(axisControl, axis, "NegativeJogButton", MotionDirection.Negative);
+            VerifyJogButtonStartAndStop(axisControl, axis, "PositiveJogButton", MotionDirection.Positive);
+        }
+
+        /// <summary>检查指定轴卡片的点动按钮按下启动对应方向，松开后发送受控停止。</summary>
         private static void VerifyJogButtonStartAndStop(
-            ManualMotionDebugView page,
+            ManualAxisControl axisControl,
             SmokeAxis axis,
             string controlName,
             MotionDirection expectedDirection)
         {
-            var jogButton = (Button)page.FindName(controlName);
+            var jogButton = (Button)axisControl.FindName(controlName);
             var initialCommandCount = axis.CommandCount;
             var mouseDown = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
             {
