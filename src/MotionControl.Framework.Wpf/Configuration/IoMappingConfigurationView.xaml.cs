@@ -91,14 +91,10 @@ namespace MotionControl.Framework.Wpf.Configuration
             EmergencyStopInputComboBox.IsEnabled = canEdit;
             DigitalInputsGrid.IsEnabled = canEdit;
             DigitalOutputsGrid.IsEnabled = canEdit;
-            bool hasInputInventory = GetKnownChannelCount(_lastIoCapabilities, true).HasValue;
-            bool hasOutputInventory = GetKnownChannelCount(_lastIoCapabilities, false).HasValue;
-            AddInputButton.Visibility = hasInputInventory ? Visibility.Collapsed : Visibility.Visible;
-            AddOutputButton.Visibility = hasOutputInventory ? Visibility.Collapsed : Visibility.Visible;
             AddInputButton.IsEnabled = canEdit && !_isReadingIoCapabilities
-                && ControllerIds.Count > 0 && !hasInputInventory;
+                && ControllerIds.Count > 0;
             AddOutputButton.IsEnabled = canEdit && !_isReadingIoCapabilities
-                && ControllerIds.Count > 0 && !hasOutputInventory;
+                && ControllerIds.Count > 0;
             RefreshIoCapabilitiesButton.IsEnabled = _cardConnection.IsConnected
                 && _ioCapabilityProvider != null
                 && !_isReadingIoCapabilities;
@@ -376,10 +372,6 @@ namespace MotionControl.Framework.Wpf.Configuration
         {
             LoadConfiguration();
             LoadControllerIds();
-            if (_lastIoCapabilities != null)
-            {
-                AddReportedChannelRows(_lastIoCapabilities);
-            }
         }
 
         /// <summary>结束两个表格当前单元格和行编辑，确保校验读取到最新输入值。</summary>

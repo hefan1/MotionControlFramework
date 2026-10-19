@@ -90,7 +90,6 @@ namespace MotionControl.Framework.Wpf.Configuration
 
                 _lastIoCapabilities = capabilities;
                 _ioCapabilityStatusResourceKey = null;
-                AddReportedChannelRows(capabilities);
                 UpdateIoCapabilityStatusText();
             }
             catch (Exception error)
@@ -195,123 +194,6 @@ namespace MotionControl.Framework.Wpf.Configuration
                 countText,
                 range.FirstUnavailableChannel.Value,
                 failureMessage);
-        }
-
-        /// <summary>按当前 API 探测结果重建未命名 DI/DO 清单，并保留已有的命名映射。</summary>
-        private void AddReportedChannelRows(MotionCardIoCapabilities capabilities)
-        {
-            if (capabilities == null)
-            {
-                return;
-            }
-
-            string controllerId = capabilities.ControllerId;
-            if (string.IsNullOrWhiteSpace(controllerId) || !ControllerIds.Contains(controllerId))
-            {
-                controllerId = GetFirstControllerId();
-            }
-
-            if (string.IsNullOrWhiteSpace(controllerId))
-            {
-                return;
-            }
-
-            AddReportedChannelRows(
-                DigitalInputs,
-                controllerId,
-                GetKnownChannelCount(capabilities, true));
-            AddReportedChannelRows(
-                DigitalOutputs,
-                controllerId,
-                GetKnownChannelCount(capabilities, false));
-
-            RefreshEmergencyStopInputNames();
-            UpdateConnectionState();
-        }
-
-        /// <summary>逐路生成空名称行；名称留空表示该通道暂未用于设备流程。</summary>
-        private static void AddReportedChannelRows(
-            ObservableCollection<DigitalIoHardwareDefinition> points,
-            string controllerId,
-            int? channelCount)
-        {
-            if (!channelCount.HasValue)
-            {
-                return;
-            }
-
-            // 刷新前先移除当前控制卡的空白草稿，避免重复刷新时把旧通道清单越叠越多。
-            // 已命名的逻辑映射是用户配置，必须保留。
-            List<DigitalIoHardwareDefinition> unnamedRows = points
-                .Where(point => string.Equals(
-                    point.ControllerId,
-                    controllerId,
-                    StringComparison.OrdinalIgnoreCase)
-                    && string.IsNullOrWhiteSpace(point.Name))
-                .ToList();
-            foreach (DigitalIoHardwareDefinition unnamedRow in unnamedRows)
-            {
-                points.Remove(unnamedRow);
-            }
-
-            if (channelCount.Value <= 0)
-            {
-                return;
-            }
-
-            var existingChannels = new HashSet<int>(points
-                .Where(point => string.Equals(
-                    point.ControllerId,
-                    controllerId,
-                    StringComparison.OrdinalIgnoreCase))
-                .Select(point => point.Channel));
-
-            for (int channel = 0; channel < channelCount.Value; channel++)
-            {
-                if (existingChannels.Add(channel))
-                {
-                    points.Add(new DigitalIoHardwareDefinition
-                    {
-                        Name = string.Empty,
-                        ControllerId = controllerId,
-                        Channel = channel,
-                        ActiveHigh = true
-                    });
-                }
-            }
-        }
-
-        /// <summary>优先使用逐路 API 读取成功的实际通道数；适配器直接报告数量时使用板载与总线数量之和。</summary>
-        private static int? GetKnownChannelCount(MotionCardIoCapabilities capabilities, bool input)
-        {
-            if (capabilities == null)
-            {
-                return null;
-            }
-
-            MotionCardIoChannelRange range = input
-                ? capabilities.DigitalInputChannelRange
-                : capabilities.DigitalOutputChannelRange;
-            if (range != null && range.MappableChannelCount.HasValue)
-            {
-                return range.MappableChannelCount.Value >= 0
-                    ? range.MappableChannelCount
-                    : null;
-            }
-
-            int? builtInCount = input
-                ? capabilities.BuiltInDigitalInputCount
-                : capabilities.BuiltInDigitalOutputCount;
-            int? busCount = input
-                ? capabilities.ScannedBusDigitalInputCount
-                : capabilities.ScannedBusDigitalOutputCount;
-            if (!builtInCount.HasValue && !busCount.HasValue)
-            {
-                return null;
-            }
-
-            int totalCount = builtInCount.GetValueOrDefault() + busCount.GetValueOrDefault();
-            return totalCount >= 0 ? (int?)totalCount : null;
         }
 
         /// <summary>只对当前能力查询对应的控制卡返回 DI 或 DO API 确认通道数。</summary>
