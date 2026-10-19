@@ -9,7 +9,8 @@ namespace MotionControl.Framework.Wpf.Configuration
 {
     /// <summary>负责轴映射页面的配置读取、格式检查和旧配置兼容。</summary>
     public partial class AxisMappingConfigurationView
-    {        /// <summary>从当前设备的轴参数 JSON 读取设置；文件不存在时保持所有通道为空。</summary>
+    {
+        /// <summary>从当前设备的轴参数 JSON 读取设置；文件不存在时保持所有通道为空。</summary>
         private void LoadConfiguration()
         {
             _loadingConfiguration = true;

@@ -8,7 +8,8 @@ namespace MotionControl.Framework.Wpf.Configuration
 {
     /// <summary>负责轴映射配置的校验和卡参数回填值检查。</summary>
     public partial class AxisMappingConfigurationView
-    {        /// <summary>验证所有已命名轴的通道范围、名称唯一性和运动参数。</summary>
+    {
+        /// <summary>验证所有已命名轴的通道范围、名称唯一性和运动参数。</summary>
         private List<string> ValidateConfiguredAxes()
         {
             var errors = new List<string>();

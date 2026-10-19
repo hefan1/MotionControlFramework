@@ -11,7 +11,8 @@ namespace MotionControl.Framework.Wpf.Configuration
 {
     /// <summary>负责轴映射页面的控制卡连接、状态刷新和轴参数读回。</summary>
     public partial class AxisMappingConfigurationView
-    {        /// <summary>根据物理轴号选择当前编辑行。</summary>
+    {
+        /// <summary>根据物理轴号选择当前编辑行。</summary>
         private async void AxisMappingGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             SelectAxis(AxisMappingGrid.SelectedItem as AxisMappingEntry);
