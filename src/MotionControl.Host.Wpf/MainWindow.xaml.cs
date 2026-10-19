@@ -60,6 +60,9 @@ namespace MotionControl.Host.Wpf
         /// <summary>当前界面语言代码；支持 zh-CN 和 en-US。</summary>
         public string CurrentLanguage { get; private set; }
 
+        /// <summary>当前界面的语言资源替换完成后通知代码生成的页面刷新显示文字。</summary>
+        public event EventHandler LanguageChanged;
+
         /// <summary>
         /// 初始化主窗口、默认导航、多语言界面和顶部时钟。
         /// </summary>
@@ -320,6 +323,12 @@ namespace MotionControl.Host.Wpf
 
             // 左侧导航由代码生成，切换语言后重新生成当前导航项；保留当前选中页面。
             NavigateToSection(_currentSectionKey);
+
+            EventHandler languageChanged = LanguageChanged;
+            if (languageChanged != null)
+            {
+                languageChanged(this, EventArgs.Empty);
+            }
         }
 
         /// <summary>

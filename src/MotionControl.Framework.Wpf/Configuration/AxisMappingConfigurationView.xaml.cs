@@ -203,7 +203,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             _loadingConfiguration = true;
             _configurationCanBeSaved = true;
             SaveConfigurationButton.IsEnabled = true;
-            ConfigurationStatusText.Text = (string)FindResource("轴映射尚未保存");
+            SetConfigurationStatus("轴映射尚未保存");
             ResetAxesToUnconfigured();
             _configuration = new AxisMappingConfigurationDocument();
             _cardConfiguration = new MotionCardSettingsDocument();
@@ -215,11 +215,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             string cardConfigurationPath = Path.Combine(
                 machineDirectory,
                 MotionCardsFilePath.Replace('/', Path.DirectorySeparatorChar));
-            ConfigurationFileText.Text = string.Format(
-                CultureInfo.CurrentCulture,
-                (string)FindResource("轴映射保存路径格式"),
-                cardConfigurationPath,
-                axisConfigurationPath);
+            UpdateConfigurationFileText();
 
             try
             {
@@ -249,7 +245,7 @@ namespace MotionControl.Framework.Wpf.Configuration
                 SelectAxisCount(_cardConfiguration.AxisCount);
                 RefreshVisibleAxes();
                 SelectAxis(_allAxes.FirstOrDefault());
-                ConfigurationStatusText.Text = (string)FindResource("轴映射读取完成");
+                SetConfigurationStatus("轴映射读取完成");
             }
             catch (Exception error)
             {
@@ -266,10 +262,7 @@ namespace MotionControl.Framework.Wpf.Configuration
                 SelectAxis(_allAxes.FirstOrDefault());
                 _configurationCanBeSaved = false;
                 SaveConfigurationButton.IsEnabled = false;
-                ConfigurationStatusText.Text = string.Format(
-                    CultureInfo.CurrentCulture,
-                    (string)FindResource("轴映射读取失败"),
-                    error.Message);
+                SetConfigurationStatus("轴映射读取失败", error.Message);
             }
             finally
             {
@@ -512,10 +505,7 @@ namespace MotionControl.Framework.Wpf.Configuration
                 return;
             }
 
-            SelectedAxisText.Text = string.Format(
-                CultureInfo.CurrentCulture,
-                (string)FindResource("当前选择物理轴格式"),
-                axis.AxisNumber);
+            UpdateSelectedAxisText();
             PhysicalAxisTextBox.Text = "Axis" + axis.AxisNumber.ToString(CultureInfo.InvariantCulture);
             if (AxisMappingGrid != null && ReferenceEquals(AxisMappingGrid.SelectedItem, axis) == false)
             {
@@ -533,8 +523,7 @@ namespace MotionControl.Framework.Wpf.Configuration
         private async void AxisMappingGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             SelectAxis(AxisMappingGrid.SelectedItem as AxisMappingEntry);
-            CardReadbackText.Text = (string)FindResource("控制器参数未读取");
-            CardSoftLimitStatusText.Text = (string)FindResource("控制器软限位状态未读取");
+            ResetCardReadbackStatus();
             if (!_loadingConfiguration && _cardConnection.IsConnected)
             {
                 await ReadSelectedAxisParametersAsync(false);
@@ -561,16 +550,12 @@ namespace MotionControl.Framework.Wpf.Configuration
             try
             {
                 await _cardConnection.DisconnectAsync(CancellationToken.None);
-                CardConnectionStatusText.Text = (string)FindResource("控制卡连接已断开");
-                CardReadbackText.Text = (string)FindResource("控制器参数未读取");
-                CardSoftLimitStatusText.Text = (string)FindResource("控制器软限位状态未读取");
+                SetCardConnectionStatus("控制卡连接已断开");
+                ResetCardReadbackStatus();
             }
             catch (Exception error)
             {
-                CardConnectionStatusText.Text = string.Format(
-                    CultureInfo.CurrentCulture,
-                    (string)FindResource("控制卡连接失败格式"),
-                    error.Message);
+                SetCardConnectionStatus("控制卡连接失败格式", error.Message);
             }
             finally
             {
@@ -593,39 +578,32 @@ namespace MotionControl.Framework.Wpf.Configuration
 
             if (!_configurationCanBeSaved)
             {
-                CardConnectionStatusText.Text = string.Format(
-                    CultureInfo.CurrentCulture,
-                    (string)FindResource("控制卡连接失败格式"),
-                    (string)FindResource("轴映射读取失败"));
+                SetCardConnectionStatus("控制卡连接失败格式", (string)FindResource("轴映射读取失败"));
                 return;
             }
 
             if (GetSelectedMotionCardOption() == null)
             {
-                CardConnectionStatusText.Text = (string)FindResource("控制卡选项未接入");
+                SetCardConnectionStatus("控制卡选项未接入");
                 UpdateCardConnectionUiState();
                 return;
             }
 
             _connectionInProgress = true;
-            CardConnectionStatusText.Text = (string)FindResource("正在连接控制卡");
+            SetCardConnectionStatus("正在连接控制卡");
             UpdateCardConnectionUiState();
             try
             {
                 await _cardConnection.ConnectAsync(_cardConfiguration, CancellationToken.None);
-                CardConnectionStatusText.Text = string.Format(
-                    CultureInfo.CurrentCulture,
-                    (string)FindResource("控制卡连接成功格式"),
+                SetCardConnectionStatus(
+                    "控制卡连接成功格式",
                     _cardConnection.ActualControllerType,
                     _cardConnection.ActualControllerVersion);
                 await ReadSelectedAxisParametersAsync(false);
             }
             catch (Exception error)
             {
-                CardConnectionStatusText.Text = string.Format(
-                    CultureInfo.CurrentCulture,
-                    (string)FindResource("控制卡连接失败格式"),
-                    error.Message);
+                SetCardConnectionStatus("控制卡连接失败格式", error.Message);
                 if (!automatic)
                 {
                     MessageBox.Show(
@@ -677,41 +655,32 @@ namespace MotionControl.Framework.Wpf.Configuration
                 return null;
             }
 
+            int axisNumber = SelectedAxis.AxisNumber;
             try
             {
                 AxisMappingCardParameters parameters = await _cardConnection.ReadAxisParametersAsync(
-                    SelectedAxis.AxisNumber,
+                    axisNumber,
                     CancellationToken.None);
-                CardReadbackText.Text = string.Format(
-                    CultureInfo.CurrentCulture,
-                    (string)FindResource("控制器参数读回格式"),
-                    parameters.UnitsPerEngineeringUnit,
-                    parameters.MinimumPosition,
-                    parameters.MaximumPosition,
-                    parameters.Speed,
-                    parameters.CreepSpeed,
-                    parameters.Acceleration,
-                    parameters.Deceleration);
-                CardSoftLimitStatusText.Text = string.Format(
-                    CultureInfo.CurrentCulture,
-                    (string)FindResource("控制器软限位状态格式"),
-                    GetSoftLimitStateText(parameters.PositiveSoftLimitEffective),
-                    GetSoftLimitStateText(parameters.NegativeSoftLimitEffective));
-                if (!string.IsNullOrWhiteSpace(parameters.SoftLimitStatusDiagnostic))
+                if (parameters == null)
                 {
-                    CardSoftLimitStatusText.Text += " " + parameters.SoftLimitStatusDiagnostic;
+                    throw new InvalidOperationException("控制卡适配器没有返回轴参数。");
                 }
+
+                _cardReadbackAttempted = true;
+                _lastReadbackParameters = parameters;
+                _lastReadbackError = null;
+                _lastReadbackAxisNumber = axisNumber;
+                RefreshCardReadbackText();
 
                 return parameters;
             }
             catch (Exception error)
             {
-                CardReadbackText.Text = string.Format(
-                    CultureInfo.CurrentCulture,
-                    (string)FindResource("控制器参数读取失败格式"),
-                    SelectedAxis.AxisNumber,
-                    error.Message);
-                CardSoftLimitStatusText.Text = (string)FindResource("控制器软限位状态读取失败");
+                _cardReadbackAttempted = true;
+                _lastReadbackParameters = null;
+                _lastReadbackError = error.Message;
+                _lastReadbackAxisNumber = axisNumber;
+                RefreshCardReadbackText();
                 if (showError)
                 {
                     MessageBox.Show(
@@ -812,23 +781,20 @@ namespace MotionControl.Framework.Wpf.Configuration
 
                 if (invalidValues.Count == 0)
                 {
-                    ConfigurationStatusText.Text = string.Format(
-                        CultureInfo.CurrentCulture,
-                        (string)FindResource("轴参数读卡回填完成格式"),
-                        axis.AxisNumber);
+                    SetConfigurationStatus("轴参数读卡回填完成格式", axis.AxisNumber);
                 }
                 else
                 {
-                    ConfigurationStatusText.Text = string.Format(
-                        CultureInfo.CurrentCulture,
-                        (string)FindResource("轴参数读卡回填部分格式"),
+                    SetConfigurationStatus(
+                        "轴参数读卡回填部分格式",
                         axis.AxisNumber,
                         string.Join("、", invalidValues.Distinct()));
                 }
 
                 if (controllerSoftLimitEnabled == false)
                 {
-                    ConfigurationStatusText.Text += " " + (string)FindResource("软限位停用时未回填范围");
+                    _configurationStatusShowsSoftLimitNotice = true;
+                    RefreshConfigurationStatusText();
                 }
             }
             finally
@@ -1004,7 +970,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             List<string> errors = ValidateConfiguredAxes();
             if (errors.Count > 0)
             {
-                ConfigurationStatusText.Text = errors[0];
+                SetConfigurationValidationStatus();
                 MessageBox.Show(
                     string.Join(Environment.NewLine, errors),
                     (string)FindResource("轴映射配置"),
@@ -1014,12 +980,14 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
 
             int configuredCount = _allAxes.Count(axis => axis.AxisNumber < _cardConfiguration.AxisCount && axis.IsConfigured);
-            ConfigurationStatusText.Text = configuredCount == 0
-                ? (string)FindResource("还没有配置设备轴")
-                : string.Format(
-                    CultureInfo.CurrentCulture,
-                    (string)FindResource("轴映射检查通过格式"),
-                    configuredCount);
+            if (configuredCount == 0)
+            {
+                SetConfigurationStatus("还没有配置设备轴");
+            }
+            else
+            {
+                SetConfigurationStatus("轴映射检查通过格式", configuredCount);
+            }
         }
 
         /// <summary>保存轴映射；连接时重载运行时轴并应用参数，断开时保存为待应用配置。</summary>
@@ -1034,7 +1002,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             List<string> errors = ValidateConfiguredAxes();
             if (errors.Count > 0)
             {
-                ConfigurationStatusText.Text = errors[0];
+                SetConfigurationValidationStatus();
                 MessageBox.Show(
                     string.Join(Environment.NewLine, errors),
                     (string)FindResource("轴映射配置"),
@@ -1071,52 +1039,46 @@ namespace MotionControl.Framework.Wpf.Configuration
 
                 if (applyToConnectedCard)
                 {
-                    CardConnectionStatusText.Text = (string)FindResource("正在连接控制卡");
+                    SetCardConnectionStatus("正在连接控制卡");
                     await _cardConnection.ReconnectAsync(_cardConfiguration, CancellationToken.None);
                     refreshManualPage = true;
-                    CardConnectionStatusText.Text = string.Format(
-                        CultureInfo.CurrentCulture,
-                        (string)FindResource("控制卡连接成功格式"),
+                    SetCardConnectionStatus(
+                        "控制卡连接成功格式",
                         _cardConnection.ActualControllerType,
                         _cardConnection.ActualControllerVersion);
                     await ReadSelectedAxisParametersAsync(false);
-                    ConfigurationStatusText.Text = (string)FindResource("轴映射保存成功");
+                    SetConfigurationStatus("轴映射保存成功");
                 }
                 else
                 {
-                    ConfigurationStatusText.Text = (string)FindResource("轴映射保存待下发");
+                    SetConfigurationStatus("轴映射保存待下发");
                 }
             }
             catch (Exception error)
             {
                 if (applyToConnectedCard)
                 {
-                    CardConnectionStatusText.Text = _cardConnection.IsConnected
-                        ? string.Format(
-                            CultureInfo.CurrentCulture,
-                            (string)FindResource("控制卡连接成功格式"),
+                    if (_cardConnection.IsConnected)
+                    {
+                        SetCardConnectionStatus(
+                            "控制卡连接成功格式",
                             _cardConnection.ActualControllerType,
-                            _cardConnection.ActualControllerVersion)
-                        : string.Format(
-                            CultureInfo.CurrentCulture,
-                            (string)FindResource("控制卡连接失败格式"),
-                            error.Message);
+                            _cardConnection.ActualControllerVersion);
+                    }
+                    else
+                    {
+                        SetCardConnectionStatus("控制卡连接失败格式", error.Message);
+                    }
                 }
 
                 if (configurationSaved)
                 {
-                    ConfigurationStatusText.Text = string.Format(
-                        CultureInfo.CurrentCulture,
-                        (string)FindResource("轴映射保存下发失败"),
-                        error.Message);
+                    SetConfigurationStatus("轴映射保存下发失败", error.Message);
                     refreshManualPage = !_cardConnection.IsConnected;
                 }
                 else
                 {
-                    ConfigurationStatusText.Text = string.Format(
-                        CultureInfo.CurrentCulture,
-                        (string)FindResource("轴映射保存失败"),
-                        error.Message);
+                    SetConfigurationStatus("轴映射保存失败", error.Message);
                 }
 
                 MessageBox.Show(
@@ -1146,7 +1108,7 @@ namespace MotionControl.Framework.Wpf.Configuration
 
             ResetAxisAndRefreshEditor(SelectedAxis);
             UpdateCardConnectionUiState();
-            ConfigurationStatusText.Text = (string)FindResource("当前轴映射已清除");
+            SetConfigurationStatus("当前轴映射已清除");
         }
 
         /// <summary>取消当前未保存修改，并重新读取设备配置文件。</summary>

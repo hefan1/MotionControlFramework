@@ -4,8 +4,6 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using MotionControl.Framework.Contracts.Configuration;
@@ -31,15 +29,6 @@ namespace MotionControl.Framework.Wpf.Configuration
 
         /// <summary>轴映射页共用的控制卡连接，确保断连时不能改 IO 映射。</summary>
         private readonly IAxisMappingCardConnection _cardConnection;
-
-        /// <summary>当前适配器提供的可选 I/O 能力查询接口。</summary>
-        private readonly IMotionCardIoCapabilityProvider _ioCapabilityProvider;
-
-        /// <summary>当前连接卡最近一次读取到的能力，用于显示范围和校验物理通道。</summary>
-        private MotionCardIoCapabilities _lastIoCapabilities;
-
-        /// <summary>阻止 I/O 能力查询期间重复提交厂商 API 请求。</summary>
-        private bool _isReadingIoCapabilities;
 
         /// <summary>从控制卡配置读取出的可选控制卡标识。</summary>
         public ObservableCollection<string> ControllerIds { get; private set; }
@@ -95,14 +84,6 @@ namespace MotionControl.Framework.Wpf.Configuration
             Loaded += IoMappingConfigurationView_Loaded;
         }
 
-        /// <summary>每次打开页面都刷新控制卡清单，取得轴映射页刚保存的卡标识。</summary>
-        private async void IoMappingConfigurationView_Loaded(object sender, RoutedEventArgs e)
-        {
-            LoadControllerIds();
-            UpdateConnectionState();
-            await RefreshIoCapabilitiesAsync(false);
-        }
-
         /// <summary>根据轴映射页共用的实时连接状态锁定或开放 IO 配置控件。</summary>
         private void UpdateConnectionState()
         {
@@ -124,116 +105,6 @@ namespace MotionControl.Framework.Wpf.Configuration
             UpdateRemoveButtons(canEdit);
         }
 
-        /// <summary>页面按钮触发一次控制卡 I/O 数量读取。</summary>
-        private async void RefreshIoCapabilitiesButton_Click(object sender, RoutedEventArgs e)
-        {
-            await RefreshIoCapabilitiesAsync(true);
-        }
-
-        /// <summary>显示连接后缓存的 I/O 能力，或按用户要求重新读取控制器 API。</summary>
-        private async Task RefreshIoCapabilitiesAsync(bool forceRefresh)
-        {
-            _lastIoCapabilities = null;
-            if (!_cardConnection.IsConnected)
-            {
-                IoCapabilityStatusText.Text = (string)FindResource("控制卡Io数量未连接");
-                UpdateConnectionState();
-                return;
-            }
-
-            if (_ioCapabilityProvider == null)
-            {
-                IoCapabilityStatusText.Text = (string)FindResource("控制卡Io数量能力不支持");
-                UpdateConnectionState();
-                return;
-            }
-
-            _isReadingIoCapabilities = true;
-            UpdateConnectionState();
-            IoCapabilityStatusText.Text = (string)FindResource("控制卡Io数量读取中");
-
-            try
-            {
-                MotionCardIoCapabilities capabilities = forceRefresh
-                    ? await _ioCapabilityProvider.RefreshIoCapabilitiesAsync(CancellationToken.None)
-                    : await _ioCapabilityProvider.ReadIoCapabilitiesAsync(CancellationToken.None);
-                if (capabilities == null)
-                {
-                    throw new InvalidOperationException("控制卡适配器没有返回 I/O 能力信息。");
-                }
-
-                _lastIoCapabilities = capabilities;
-                AddReportedChannelRows(capabilities);
-                IoCapabilityStatusText.Text = string.Format(
-                    CultureInfo.CurrentCulture,
-                    (string)FindResource("控制卡Io数量读取结果格式"),
-                    FormatIoCount(capabilities.BuiltInDigitalInputCount),
-                    FormatIoCount(capabilities.BuiltInDigitalOutputCount),
-                    FormatIoCount(capabilities.MaximumDigitalInputCount),
-                    FormatIoCount(capabilities.MaximumDigitalOutputCount),
-                    FormatMappableIoRange(capabilities.DigitalInputChannelRange),
-                    FormatMappableIoRange(capabilities.DigitalOutputChannelRange),
-                    FormatIoCount(capabilities.ScannedBusNodeCount),
-                    FormatIoCount(capabilities.ScannedBusDigitalInputCount),
-                    FormatIoCount(capabilities.ScannedBusDigitalOutputCount));
-
-                if (!string.IsNullOrWhiteSpace(capabilities.BusScanError))
-                {
-                    IoCapabilityStatusText.Text += " " + string.Format(
-                        CultureInfo.CurrentCulture,
-                        (string)FindResource("控制卡Io总线扫描失败格式"),
-                        capabilities.BusScanError);
-                }
-            }
-            catch (Exception error)
-            {
-                IoCapabilityStatusText.Text = string.Format(
-                    CultureInfo.CurrentCulture,
-                    (string)FindResource("控制卡Io数量查询失败格式"),
-                    error.Message);
-            }
-            finally
-            {
-                _isReadingIoCapabilities = false;
-                UpdateConnectionState();
-            }
-        }
-
-        /// <summary>把尚未读取的可选数量转换成当前语言的提示文字。</summary>
-        private string FormatIoCount(int? count)
-        {
-            return count.HasValue
-                ? count.Value.ToString(CultureInfo.CurrentCulture)
-                : (string)FindResource("控制卡Io数量未读取");
-        }
-
-        /// <summary>把 API 连续读取成功的通道数和首个失败地址整理成页面提示。</summary>
-        private string FormatMappableIoRange(MotionCardIoChannelRange range)
-        {
-            if (range == null || !range.MappableChannelCount.HasValue)
-            {
-                return (string)FindResource("控制卡Io数量未读取");
-            }
-
-            string countText = range.ReachedProbeLimit
-                ? "至少 " + range.MappableChannelCount.Value.ToString(CultureInfo.CurrentCulture)
-                : range.MappableChannelCount.Value.ToString(CultureInfo.CurrentCulture);
-
-            if (!range.FirstUnavailableChannel.HasValue)
-            {
-                return countText + " 路";
-            }
-
-            return string.Format(
-                CultureInfo.CurrentCulture,
-                (string)FindResource("控制卡Io通道探测边界格式"),
-                countText,
-                range.FirstUnavailableChannel.Value,
-                range.FirstUnavailableReturnCode.HasValue
-                    ? range.FirstUnavailableReturnCode.Value.ToString(CultureInfo.CurrentCulture)
-                    : (string)FindResource("控制卡Io数量未读取"));
-        }
-
         /// <summary>仅在控制卡已连接且选中映射行时启用对应删除按钮。</summary>
         private void UpdateRemoveButtons(bool canEdit)
         {
@@ -250,7 +121,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             if (!File.Exists(cardPath))
             {
                 UpdateConnectionState();
-                ConfigurationStatusText.Text = (string)FindResource("IO映射请先连接控制卡");
+                SetConfigurationStatus("IO映射请先连接控制卡");
                 return;
             }
 
@@ -274,18 +145,15 @@ namespace MotionControl.Framework.Wpf.Configuration
                 }
 
                 UpdateConnectionState();
-                ConfigurationStatusText.Text = ControllerIds.Count == 0
-                    ? (string)FindResource("IO映射请先连接控制卡")
-                    : (string)FindResource("IO映射读取完成");
+                SetConfigurationStatus(ControllerIds.Count == 0
+                    ? "IO映射请先连接控制卡"
+                    : "IO映射读取完成");
             }
             catch (Exception error)
             {
                 _configurationCanBeSaved = false;
                 UpdateConnectionState();
-                ConfigurationStatusText.Text = string.Format(
-                    CultureInfo.CurrentCulture,
-                    (string)FindResource("IO映射控制卡读取失败"),
-                    error.Message);
+                SetConfigurationStatus("IO映射控制卡读取失败", error.Message);
             }
         }
 
@@ -313,7 +181,7 @@ namespace MotionControl.Framework.Wpf.Configuration
                 }
 
                 RefreshEmergencyStopInputNames();
-                ConfigurationStatusText.Text = (string)FindResource("IO映射读取完成");
+                SetConfigurationStatus("IO映射读取完成");
             }
             catch (Exception error)
             {
@@ -323,10 +191,7 @@ namespace MotionControl.Framework.Wpf.Configuration
                 EmergencyStopInputNames.Clear();
                 EmergencyStopInputComboBox.GetBindingExpression(ComboBox.TextProperty)?.UpdateTarget();
                 _configurationCanBeSaved = false;
-                ConfigurationStatusText.Text = string.Format(
-                    CultureInfo.CurrentCulture,
-                    (string)FindResource("IO映射读取失败"),
-                    error.Message);
+                SetConfigurationStatus("IO映射读取失败", error.Message);
             }
         }
 
@@ -446,18 +311,18 @@ namespace MotionControl.Framework.Wpf.Configuration
         {
             if (!CommitGridEdits())
             {
-                ConfigurationStatusText.Text = (string)FindResource("IO映射表格输入无效");
+                SetConfigurationStatus("IO映射表格输入无效");
                 return;
             }
 
             string errorMessage;
             if (!TryValidateConfiguration(out errorMessage))
             {
-                ConfigurationStatusText.Text = errorMessage;
+                SetConfigurationStatusText(errorMessage, true);
                 return;
             }
 
-            ConfigurationStatusText.Text = (string)FindResource("IO映射检查通过");
+            SetConfigurationStatus("IO映射检查通过");
         }
 
         /// <summary>检查通过后，将 DI/DO 与急停名称保存到本设备的 IoMapping.json。</summary>
@@ -465,20 +330,20 @@ namespace MotionControl.Framework.Wpf.Configuration
         {
             if (!CommitGridEdits())
             {
-                ConfigurationStatusText.Text = (string)FindResource("IO映射表格输入无效");
+                SetConfigurationStatus("IO映射表格输入无效");
                 return;
             }
 
             if (!_configurationCanBeSaved)
             {
-                ConfigurationStatusText.Text = (string)FindResource("IO映射禁止保存");
+                SetConfigurationStatus("IO映射禁止保存");
                 return;
             }
 
             string errorMessage;
             if (!TryValidateConfiguration(out errorMessage))
             {
-                ConfigurationStatusText.Text = errorMessage;
+                SetConfigurationStatusText(errorMessage, true);
                 return;
             }
 
@@ -498,14 +363,11 @@ namespace MotionControl.Framework.Wpf.Configuration
             try
             {
                 _configurationStore.SaveJson(_machineId, IoMappingFilePath, configuration);
-                ConfigurationStatusText.Text = (string)FindResource("IO映射保存成功");
+                SetConfigurationStatus("IO映射保存成功");
             }
             catch (Exception error)
             {
-                ConfigurationStatusText.Text = string.Format(
-                    CultureInfo.CurrentCulture,
-                    (string)FindResource("IO映射保存失败"),
-                    error.Message);
+                SetConfigurationStatus("IO映射保存失败", error.Message);
             }
         }
 
@@ -518,123 +380,6 @@ namespace MotionControl.Framework.Wpf.Configuration
             {
                 AddReportedChannelRows(_lastIoCapabilities);
             }
-        }
-
-        /// <summary>按当前 API 探测结果重建未命名 DI/DO 清单，并保留已有的命名映射。</summary>
-        private void AddReportedChannelRows(MotionCardIoCapabilities capabilities)
-        {
-            if (capabilities == null)
-            {
-                return;
-            }
-
-            string controllerId = capabilities.ControllerId;
-            if (string.IsNullOrWhiteSpace(controllerId) || !ControllerIds.Contains(controllerId))
-            {
-                controllerId = GetFirstControllerId();
-            }
-
-            if (string.IsNullOrWhiteSpace(controllerId))
-            {
-                return;
-            }
-
-            AddReportedChannelRows(
-                DigitalInputs,
-                controllerId,
-                GetKnownChannelCount(capabilities, true));
-            AddReportedChannelRows(
-                DigitalOutputs,
-                controllerId,
-                GetKnownChannelCount(capabilities, false));
-
-            RefreshEmergencyStopInputNames();
-            UpdateConnectionState();
-        }
-
-        /// <summary>逐路生成空名称行；名称留空表示该通道暂未用于设备流程。</summary>
-        private static void AddReportedChannelRows(
-            ObservableCollection<DigitalIoHardwareDefinition> points,
-            string controllerId,
-            int? channelCount)
-        {
-            if (!channelCount.HasValue)
-            {
-                return;
-            }
-
-            // 刷新前先移除当前控制卡的空白草稿，避免重复刷新时把旧通道清单越叠越多。
-            // 已命名的逻辑映射是用户配置，必须保留。
-            List<DigitalIoHardwareDefinition> unnamedRows = points
-                .Where(point => string.Equals(
-                    point.ControllerId,
-                    controllerId,
-                    StringComparison.OrdinalIgnoreCase)
-                    && string.IsNullOrWhiteSpace(point.Name))
-                .ToList();
-            foreach (DigitalIoHardwareDefinition unnamedRow in unnamedRows)
-            {
-                points.Remove(unnamedRow);
-            }
-
-            if (channelCount.Value <= 0)
-            {
-                return;
-            }
-
-            var existingChannels = new HashSet<int>(points
-                .Where(point => string.Equals(
-                    point.ControllerId,
-                    controllerId,
-                    StringComparison.OrdinalIgnoreCase))
-                .Select(point => point.Channel));
-
-            for (int channel = 0; channel < channelCount.Value; channel++)
-            {
-                if (existingChannels.Add(channel))
-                {
-                    points.Add(new DigitalIoHardwareDefinition
-                    {
-                        Name = string.Empty,
-                        ControllerId = controllerId,
-                        Channel = channel,
-                        ActiveHigh = true
-                    });
-                }
-            }
-        }
-
-        /// <summary>优先使用逐路 API 读取成功的实际通道数；适配器直接报告数量时使用板载与总线数量之和。</summary>
-        private static int? GetKnownChannelCount(MotionCardIoCapabilities capabilities, bool input)
-        {
-            if (capabilities == null)
-            {
-                return null;
-            }
-
-            MotionCardIoChannelRange range = input
-                ? capabilities.DigitalInputChannelRange
-                : capabilities.DigitalOutputChannelRange;
-            if (range != null && range.MappableChannelCount.HasValue)
-            {
-                return range.MappableChannelCount.Value >= 0
-                    ? range.MappableChannelCount
-                    : null;
-            }
-
-            int? builtInCount = input
-                ? capabilities.BuiltInDigitalInputCount
-                : capabilities.BuiltInDigitalOutputCount;
-            int? busCount = input
-                ? capabilities.ScannedBusDigitalInputCount
-                : capabilities.ScannedBusDigitalOutputCount;
-            if (!builtInCount.HasValue && !busCount.HasValue)
-            {
-                return null;
-            }
-
-            int totalCount = builtInCount.GetValueOrDefault() + busCount.GetValueOrDefault();
-            return totalCount >= 0 ? (int?)totalCount : null;
         }
 
         /// <summary>结束两个表格当前单元格和行编辑，确保校验读取到最新输入值。</summary>
@@ -685,7 +430,7 @@ namespace MotionControl.Framework.Wpf.Configuration
         {
             if (IsLoaded && _configurationCanBeSaved)
             {
-                ConfigurationStatusText.Text = (string)FindResource("IO映射尚未保存");
+                SetConfigurationStatus("IO映射尚未保存");
             }
         }
 
@@ -842,24 +587,6 @@ namespace MotionControl.Framework.Wpf.Configuration
 
             errorMessage = string.Empty;
             return true;
-        }
-
-        /// <summary>只对当前能力查询对应的控制卡返回 DI 或 DO API 确认通道数。</summary>
-        private int? GetMappableChannelCount(string controllerId, bool input)
-        {
-            if (_lastIoCapabilities == null
-                || !string.Equals(
-                    _lastIoCapabilities.ControllerId,
-                    controllerId,
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                return null;
-            }
-
-            MotionCardIoChannelRange range = input
-                ? _lastIoCapabilities.DigitalInputChannelRange
-                : _lastIoCapabilities.DigitalOutputChannelRange;
-            return range == null ? (int?)null : range.MappableChannelCount;
         }
 
         /// <summary>复制一个逻辑点位并保留其控制卡、通道和有效电平。</summary>

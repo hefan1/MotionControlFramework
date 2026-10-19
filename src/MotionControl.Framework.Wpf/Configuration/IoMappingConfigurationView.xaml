@@ -287,7 +287,7 @@
                                        Foreground="#24364B" />
                             <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
                                 <TextBlock Text="{Binding DigitalInputs.Count}" FontSize="11" Foreground="#718096" />
-                                <TextBlock Text="{DynamicResource 个通道}" FontSize="11" Foreground="#718096" />
+                                <TextBlock Text="{DynamicResource 个通道}" Margin="3,0,0,0" FontSize="11" Foreground="#718096" />
                             </StackPanel>
                         </StackPanel>
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
@@ -355,7 +355,7 @@
                                        Foreground="#24364B" />
                             <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
                                 <TextBlock Text="{Binding DigitalOutputs.Count}" FontSize="11" Foreground="#718096" />
-                                <TextBlock Text="{DynamicResource 个通道}" FontSize="11" Foreground="#718096" />
+                                <TextBlock Text="{DynamicResource 个通道}" Margin="3,0,0,0" FontSize="11" Foreground="#718096" />
                             </StackPanel>
                         </StackPanel>
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">

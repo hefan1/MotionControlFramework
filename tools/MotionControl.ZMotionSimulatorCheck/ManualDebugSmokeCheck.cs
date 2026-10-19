@@ -24,7 +24,7 @@ using MotionControl.Host.Wpf;
 
 namespace MotionControl.ZMotionSimulatorCheck
 {
-    /// <summary>检查轴手动和 IO 手动页面控件构建及 Host 导航注入。</summary>
+    /// <summary>检查手动调试页面、硬件配置页面和 Host 导航注入。</summary>
     internal static class ManualDebugSmokeCheck
     {
         /// <summary>建立 WPF 应用上下文并检查页面控件与 Host 导航入口。</summary>
@@ -112,6 +112,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 hostWindow.SetManualIoDebugPage(ioPage);
                 VerifyMotionCardConnectionStatus(application, hostWindow, englishResources, chineseResources);
                 VerifyAxisMappingStartupConnection();
+                VerifyIoCapabilityDiagnosticDisplay(application, englishResources, chineseResources);
                 var primaryNavigation = (StackPanel)hostWindow.FindName("PrimaryNavigation");
                 var manualNavigation = primaryNavigation.Children
                     .OfType<ToggleButton>()
@@ -129,7 +130,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(ReferenceEquals(manualContent.Content, ioPage), "Host 的 IO 手动导航没有显示独立 IO 页面。");
 
                 application.Shutdown();
-                Console.WriteLine("[通过] 手动调试页与轴映射页离屏检查完成：启动连接策略、轴参数读回、Host底栏卡状态、中英资源及手动调试控件；使用内存测试卡。");
+                Console.WriteLine("[通过] 手动调试页与硬件配置页离屏检查完成：轴参数读回、I/O 能力诊断显示、Host 底栏卡状态和中英资源；使用内存测试卡。");
                 return 0;
             }
             catch (Exception error)
@@ -381,9 +382,82 @@ namespace MotionControl.ZMotionSimulatorCheck
             }
         }
 
-        /// <summary>提供无硬件的轴映射页连接替身，记录自动连接及参数读取调用。</summary>
-        private sealed class SmokeAxisMappingCardConnection : IAxisMappingCardConnection
+        /// <summary>确认通用 IO 页面展示适配器诊断文字，不要求公共契约提供厂商错误码字段。</summary>
+        private static void VerifyIoCapabilityDiagnosticDisplay(
+            Application application,
+            ResourceDictionary englishResources,
+            ResourceDictionary chineseResources)
         {
+            string configurationRoot = Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory,
+                "IoCapabilitySmokeData_" + Guid.NewGuid().ToString("N"));
+            const string machineId = "IoCapabilitySmoke";
+
+            try
+            {
+                var configurationStore = new MachineConfigurationStore(configurationRoot);
+                configurationStore.SaveJson(machineId, "HardwareConfig/MotionCards.json", new MotionCardSettingsDocument
+                {
+                    AxisCount = 8,
+                    MotionCards = new List<MotionCardConnectionDefinition>
+                    {
+                        new MotionCardConnectionDefinition
+                        {
+                            ControllerId = "SmokeCard",
+                            AdapterType = "TestPulseAdapter",
+                            ConnectionConfigurationFile = "HardwareConfig/TestPulse.json"
+                        }
+                    }
+                });
+
+                var connection = new SmokeAxisMappingCardConnection();
+                connection.ConnectAsync(new MotionCardSettingsDocument(), CancellationToken.None)
+                    .GetAwaiter().GetResult();
+                var page = new IoMappingConfigurationView(configurationStore, machineId, connection);
+                application.Resources.MergedDictionaries[0] = chineseResources;
+                page.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
+
+                var statusText = (TextBlock)page.FindName("IoCapabilityStatusText");
+                var configurationStatusText = (TextBlock)page.FindName("ConfigurationStatusText");
+                var digitalInputsGrid = (DataGrid)page.FindName("DigitalInputsGrid");
+                Ensure(connection.IoCapabilityReadCount == 1, "打开 IO 映射页没有执行一次能力读取。");
+                Ensure(configurationStatusText.Text.Contains("已读取"), "中文 IO 映射状态没有显示读取完成文字。");
+                Ensure(digitalInputsGrid.Columns[0].Header.ToString() == "逻辑名称", "中文 DI 表格列标题不正确。");
+                Ensure(statusText.Text.Contains("TestPulse_ReadInput"), "中文 IO 能力摘要没有显示适配器提供的探测说明。");
+                Ensure(statusText.Text.Contains("20008"), "适配器诊断中的错误码没有保留到 IO 页面文字中。");
+                Ensure(statusText.Text.Contains("3 路"), "中文 IO 能力摘要没有使用本地化通道数量单位。");
+
+                application.Resources.MergedDictionaries[0] = englishResources;
+                page.RefreshLocalizedText();
+                Ensure(statusText.Text.Contains("details:"), "英文 IO 能力摘要没有使用英文诊断标签。");
+                Ensure(statusText.Text.Contains("TestPulse_ReadInput"), "英文 IO 能力摘要丢失了适配器提供的探测说明。");
+                Ensure(statusText.Text.Contains("3 channels"), "英文 IO 能力摘要仍混入中文通道数量单位。");
+                Ensure(configurationStatusText.Text.Contains("Loaded I/O"), "英文 IO 映射状态没有切换语言。");
+                Ensure(digitalInputsGrid.Columns[0].Header.ToString() == "Logical Name", "英文 DI 表格列标题没有切换语言。");
+                Ensure(connection.IoCapabilityReadCount == 1, "切换语言时不应重复读取控制卡 I/O 能力。");
+
+                application.Resources.MergedDictionaries[0] = chineseResources;
+                page.RefreshLocalizedText();
+                Ensure(statusText.Text.Contains("3 路"), "切回中文后 IO 能力摘要没有恢复中文通道数量单位。");
+                Ensure(configurationStatusText.Text.Contains("已读取"), "切回中文后 IO 映射状态没有恢复中文。");
+                Ensure(digitalInputsGrid.Columns[0].Header.ToString() == "逻辑名称", "切回中文后 DI 表格列标题没有恢复中文。");
+            }
+            finally
+            {
+                application.Resources.MergedDictionaries[0] = chineseResources;
+                if (Directory.Exists(configurationRoot))
+                {
+                    Directory.Delete(configurationRoot, true);
+                }
+            }
+        }
+
+        /// <summary>提供无硬件的轴映射页连接替身，记录自动连接及参数读取调用。</summary>
+        private sealed class SmokeAxisMappingCardConnection : IAxisMappingCardConnection, IMotionCardIoCapabilityProvider
+        {
+            /// <summary>记录测试页面读取 I/O 能力的次数，确认语言刷新不会重复调用适配器。</summary>
+            public int IoCapabilityReadCount { get; private set; }
+
             /// <summary>返回内存测试卡提供的卡型及轴数量选项。</summary>
             public IReadOnlyList<MotionCardSelectionOption> SupportedMotionCards
             {
@@ -488,6 +562,34 @@ namespace MotionControl.ZMotionSimulatorCheck
                     Acceleration = 10,
                     Deceleration = 0
                 });
+            }
+
+            /// <summary>返回包含适配器诊断文字的测试 I/O 能力结果，不连接真实控制器。</summary>
+            public Task<MotionCardIoCapabilities> ReadIoCapabilitiesAsync(CancellationToken cancellationToken)
+            {
+                IoCapabilityReadCount++;
+                return Task.FromResult(new MotionCardIoCapabilities
+                {
+                    ControllerId = "SmokeCard",
+                    DigitalInputChannelRange = new MotionCardIoChannelRange
+                    {
+                        MappableChannelCount = 3,
+                        FirstUnavailableChannel = 3,
+                        FirstUnavailableMessage = "TestPulse_ReadInput channel 3 returned code 20008."
+                    },
+                    DigitalOutputChannelRange = new MotionCardIoChannelRange
+                    {
+                        MappableChannelCount = 2,
+                        FirstUnavailableChannel = 2,
+                        FirstUnavailableMessage = "TestPulse_ReadOutput channel 2 returned code 20008."
+                    }
+                });
+            }
+
+            /// <summary>刷新时重新返回测试 I/O 能力，用于验证页面刷新流程。</summary>
+            public Task<MotionCardIoCapabilities> RefreshIoCapabilitiesAsync(CancellationToken cancellationToken)
+            {
+                return ReadIoCapabilitiesAsync(cancellationToken);
             }
 
             /// <summary>接受轴参数写入调用但不操作任何硬件。</summary>

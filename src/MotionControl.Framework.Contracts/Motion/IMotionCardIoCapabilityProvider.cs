@@ -59,8 +59,8 @@ namespace MotionControl.Framework.Contracts.Motion
         /// <summary>首个读取失败的通道号；厂商直接返回数量时为空。</summary>
         public int? FirstUnavailableChannel { get; set; }
 
-        /// <summary>首个读取失败通道对应的厂商 API 返回码；没有逐路探测时为空。</summary>
-        public int? FirstUnavailableReturnCode { get; set; }
+        /// <summary>首个探测失败通道的可读说明；适配器可在说明中保留接口名和错误码。</summary>
+        public string FirstUnavailableMessage { get; set; }
 
         /// <summary>是否因安全探测上限而停止；为真时数量表示至少可映射这么多通道。</summary>
         public bool ReachedProbeLimit { get; set; }

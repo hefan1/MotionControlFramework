@@ -279,21 +279,35 @@
                     </DataGrid.Resources>
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="{DynamicResource 物理轴号}"
-                                            Binding="{Binding AxisNumber, StringFormat='Axis{0}'}" Width="62"
+                                            Binding="{Binding AxisNumber, StringFormat='Axis{0}'}" Width="78"
                                             ElementStyle="{StaticResource AxisMappingCellText}" />
                         <DataGridTextColumn Header="{DynamicResource 设备轴名称}" Binding="{Binding Name, TargetNullValue='-'}" Width="1.15*"
                                             ElementStyle="{StaticResource AxisMappingCellText}" />
-                        <DataGridTextColumn Header="{DynamicResource 轴类型}" Binding="{Binding AxisType, TargetNullValue='-'}" Width="62"
+                        <DataGridTemplateColumn Header="{DynamicResource 轴类型}" Width="66">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock x:Name="AxisTypeText" Text="{Binding AxisType, TargetNullValue='-'}"
+                                               Style="{StaticResource AxisMappingCellText}" />
+                                    <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding AxisType}" Value="直线轴">
+                                            <Setter TargetName="AxisTypeText" Property="Text" Value="{DynamicResource 直线轴}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding AxisType}" Value="旋转轴">
+                                            <Setter TargetName="AxisTypeText" Property="Text" Value="{DynamicResource 旋转轴}" />
+                                        </DataTrigger>
+                                    </DataTemplate.Triggers>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="{DynamicResource 工程单位}" Binding="{Binding EngineeringUnit, TargetNullValue='-'}" Width="64"
                                             ElementStyle="{StaticResource AxisMappingCellText}" />
-                        <DataGridTextColumn Header="{DynamicResource 工程单位}" Binding="{Binding EngineeringUnit, TargetNullValue='-'}" Width="62"
+                        <DataGridTextColumn Header="{DynamicResource 单位换算}" Binding="{Binding UnitsPerEngineeringUnit, TargetNullValue='-', StringFormat={}{0:0.###}}" Width="80"
                                             ElementStyle="{StaticResource AxisMappingCellText}" />
-                        <DataGridTextColumn Header="{DynamicResource 单位换算}" Binding="{Binding UnitsPerEngineeringUnit, TargetNullValue='-', StringFormat={}{0:0.###}}" Width="84"
+                        <DataGridTextColumn Header="{DynamicResource 软限位下限}" Binding="{Binding MinimumPosition, TargetNullValue='-', StringFormat={}{0:0.000}}" Width="78"
                                             ElementStyle="{StaticResource AxisMappingCellText}" />
-                        <DataGridTextColumn Header="{DynamicResource 软限位下限}" Binding="{Binding MinimumPosition, TargetNullValue='-', StringFormat={}{0:0.000}}" Width="86"
+                        <DataGridTextColumn Header="{DynamicResource 软限位上限}" Binding="{Binding MaximumPosition, TargetNullValue='-', StringFormat={}{0:0.000}}" Width="78"
                                             ElementStyle="{StaticResource AxisMappingCellText}" />
-                        <DataGridTextColumn Header="{DynamicResource 软限位上限}" Binding="{Binding MaximumPosition, TargetNullValue='-', StringFormat={}{0:0.000}}" Width="86"
-                                            ElementStyle="{StaticResource AxisMappingCellText}" />
-                        <DataGridTemplateColumn Header="{DynamicResource 配置状态}" Width="74">
+                        <DataGridTemplateColumn Header="{DynamicResource 配置状态}" Width="100">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <Border x:Name="ConfigurationBadge" HorizontalAlignment="Center"
@@ -332,7 +346,7 @@
                     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <Grid x:Name="AxisDetailsGrid" Margin="0,2,4,6">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="92" />
+                                <ColumnDefinition Width="140" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
@@ -408,7 +422,7 @@
                                       IsExpanded="False" Margin="0,3,0,0" FontSize="12" Foreground="#42556C">
                                 <Grid Margin="0,6,0,2">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="92" />
+                                        <ColumnDefinition Width="140" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
@@ -469,12 +483,12 @@
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                             <Button x:Name="CheckMappingButton" Content="{DynamicResource 检查映射}"
                                     Click="CheckMappingButton_Click" Style="{StaticResource AxisMappingButton}"
-                                    Width="84" Height="36" Padding="6,4" Margin="0,0,7,0" />
+                                    Width="112" Height="36" Padding="6,4" Margin="0,0,7,0" />
                             <Button x:Name="SaveConfigurationButton" Content="{DynamicResource 保存配置}"
                                     Click="SaveConfigurationButton_Click" Style="{StaticResource AxisMappingPrimaryButton}"
-                                    Width="96" Height="36" Padding="6,4" Margin="0,0,7,0" />
+                                    Width="144" Height="36" Padding="6,4" Margin="0,0,7,0" />
                             <Button Content="{DynamicResource 取消修改}" Click="CancelChangesButton_Click"
-                                    Style="{StaticResource AxisMappingButton}" Width="84" Height="36" Padding="6,4" />
+                                    Style="{StaticResource AxisMappingButton}" Width="112" Height="36" Padding="6,4" />
                         </StackPanel>
                     </StackPanel>
                 </Grid>

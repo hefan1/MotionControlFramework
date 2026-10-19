@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -420,7 +421,12 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     {
                         MappableChannelCount = readableChannelCount,
                         FirstUnavailableChannel = channel,
-                        FirstUnavailableReturnCode = result
+                        FirstUnavailableMessage = string.Format(
+                            CultureInfo.InvariantCulture,
+                            "{0}(channel={1}, returnCode={2})",
+                            input ? "ZAux_Direct_GetIn" : "ZAux_Direct_GetOp",
+                            channel,
+                            result)
                     };
                 }
 

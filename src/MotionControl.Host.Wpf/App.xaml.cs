@@ -63,6 +63,7 @@ namespace MotionControl.Host.Wpf
             _ioMappingPage = new IoMappingConfigurationView(_configurationStore, "Machine01", _cardConnection);
             _mainWindow = new MainWindow();
             _mainWindow.Loaded += MainWindow_Loaded;
+            _mainWindow.LanguageChanged += MainWindow_LanguageChanged;
             _mainWindow.SetAxisMappingConfigurationPage(_axisMappingPage);
             _mainWindow.SetIoMappingConfigurationPage(_ioMappingPage);
 
@@ -74,6 +75,20 @@ namespace MotionControl.Host.Wpf
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             await _axisMappingPage.InitializeSavedCardConnectionAsync();
+        }
+
+        /// <summary>Host 语言切换后刷新轴映射页和 IO 映射页中由代码生成的文字。</summary>
+        private void MainWindow_LanguageChanged(object sender, EventArgs e)
+        {
+            if (_axisMappingPage != null)
+            {
+                _axisMappingPage.RefreshLocalizedText();
+            }
+
+            if (_ioMappingPage != null)
+            {
+                _ioMappingPage.RefreshLocalizedText();
+            }
         }
 
         /// <summary>连接状态变化后同步底栏，并用当前卡轴映射创建或移除手动调试页。</summary>
