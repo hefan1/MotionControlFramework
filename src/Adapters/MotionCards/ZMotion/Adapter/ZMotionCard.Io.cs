@@ -14,7 +14,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
     /// <summary>正运动适配器中负责逻辑 DI/DO 与控制卡 IO 能力读取的实现部分。</summary>
     public sealed partial class ZMotionCard
     {
-        /// <summary>只读查询正运动控制器规格和总线能力，并按 API 逐路探测实际 DI/DO 通道。</summary>
+        /// <summary>读取正运动控制器规格，并在控制器报告的数量范围内逐路探测 DI/DO 通道。</summary>
         public Task<MotionCardIoCapabilities> ReadIoCapabilitiesAsync(CancellationToken cancellationToken)
         {
             return Task.Run(() =>
@@ -57,10 +57,12 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     capabilities.DigitalInputChannelRange = ReadMappableIoChannelRange(
                         handle,
                         true,
+                        maximumInputs,
                         cancellationToken);
                     capabilities.DigitalOutputChannelRange = ReadMappableIoChannelRange(
                         handle,
                         false,
+                        maximumOutputs,
                         cancellationToken);
                     ReadScannedBusIoCapabilities(handle, busSlotCount, capabilities, cancellationToken);
                     return capabilities;
@@ -74,14 +76,16 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             return ReadIoCapabilitiesAsync(cancellationToken);
         }
 
-        /// <summary>从通道 0 起逐路读取 DI 或 DO，首个非零返回码作为实际通道范围边界。</summary>
+        /// <summary>从通道 0 起探测 DI 或 DO；遵守卡报告的最大数量和本机安全探测上限。</summary>
         private MotionCardIoChannelRange ReadMappableIoChannelRange(
             IntPtr handle,
             bool input,
+            int reportedMaximumChannelCount,
             CancellationToken cancellationToken)
         {
             int readableChannelCount = 0;
-            for (int channel = 0; channel < MaximumIoChannelsToProbe; channel++)
+            int channelCountToProbe = Math.Min(reportedMaximumChannelCount, MaximumIoChannelsToProbe);
+            for (int channel = 0; channel < channelCountToProbe; channel++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 uint physicalValue = 0;
@@ -110,7 +114,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             return new MotionCardIoChannelRange
             {
                 MappableChannelCount = readableChannelCount,
-                ReachedProbeLimit = true
+                ReachedProbeLimit = reportedMaximumChannelCount > MaximumIoChannelsToProbe
             };
         }
 
