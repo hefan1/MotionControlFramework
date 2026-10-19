@@ -280,11 +280,8 @@
     <sys:String x:Key="软限位未启用">inactive</sys:String>
     <sys:String x:Key="控制器参数读取失败格式">Failed to read controller parameters for Axis{0}: {1}</sys:String>
     <sys:String x:Key="读取控制卡参数">Read Card Values</sys:String>
-    <sys:String x:Key="写入控制卡">Write Axis Values</sys:String>
-    <sys:String x:Key="写卡确认标题">Confirm Axis Parameter Write</sys:String>
-    <sys:String x:Key="写卡确认内容格式">This writes the current Axis{0} unit scale, soft limits, home speeds, and accelerations to the motion card. The axis must be stopped. Continue?</sys:String>
-    <sys:String x:Key="轴参数写卡成功">Axis values were written to the card and read back successfully.</sys:String>
-    <sys:String x:Key="轴映射要求先连接">Connect the motion card before checking or saving axis mappings.</sys:String>
+    <sys:String x:Key="保存并应用轴映射确认标题">Save and Apply Axis Mapping</sys:String>
+    <sys:String x:Key="保存并应用轴映射确认内容">Saving will reconnect the card, reload mapped axes, and apply their parameters. Reconnecting clears the homed state, so home the axes again before positioning. Confirm that all axes are stopped. Continue?</sys:String>
     <sys:String x:Key="轴映射连接保存失败格式">The card connected, but saving the connection profile failed: {0}</sys:String>
     <sys:String x:Key="当前选择物理轴格式">Selected: Axis{0}</sys:String>
     <sys:String x:Key="直线轴">Linear</sys:String>
@@ -315,7 +312,9 @@
     <sys:String x:Key="轴数量减少时仍有轴已映射">Configured channels or channels with retained parameters exist above the selected capacity. Clear those mappings before reducing the count.</sys:String>
     <sys:String x:Key="还没有配置设备轴">No machine axes are configured. Enter a machine axis name first.</sys:String>
     <sys:String x:Key="轴映射检查通过格式">Mapping check passed for {0} configured machine axes.</sys:String>
-    <sys:String x:Key="轴映射保存成功">Axis mapping saved to this machine configuration.</sys:String>
+    <sys:String x:Key="轴映射保存成功">Axis mapping was saved and applied after reconnecting the card.</sys:String>
+    <sys:String x:Key="轴映射保存待下发">Axis mapping was saved. The card is disconnected; parameters will be applied when it connects.</sys:String>
+    <sys:String x:Key="轴映射保存下发失败">Configuration was saved, but the card could not apply the parameters: {0}</sys:String>
     <sys:String x:Key="轴映射保存失败">Failed to save axis mapping: {0}</sys:String>
     <sys:String x:Key="当前轴映射已清除">Mapping for the selected physical axis was cleared.</sys:String>
     <sys:String x:Key="设备轴名称重复格式">Duplicate machine axis name: {0}</sys:String>

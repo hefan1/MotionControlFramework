@@ -166,6 +166,7 @@ namespace MotionControl.Host.Wpf
             try
             {
                 await newCard.ConnectAsync(cancellationToken).ConfigureAwait(false);
+                await newCard.ApplyAxisParametersAsync(cancellationToken).ConfigureAwait(false);
                 SaveConnectionConfiguration(
                     connectionDefinition.ConnectionConfigurationFile,
                     connectionConfiguration);
@@ -224,6 +225,30 @@ namespace MotionControl.Host.Wpf
             _digitalInputs = new List<DigitalIoHardwareDefinition>().AsReadOnly();
             _digitalOutputs = new List<DigitalIoHardwareDefinition>().AsReadOnly();
             _emergencyStopInputName = string.Empty;
+        }
+
+        /// <summary>确认当前已映射轴均停止后重新连接，使保存的映射和参数进入运行时。</summary>
+        public async Task ReconnectAsync(
+            MotionCardSettingsDocument settings,
+            CancellationToken cancellationToken)
+        {
+            if (_card != null && _card.IsConnected)
+            {
+                foreach (IAxis axis in _card.Axes)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    AxisStatus status = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
+                    if (status.Moving)
+                    {
+                        throw new InvalidOperationException(
+                            "逻辑轴 '" + axis.Name + "' 仍在运动，停止所有轴后再保存并应用轴映射。");
+                    }
+                }
+
+                await DisconnectAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await ConnectAsync(settings, cancellationToken).ConfigureAwait(false);
         }
 
         /// <summary>把设备已保存的轴和 DI/DO 映射转换成当前正运动卡实例所需的对象。</summary>
@@ -444,33 +469,6 @@ namespace MotionControl.Host.Wpf
             _cachedIoCapabilities = await _card.RefreshIoCapabilitiesAsync(cancellationToken)
                 .ConfigureAwait(false);
             return _cachedIoCapabilities;
-        }
-
-        /// <summary>显式下发选中物理轴的单位换算、软限位和当前运动参数。</summary>
-        public Task WriteAxisParametersAsync(
-            AxisMappingCardParameters parameters,
-            CancellationToken cancellationToken)
-        {
-            if (parameters == null)
-            {
-                throw new ArgumentNullException(nameof(parameters));
-            }
-
-            EnsureConnected();
-            var physicalParameters = new ZMotionPhysicalAxisParameters
-            {
-                AxisNumber = parameters.AxisNumber,
-                UnitsPerEngineeringUnit = parameters.UnitsPerEngineeringUnit,
-                MinimumPosition = parameters.MinimumPosition,
-                MaximumPosition = parameters.MaximumPosition,
-                SoftLimitEnabled = parameters.SoftLimitEnabled,
-                Speed = parameters.Speed,
-                CreepSpeed = parameters.CreepSpeed,
-                Acceleration = parameters.Acceleration,
-                Deceleration = parameters.Deceleration
-            };
-
-            return _card.WritePhysicalAxisParametersAsync(physicalParameters, cancellationToken);
         }
 
         /// <summary>取得页面当前使用的卡连接资料；首次连接时创建正运动默认项。</summary>

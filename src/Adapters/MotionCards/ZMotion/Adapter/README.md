@@ -30,11 +30,11 @@
 
 1. Host 从设备配置加载卡连接、轴参数和 IO 映射，并创建 `ZMotionCard`；同一个卡实例同时交给 `MotionCardGroup` 和 `ILogicalIo` 使用。
 2. 调用 `ConnectAsync`。此时只连接并读取身份，不写轴参数。
-3. 确认 `ActualControllerType` 为 `VPLC5xx-Simu` 后，显式调用 `ApplyAxisParametersAsync`。
+3. Host 连接时确认 `ActualControllerType` 为 `VPLC5xx-Simu`，再应用已保存轴映射中的轴参数；任何参数写入失败都会中止连接。
 4. 轴参数应用成功后，才可以使能、调用 DATUM 回零、点动或定位。
 5. 流程或调试页面通过 `IAxis` 与 `ILogicalIo` 操作，不直接引用厂商 API。
 
-`ApplyAxisParametersAsync` 会写入仿真轴的 `UNITS` 和软件限位；调用前应确认仿真轴空闲。运动结束等待受配置的超时约束；取消或超时时适配器会请求受控停止并等待停止反馈。
+`ApplyAxisParametersAsync` 会写入已映射仿真轴的 `UNITS`、软件限位、回零速度和回零加减速度；调用前会确认轴处于空闲状态。运动结束等待受配置的超时约束；取消或超时时适配器会请求受控停止并等待停止反馈。
 
 ## SDK 部署
 

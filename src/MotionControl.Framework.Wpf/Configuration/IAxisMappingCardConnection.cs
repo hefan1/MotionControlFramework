@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 
 namespace MotionControl.Framework.Wpf.Configuration
 {
-    /// <summary>供轴映射页面连接控制卡并读写当前物理轴参数。</summary>
+    /// <summary>供轴映射页面连接控制卡并读取当前物理轴参数。</summary>
     public interface IAxisMappingCardConnection
     {
         /// <summary>当前控制卡是否已经连接成功。</summary>
@@ -21,14 +21,15 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>断开当前控制卡连接并释放厂商连接句柄。</summary>
         Task DisconnectAsync(CancellationToken cancellationToken);
 
+        /// <summary>停止状态下重新加载当前设备保存的轴映射并应用轴参数。</summary>
+        Task ReconnectAsync(MotionCardSettingsDocument settings, CancellationToken cancellationToken);
+
         /// <summary>读取指定物理轴的单位换算、软限位和当前运动参数。</summary>
         Task<AxisMappingCardParameters> ReadAxisParametersAsync(int axisNumber, CancellationToken cancellationToken);
 
-        /// <summary>把页面指定的物理轴参数显式写入控制卡当前运行参数。</summary>
-        Task WriteAxisParametersAsync(AxisMappingCardParameters parameters, CancellationToken cancellationToken);
     }
 
-    /// <summary>轴映射页面读取或写入的一组控制卡轴参数。</summary>
+    /// <summary>轴映射页面从控制卡读取的一组轴参数。</summary>
     public sealed class AxisMappingCardParameters
     {
         /// <summary>控制器上的物理轴通道号，从零开始。</summary>

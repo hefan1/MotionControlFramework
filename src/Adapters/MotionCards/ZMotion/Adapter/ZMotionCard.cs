@@ -260,10 +260,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             return Task.Run(() => Disconnect(cancellationToken), cancellationToken);
         }
 
-        /// <summary>
-        /// 显式把样例中的 UNITS 和软限位应用到仿真器。
-        /// ConnectAsync 本身只连接并读取身份，不会写入控制器参数。
-        /// </summary>
+        /// <summary>把已映射轴的单位、软限位和回零运动参数应用到控制器。</summary>
         public Task ApplyAxisParametersAsync(CancellationToken cancellationToken)
         {
             return Task.Run(() => ApplyAxisParameters(cancellationToken), cancellationToken);
@@ -435,68 +432,6 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 MappableChannelCount = readableChannelCount,
                 ReachedProbeLimit = true
             };
-        }
-
-        /// <summary>空闲时把指定物理轴参数写入控制器，不会启动轴运动或伺服。</summary>
-        public Task WritePhysicalAxisParametersAsync(
-            ZMotionPhysicalAxisParameters parameters,
-            CancellationToken cancellationToken)
-        {
-            if (parameters == null)
-            {
-                throw new ArgumentNullException(nameof(parameters));
-            }
-
-            ValidatePhysicalAxisParameters(parameters);
-            return Task.Run(() =>
-            {
-                lock (_nativeLock)
-                {
-                    var handle = GetConnectedHandle();
-                    var axisName = GetPhysicalAxisName(parameters.AxisNumber);
-                    EnsureAxisIdle(handle, parameters.AxisNumber, axisName);
-                    double minimumPosition = parameters.MinimumPosition;
-                    double maximumPosition = parameters.MaximumPosition;
-                    if (!parameters.SoftLimitEnabled.Value)
-                    {
-                        GetDisabledSoftLimitPositions(
-                            handle,
-                            parameters.AxisNumber,
-                            axisName,
-                            out minimumPosition,
-                            out maximumPosition);
-                    }
-
-                    CheckResult(
-                        zmcaux.ZAux_Direct_SetUnits(handle, parameters.AxisNumber, (float)parameters.UnitsPerEngineeringUnit),
-                        "写入 UNITS 单位换算",
-                        axisName);
-                    CheckResult(
-                        zmcaux.ZAux_Direct_SetRsLimit(handle, parameters.AxisNumber, (float)minimumPosition),
-                        "写入 RS_LIMIT 负向软限位",
-                        axisName);
-                    CheckResult(
-                        zmcaux.ZAux_Direct_SetFsLimit(handle, parameters.AxisNumber, (float)maximumPosition),
-                        "写入 FS_LIMIT 正向软限位",
-                        axisName);
-                    CheckResult(
-                        zmcaux.ZAux_Direct_SetSpeed(handle, parameters.AxisNumber, (float)parameters.Speed),
-                        "写入 SPEED 速度",
-                        axisName);
-                    CheckResult(
-                        zmcaux.ZAux_Direct_SetCreep(handle, parameters.AxisNumber, (float)parameters.CreepSpeed),
-                        "写入 CREEP 爬行速度",
-                        axisName);
-                    CheckResult(
-                        zmcaux.ZAux_Direct_SetAccel(handle, parameters.AxisNumber, (float)parameters.Acceleration),
-                        "写入 ACCEL 加速度",
-                        axisName);
-                    CheckResult(
-                        zmcaux.ZAux_Direct_SetDecel(handle, parameters.AxisNumber, (float)parameters.Deceleration),
-                        "写入 DECEL 减速度",
-                        axisName);
-                }
-            }, cancellationToken);
         }
 
         /// <summary>按逻辑名称读取数字输入，并转换为配置的有效电平。</summary>
@@ -1066,7 +1001,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             }
         }
 
-        /// <summary>在所有仿真轴空闲时应用工程单位和正负软件限位。</summary>
+        /// <summary>在所有已映射轴空闲时应用映射页配置的轴参数。</summary>
         private void ApplyAxisParameters(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -1080,6 +1015,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     EnsureAxisIdle(handle, axis);
+                    axis.Configuration.ValidateHomeParameters();
                     double minimumPosition = axis.Configuration.MinimumPosition;
                     double maximumPosition = axis.Configuration.MaximumPosition;
                     if (!axis.Configuration.SoftLimitEnabled)
@@ -1111,6 +1047,34 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                             axis.AxisNumber,
                             (float)maximumPosition),
                         "应用正向软件限位",
+                        axis.Name);
+                    CheckResult(
+                        zmcaux.ZAux_Direct_SetSpeed(
+                            handle,
+                            axis.AxisNumber,
+                            (float)axis.Configuration.HomeSearchSpeed),
+                        "应用回零搜索速度",
+                        axis.Name);
+                    CheckResult(
+                        zmcaux.ZAux_Direct_SetCreep(
+                            handle,
+                            axis.AxisNumber,
+                            (float)axis.Configuration.HomeCreepSpeed),
+                        "应用回零爬行速度",
+                        axis.Name);
+                    CheckResult(
+                        zmcaux.ZAux_Direct_SetAccel(
+                            handle,
+                            axis.AxisNumber,
+                            (float)axis.Configuration.HomeAcceleration),
+                        "应用回零加速度",
+                        axis.Name);
+                    CheckResult(
+                        zmcaux.ZAux_Direct_SetDecel(
+                            handle,
+                            axis.AxisNumber,
+                            (float)axis.Configuration.HomeDeceleration),
+                        "应用回零减速度",
                         axis.Name);
                 }
 
@@ -1358,8 +1322,8 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             if (!_axisParametersApplied)
             {
                 throw new InvalidOperationException(
-                    "正运动控制卡 '" + ControllerId + "' 尚未应用仿真轴参数，不能操作逻辑轴 '"
-                    + axis.Name + "'。请先调用 ApplyAxisParametersAsync。");
+                    "正运动控制卡 '" + ControllerId + "' 尚未应用逻辑轴参数，不能操作逻辑轴 '"
+                    + axis.Name + "'。请先在轴映射页保存并应用轴参数。");
             }
         }
 
@@ -1493,37 +1457,6 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             if (axisNumber < 0 || axisNumber >= 64)
             {
                 throw new ArgumentOutOfRangeException(nameof(axisNumber), "正运动物理轴号必须在 0 到 63 之间。");
-            }
-        }
-
-        /// <summary>检查下发的单位换算、限位和运动速度参数有效且范围合理。</summary>
-        private static void ValidatePhysicalAxisParameters(ZMotionPhysicalAxisParameters parameters)
-        {
-            ValidatePhysicalAxisNumber(parameters.AxisNumber);
-            if (!parameters.SoftLimitEnabled.HasValue)
-            {
-                throw new ArgumentException("必须明确指定是否启用正负软限位。", nameof(parameters));
-            }
-
-            if (!IsFinite(parameters.UnitsPerEngineeringUnit) || parameters.UnitsPerEngineeringUnit <= 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(parameters), "UNITS 必须是大于零的有限数值。");
-            }
-
-            if (parameters.SoftLimitEnabled.Value
-                && (!IsFinite(parameters.MinimumPosition)
-                    || !IsFinite(parameters.MaximumPosition)
-                    || parameters.MinimumPosition >= parameters.MaximumPosition))
-            {
-                throw new ArgumentOutOfRangeException(nameof(parameters), "软限位必须是有限数值，且下限小于上限。");
-            }
-
-            if (!IsFinite(parameters.Speed) || parameters.Speed <= 0
-                || !IsFinite(parameters.CreepSpeed) || parameters.CreepSpeed <= 0
-                || !IsFinite(parameters.Acceleration) || parameters.Acceleration <= 0
-                || !IsFinite(parameters.Deceleration) || parameters.Deceleration <= 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(parameters), "速度、爬行速度、加速度和减速度必须是大于零的有限数值。");
             }
         }
 
