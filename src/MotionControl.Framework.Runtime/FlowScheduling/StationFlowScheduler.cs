@@ -7,7 +7,7 @@ using MotionControl.Framework.Contracts.Flow;
 
 namespace MotionControl.Framework.Runtime.FlowScheduling
 {
-    /// <summary>并行运行设备项目提供的各工位步骤，并在暂停时等待所有当前步骤退出。</summary>
+    /// <summary>并行运行设备项目提供的各工位步骤；未配置流程时允许设备仅用于手动调试。</summary>
     internal sealed class StationFlowScheduler
     {
         /// <summary>本设备需要并行执行的工位流程，构造后不再变更。</summary>
@@ -22,7 +22,7 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
         /// <summary>当前并行工位任务；全部退出后由暂停流程清空。</summary>
         private Task _runTask;
 
-        /// <summary>检查并保存本设备需要并行运行的工位流程。</summary>
+        /// <summary>检查并保存本设备需要并行运行的工位流程；空列表表示当前只使用手动功能。</summary>
         public StationFlowScheduler(IEnumerable<IStationFlow> stationFlows)
         {
             if (stationFlows == null)
@@ -31,11 +31,6 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
             }
 
             var flowList = stationFlows.ToList();
-            if (flowList.Count == 0)
-            {
-                throw new ArgumentException("设备至少需要配置一个工位流程。", nameof(stationFlows));
-            }
-
             var stationNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var flow in flowList)
             {

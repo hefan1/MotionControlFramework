@@ -170,15 +170,22 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>添加一个空目标位置；调试人员可立即修改自动生成的名称。</summary>
         private void AddPositionButton_Click(object sender, RoutedEventArgs e)
         {
+            ManualAxisPosition position = null;
             try
             {
-                ManualAxisPosition position = _createPosition();
+                position = _createPosition();
                 _savedPositionNames[position.Id] = position.Name;
                 _savePositions();
                 OperationMessageText.Text = string.Format(GetText("位置已添加"), position.Name);
             }
             catch (Exception error)
             {
+                if (position != null)
+                {
+                    _positions.Remove(position);
+                    _savedPositionNames.Remove(position.Id);
+                }
+
                 OperationMessageText.Text = string.Format(GetText("位置配置保存失败"), error.Message);
             }
         }
@@ -211,6 +218,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 return;
             }
 
+            string savedName = _savedPositionNames[position.Id];
             position.Name = newName;
             try
             {
@@ -220,6 +228,8 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
             catch (Exception error)
             {
+                position.Name = savedName;
+                nameTextBox.Text = savedName;
                 OperationMessageText.Text = string.Format(GetText("位置配置保存失败"), error.Message);
             }
         }
@@ -238,8 +248,18 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             {
                 EnsurePositionNameIsValid(position);
                 AxisStatus status = await _axis.ReadStatusAsync(CancellationToken.None).ConfigureAwait(true);
+                double? previousPosition = position.Position;
                 position.Position = status.Position;
-                _savePositions();
+                try
+                {
+                    _savePositions();
+                }
+                catch
+                {
+                    position.Position = previousPosition;
+                    throw;
+                }
+
                 OperationMessageText.Text = string.Format(
                     GetText("当前位置已写入位置"),
                     position.Name,
@@ -282,7 +302,8 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 return;
             }
 
-            _positions.Remove(position);
+            int positionIndex = _positions.IndexOf(position);
+            _positions.RemoveAt(positionIndex);
             _savedPositionNames.Remove(position.Id);
             try
             {
@@ -291,6 +312,8 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
             catch (Exception error)
             {
+                _positions.Insert(positionIndex, position);
+                _savedPositionNames[position.Id] = position.Name;
                 OperationMessageText.Text = string.Format(GetText("位置配置保存失败"), error.Message);
             }
         }

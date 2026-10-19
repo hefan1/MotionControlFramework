@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Adapter.MotionCard.ZMotion;
+using MotionControl.Framework.Contracts.Configuration;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Wpf.Configuration;
@@ -20,6 +21,12 @@ namespace MotionControl.Host.Wpf
         /// <summary>首次连接正运动仿真器时使用的连接参数文件。</summary>
         private const string DefaultConnectionConfigurationFile = "HardwareConfig/ZDevelopSimulation.json";
 
+        /// <summary>设备逻辑轴名称、物理轴号和运动参数配置文件。</summary>
+        private const string AxisParametersFilePath = "HardwareConfig/AxisParameters.json";
+
+        /// <summary>设备逻辑 DI/DO 名称和物理通道映射配置文件。</summary>
+        private const string IoMappingFilePath = "HardwareConfig/IoMapping.json";
+
         /// <summary>当前 Host 所属设备的 JSON 配置存储。</summary>
         private readonly MachineConfigurationStore _configurationStore;
 
@@ -31,6 +38,21 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>控制卡连接成功后预扫描并缓存的 I/O 能力。</summary>
         private MotionCardIoCapabilities _cachedIoCapabilities;
+
+        /// <summary>当前已连接卡上实际创建的逻辑轴硬件定义。</summary>
+        private IReadOnlyList<AxisHardwareDefinition> _axisHardwareDefinitions =
+            new List<AxisHardwareDefinition>().AsReadOnly();
+
+        /// <summary>当前卡上配置的逻辑 DI 点位。</summary>
+        private IReadOnlyList<DigitalIoHardwareDefinition> _digitalInputs =
+            new List<DigitalIoHardwareDefinition>().AsReadOnly();
+
+        /// <summary>当前卡上配置的逻辑 DO 点位。</summary>
+        private IReadOnlyList<DigitalIoHardwareDefinition> _digitalOutputs =
+            new List<DigitalIoHardwareDefinition>().AsReadOnly();
+
+        /// <summary>设备配置中用于整机安全检查的急停 DI 名称。</summary>
+        private string _emergencyStopInputName = string.Empty;
 
         /// <summary>创建使用指定 MachineId 保存连接资料的正运动连接服务。</summary>
         public ZMotionAxisMappingCardConnection(MachineConfigurationStore configurationStore, string machineId)
@@ -53,6 +75,36 @@ namespace MotionControl.Host.Wpf
         public bool IsConnected
         {
             get { return _card != null && _card.IsConnected; }
+        }
+
+        /// <summary>提供给 Host 运行时和手动调试页共用的当前控制卡实例。</summary>
+        public ZMotionCard ConnectedCard
+        {
+            get { return _card; }
+        }
+
+        /// <summary>返回创建在当前卡实例上的已映射逻辑轴定义。</summary>
+        public IReadOnlyList<AxisHardwareDefinition> AxisHardwareDefinitions
+        {
+            get { return _axisHardwareDefinitions; }
+        }
+
+        /// <summary>返回创建在当前卡实例上的逻辑 DI 映射。</summary>
+        public IReadOnlyList<DigitalIoHardwareDefinition> DigitalInputs
+        {
+            get { return _digitalInputs; }
+        }
+
+        /// <summary>返回创建在当前卡实例上的逻辑 DO 映射。</summary>
+        public IReadOnlyList<DigitalIoHardwareDefinition> DigitalOutputs
+        {
+            get { return _digitalOutputs; }
+        }
+
+        /// <summary>返回设备配置中的急停 DI 逻辑名称；未配置时为空。</summary>
+        public string EmergencyStopInputName
+        {
+            get { return _emergencyStopInputName; }
         }
 
         /// <summary>连接后从仿真控制器读取的型号标识。</summary>
@@ -102,12 +154,14 @@ namespace MotionControl.Host.Wpf
                 connectionDefinition.ConnectionConfigurationFile);
             connectionConfiguration.Validate();
 
+            LoadedMotionMappings mappings = LoadMotionMappings(connectionDefinition.ControllerId);
+
             var newCard = new ZMotionCard(
                 connectionDefinition.ControllerId,
                 connectionConfiguration,
-                new ZMotionAxisConfiguration[0],
-                new ZMotionIoPointConfiguration[0],
-                new ZMotionIoPointConfiguration[0]);
+                mappings.AxisConfigurations,
+                mappings.DigitalInputs,
+                mappings.DigitalOutputs);
 
             try
             {
@@ -117,6 +171,10 @@ namespace MotionControl.Host.Wpf
                     connectionConfiguration);
                 _configurationStore.SaveJson(_machineId, MotionCardsFilePath, settings);
                 _card = newCard;
+                _axisHardwareDefinitions = mappings.AxisHardwareDefinitions.AsReadOnly();
+                _digitalInputs = mappings.AxisDigitalInputs.AsReadOnly();
+                _digitalOutputs = mappings.AxisDigitalOutputs.AsReadOnly();
+                _emergencyStopInputName = mappings.EmergencyStopInputName;
 
                 try
                 {
@@ -162,6 +220,180 @@ namespace MotionControl.Host.Wpf
             await currentCard.DisconnectAsync(cancellationToken).ConfigureAwait(false);
             _card = null;
             _cachedIoCapabilities = null;
+            _axisHardwareDefinitions = new List<AxisHardwareDefinition>().AsReadOnly();
+            _digitalInputs = new List<DigitalIoHardwareDefinition>().AsReadOnly();
+            _digitalOutputs = new List<DigitalIoHardwareDefinition>().AsReadOnly();
+            _emergencyStopInputName = string.Empty;
+        }
+
+        /// <summary>把设备已保存的轴和 DI/DO 映射转换成当前正运动卡实例所需的对象。</summary>
+        private LoadedMotionMappings LoadMotionMappings(string controllerId)
+        {
+            var result = new LoadedMotionMappings();
+            string axisPath = GetConfigurationPath(AxisParametersFilePath);
+            if (File.Exists(axisPath))
+            {
+                AxisMappingConfigurationDocument axisDocument = _configurationStore
+                    .LoadJson<AxisMappingConfigurationDocument>(_machineId, AxisParametersFilePath);
+                if (axisDocument == null || axisDocument.SchemaVersion != 1 || axisDocument.Axes == null)
+                {
+                    throw new InvalidOperationException("AxisParameters.json 格式无效，不能创建手动调试轴对象。");
+                }
+
+                foreach (AxisMappingEntry axis in axisDocument.Axes)
+                {
+                    if (axis == null)
+                    {
+                        throw new InvalidOperationException("AxisParameters.json 中包含空轴配置。");
+                    }
+
+                    if (!axis.IsConfigured
+                        || !string.Equals(axis.ControllerId, controllerId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (!axis.UnitsPerEngineeringUnit.HasValue
+                        || !axis.MinimumPosition.HasValue
+                        || !axis.MaximumPosition.HasValue
+                        || !axis.SoftLimitEnabled.HasValue
+                        || !axis.ManualSpeed.HasValue)
+                    {
+                        throw new InvalidOperationException(
+                            "逻辑轴 '" + axis.Name + "' 的单位换算、软限位或手动速度尚未配置完整。");
+                    }
+
+                    result.AxisConfigurations.Add(new ZMotionAxisConfiguration
+                    {
+                        ControllerId = axis.ControllerId,
+                        Name = axis.Name,
+                        AxisNumber = axis.AxisNumber,
+                        UnitsPerEngineeringUnit = axis.UnitsPerEngineeringUnit.Value,
+                        MinimumPosition = axis.MinimumPosition.Value,
+                        MaximumPosition = axis.MaximumPosition.Value,
+                        SoftLimitEnabled = axis.SoftLimitEnabled.Value,
+                        ManualSpeed = axis.ManualSpeed.Value,
+                        HomeMode = axis.HomeMode.GetValueOrDefault(),
+                        HomeSearchSpeed = axis.HomeSearchSpeed.GetValueOrDefault(),
+                        HomeCreepSpeed = axis.HomeCreepSpeed.GetValueOrDefault(),
+                        HomeAcceleration = axis.HomeAcceleration.GetValueOrDefault(),
+                        HomeDeceleration = axis.HomeDeceleration.GetValueOrDefault()
+                    });
+                    result.AxisHardwareDefinitions.Add(new AxisHardwareDefinition
+                    {
+                        Name = axis.Name,
+                        ControllerId = axis.ControllerId,
+                        AxisNumber = axis.AxisNumber,
+                        MinimumPosition = axis.MinimumPosition.Value,
+                        MaximumPosition = axis.MaximumPosition.Value,
+                        SoftLimitEnabled = axis.SoftLimitEnabled.Value,
+                        ManualSpeed = axis.ManualSpeed.Value
+                    });
+                }
+            }
+
+            string ioPath = GetConfigurationPath(IoMappingFilePath);
+            if (!File.Exists(ioPath))
+            {
+                return result;
+            }
+
+            IoMappingConfigurationDocument ioDocument = _configurationStore
+                .LoadJson<IoMappingConfigurationDocument>(_machineId, IoMappingFilePath);
+            if (ioDocument == null || ioDocument.SchemaVersion != 1
+                || ioDocument.DigitalInputs == null || ioDocument.DigitalOutputs == null)
+            {
+                throw new InvalidOperationException("IoMapping.json 格式无效，不能创建手动调试 IO 对象。");
+            }
+
+            result.EmergencyStopInputName = ioDocument.EmergencyStopInputName ?? string.Empty;
+            AddIoMappings(result, ioDocument.DigitalInputs, controllerId, true);
+            AddIoMappings(result, ioDocument.DigitalOutputs, controllerId, false);
+            return result;
+        }
+
+        /// <summary>把同一张卡的逻辑 DI 或 DO 映射复制到适配器和手动页配置中。</summary>
+        private static void AddIoMappings(
+            LoadedMotionMappings mappings,
+            IEnumerable<DigitalIoHardwareDefinition> points,
+            string controllerId,
+            bool isInput)
+        {
+            foreach (DigitalIoHardwareDefinition point in points)
+            {
+                if (point == null)
+                {
+                    throw new InvalidOperationException("IoMapping.json 中包含空 IO 配置。");
+                }
+
+                if (!string.Equals(point.ControllerId, controllerId, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var adapterPoint = new ZMotionIoPointConfiguration
+                {
+                    ControllerId = point.ControllerId,
+                    Name = point.Name,
+                    Channel = point.Channel,
+                    ActiveHigh = point.ActiveHigh
+                };
+                if (isInput)
+                {
+                    mappings.DigitalInputs.Add(adapterPoint);
+                    mappings.AxisDigitalInputs.Add(point);
+                }
+                else
+                {
+                    mappings.DigitalOutputs.Add(adapterPoint);
+                    mappings.AxisDigitalOutputs.Add(point);
+                }
+            }
+        }
+
+        /// <summary>取得当前 MachineId 下指定硬件配置文件的完整路径。</summary>
+        private string GetConfigurationPath(string relativeFilePath)
+        {
+            return Path.Combine(
+                _configurationStore.GetMachineDirectory(_machineId),
+                relativeFilePath.Replace('/', Path.DirectorySeparatorChar));
+        }
+
+        /// <summary>暂存从设备配置文件转换出的卡轴、逻辑 IO 和页面显示定义。</summary>
+        private sealed class LoadedMotionMappings
+        {
+            /// <summary>创建空的已映射轴和 IO 集合。</summary>
+            public LoadedMotionMappings()
+            {
+                AxisConfigurations = new List<ZMotionAxisConfiguration>();
+                AxisHardwareDefinitions = new List<AxisHardwareDefinition>();
+                DigitalInputs = new List<ZMotionIoPointConfiguration>();
+                DigitalOutputs = new List<ZMotionIoPointConfiguration>();
+                AxisDigitalInputs = new List<DigitalIoHardwareDefinition>();
+                AxisDigitalOutputs = new List<DigitalIoHardwareDefinition>();
+                EmergencyStopInputName = string.Empty;
+            }
+
+            /// <summary>交给正运动适配器创建的逻辑轴配置。</summary>
+            public List<ZMotionAxisConfiguration> AxisConfigurations { get; private set; }
+
+            /// <summary>交给手动调试页检查软限位和显示物理轴号的配置。</summary>
+            public List<AxisHardwareDefinition> AxisHardwareDefinitions { get; private set; }
+
+            /// <summary>交给正运动适配器创建的逻辑 DI 配置。</summary>
+            public List<ZMotionIoPointConfiguration> DigitalInputs { get; private set; }
+
+            /// <summary>交给正运动适配器创建的逻辑 DO 配置。</summary>
+            public List<ZMotionIoPointConfiguration> DigitalOutputs { get; private set; }
+
+            /// <summary>交给手动调试页显示的逻辑 DI 配置。</summary>
+            public List<DigitalIoHardwareDefinition> AxisDigitalInputs { get; private set; }
+
+            /// <summary>交给手动调试页显示的逻辑 DO 配置。</summary>
+            public List<DigitalIoHardwareDefinition> AxisDigitalOutputs { get; private set; }
+
+            /// <summary>由 IoMapping.json 保存的急停逻辑 DI 名称。</summary>
+            public string EmergencyStopInputName { get; set; }
         }
 
         /// <summary>读取指定物理轴的 UNITS、软限位、速度、爬行速度和加减速度。</summary>

@@ -152,6 +152,7 @@
     <sys:String x:Key="参数不能为无穷或NaN">{0}不能是无穷大或 NaN。</sys:String>
     <sys:String x:Key="目标位置超出软限位范围">目标位置超出软限位范围：{0} 到 {1}。</sys:String>
     <sys:String x:Key="轴卡片物理通道格式">控制卡 {0} · 物理轴 Axis{1}</sys:String>
+    <sys:String x:Key="添加位置">添加位置</sys:String>
     <sys:String x:Key="示教位置">示教位置</sys:String>
     <sys:String x:Key="位置名称">位置名称</sys:String>
     <sys:String x:Key="写入当前位置">写入当前位置</sys:String>

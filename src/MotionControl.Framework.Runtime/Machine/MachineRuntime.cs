@@ -12,8 +12,8 @@ using MotionControl.Framework.Runtime.FlowScheduling;
 namespace MotionControl.Framework.Runtime.Machine
 {
     /// <summary>
-    /// 管理一台设备的卡连接、复位、启动、暂停和急停监控。各工位流程由设备项目提供，
-    /// 暂停后保留工位当前步骤，复位成功后才能再次启动。
+    /// 管理一台设备的卡连接、复位、启动、暂停和急停监控。各工位流程由设备项目提供；
+    /// 没有流程时可以连接控制卡进行手动调试，但不能启动自动运行。
     /// </summary>
     public sealed class MachineRuntime
     {
@@ -68,7 +68,7 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>取消当前急停监控任务的令牌源。</summary>
         private CancellationTokenSource _safetyMonitorCancellation;
 
-        /// <summary>创建单机运行上下文，并设置流程暂停时限和急停状态轮询间隔。</summary>
+        /// <summary>创建单机运行上下文；工位流程可以为空，并设置暂停时限和急停轮询间隔。</summary>
         public MachineRuntime(
             MotionCardGroup motionCards,
             IEnumerable<IStationFlow> stationFlows,
@@ -296,6 +296,11 @@ namespace MotionControl.Framework.Runtime.Machine
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                if (_flowScheduler.StationFlows.Count == 0)
+                {
+                    throw new InvalidOperationException("尚未配置工位流程，不能启动自动运行。");
+                }
+
                 EnsureState(MachineRunState.Ready, "启动前必须先成功复位设备。");
                 try
                 {

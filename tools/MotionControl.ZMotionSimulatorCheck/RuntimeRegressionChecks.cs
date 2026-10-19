@@ -24,6 +24,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             var failures = new List<string>();
             await RunCheckAsync("连接中途失败后回收已连接卡", ConnectionFailureRollsBackEarlierCardsAsync, failures);
             await RunCheckAsync("重复逻辑轴名称被拒绝", DuplicateAxisNameIsRejectedAsync, failures);
+            await RunCheckAsync("未配置自动流程时允许连接手动调试但禁止启动", ManualOnlyRuntimeConnectsButCannotStartAsync, failures);
             await RunCheckAsync("必须复位后启动，暂停后保留当前步骤", ResetAndPauseKeepCurrentStepAsync, failures);
             await RunCheckAsync("停机报警暂停流程并要求复位", StopAlarmPausesMachineUntilResetAsync, failures);
             await RunCheckAsync("非停机报警在条件恢复后自动清除", NonStopAlarmClearsWhenRecoveredAsync, failures);
@@ -73,6 +74,27 @@ namespace MotionControl.ZMotionSimulatorCheck
             var secondCard = new FakeMotionCard("CardB", new FakeAxis("x"));
             ExpectException<ArgumentException>(() => new MotionCardGroup(new IMotionCard[] { firstCard, secondCard }));
             return Task.CompletedTask;
+        }
+
+        /// <summary>确认只做轴手动调试的设备可以连接和复位，但不会空跑自动流程。</summary>
+        private static async Task ManualOnlyRuntimeConnectsButCannotStartAsync()
+        {
+            var card = new FakeMotionCard("ManualCard", new FakeAxis("X"));
+            var runtime = new MachineRuntime(
+                new MotionCardGroup(new IMotionCard[] { card }),
+                new IStationFlow[0],
+                new MachineAlarmService(),
+                new FakeSafetyStatus());
+
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(runtime.State == MachineRunState.ResetRequired, "手动调试设备连接后没有进入待复位状态。");
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(runtime.State == MachineRunState.Ready, "手动调试设备复位后没有进入就绪状态。");
+            await ExpectExceptionAsync<InvalidOperationException>(
+                () => runtime.StartAsync(CancellationToken.None)).ConfigureAwait(false);
+            Ensure(runtime.State == MachineRunState.Ready, "无工位流程时误启动改变了整机状态。");
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(!card.IsConnected, "手动调试设备断开后控制卡仍处于连接状态。");
         }
 
         /// <summary>确认启动前必须复位，暂停和复位后保留相同的工位步骤。</summary>

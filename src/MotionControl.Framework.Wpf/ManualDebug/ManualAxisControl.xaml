@@ -19,10 +19,14 @@
                     <TextBlock x:Name="AxisHardwareText" Margin="0,2,0,0" FontSize="11" Foreground="#68737B" />
                 </StackPanel>
                 <Button Grid.Column="1"
-                        Content="＋ 添加位置"
                         Click="AddPositionButton_Click"
                         Padding="10,5"
-                        VerticalAlignment="Center" />
+                        VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="＋" />
+                        <TextBlock Text="{DynamicResource 添加位置}" Margin="3,0,0,0" />
+                    </StackPanel>
+                </Button>
             </Grid>
 
             <TextBlock x:Name="AxisStatusText"
