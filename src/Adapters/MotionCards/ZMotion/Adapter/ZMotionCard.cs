@@ -411,17 +411,28 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     var handle = GetConnectedHandle();
                     var axisName = GetPhysicalAxisName(parameters.AxisNumber);
                     EnsureAxisIdle(handle, parameters.AxisNumber, axisName);
+                    double minimumPosition = parameters.MinimumPosition;
+                    double maximumPosition = parameters.MaximumPosition;
+                    if (!parameters.SoftLimitEnabled.Value)
+                    {
+                        GetDisabledSoftLimitPositions(
+                            handle,
+                            parameters.AxisNumber,
+                            axisName,
+                            out minimumPosition,
+                            out maximumPosition);
+                    }
 
                     CheckResult(
                         zmcaux.ZAux_Direct_SetUnits(handle, parameters.AxisNumber, (float)parameters.UnitsPerEngineeringUnit),
                         "写入 UNITS 单位换算",
                         axisName);
                     CheckResult(
-                        zmcaux.ZAux_Direct_SetRsLimit(handle, parameters.AxisNumber, (float)parameters.MinimumPosition),
+                        zmcaux.ZAux_Direct_SetRsLimit(handle, parameters.AxisNumber, (float)minimumPosition),
                         "写入 RS_LIMIT 负向软限位",
                         axisName);
                     CheckResult(
-                        zmcaux.ZAux_Direct_SetFsLimit(handle, parameters.AxisNumber, (float)parameters.MaximumPosition),
+                        zmcaux.ZAux_Direct_SetFsLimit(handle, parameters.AxisNumber, (float)maximumPosition),
                         "写入 FS_LIMIT 正向软限位",
                         axisName);
                     CheckResult(
@@ -1023,6 +1034,17 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     EnsureAxisIdle(handle, axis);
+                    double minimumPosition = axis.Configuration.MinimumPosition;
+                    double maximumPosition = axis.Configuration.MaximumPosition;
+                    if (!axis.Configuration.SoftLimitEnabled)
+                    {
+                        GetDisabledSoftLimitPositions(
+                            handle,
+                            axis.AxisNumber,
+                            axis.Name,
+                            out minimumPosition,
+                            out maximumPosition);
+                    }
                     CheckResult(
                         zmcaux.ZAux_Direct_SetUnits(
                             handle,
@@ -1034,14 +1056,14 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                         zmcaux.ZAux_Direct_SetRsLimit(
                             handle,
                             axis.AxisNumber,
-                            (float)axis.Configuration.MinimumPosition),
+                            (float)minimumPosition),
                         "应用负向软件限位",
                         axis.Name);
                     CheckResult(
                         zmcaux.ZAux_Direct_SetFsLimit(
                             handle,
                             axis.AxisNumber,
-                            (float)axis.Configuration.MaximumPosition),
+                            (float)maximumPosition),
                         "应用正向软件限位",
                         axis.Name);
                 }
@@ -1308,6 +1330,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             {
                 parameters.PositiveSoftLimitEffective = null;
                 parameters.NegativeSoftLimitEffective = null;
+                parameters.SoftLimitEnabled = null;
                 parameters.SoftLimitStatusDiagnostic =
                     "正运动物理轴 '" + axisName + "' 读取 REP_DIST 失败，厂商错误码：" + result + "。";
                 return;
@@ -1317,6 +1340,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             {
                 parameters.PositiveSoftLimitEffective = null;
                 parameters.NegativeSoftLimitEffective = null;
+                parameters.SoftLimitEnabled = null;
                 parameters.SoftLimitStatusDiagnostic =
                     "正运动物理轴 '" + axisName + "' 的 REP_DIST 不是大于零的有限数值，无法判断软限位状态。";
                 return;
@@ -1328,12 +1352,44 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             parameters.NegativeSoftLimitEffective = IsSoftLimitWithinRepeatDistance(
                 parameters.MinimumPosition,
                 repeatDistance);
+            parameters.SoftLimitEnabled = parameters.PositiveSoftLimitEffective.HasValue
+                && parameters.NegativeSoftLimitEffective.HasValue
+                && parameters.PositiveSoftLimitEffective.Value == parameters.NegativeSoftLimitEffective.Value
+                    ? parameters.PositiveSoftLimitEffective.Value
+                    : (bool?)null;
 
             if (!parameters.PositiveSoftLimitEffective.HasValue || !parameters.NegativeSoftLimitEffective.HasValue)
             {
                 parameters.SoftLimitStatusDiagnostic =
                     "正运动物理轴 '" + axisName + "' 的 FS_LIMIT 或 RS_LIMIT 读回值无效，无法判断对应方向。";
             }
+        }
+
+        /// <summary>读取 REP_DIST 并计算卡上无效范围，用于停用正负软限位但保留控制器设置。</summary>
+        private void GetDisabledSoftLimitPositions(
+            IntPtr handle,
+            int axisNumber,
+            string axisName,
+            out double minimumPosition,
+            out double maximumPosition)
+        {
+            float repeatDistance = 0;
+            int result = zmcaux.ZAux_Direct_GetRepDist(handle, axisNumber, ref repeatDistance);
+            CheckResult(result, "读取 REP_DIST 以停用软限位", axisName);
+
+            float disabledLimit = repeatDistance * 2.0f;
+            if (!IsFinite(repeatDistance)
+                || repeatDistance <= 0
+                || !IsFinite(disabledLimit)
+                || disabledLimit <= repeatDistance)
+            {
+                throw new InvalidOperationException(
+                    "正运动物理轴 '" + axisName
+                    + "' 的 REP_DIST 无法生成大于有效区间的软限位停用值；未写入该轴参数。");
+            }
+
+            minimumPosition = -disabledLimit;
+            maximumPosition = disabledLimit;
         }
 
         /// <summary>判断一个软限位位置是否处于正运动规定的 REP_DIST 有效范围内。</summary>
@@ -1360,14 +1416,20 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         private static void ValidatePhysicalAxisParameters(ZMotionPhysicalAxisParameters parameters)
         {
             ValidatePhysicalAxisNumber(parameters.AxisNumber);
+            if (!parameters.SoftLimitEnabled.HasValue)
+            {
+                throw new ArgumentException("必须明确指定是否启用正负软限位。", nameof(parameters));
+            }
+
             if (!IsFinite(parameters.UnitsPerEngineeringUnit) || parameters.UnitsPerEngineeringUnit <= 0)
             {
                 throw new ArgumentOutOfRangeException(nameof(parameters), "UNITS 必须是大于零的有限数值。");
             }
 
-            if (!IsFinite(parameters.MinimumPosition)
-                || !IsFinite(parameters.MaximumPosition)
-                || parameters.MinimumPosition >= parameters.MaximumPosition)
+            if (parameters.SoftLimitEnabled.Value
+                && (!IsFinite(parameters.MinimumPosition)
+                    || !IsFinite(parameters.MaximumPosition)
+                    || parameters.MinimumPosition >= parameters.MaximumPosition))
             {
                 throw new ArgumentOutOfRangeException(nameof(parameters), "软限位必须是有限数值，且下限小于上限。");
             }
@@ -1411,8 +1473,9 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         /// <summary>检查目标位置是否落在轴配置的仿真软件限位范围内。</summary>
         private void EnsureTargetWithinLimits(ZMotionAxis axis, double targetPosition)
         {
-            if (targetPosition < axis.Configuration.MinimumPosition
-                || targetPosition > axis.Configuration.MaximumPosition)
+            if (axis.Configuration.SoftLimitEnabled
+                && (targetPosition < axis.Configuration.MinimumPosition
+                    || targetPosition > axis.Configuration.MaximumPosition))
             {
                 throw new ArgumentOutOfRangeException(
                     nameof(targetPosition),

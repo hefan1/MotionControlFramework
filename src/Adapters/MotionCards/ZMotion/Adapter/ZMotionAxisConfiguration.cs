@@ -9,6 +9,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         public ZMotionAxisConfiguration()
         {
             ManualSpeed = 5;
+            SoftLimitEnabled = true;
         }
 
         /// <summary>设备硬件配置中所属的控制卡标识。</summary>
@@ -24,6 +25,9 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         public double MinimumPosition { get; set; }
 
         public double MaximumPosition { get; set; }
+
+        /// <summary>控制卡和适配器是否启用正负软限位，默认启用以保持保护。</summary>
+        public bool SoftLimitEnabled { get; set; }
 
         /// <summary>手动调试页面初始速度，单位为工程单位/秒。</summary>
         public double ManualSpeed { get; set; }
@@ -67,9 +71,10 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     "轴 '" + Name + "' 的 UnitsPerEngineeringUnit 必须是大于 0 的有限数值。");
             }
 
-            if (!IsFinite(MinimumPosition)
-                || !IsFinite(MaximumPosition)
-                || MinimumPosition >= MaximumPosition)
+            if (SoftLimitEnabled
+                && (!IsFinite(MinimumPosition)
+                    || !IsFinite(MaximumPosition)
+                    || MinimumPosition >= MaximumPosition))
             {
                 throw new InvalidOperationException(
                     "轴 '" + Name + "' 的仿真软限位范围无效：MinimumPosition 必须小于 MaximumPosition。");

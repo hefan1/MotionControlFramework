@@ -15,6 +15,9 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         /// <summary>控制器当前正向软限位位置。</summary>
         public double MaximumPosition { get; set; }
 
+        /// <summary>下发时要求正负软限位启用或停用；读卡状态不一致或未知时为空。</summary>
+        public bool? SoftLimitEnabled { get; set; }
+
         /// <summary>根据卡上正向软限位参数和 REP_DIST 判断该方向限制是否生效。</summary>
         public bool? PositiveSoftLimitEffective { get; set; }
 

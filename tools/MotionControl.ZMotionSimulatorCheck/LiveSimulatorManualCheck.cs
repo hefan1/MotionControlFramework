@@ -211,6 +211,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 AxisNumber = axisConfiguration.AxisNumber,
                 MinimumPosition = axisConfiguration.MinimumPosition,
                 MaximumPosition = axisConfiguration.MaximumPosition,
+                SoftLimitEnabled = axisConfiguration.SoftLimitEnabled,
                 ManualSpeed = axisConfiguration.ManualSpeed
             };
         }

@@ -224,6 +224,10 @@
     <sys:String x:Key="脉冲每工程单位">脉冲 / 单位</sys:String>
     <sys:String x:Key="软限位下限">软限位下限</sys:String>
     <sys:String x:Key="软限位上限">软限位上限</sys:String>
+    <sys:String x:Key="软限位启用">软限位启用</sys:String>
+    <sys:String x:Key="未设置">未设置</sys:String>
+    <sys:String x:Key="启用">启用</sys:String>
+    <sys:String x:Key="停用">停用</sys:String>
     <sys:String x:Key="配置状态">配置状态</sys:String>
     <sys:String x:Key="已配置">已配置</sys:String>
     <sys:String x:Key="未配置">未配置</sys:String>
@@ -263,7 +267,9 @@
     <sys:String x:Key="轴映射保存位置">控制卡参数与轴映射分别保存到设备 JSON 配置。</sys:String>
     <sys:String x:Key="轴映射保存路径格式">MotionCards.json：{0}；AxisParameters.json：{1}</sys:String>
     <sys:String x:Key="轴映射读取完成">已读取当前设备的轴参数。</sys:String>
-    <sys:String x:Key="轴参数读卡回填完成格式">Axis{0} 卡上参数已填入编辑区；尚未保存配置。</sys:String>
+    <sys:String x:Key="轴参数读卡回填完成格式">Axis{0} 卡上有效参数已填入编辑区；尚未保存配置。</sys:String>
+    <sys:String x:Key="轴参数读卡回填部分格式">Axis{0} 卡上有效参数已填入；以下读数无效，未覆盖编辑值：{1}。尚未保存配置。</sys:String>
+    <sys:String x:Key="软限位停用时未回填范围">软限位当前停用，未把卡上的停用占位范围写入轴配置。</sys:String>
     <sys:String x:Key="轴映射读取失败">读取轴参数失败，已停止保存以免覆盖原文件：{0}</sys:String>
     <sys:String x:Key="检查映射">检查映射</sys:String>
     <sys:String x:Key="保存配置">保存配置</sys:String>
@@ -281,7 +287,8 @@
     <sys:String x:Key="工程单位未选择格式">{0} 尚未选择工程单位。</sys:String>
     <sys:String x:Key="轴参数大于零格式">{0} 的 {1} 必须是大于零的有效数值。</sys:String>
     <sys:String x:Key="轴软限位无效格式">{0} 的软限位下限必须小于上限，且两项必须是有效数值。</sys:String>
-    <sys:String x:Key="轴加减速度无效格式">{0} 的手动、点动和回零加减速度必须是大于零的有效数值。</sys:String>
+    <sys:String x:Key="轴加减速度无效格式">{0} 的回零加速度和回零减速度必须是大于零的有效数值。</sys:String>
+    <sys:String x:Key="轴软限位启用未选择格式">{0} 尚未选择是否启用软限位。</sys:String>
     <sys:String x:Key="轴回零速度无效格式">{0} 的回零搜索速度和爬行速度必须是大于零的有效数值。</sys:String>
     <sys:String x:Key="轴回零模式无效格式">{0} 尚未配置 {1} 支持的回零模式，或编号属于其他厂商。请重新选择。</sys:String>
 </ResourceDictionary>

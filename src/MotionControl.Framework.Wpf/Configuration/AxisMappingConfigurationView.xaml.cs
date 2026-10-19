@@ -188,6 +188,7 @@ namespace MotionControl.Framework.Wpf.Configuration
                 {
                     SelectComboBoxItem(AxisTypeComboBox, axis.AxisType);
                     SelectComboBoxItem(EngineeringUnitComboBox, axis.EngineeringUnit);
+                    UpdateSoftLimitEnabledEditor(axis);
                     UpdateHomeModeEditor(axis);
                 }
             }
@@ -290,6 +291,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             axis.UnitsPerEngineeringUnit = null;
             axis.MinimumPosition = null;
             axis.MaximumPosition = null;
+            axis.SoftLimitEnabled = null;
             axis.ManualSpeed = null;
             axis.HomeMode = null;
             axis.HomeModeVendor = null;
@@ -376,6 +378,7 @@ namespace MotionControl.Framework.Wpf.Configuration
                 visibleAxis.UnitsPerEngineeringUnit = configuredAxis.UnitsPerEngineeringUnit;
                 visibleAxis.MinimumPosition = configuredAxis.MinimumPosition;
                 visibleAxis.MaximumPosition = configuredAxis.MaximumPosition;
+                visibleAxis.SoftLimitEnabled = configuredAxis.SoftLimitEnabled;
                 visibleAxis.ManualSpeed = configuredAxis.ManualSpeed;
                 visibleAxis.HomeMode = configuredAxis.HomeMode;
                 visibleAxis.HomeModeVendor = configuredAxis.HomeModeVendor;
@@ -480,6 +483,7 @@ namespace MotionControl.Framework.Wpf.Configuration
 
             SelectComboBoxItem(AxisTypeComboBox, axis.AxisType);
             SelectComboBoxItem(EngineeringUnitComboBox, axis.EngineeringUnit);
+            UpdateSoftLimitEnabledEditor(axis);
             UpdateHomeModeEditor(axis);
         }
 
@@ -623,10 +627,9 @@ namespace MotionControl.Framework.Wpf.Configuration
         {
             return axis != null
                 && axis.IsConfigured
+                && axis.SoftLimitEnabled.HasValue
                 && IsFinite(axis.UnitsPerEngineeringUnit) && axis.UnitsPerEngineeringUnit.Value > 0
-                && IsFinite(axis.MinimumPosition)
-                && IsFinite(axis.MaximumPosition)
-                && axis.MinimumPosition.Value < axis.MaximumPosition.Value
+                && (!axis.SoftLimitEnabled.Value || HasValidSoftLimitRange(axis))
                 && IsFinite(axis.HomeSearchSpeed) && axis.HomeSearchSpeed.Value > 0
                 && IsFinite(axis.HomeCreepSpeed) && axis.HomeCreepSpeed.Value > 0
                 && IsFinite(axis.HomeAcceleration) && axis.HomeAcceleration.Value > 0
@@ -721,17 +724,57 @@ namespace MotionControl.Framework.Wpf.Configuration
                     return;
                 }
 
-                axis.UnitsPerEngineeringUnit = parameters.UnitsPerEngineeringUnit;
-                axis.MinimumPosition = parameters.MinimumPosition;
-                axis.MaximumPosition = parameters.MaximumPosition;
-                axis.HomeSearchSpeed = parameters.Speed;
-                axis.HomeCreepSpeed = parameters.CreepSpeed;
-                axis.HomeAcceleration = parameters.Acceleration;
-                axis.HomeDeceleration = parameters.Deceleration;
-                ConfigurationStatusText.Text = string.Format(
-                    CultureInfo.CurrentCulture,
-                    (string)FindResource("轴参数读卡回填完成格式"),
-                    axis.AxisNumber);
+                var invalidValues = new List<string>();
+                CopyPositiveValue(parameters.UnitsPerEngineeringUnit, value => axis.UnitsPerEngineeringUnit = value, "UNITS", invalidValues);
+
+                bool? controllerSoftLimitEnabled = GetCombinedSoftLimitState(parameters);
+                if (controllerSoftLimitEnabled.HasValue)
+                {
+                    axis.SoftLimitEnabled = controllerSoftLimitEnabled;
+                    if (controllerSoftLimitEnabled.Value)
+                    {
+                        if (IsValidSoftLimitRange(parameters.MinimumPosition, parameters.MaximumPosition))
+                        {
+                            axis.MinimumPosition = parameters.MinimumPosition;
+                            axis.MaximumPosition = parameters.MaximumPosition;
+                        }
+                        else
+                        {
+                            invalidValues.Add("RS_LIMIT/FS_LIMIT");
+                        }
+                    }
+                }
+                else
+                {
+                    invalidValues.Add("软限位状态");
+                }
+                UpdateSoftLimitEnabledEditor(axis);
+
+                CopyPositiveValue(parameters.Speed, value => axis.HomeSearchSpeed = value, "SPEED", invalidValues);
+                CopyPositiveValue(parameters.CreepSpeed, value => axis.HomeCreepSpeed = value, "CREEP", invalidValues);
+                CopyPositiveValue(parameters.Acceleration, value => axis.HomeAcceleration = value, "ACCEL", invalidValues);
+                CopyPositiveValue(parameters.Deceleration, value => axis.HomeDeceleration = value, "DECEL", invalidValues);
+
+                if (invalidValues.Count == 0)
+                {
+                    ConfigurationStatusText.Text = string.Format(
+                        CultureInfo.CurrentCulture,
+                        (string)FindResource("轴参数读卡回填完成格式"),
+                        axis.AxisNumber);
+                }
+                else
+                {
+                    ConfigurationStatusText.Text = string.Format(
+                        CultureInfo.CurrentCulture,
+                        (string)FindResource("轴参数读卡回填部分格式"),
+                        axis.AxisNumber,
+                        string.Join("、", invalidValues.Distinct()));
+                }
+
+                if (controllerSoftLimitEnabled == false)
+                {
+                    ConfigurationStatusText.Text += " " + (string)FindResource("软限位停用时未回填范围");
+                }
             }
             finally
             {
@@ -769,8 +812,9 @@ namespace MotionControl.Framework.Wpf.Configuration
                 {
                     AxisNumber = SelectedAxis.AxisNumber,
                     UnitsPerEngineeringUnit = SelectedAxis.UnitsPerEngineeringUnit.Value,
-                    MinimumPosition = SelectedAxis.MinimumPosition.Value,
-                    MaximumPosition = SelectedAxis.MaximumPosition.Value,
+                    MinimumPosition = SelectedAxis.MinimumPosition.GetValueOrDefault(),
+                    MaximumPosition = SelectedAxis.MaximumPosition.GetValueOrDefault(),
+                    SoftLimitEnabled = SelectedAxis.SoftLimitEnabled.Value,
                     Speed = SelectedAxis.HomeSearchSpeed.Value,
                     CreepSpeed = SelectedAxis.HomeCreepSpeed.Value,
                     Acceleration = SelectedAxis.HomeAcceleration.Value,
@@ -807,14 +851,18 @@ namespace MotionControl.Framework.Wpf.Configuration
             AxisMappingCardParameters actualParameters)
         {
             if (requestedParameters == null || actualParameters == null
-                || requestedParameters.AxisNumber != actualParameters.AxisNumber)
+                || requestedParameters.AxisNumber != actualParameters.AxisNumber
+                || !requestedParameters.SoftLimitEnabled.HasValue)
             {
                 return false;
             }
 
             return AreControllerValuesEqual(requestedParameters.UnitsPerEngineeringUnit, actualParameters.UnitsPerEngineeringUnit)
-                && AreControllerValuesEqual(requestedParameters.MinimumPosition, actualParameters.MinimumPosition)
-                && AreControllerValuesEqual(requestedParameters.MaximumPosition, actualParameters.MaximumPosition)
+                && actualParameters.PositiveSoftLimitEffective == requestedParameters.SoftLimitEnabled
+                && actualParameters.NegativeSoftLimitEffective == requestedParameters.SoftLimitEnabled
+                && (!requestedParameters.SoftLimitEnabled.Value
+                    || (AreControllerValuesEqual(requestedParameters.MinimumPosition, actualParameters.MinimumPosition)
+                        && AreControllerValuesEqual(requestedParameters.MaximumPosition, actualParameters.MaximumPosition)))
                 && AreControllerValuesEqual(requestedParameters.Speed, actualParameters.Speed)
                 && AreControllerValuesEqual(requestedParameters.CreepSpeed, actualParameters.CreepSpeed)
                 && AreControllerValuesEqual(requestedParameters.Acceleration, actualParameters.Acceleration)
@@ -890,6 +938,48 @@ namespace MotionControl.Framework.Wpf.Configuration
             if (!_loadingConfiguration && SelectedAxis != null)
             {
                 SelectedAxis.EngineeringUnit = GetSelectedTag(EngineeringUnitComboBox);
+            }
+        }
+
+        /// <summary>把软限位下拉框选项保存到当前物理轴配置。</summary>
+        private void SoftLimitEnabledComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loadingConfiguration || SelectedAxis == null || SoftLimitEnabledComboBox.SelectedItem == null)
+            {
+                return;
+            }
+
+            string selectedValue = GetSelectedTag(SoftLimitEnabledComboBox);
+            bool enabled;
+            SelectedAxis.SoftLimitEnabled = bool.TryParse(selectedValue, out enabled) ? (bool?)enabled : null;
+        }
+
+        /// <summary>按当前轴配置恢复软限位下拉框选项。</summary>
+        private void UpdateSoftLimitEnabledEditor(AxisMappingEntry axis)
+        {
+            bool wasLoadingConfiguration = _loadingConfiguration;
+            _loadingConfiguration = true;
+            try
+            {
+                SoftLimitEnabledComboBox.SelectedIndex = 0;
+                if (axis == null || !axis.SoftLimitEnabled.HasValue)
+                {
+                    return;
+                }
+
+                string desiredTag = axis.SoftLimitEnabled.Value ? "True" : "False";
+                foreach (ComboBoxItem item in SoftLimitEnabledComboBox.Items)
+                {
+                    if (string.Equals(item.Tag as string, desiredTag, StringComparison.OrdinalIgnoreCase))
+                    {
+                        SoftLimitEnabledComboBox.SelectedItem = item;
+                        return;
+                    }
+                }
+            }
+            finally
+            {
+                _loadingConfiguration = wasLoadingConfiguration;
             }
         }
 
@@ -1126,11 +1216,17 @@ namespace MotionControl.Framework.Wpf.Configuration
                     errors.Add(string.Format((string)FindResource("轴参数大于零格式"), axisName, (string)FindResource("单位换算")));
                 }
 
-                if (!IsFinite(axis.MinimumPosition)
-                    || !IsFinite(axis.MaximumPosition)
-                    || axis.MinimumPosition.Value >= axis.MaximumPosition.Value)
+                if (!axis.SoftLimitEnabled.HasValue)
                 {
-                    errors.Add(string.Format((string)FindResource("轴软限位无效格式"), axisName));
+                    errors.Add(string.Format((string)FindResource("轴软限位启用未选择格式"), axisName));
+                }
+
+                if (axis.SoftLimitEnabled == true || axis.MinimumPosition.HasValue || axis.MaximumPosition.HasValue)
+                {
+                    if (!HasValidSoftLimitRange(axis))
+                    {
+                        errors.Add(string.Format((string)FindResource("轴软限位无效格式"), axisName));
+                    }
                 }
 
                 if (!IsFinite(axis.ManualSpeed) || axis.ManualSpeed.Value <= 0)
@@ -1172,6 +1268,7 @@ namespace MotionControl.Framework.Wpf.Configuration
                 || axis.UnitsPerEngineeringUnit.HasValue
                 || axis.MinimumPosition.HasValue
                 || axis.MaximumPosition.HasValue
+                || axis.SoftLimitEnabled.HasValue
                 || axis.ManualSpeed.HasValue
                 || axis.HomeMode.HasValue
                 || !string.IsNullOrWhiteSpace(axis.HomeModeVendor)
@@ -1192,6 +1289,50 @@ namespace MotionControl.Framework.Wpf.Configuration
         private static bool IsFinite(double? value)
         {
             return value.HasValue && !double.IsNaN(value.Value) && !double.IsInfinity(value.Value);
+        }
+
+        /// <summary>检查配置中的软限位下限、上限均有效且下限小于上限。</summary>
+        private static bool HasValidSoftLimitRange(AxisMappingEntry axis)
+        {
+            return axis != null && IsValidSoftLimitRange(axis.MinimumPosition, axis.MaximumPosition);
+        }
+
+        /// <summary>检查一组正负软限位值是否有效。</summary>
+        private static bool IsValidSoftLimitRange(double? minimumPosition, double? maximumPosition)
+        {
+            return IsFinite(minimumPosition)
+                && IsFinite(maximumPosition)
+                && minimumPosition.Value < maximumPosition.Value;
+        }
+
+        /// <summary>只把大于零的有效卡参数回填，避免零值覆盖用户已配置的运动参数。</summary>
+        private static void CopyPositiveValue(
+            double controllerValue,
+            Action<double> copyValue,
+            string parameterName,
+            ICollection<string> invalidValues)
+        {
+            if (IsFinite(controllerValue) && controllerValue > 0)
+            {
+                copyValue(controllerValue);
+                return;
+            }
+
+            invalidValues.Add(parameterName);
+        }
+
+        /// <summary>只有正负方向都处于同一可判定状态时，才得到整体软限位开关状态。</summary>
+        private static bool? GetCombinedSoftLimitState(AxisMappingCardParameters parameters)
+        {
+            if (parameters == null
+                || !parameters.PositiveSoftLimitEffective.HasValue
+                || !parameters.NegativeSoftLimitEffective.HasValue
+                || parameters.PositiveSoftLimitEffective.Value != parameters.NegativeSoftLimitEffective.Value)
+            {
+                return null;
+            }
+
+            return parameters.PositiveSoftLimitEffective.Value;
         }
 
         /// <summary>向 WPF 页面发送指定属性已变化的通知。</summary>

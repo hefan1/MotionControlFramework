@@ -215,6 +215,10 @@
     <sys:String x:Key="脉冲每工程单位">pulses / unit</sys:String>
     <sys:String x:Key="软限位下限">Soft Limit Min</sys:String>
     <sys:String x:Key="软限位上限">Soft Limit Max</sys:String>
+    <sys:String x:Key="软限位启用">Soft Limits</sys:String>
+    <sys:String x:Key="未设置">Not set</sys:String>
+    <sys:String x:Key="启用">Enabled</sys:String>
+    <sys:String x:Key="停用">Disabled</sys:String>
     <sys:String x:Key="配置状态">Status</sys:String>
     <sys:String x:Key="已配置">Configured</sys:String>
     <sys:String x:Key="未配置">Not configured</sys:String>
@@ -254,7 +258,9 @@
     <sys:String x:Key="轴映射保存位置">Card settings and axis mappings use separate device JSON files.</sys:String>
     <sys:String x:Key="轴映射保存路径格式">MotionCards.json: {0}; AxisParameters.json: {1}</sys:String>
     <sys:String x:Key="轴映射读取完成">Loaded axis parameters for this machine.</sys:String>
-    <sys:String x:Key="轴参数读卡回填完成格式">Axis{0} card values were copied into the editor; changes are not saved.</sys:String>
+    <sys:String x:Key="轴参数读卡回填完成格式">Valid card values for Axis{0} were copied into the editor; changes are not saved.</sys:String>
+    <sys:String x:Key="轴参数读卡回填部分格式">Valid card values for Axis{0} were copied. These invalid values did not replace editor values: {1}. Changes are not saved.</sys:String>
+    <sys:String x:Key="软限位停用时未回填范围">Soft limits are disabled; controller placeholder limits were not copied into the axis configuration.</sys:String>
     <sys:String x:Key="轴映射读取失败">Failed to load axis parameters. Saving is disabled to protect the existing file: {0}</sys:String>
     <sys:String x:Key="检查映射">Check Mapping</sys:String>
     <sys:String x:Key="保存配置">Save Configuration</sys:String>
@@ -272,7 +278,8 @@
     <sys:String x:Key="工程单位未选择格式">{0} has no engineering unit selected.</sys:String>
     <sys:String x:Key="轴参数大于零格式">{0} {1} must be a valid number greater than zero.</sys:String>
     <sys:String x:Key="轴软限位无效格式">{0} soft limit minimum must be less than maximum; both values must be valid.</sys:String>
-    <sys:String x:Key="轴加减速度无效格式">{0} manual, jog, and home acceleration/deceleration must be valid numbers greater than zero.</sys:String>
+    <sys:String x:Key="轴加减速度无效格式">{0} home acceleration and deceleration must be valid numbers greater than zero.</sys:String>
+    <sys:String x:Key="轴软限位启用未选择格式">{0} must specify whether soft limits are enabled.</sys:String>
     <sys:String x:Key="轴回零速度无效格式">{0} home search and creep speeds must be valid numbers greater than zero.</sys:String>
     <sys:String x:Key="轴回零模式无效格式">{0} has no valid {1} home mode configured, or its number belongs to another vendor. Select the mode again.</sys:String>
 </ResourceDictionary>

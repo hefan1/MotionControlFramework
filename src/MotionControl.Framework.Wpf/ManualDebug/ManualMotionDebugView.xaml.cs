@@ -617,7 +617,8 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>拒绝超出轴配置软限位范围的手动定位目标。</summary>
         private void EnsurePositionWithinLimits(AxisHardwareDefinition configuration, double targetPosition)
         {
-            if (targetPosition < configuration.MinimumPosition || targetPosition > configuration.MaximumPosition)
+            if (configuration.SoftLimitEnabled != false
+                && (targetPosition < configuration.MinimumPosition || targetPosition > configuration.MaximumPosition))
             {
                 throw new ArgumentOutOfRangeException(
                     nameof(targetPosition),

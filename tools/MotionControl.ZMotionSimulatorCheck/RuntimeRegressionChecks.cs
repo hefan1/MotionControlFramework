@@ -209,6 +209,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                     AxisNumber = 0,
                     MinimumPosition = -100,
                     MaximumPosition = 100,
+                    SoftLimitEnabled = true,
                     ManualSpeed = 5,
                     ManualAcceleration = 10,
                     ManualDeceleration = 10
@@ -226,6 +227,30 @@ namespace MotionControl.ZMotionSimulatorCheck
             };
 
             MachineHardwareConfigurationValidator.Validate(cards, axes, inputs, new DigitalIoHardwareDefinition[0], "EmergencyStop");
+
+            axes[0].SoftLimitEnabled = null;
+            ExpectConfigurationFailureContaining(
+                () => MachineHardwareConfigurationValidator.Validate(
+                    cards, axes, inputs, new DigitalIoHardwareDefinition[0], "EmergencyStop"),
+                "尚未配置是否启用软限位");
+            axes[0].SoftLimitEnabled = true;
+
+            MachineHardwareConfigurationValidator.Validate(
+                cards,
+                new[]
+                {
+                    new AxisHardwareDefinition
+                    {
+                        ControllerId = "CardA",
+                        Name = "UnboundedManualAxis",
+                        AxisNumber = 1,
+                        SoftLimitEnabled = false,
+                        ManualSpeed = 5
+                    }
+                },
+                inputs,
+                new DigitalIoHardwareDefinition[0],
+                "EmergencyStop");
 
             ExpectConfigurationFailureContaining(
                 () => MachineHardwareConfigurationValidator.Validate(
@@ -257,6 +282,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                             AxisNumber = 0,
                             MinimumPosition = -100,
                             MaximumPosition = 100,
+                            SoftLimitEnabled = true,
                             ManualSpeed = 5,
                             ManualAcceleration = 10,
                             ManualDeceleration = 10
@@ -279,6 +305,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                             AxisNumber = 1,
                             MinimumPosition = -100,
                             MaximumPosition = 100,
+                            SoftLimitEnabled = true,
                             ManualSpeed = 5,
                             ManualAcceleration = 10,
                             ManualDeceleration = 10
@@ -329,6 +356,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                             AxisNumber = 0,
                             MinimumPosition = -100,
                             MaximumPosition = 100,
+                            SoftLimitEnabled = true,
                             ManualSpeed = 0,
                             ManualAcceleration = 10,
                             ManualDeceleration = 10
@@ -337,7 +365,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                     inputs,
                     new DigitalIoHardwareDefinition[0],
                     "EmergencyStop"),
-                "手动速度、加速度和减速度必须是大于 0 的有限数值");
+                "手动速度必须是大于 0 的有限数值");
             return Task.CompletedTask;
         }
 

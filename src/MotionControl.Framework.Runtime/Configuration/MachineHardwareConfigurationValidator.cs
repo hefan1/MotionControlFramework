@@ -150,9 +150,15 @@ namespace MotionControl.Framework.Runtime.Configuration
                     errors.Add("控制卡 '" + axis.ControllerId + "' 的物理轴号重复：" + axis.AxisNumber + "。");
                 }
 
-                if (!IsFinite(axis.MinimumPosition)
-                    || !IsFinite(axis.MaximumPosition)
-                    || axis.MinimumPosition >= axis.MaximumPosition)
+                if (!axis.SoftLimitEnabled.HasValue)
+                {
+                    errors.Add("逻辑轴 '" + displayName + "' 尚未配置是否启用软限位。");
+                }
+
+                if (axis.SoftLimitEnabled != false
+                    && (!IsFinite(axis.MinimumPosition)
+                        || !IsFinite(axis.MaximumPosition)
+                        || axis.MinimumPosition >= axis.MaximumPosition))
                 {
                     errors.Add("逻辑轴 '" + displayName + "' 的最小位置必须小于有效的最大位置。");
                 }

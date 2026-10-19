@@ -43,6 +43,9 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>保存软件限位上限；未配置时为空。</summary>
         private double? _maximumPosition;
 
+        /// <summary>保存是否要求控制卡启用正负软件限位；未选择时为空。</summary>
+        private bool? _softLimitEnabled;
+
         /// <summary>保存手动调试速度；未配置时为空。</summary>
         private double? _manualSpeed;
 
@@ -120,6 +123,13 @@ namespace MotionControl.Framework.Wpf.Configuration
         {
             get { return _maximumPosition; }
             set { SetValue(ref _maximumPosition, value, "MaximumPosition"); }
+        }
+
+        /// <summary>是否启用控制卡正负软件限位；空值表示尚未选择。</summary>
+        public bool? SoftLimitEnabled
+        {
+            get { return _softLimitEnabled; }
+            set { SetValue(ref _softLimitEnabled, value, "SoftLimitEnabled"); }
         }
 
         /// <summary>手动调试速度，单位为工程单位每秒；未配置时为空。</summary>

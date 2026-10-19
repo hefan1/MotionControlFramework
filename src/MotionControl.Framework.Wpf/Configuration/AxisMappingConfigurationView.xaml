@@ -354,7 +354,8 @@
                                 <RowDefinition Height="34" /><RowDefinition Height="34" />
                                 <RowDefinition Height="34" /><RowDefinition Height="34" />
                                 <RowDefinition Height="34" /><RowDefinition Height="34" />
-                                <RowDefinition Height="34" /><RowDefinition Height="42" />
+                                <RowDefinition Height="34" /><RowDefinition Height="34" />
+                                <RowDefinition Height="42" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
@@ -391,13 +392,21 @@
                                      Style="{StaticResource AxisMappingTextBox}" />
                             <TextBlock Grid.Row="6" Grid.Column="2" Text="{Binding SelectedAxis.EngineeringUnit}"
                                        VerticalAlignment="Center" Margin="8,0,0,0" FontSize="11" Foreground="#718096" />
-                            <TextBlock Grid.Row="7" Text="{DynamicResource 手动调试速度}" Style="{StaticResource AxisMappingFieldLabel}" />
-                            <TextBox Grid.Row="7" Grid.Column="1" Text="{Binding SelectedAxis.ManualSpeed, StringFormat={}{0:0.000}}"
+                            <TextBlock Grid.Row="7" Text="{DynamicResource 软限位启用}" Style="{StaticResource AxisMappingFieldLabel}" />
+                            <ComboBox Grid.Row="7" Grid.Column="1" x:Name="SoftLimitEnabledComboBox"
+                                      Style="{StaticResource AxisMappingComboBox}"
+                                      SelectionChanged="SoftLimitEnabledComboBox_SelectionChanged">
+                                <ComboBoxItem Tag="" Content="{DynamicResource 未设置}" />
+                                <ComboBoxItem Tag="True" Content="{DynamicResource 启用}" />
+                                <ComboBoxItem Tag="False" Content="{DynamicResource 停用}" />
+                            </ComboBox>
+                            <TextBlock Grid.Row="8" Text="{DynamicResource 手动调试速度}" Style="{StaticResource AxisMappingFieldLabel}" />
+                            <TextBox Grid.Row="8" Grid.Column="1" Text="{Binding SelectedAxis.ManualSpeed, StringFormat={}{0:0.000}}"
                                      Style="{StaticResource AxisMappingTextBox}" />
-                            <TextBlock Grid.Row="7" Grid.Column="2" Text="{Binding SelectedAxis.EngineeringUnit, StringFormat={}{0}/s}"
+                            <TextBlock Grid.Row="8" Grid.Column="2" Text="{Binding SelectedAxis.EngineeringUnit, StringFormat={}{0}/s}"
                                        VerticalAlignment="Center" Margin="8,0,0,0" FontSize="11" Foreground="#718096" />
-                            <TextBlock Grid.Row="8" Text="{DynamicResource 回零模式}" Style="{StaticResource AxisMappingFieldLabel}" />
-                            <ComboBox Grid.Row="8" Grid.Column="1" x:Name="HomeModeComboBox"
+                            <TextBlock Grid.Row="9" Text="{DynamicResource 回零模式}" Style="{StaticResource AxisMappingFieldLabel}" />
+                            <ComboBox Grid.Row="9" Grid.Column="1" x:Name="HomeModeComboBox"
                                       Style="{StaticResource AxisMappingComboBox}" SelectionChanged="HomeModeComboBox_SelectionChanged">
                                 <ComboBoxItem Tag="1" Content="1" />
                                 <ComboBoxItem Tag="2" Content="2" />
@@ -416,7 +425,7 @@
                                 <ComboBoxItem Tag="18" Content="18" />
                                 <ComboBoxItem Tag="19" Content="19" />
                             </ComboBox>
-                            <Border Grid.Row="9" Grid.ColumnSpan="3" Padding="8,5" Margin="0,3"
+                            <Border Grid.Row="10" Grid.ColumnSpan="3" Padding="8,5" Margin="0,3"
                                     Background="#F1F7FF" BorderBrush="#D5E6FC" BorderThickness="1" CornerRadius="4">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="ⓘ" FontSize="15" Foreground="#2475D0" Margin="0,0,7,0"
@@ -425,7 +434,7 @@
                                                TextWrapping="Wrap" FontSize="11" Foreground="#526A86" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Border>
-                            <Expander Grid.Row="10" Grid.ColumnSpan="3" Header="{DynamicResource 更多轴参数}"
+                            <Expander Grid.Row="11" Grid.ColumnSpan="3" Header="{DynamicResource 更多轴参数}"
                                       IsExpanded="False" Margin="0,3,0,0" FontSize="12" Foreground="#42556C">
                                 <Grid Margin="0,6,0,2">
                                     <Grid.ColumnDefinitions>

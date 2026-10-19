@@ -18,6 +18,9 @@ namespace MotionControl.Framework.Contracts.Configuration
         /// <summary>逻辑轴允许的最大工程位置。</summary>
         public double MaximumPosition { get; set; }
 
+        /// <summary>是否允许轴超出配置的正负软件限位；空值表示未完成配置。</summary>
+        public bool? SoftLimitEnabled { get; set; }
+
         /// <summary>手动调试时默认使用的速度，直线轴为 mm/s，旋转轴为度/s。</summary>
         public double ManualSpeed { get; set; }
 

@@ -62,6 +62,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                             AxisNumber = 0,
                             MinimumPosition = -100,
                             MaximumPosition = 100,
+                            SoftLimitEnabled = true,
                             ManualSpeed = 23,
                             ManualAcceleration = 34,
                             ManualDeceleration = 45
@@ -198,6 +199,34 @@ namespace MotionControl.ZMotionSimulatorCheck
                     "SavedRun",
                     "HardwareConfig/MotionCards.json",
                     savedCardSettings);
+                configurationStore.SaveJson(
+                    "SavedRun",
+                    "HardwareConfig/AxisParameters.json",
+                    new AxisMappingConfigurationDocument
+                    {
+                        Axes = new List<AxisMappingEntry>
+                        {
+                            new AxisMappingEntry
+                            {
+                                ControllerId = "MotionCard01",
+                                AxisNumber = 0,
+                                Name = "X",
+                                AxisType = "直线轴",
+                                EngineeringUnit = "mm",
+                                UnitsPerEngineeringUnit = 1,
+                                MinimumPosition = -100,
+                                MaximumPosition = 100,
+                                SoftLimitEnabled = true,
+                                ManualSpeed = 5,
+                                HomeMode = 3,
+                                HomeModeVendor = "正运动",
+                                HomeSearchSpeed = 5,
+                                HomeCreepSpeed = 1,
+                                HomeAcceleration = 10,
+                                HomeDeceleration = 9
+                            }
+                        }
+                    });
 
                 var savedRunConnection = new SmokeAxisMappingCardConnection();
                 var savedRunPage = new AxisMappingConfigurationView(
@@ -211,6 +240,47 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(
                     ((TextBlock)savedRunPage.FindName("CardReadbackText")).Text.Contains("UNITS=1"),
                     "自动连接成功后没有读取所选物理轴的当前参数。");
+
+                var softLimitEditor = (ComboBox)savedRunPage.FindName("SoftLimitEnabledComboBox");
+                Ensure(softLimitEditor != null, "轴参数编辑区没有软限位启用下拉框。");
+                Ensure(
+                    string.Equals(((ComboBoxItem)softLimitEditor.SelectedItem).Tag as string, "True", StringComparison.OrdinalIgnoreCase),
+                    "已保存的软限位启用状态没有显示在下拉框中。");
+
+                var readCardButton = (Button)savedRunPage.FindName("ReadAxisParametersButton");
+                readCardButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, readCardButton));
+                Ensure(
+                    savedRunPage.SelectedAxis.HomeDeceleration == 9,
+                    "卡上 DECEL=0 覆盖了原有有效的回零减速度配置。");
+                Ensure(
+                    ((TextBlock)savedRunPage.FindName("CardReadbackText")).Text.Contains("DECEL=0"),
+                    "卡上无效 DECEL=0 没有保留在只读参数读回区显示。");
+                Ensure(
+                    ((TextBlock)savedRunPage.FindName("ConfigurationStatusText")).Text.Contains("DECEL"),
+                    "读卡后没有说明 DECEL=0 未回填到编辑区。");
+                Ensure(
+                    ((Button)savedRunPage.FindName("WriteAxisParametersButton")).IsEnabled,
+                    "忽略无效 DECEL=0 后，已有完整有效配置仍不能写卡。");
+
+                ComboBoxItem disabledSoftLimitItem = softLimitEditor.Items
+                    .OfType<ComboBoxItem>()
+                    .Single(item => string.Equals(item.Tag as string, "False", StringComparison.OrdinalIgnoreCase));
+                softLimitEditor.SelectedItem = disabledSoftLimitItem;
+                savedRunPage.SelectedAxis.MinimumPosition = null;
+                savedRunPage.SelectedAxis.MaximumPosition = null;
+                var checkMappingButton = (Button)savedRunPage.FindName("CheckMappingButton");
+                checkMappingButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, checkMappingButton));
+                Ensure(
+                    ((TextBlock)savedRunPage.FindName("ConfigurationStatusText")).Text.Contains("检查通过"),
+                    "软限位停用且范围留空时仍未通过轴映射检查。");
+
+                ComboBoxItem unsetSoftLimitItem = softLimitEditor.Items
+                    .OfType<ComboBoxItem>()
+                    .Single(item => string.IsNullOrWhiteSpace(item.Tag as string));
+                softLimitEditor.SelectedItem = unsetSoftLimitItem;
+                Ensure(
+                    !((Button)savedRunPage.FindName("WriteAxisParametersButton")).IsEnabled,
+                    "尚未选择软限位启停状态时仍允许写入控制卡。");
             }
             finally
             {
@@ -262,10 +332,13 @@ namespace MotionControl.ZMotionSimulatorCheck
                     UnitsPerEngineeringUnit = 1,
                     MinimumPosition = -100,
                     MaximumPosition = 100,
+                    SoftLimitEnabled = true,
+                    PositiveSoftLimitEffective = true,
+                    NegativeSoftLimitEffective = true,
                     Speed = 5,
                     CreepSpeed = 1,
                     Acceleration = 10,
-                    Deceleration = 10
+                    Deceleration = 0
                 });
             }
 

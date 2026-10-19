@@ -296,6 +296,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                     AxisNumber = axis.AxisNumber,
                     MinimumPosition = axis.MinimumPosition,
                     MaximumPosition = axis.MaximumPosition,
+                    SoftLimitEnabled = axis.SoftLimitEnabled,
                     ManualSpeed = axis.ManualSpeed
                 }),
                 ioMapping.DigitalInputs.Select(point => point == null ? null : new DigitalIoHardwareDefinition
@@ -479,8 +480,9 @@ namespace MotionControl.ZMotionSimulatorCheck
                 targetPosition = originalStatus.Position - 1.0;
             }
 
-            if (targetPosition < configuration.MinimumPosition
-                || targetPosition > configuration.MaximumPosition)
+            if (configuration.SoftLimitEnabled
+                && (targetPosition < configuration.MinimumPosition
+                    || targetPosition > configuration.MaximumPosition))
             {
                 throw new InvalidOperationException("仿真轴当前位置附近没有可供单步往返的软限位空间。");
             }
