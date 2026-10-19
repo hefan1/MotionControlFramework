@@ -21,7 +21,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>人工示教位置配置在单台设备目录中的相对路径。</summary>
         private const string ManualAxisPositionsFilePath = "Parameters/ManualAxisPositions.json";
 
-        /// <summary>定时刷新轴状态的 WPF 计时器。</summary>
+        /// <summary>手动页可见时约每 200 毫秒刷新轴位置和状态。</summary>
         private readonly DispatcherTimer _refreshTimer;
 
         /// <summary>按逻辑轴名称保存硬件配置，用于显示物理通道并检查软限位。</summary>
@@ -101,7 +101,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
 
             _refreshTimer = new DispatcherTimer
             {
-                Interval = TimeSpan.FromMilliseconds(1000)
+                Interval = TimeSpan.FromMilliseconds(200)
             };
             _refreshTimer.Tick += RefreshTimer_Tick;
             Loaded += ManualMotionDebugView_Loaded;
@@ -305,14 +305,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         private async void ManualMotionDebugView_Loaded(object sender, RoutedEventArgs e)
         {
             _refreshTimer.Start();
-            try
-            {
-                await RefreshAllStatusAsync().ConfigureAwait(true);
-            }
-            catch (Exception error)
-            {
-                OperationMessageText.Text = string.Format(GetText("读取状态失败"), error.Message);
-            }
+            await RefreshStatusSafelyAsync().ConfigureAwait(true);
         }
 
         /// <summary>页面离开视觉树时停止轮询，并停止所有卡片上可能仍按住的点动轴。</summary>
@@ -327,6 +320,12 @@ namespace MotionControl.Framework.Wpf.ManualDebug
 
         /// <summary>定时刷新所有轴卡片和整机状态。</summary>
         private async void RefreshTimer_Tick(object sender, EventArgs e)
+        {
+            await RefreshStatusSafelyAsync().ConfigureAwait(true);
+        }
+
+        /// <summary>统一保护首次读取和定时读取，避免同一时间重复查询控制卡。</summary>
+        private async Task RefreshStatusSafelyAsync()
         {
             if (_refreshInProgress)
             {

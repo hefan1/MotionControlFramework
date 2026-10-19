@@ -51,7 +51,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>调试人员在界面中看到并可编辑的位置名称。</summary>
         private string _name;
 
-        /// <summary>示教时读取的轴工程位置；尚未示教时为空。</summary>
+        /// <summary>手动输入或示教保存的轴工程位置；尚未设置时为空。</summary>
         private double? _position;
 
         /// <summary>通知位置列表中绑定的名称或位置值已经变化。</summary>

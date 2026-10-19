@@ -108,7 +108,7 @@
     <sys:String x:Key="寸动步长">寸动步长</sys:String>
     <sys:String x:Key="定位位置">定位位置</sys:String>
     <sys:String x:Key="指令位置">当前指令位置</sys:String>
-    <sys:String x:Key="反馈位置">当前反馈位置</sys:String>
+    <sys:String x:Key="轴当前位置">轴当前位置</sys:String>
     <sys:String x:Key="原点输入状态">原点输入当前状态</sys:String>
     <sys:String x:Key="原点输入未配置">控制器没有配置原点输入，或当前适配器无法读取该状态</sys:String>
     <sys:String x:Key="运动曲线参数">运动曲线参数</sys:String>
@@ -186,8 +186,10 @@
     <sys:String x:Key="删除位置">删除</sys:String>
     <sys:String x:Key="暂无示教位置">还没有位置，点击“添加位置”创建。</sys:String>
     <sys:String x:Key="默认示教位置名称">位置{0}</sys:String>
-    <sys:String x:Key="位置已添加">已添加 {0}，写入当前位置后即可定位。</sys:String>
+    <sys:String x:Key="位置已添加">已添加 {0}，输入目标位置或写入当前位置后即可定位。</sys:String>
     <sys:String x:Key="位置配置保存失败">保存轴位置失败：{0}</sys:String>
+    <sys:String x:Key="直接编辑目标位置">直接输入目标坐标；按回车或移开输入框自动保存。</sys:String>
+    <sys:String x:Key="目标位置未设置">请先输入目标位置，或点击“写入”记录当前位置。</sys:String>
     <sys:String x:Key="示教位置配置读取失败">读取轴位置配置失败：{0}；原文件不会被覆盖。</sys:String>
     <sys:String x:Key="示教位置配置禁止覆盖">位置配置读取失败，为避免覆盖原文件，当前禁止保存。</sys:String>
     <sys:String x:Key="位置名称不能为空">位置名称不能为空。</sys:String>

@@ -100,7 +100,7 @@
     <sys:String x:Key="寸动步长">Step distance</sys:String>
     <sys:String x:Key="定位位置">Target position</sys:String>
     <sys:String x:Key="指令位置">Command position</sys:String>
-    <sys:String x:Key="反馈位置">Feedback position</sys:String>
+    <sys:String x:Key="轴当前位置">Current axis position</sys:String>
     <sys:String x:Key="原点输入状态">Current home input state</sys:String>
     <sys:String x:Key="原点输入未配置">No home input is configured or this adapter cannot read it.</sys:String>
     <sys:String x:Key="运动曲线参数">Motion profile</sys:String>
@@ -178,8 +178,10 @@
     <sys:String x:Key="删除位置">Delete</sys:String>
     <sys:String x:Key="暂无示教位置">No positions yet. Select Add Position to create one.</sys:String>
     <sys:String x:Key="默认示教位置名称">Position {0}</sys:String>
-    <sys:String x:Key="位置已添加">Added {0}. Teach the current position before moving to it.</sys:String>
+    <sys:String x:Key="位置已添加">Added {0}. Enter a target or teach the current position before moving.</sys:String>
     <sys:String x:Key="位置配置保存失败">Failed to save axis positions: {0}</sys:String>
+    <sys:String x:Key="直接编辑目标位置">Enter the target position; press Enter or leave the field to save.</sys:String>
+    <sys:String x:Key="目标位置未设置">Enter a target position or select Teach Current first.</sys:String>
     <sys:String x:Key="示教位置配置读取失败">Failed to read axis positions: {0}. The original file will not be overwritten.</sys:String>
     <sys:String x:Key="示教位置配置禁止覆盖">Saving is disabled because the position configuration could not be read.</sys:String>
     <sys:String x:Key="位置名称不能为空">Position name cannot be empty.</sys:String>

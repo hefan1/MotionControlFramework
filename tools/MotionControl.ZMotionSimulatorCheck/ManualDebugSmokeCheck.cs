@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -42,6 +44,12 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(
                     string.Equals(englishResources["伺服使能"] as string, "Servo On", StringComparison.Ordinal),
                     "英文手动调试资源没有正确加载。 ");
+                Ensure(
+                    string.Equals(chineseResources["轴当前位置"] as string, "轴当前位置", StringComparison.Ordinal),
+                    "中文语言资源没有提供通用轴当前位置标签。");
+                Ensure(
+                    string.Equals(englishResources["轴当前位置"] as string, "Current axis position", StringComparison.Ordinal),
+                    "英文语言资源没有提供通用轴当前位置标签。");
 
                 var card = new SmokeMotionCard();
                 var cards = new MotionCardGroup(new IMotionCard[] { card });
@@ -84,12 +92,13 @@ namespace MotionControl.ZMotionSimulatorCheck
                 var axisCards = (WrapPanel)page.FindName("AxisCardsPanel");
                 Ensure(axisCards.Children.Count == 1, "已映射一个轴时没有生成对应的单轴调试卡片。");
                 var axisControl = (ManualAxisControl)axisCards.Children[0];
-                Ensure(axisControl.FindName("FeedbackPositionText") is TextBlock, "轴卡片没有加载反馈位置显示。");
+                Ensure(axisControl.FindName("FeedbackPositionText") is TextBlock, "轴卡片没有加载轴当前位置显示。");
                 Ensure(((TextBox)axisControl.FindName("SpeedTextBox")).Text == "23", "轴卡片没有从轴配置加载手动速度。");
                 Ensure(((TextBox)axisControl.FindName("AccelerationTextBox")).Text == "34", "轴卡片没有从轴配置加载手动加速度。");
                 Ensure(((TextBox)axisControl.FindName("DecelerationTextBox")).Text == "45", "轴卡片没有从轴配置加载手动减速度。");
                 Ensure(((ItemsControl)axisControl.FindName("PositionsList")).Items.Count == 0, "新轴自动出现了默认示教位置。");
                 Ensure(((TextBlock)axisControl.FindName("EmptyPositionsText")).Visibility == Visibility.Visible, "空位置列表没有显示添加提示。");
+                VerifyManualPositionPrecision(runtime, card);
                 Ensure(page.FindName("DigitalInputsPanel") == null, "轴手动页仍混入 DI 操作面板。");
                 Ensure(page.FindName("DigitalOutputsPanel") == null, "轴手动页仍混入 DO 操作面板。");
                 Ensure(((StackPanel)ioPage.FindName("DigitalInputsPanel")).Children.Count == 2, "IO 手动页 DI 列表行数与配置数量不一致。");
@@ -130,7 +139,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(ReferenceEquals(manualContent.Content, ioPage), "Host 的 IO 手动导航没有显示独立 IO 页面。");
 
                 application.Shutdown();
-                Console.WriteLine("[通过] 手动调试页与硬件配置页离屏检查完成：轴参数读回、I/O 能力诊断显示、Host 底栏卡状态和中英资源；使用内存测试卡。");
+                Console.WriteLine("[通过] 手动调试页与硬件配置页离屏检查完成：位置坐标精度与编辑保存、轴参数读回、I/O 能力诊断、Host 底栏卡状态和中英资源；使用内存测试卡。");
                 return 0;
             }
             catch (Exception error)
@@ -138,6 +147,66 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Console.Error.WriteLine("[失败] 手动调试页离屏检查：" + error);
                 return 1;
             }
+        }
+
+        /// <summary>确认位置输入框保留完整坐标精度，未修改时失焦不会触发配置保存。</summary>
+        private static void VerifyManualPositionPrecision(MachineRuntime runtime, SmokeMotionCard card)
+        {
+            const double originalPosition = 12.3456789;
+            var position = new ManualAxisPosition
+            {
+                Id = "Position1",
+                Name = "精度检查位置",
+                Position = originalPosition
+            };
+            var positions = new ObservableCollection<ManualAxisPosition> { position };
+            var axisConfiguration = new AxisHardwareDefinition
+            {
+                Name = "X",
+                ControllerId = card.ControllerId,
+                AxisNumber = 0,
+                EngineeringUnit = "mm",
+                MinimumPosition = -100,
+                MaximumPosition = 100,
+                SoftLimitEnabled = true,
+                ManualSpeed = 5
+            };
+            int saveCount = 0;
+            var axisControl = new ManualAxisControl(
+                card.Axes.Single(),
+                axisConfiguration,
+                runtime,
+                positions,
+                () => null,
+                () =>
+                {
+                    saveCount++;
+                });
+            var positionsList = (ItemsControl)axisControl.FindName("PositionsList");
+
+            axisControl.Measure(new Size(600, 700));
+            axisControl.Arrange(new Rect(0, 0, 600, 700));
+            axisControl.UpdateLayout();
+
+            FrameworkElement itemContainer = positionsList.ItemContainerGenerator.ContainerFromIndex(0) as FrameworkElement;
+            Ensure(itemContainer != null, "精度检查没有生成示教位置行。");
+            var positionTextBox = positionsList.ItemTemplate.FindName("PositionValueTextBox", itemContainer) as TextBox;
+            Ensure(positionTextBox != null, "示教位置行没有生成目标位置输入框。");
+
+            double displayedPosition;
+            Ensure(
+                double.TryParse(positionTextBox.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out displayedPosition)
+                    && displayedPosition == originalPosition,
+                "目标位置输入框显示时舍入了已保存的高精度坐标。");
+
+            positionTextBox.RaiseEvent(new RoutedEventArgs(UIElement.LostFocusEvent));
+            Ensure(position.Position == originalPosition, "未修改目标位置并移开输入框后，坐标精度发生变化。");
+            Ensure(saveCount == 0, "未修改目标位置并移开输入框后，不应重复保存配置。");
+
+            positionTextBox.Text = "12.5";
+            positionTextBox.RaiseEvent(new RoutedEventArgs(UIElement.LostFocusEvent));
+            Ensure(position.Position == 12.5, "手动编辑目标位置后没有保存新坐标。");
+            Ensure(saveCount == 1, "手动编辑目标位置后没有且仅有一次保存配置。");
         }
 
         /// <summary>加载 Host 的指定语言资源字典供页面和导航解析 DynamicResource。</summary>

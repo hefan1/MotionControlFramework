@@ -125,7 +125,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             UpdateEmptyPositionsText();
         }
 
-        /// <summary>读取并显示指令位置、反馈位置、伺服、回零、限位和报警状态。</summary>
+        /// <summary>读取并显示指令位置、轴当前位置、伺服、回零、限位和报警状态。</summary>
         public async Task RefreshStatusAsync()
         {
             if (_machineRuntime.State == MachineRunState.Disconnected)
@@ -269,6 +269,81 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
+        /// <summary>位置坐标编辑结束时校验数值、软限位并保存到设备配置。</summary>
+        private void PositionValueTextBox_LostFocus(object sender, RoutedEventArgs e)
+        {
+            SavePositionValue(sender as TextBox);
+        }
+
+        /// <summary>按回车立即保存位置坐标，方便调试人员连续录入。</summary>
+        private void PositionValueTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter)
+            {
+                return;
+            }
+
+            e.Handled = true;
+            SavePositionValue(sender as TextBox);
+        }
+
+        /// <summary>保存手动输入的轴坐标；留空会清除坐标，不能定位到空位置。</summary>
+        private void SavePositionValue(TextBox positionTextBox)
+        {
+            ManualAxisPosition position = positionTextBox == null
+                ? null
+                : positionTextBox.DataContext as ManualAxisPosition;
+            if (positionTextBox == null || position == null)
+            {
+                return;
+            }
+
+            double? updatedPosition = null;
+            if (!string.IsNullOrWhiteSpace(positionTextBox.Text))
+            {
+                try
+                {
+                    updatedPosition = ReadNumber(positionTextBox, GetText("目标位置"));
+                    EnsurePositionWithinLimits(updatedPosition.Value);
+                }
+                catch (Exception error)
+                {
+                    positionTextBox.Text = FormatPosition(position.Position);
+                    OperationMessageText.Text = error.Message;
+                    return;
+                }
+            }
+
+            double? previousPosition = position.Position;
+            if (previousPosition == updatedPosition)
+            {
+                positionTextBox.Text = FormatPosition(previousPosition);
+                return;
+            }
+
+            position.Position = updatedPosition;
+            try
+            {
+                _savePositions();
+                positionTextBox.Text = FormatPosition(updatedPosition);
+                OperationMessageText.Text = string.Empty;
+            }
+            catch (Exception error)
+            {
+                position.Position = previousPosition;
+                positionTextBox.Text = FormatPosition(previousPosition);
+                OperationMessageText.Text = string.Format(GetText("位置配置保存失败"), error.Message);
+            }
+        }
+
+        /// <summary>用可往返解析的当前区域格式显示坐标，避免显示时舍入后误改配置。</summary>
+        private static string FormatPosition(double? position)
+        {
+            return position.HasValue
+                ? position.Value.ToString("R", CultureInfo.CurrentCulture)
+                : string.Empty;
+        }
+
         /// <summary>读取当前轴位置并保存到指定位置行。</summary>
         private async void TeachPositionButton_Click(object sender, RoutedEventArgs e)
         {
@@ -317,7 +392,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 EnsurePositionNameIsValid(position);
                 if (!position.Position.HasValue)
                 {
-                    throw new InvalidOperationException(GetText("请先写入当前位置"));
+                    throw new InvalidOperationException(GetText("目标位置未设置"));
                 }
 
                 EnsurePositionWithinLimits(position.Position.Value);

@@ -72,7 +72,7 @@
                 </Grid>
             </Border>
 
-            <!-- 指令位置、反馈位置和常用手动参数按行排列，标签和单位对齐。 -->
+            <!-- 指令位置、轴当前位置和常用手动参数按行排列，标签和单位对齐。 -->
             <Grid Margin="0,0,0,5">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="92" />
@@ -89,7 +89,7 @@
                 <TextBlock Text="{DynamicResource 指令位置}" VerticalAlignment="Center" FontSize="11" Foreground="#43576A" />
                 <TextBlock x:Name="CommandPositionText" Grid.Column="1" VerticalAlignment="Center" FontSize="11" FontWeight="SemiBold" />
                 <TextBlock x:Name="PositionUnitText" Grid.Column="2" VerticalAlignment="Center" FontSize="10" Foreground="#687A8C" Margin="5,0,0,0" />
-                <TextBlock Grid.Row="1" Text="{DynamicResource 反馈位置}" VerticalAlignment="Center" FontSize="11" Foreground="#43576A" />
+                <TextBlock Grid.Row="1" Text="{DynamicResource 轴当前位置}" VerticalAlignment="Center" FontSize="11" Foreground="#43576A" />
                 <TextBlock x:Name="FeedbackPositionText" Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" FontSize="11" FontWeight="SemiBold" />
                 <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding ElementName=PositionUnitText, Path=Text}" VerticalAlignment="Center" FontSize="10" Foreground="#687A8C" Margin="5,0,0,0" />
                 <TextBlock Grid.Row="2" Text="{DynamicResource 手动调试速度}" VerticalAlignment="Center" FontSize="11" Foreground="#43576A" />
@@ -158,7 +158,7 @@
                 </Grid>
             </Expander>
 
-            <!-- 示教位置最初为空；新增后可改名、写入当前位置、定位或删除。 -->
+            <!-- 示教位置最初为空；新增后可改名、直接编辑坐标、写入当前位置、定位或删除。 -->
             <Border BorderBrush="#DCE4EC" BorderThickness="0,1,0,0" Padding="0,7,0,0">
                 <StackPanel>
                     <Grid Margin="0,0,0,4">
@@ -216,11 +216,17 @@
                                                      MinHeight="24"
                                                      Padding="3,1"
                                                      FontSize="10" />
-                                            <TextBlock Grid.Column="1"
-                                                       Text="{Binding Position, StringFormat={}{0:F3}}"
-                                                       VerticalAlignment="Center"
-                                                       Margin="4,0"
-                                                       FontSize="10" />
+                                            <TextBox x:Name="PositionValueTextBox"
+                                                     Grid.Column="1"
+                                                     Text="{Binding Position, Mode=OneWay, StringFormat={}{0:R}}"
+                                                     LostFocus="PositionValueTextBox_LostFocus"
+                                                     KeyDown="PositionValueTextBox_KeyDown"
+                                                     Style="{StaticResource AxisInputStyle}"
+                                                     MinHeight="24"
+                                                     Padding="3,1"
+                                                     Margin="1"
+                                                     FontSize="10"
+                                                     ToolTip="{DynamicResource 直接编辑目标位置}" />
                                             <Button Grid.Column="2" Content="{DynamicResource 写入短标签}" Click="TeachPositionButton_Click" Margin="1" Padding="2,1" MinHeight="24" FontSize="10" ToolTip="{DynamicResource 写入当前位置}" />
                                             <Button Grid.Column="3" Content="{DynamicResource 定位}" Click="MoveToPositionButton_Click" Margin="1" Padding="2,1" MinHeight="24" FontSize="10" />
                                             <Button Grid.Column="4" Content="×" Click="DeletePositionButton_Click" Margin="1" Padding="1" MinHeight="24" FontSize="10" ToolTip="{DynamicResource 删除位置}" />
