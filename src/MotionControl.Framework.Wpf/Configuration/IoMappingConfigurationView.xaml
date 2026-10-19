@@ -422,7 +422,7 @@
                 <TextBlock x:Name="ConfigurationFileText" Visibility="Collapsed" />
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="{DynamicResource 检查映射}" Click="CheckMappingButton_Click"
+                <Button x:Name="CheckMappingButton" Content="{DynamicResource 检查映射}" Click="CheckMappingButton_Click"
                         Style="{StaticResource IoMappingButton}" MinWidth="96" Margin="0,0,8,0" />
                 <Button Content="{DynamicResource 保存配置}" Click="SaveConfigurationButton_Click"
                         Style="{StaticResource IoMappingPrimaryButton}" MinWidth="108" Margin="0,0,8,0" />

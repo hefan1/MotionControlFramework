@@ -451,7 +451,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             }
         }
 
-        /// <summary>确认通用 IO 页面展示适配器诊断文字，不要求公共契约提供厂商错误码字段。</summary>
+        /// <summary>确认 IO 页面展示适配器诊断，并拒绝超出数量边界的 DI/DO 通道号。</summary>
         private static void VerifyIoCapabilityDiagnosticDisplay(
             Application application,
             ResourceDictionary englishResources,
@@ -510,6 +510,63 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(statusText.Text.Contains("3 路"), "切回中文后 IO 能力摘要没有恢复中文通道数量单位。");
                 Ensure(configurationStatusText.Text.Contains("已读取"), "切回中文后 IO 映射状态没有恢复中文。");
                 Ensure(digitalInputsGrid.Columns[0].Header.ToString() == "逻辑名称", "切回中文后 DI 表格列标题没有恢复中文。");
+
+                connection.DigitalInputChannelCount = 4096;
+                connection.DigitalOutputChannelCount = 4096;
+                var refreshButton = (Button)page.FindName("RefreshIoCapabilitiesButton");
+                refreshButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, refreshButton));
+                Ensure(connection.IoCapabilityReadCount == 2, "刷新 I/O 能力时没有重新读取可映射通道数量。");
+
+                page.DigitalInputs.Add(new DigitalIoHardwareDefinition
+                {
+                    Name = "EmergencyStop",
+                    ControllerId = "SmokeCard",
+                    Channel = 0,
+                    ActiveHigh = true
+                });
+                var lastInput = new DigitalIoHardwareDefinition
+                {
+                    Name = "LastInput",
+                    ControllerId = "SmokeCard",
+                    Channel = 4095,
+                    ActiveHigh = true
+                };
+                page.DigitalInputs.Add(lastInput);
+                page.DigitalOutputs.Add(new DigitalIoHardwareDefinition
+                {
+                    Name = "FirstOutput",
+                    ControllerId = "SmokeCard",
+                    Channel = 0,
+                    ActiveHigh = true
+                });
+                var lastOutput = new DigitalIoHardwareDefinition
+                {
+                    Name = "LastOutput",
+                    ControllerId = "SmokeCard",
+                    Channel = 4095,
+                    ActiveHigh = true
+                };
+                page.DigitalOutputs.Add(lastOutput);
+                page.EmergencyStopInputName = "EmergencyStop";
+
+                var checkMappingButton = (Button)page.FindName("CheckMappingButton");
+                checkMappingButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, checkMappingButton));
+                Ensure(
+                    configurationStatusText.Text.Contains("检查通过"),
+                    "可映射数量为 4096 时，DI/DO 的首末合法通道没有通过校验。");
+
+                lastInput.Channel = 4096;
+                checkMappingButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, checkMappingButton));
+                Ensure(
+                    configurationStatusText.Text.Contains("超出当前控制卡允许的编号范围"),
+                    "DI 通道号 4096 没有因超出 4096 路可映射范围而被拒绝。");
+
+                lastInput.Channel = 4095;
+                lastOutput.Channel = 4096;
+                checkMappingButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, checkMappingButton));
+                Ensure(
+                    configurationStatusText.Text.Contains("超出当前控制卡允许的编号范围"),
+                    "DO 通道号 4096 没有因超出 4096 路可映射范围而被拒绝。");
             }
             finally
             {
@@ -524,6 +581,12 @@ namespace MotionControl.ZMotionSimulatorCheck
         /// <summary>提供无硬件的轴映射页连接替身，记录自动连接及参数读取调用。</summary>
         private sealed class SmokeAxisMappingCardConnection : IAxisMappingCardConnection, IMotionCardIoCapabilityProvider
         {
+            /// <summary>测试卡当前报告的 DI 可映射通道数量。</summary>
+            public int DigitalInputChannelCount { get; set; } = 3;
+
+            /// <summary>测试卡当前报告的 DO 可映射通道数量。</summary>
+            public int DigitalOutputChannelCount { get; set; } = 2;
+
             /// <summary>记录测试页面读取 I/O 能力的次数，确认语言刷新不会重复调用适配器。</summary>
             public int IoCapabilityReadCount { get; private set; }
 
@@ -642,15 +705,17 @@ namespace MotionControl.ZMotionSimulatorCheck
                     ControllerId = "SmokeCard",
                     DigitalInputChannelRange = new MotionCardIoChannelRange
                     {
-                        MappableChannelCount = 3,
-                        FirstUnavailableChannel = 3,
-                        FirstUnavailableMessage = "TestPulse_ReadInput channel 3 returned code 20008."
+                        MappableChannelCount = DigitalInputChannelCount,
+                        FirstUnavailableChannel = DigitalInputChannelCount,
+                        FirstUnavailableMessage = "TestPulse_ReadInput channel "
+                            + DigitalInputChannelCount + " returned code 20008."
                     },
                     DigitalOutputChannelRange = new MotionCardIoChannelRange
                     {
-                        MappableChannelCount = 2,
-                        FirstUnavailableChannel = 2,
-                        FirstUnavailableMessage = "TestPulse_ReadOutput channel 2 returned code 20008."
+                        MappableChannelCount = DigitalOutputChannelCount,
+                        FirstUnavailableChannel = DigitalOutputChannelCount,
+                        FirstUnavailableMessage = "TestPulse_ReadOutput channel "
+                            + DigitalOutputChannelCount + " returned code 20008."
                     }
                 });
             }
