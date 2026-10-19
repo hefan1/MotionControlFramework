@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using MotionControl.Adapter.MotionCard.ZMotion;
 using MotionControl.Framework.Contracts.Flow;
+using MotionControl.Framework.Contracts.IO;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Contracts.Safety;
 using MotionControl.Framework.Runtime.Alarms;
@@ -20,8 +21,11 @@ namespace MotionControl.Host.Wpf
     /// <summary>Host 应用启动入口，负责创建配置服务、页面和控制卡连接。</summary>
     public partial class App : Application
     {
-        /// <summary>由 Host 创建并在应用退出时释放的正运动连接服务。</summary>
-        private ZMotionAxisMappingCardConnection _cardConnection;
+        /// <summary>当前 Host 示例所使用设备的稳定编号。</summary>
+        private const string MachineId = "Machine01";
+
+        /// <summary>由 Host 创建并在应用退出时释放的运动卡连接服务。</summary>
+        private IMotionCardHostConnection _cardConnection;
 
         /// <summary>当前 Host 使用的轴映射页面，用于在应用启动时恢复控制卡连接。</summary>
         private AxisMappingConfigurationView _axisMappingPage;
@@ -54,13 +58,13 @@ namespace MotionControl.Host.Wpf
                 "MotionControlFramework",
                 "Configurations");
             _configurationStore = new MachineConfigurationStore(configurationRoot);
-            _cardConnection = new ZMotionAxisMappingCardConnection(_configurationStore, "Machine01");
+            _cardConnection = CreateMotionCardConnection();
             _axisMappingPage = new AxisMappingConfigurationView(
                 _configurationStore,
-                "Machine01",
+                MachineId,
                 _cardConnection);
             _axisMappingPage.CardConnectionChanged += AxisMappingPage_CardConnectionChanged;
-            _ioMappingPage = new IoMappingConfigurationView(_configurationStore, "Machine01", _cardConnection);
+            _ioMappingPage = new IoMappingConfigurationView(_configurationStore, MachineId, _cardConnection);
             _mainWindow = new MainWindow();
             _mainWindow.Loaded += MainWindow_Loaded;
             _mainWindow.LanguageChanged += MainWindow_LanguageChanged;
@@ -69,6 +73,12 @@ namespace MotionControl.Host.Wpf
 
             MainWindow = _mainWindow;
             _mainWindow.Show();
+        }
+
+        /// <summary>在 Host 组合入口选择本次运行使用的运动卡连接实现。</summary>
+        private IMotionCardHostConnection CreateMotionCardConnection()
+        {
+            return new ZMotionAxisMappingCardConnection(_configurationStore, MachineId);
         }
 
         /// <summary>主窗口显示后按已保存的控制卡配置自动连接，不阻塞窗口创建。</summary>
@@ -112,14 +122,20 @@ namespace MotionControl.Host.Wpf
 
             try
             {
-                ZMotionCard connectedCard = _cardConnection.ConnectedCard;
+                IMotionCard connectedCard = _cardConnection.ConnectedMotionCard;
                 if (connectedCard == null)
                 {
                     throw new InvalidOperationException("控制卡连接状态有效，但没有可供手动调试使用的卡对象。");
                 }
 
+                ILogicalIo connectedLogicalIo = _cardConnection.ConnectedLogicalIo;
+                if (connectedLogicalIo == null)
+                {
+                    throw new InvalidOperationException("控制卡已连接，但没有可供设备运行时使用的逻辑 IO 服务。");
+                }
+
                 var motionCards = new MotionCardGroup(new IMotionCard[] { connectedCard });
-                IMachineSafetyStatus safetyStatus = CreateSafetyStatus(connectedCard);
+                IMachineSafetyStatus safetyStatus = CreateSafetyStatus(connectedLogicalIo);
                 var machineRuntime = new MachineRuntime(
                     motionCards,
                     new IStationFlow[0],
@@ -132,10 +148,10 @@ namespace MotionControl.Host.Wpf
                     motionCards,
                     _cardConnection.AxisHardwareDefinitions,
                     _configurationStore,
-                    "Machine01");
+                    MachineId);
                 ManualIoDebugView ioManualPage = new ManualIoDebugView(
                     machineRuntime,
-                    connectedCard,
+                    connectedLogicalIo,
                     _cardConnection.DigitalInputs.Select(point => point.Name),
                     _cardConnection.DigitalOutputs.Select(point => point.Name));
 
@@ -161,7 +177,7 @@ namespace MotionControl.Host.Wpf
         }
 
         /// <summary>使用已映射急停 DI 创建安全状态读取器；缺少配置时按急停触发处理。</summary>
-        private IMachineSafetyStatus CreateSafetyStatus(ZMotionCard connectedCard)
+        private IMachineSafetyStatus CreateSafetyStatus(ILogicalIo logicalIo)
         {
             string emergencyStopInputName = _cardConnection.EmergencyStopInputName;
             if (string.IsNullOrWhiteSpace(emergencyStopInputName))
@@ -178,7 +194,7 @@ namespace MotionControl.Host.Wpf
                     "急停输入 '" + emergencyStopInputName + "' 没有对应的 DI 映射，不能创建运行时。");
             }
 
-            return new LogicalIoEmergencyStopStatus(connectedCard, emergencyStopInputName);
+            return new LogicalIoEmergencyStopStatus(logicalIo, emergencyStopInputName);
         }
 
         /// <summary>应用退出时断开已连接的控制卡，并报告句柄释放失败。</summary>

@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Adapter.MotionCard.ZMotion;
 using MotionControl.Framework.Contracts.Configuration;
+using MotionControl.Framework.Contracts.IO;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Wpf.Configuration;
@@ -13,7 +14,7 @@ using MotionControl.Framework.Wpf.Configuration;
 namespace MotionControl.Host.Wpf
 {
     /// <summary>由 Host 选择正运动适配器，并为轴映射页面提供连接和参数读写。</summary>
-    public sealed class ZMotionAxisMappingCardConnection : IAxisMappingCardConnection, IMotionCardIoCapabilityProvider
+    public sealed class ZMotionAxisMappingCardConnection : IMotionCardHostConnection, IMotionCardIoCapabilityProvider
     {
         /// <summary>运动卡选择配置在单机配置目录中的相对路径。</summary>
         private const string MotionCardsFilePath = "HardwareConfig/MotionCards.json";
@@ -106,7 +107,13 @@ namespace MotionControl.Host.Wpf
         }
 
         /// <summary>提供给 Host 运行时和手动调试页共用的当前控制卡实例。</summary>
-        public ZMotionCard ConnectedCard
+        public IMotionCard ConnectedMotionCard
+        {
+            get { return _card; }
+        }
+
+        /// <summary>提供当前正运动卡上的逻辑 DI/DO 读写入口。</summary>
+        public ILogicalIo ConnectedLogicalIo
         {
             get { return _card; }
         }
