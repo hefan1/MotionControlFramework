@@ -231,6 +231,12 @@
     <sys:String x:Key="控制器参数说明">连接后显示所选物理轴的卡上实时参数。DATUM 回零模式和设备轴名称保存在软件配置中。</sys:String>
     <sys:String x:Key="控制器参数未读取">尚未读取控制卡参数。</sys:String>
     <sys:String x:Key="控制器参数读回格式">控制器当前值：UNITS={0}，RS_LIMIT={1}，FS_LIMIT={2}，SPEED={3}，CREEP={4}，ACCEL={5}，DECEL={6}</sys:String>
+    <sys:String x:Key="控制器软限位状态未读取">卡上软限位状态：尚未读取。</sys:String>
+    <sys:String x:Key="控制器软限位状态读取失败">卡上软限位状态：读取失败。</sys:String>
+    <sys:String x:Key="控制器软限位状态格式">软限位当前生效状态（正运动按 FS_LIMIT/RS_LIMIT 与 REP_DIST 判断）：正向{0}，负向{1}。</sys:String>
+    <sys:String x:Key="软限位状态无法判断">无法判断</sys:String>
+    <sys:String x:Key="软限位已启用">生效</sys:String>
+    <sys:String x:Key="软限位未启用">未生效</sys:String>
     <sys:String x:Key="控制器参数读取失败格式">读取 Axis{0} 控制器参数失败：{1}</sys:String>
     <sys:String x:Key="读取控制卡参数">读取卡上参数</sys:String>
     <sys:String x:Key="写入控制卡">下发当前轴参数</sys:String>

@@ -222,6 +222,12 @@
     <sys:String x:Key="控制器参数说明">After connection, the selected physical axis shows live card values. The DATUM home mode and machine axis name are kept in software configuration.</sys:String>
     <sys:String x:Key="控制器参数未读取">Controller parameters have not been read.</sys:String>
     <sys:String x:Key="控制器参数读回格式">Current card values: UNITS={0}, RS_LIMIT={1}, FS_LIMIT={2}, SPEED={3}, CREEP={4}, ACCEL={5}, DECEL={6}</sys:String>
+    <sys:String x:Key="控制器软限位状态未读取">Card soft-limit state: not read.</sys:String>
+    <sys:String x:Key="控制器软限位状态读取失败">Card soft-limit state: read failed.</sys:String>
+    <sys:String x:Key="控制器软限位状态格式">Effective soft-limit state (ZMotion uses FS_LIMIT/RS_LIMIT and REP_DIST): positive {0}, negative {1}.</sys:String>
+    <sys:String x:Key="软限位状态无法判断">unknown</sys:String>
+    <sys:String x:Key="软限位已启用">effective</sys:String>
+    <sys:String x:Key="软限位未启用">inactive</sys:String>
     <sys:String x:Key="控制器参数读取失败格式">Failed to read controller parameters for Axis{0}: {1}</sys:String>
     <sys:String x:Key="读取控制卡参数">Read Card Values</sys:String>
     <sys:String x:Key="写入控制卡">Write Axis Values</sys:String>

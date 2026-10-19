@@ -263,6 +263,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                         "FS_LIMIT",
                         zmcaux.ZAux_Direct_GetFsLimit,
                         value => parameters.MaximumPosition = value);
+                    ReadSoftLimitEffectiveState(handle, axisNumber, axisName, parameters);
                     ReadAxisParameter(
                         handle,
                         axisNumber,
@@ -1292,6 +1293,58 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 "读取 " + parameterName,
                 axisName);
             saveValue(value);
+        }
+
+        /// <summary>读取 REP_DIST，并按正运动规则判断正负软限位参数是否生效。</summary>
+        private void ReadSoftLimitEffectiveState(
+            IntPtr handle,
+            int axisNumber,
+            string axisName,
+            ZMotionPhysicalAxisParameters parameters)
+        {
+            float repeatDistance = 0;
+            int result = zmcaux.ZAux_Direct_GetRepDist(handle, axisNumber, ref repeatDistance);
+            if (result != 0)
+            {
+                parameters.PositiveSoftLimitEffective = null;
+                parameters.NegativeSoftLimitEffective = null;
+                parameters.SoftLimitStatusDiagnostic =
+                    "正运动物理轴 '" + axisName + "' 读取 REP_DIST 失败，厂商错误码：" + result + "。";
+                return;
+            }
+
+            if (!IsFinite(repeatDistance) || repeatDistance <= 0)
+            {
+                parameters.PositiveSoftLimitEffective = null;
+                parameters.NegativeSoftLimitEffective = null;
+                parameters.SoftLimitStatusDiagnostic =
+                    "正运动物理轴 '" + axisName + "' 的 REP_DIST 不是大于零的有限数值，无法判断软限位状态。";
+                return;
+            }
+
+            parameters.PositiveSoftLimitEffective = IsSoftLimitWithinRepeatDistance(
+                parameters.MaximumPosition,
+                repeatDistance);
+            parameters.NegativeSoftLimitEffective = IsSoftLimitWithinRepeatDistance(
+                parameters.MinimumPosition,
+                repeatDistance);
+
+            if (!parameters.PositiveSoftLimitEffective.HasValue || !parameters.NegativeSoftLimitEffective.HasValue)
+            {
+                parameters.SoftLimitStatusDiagnostic =
+                    "正运动物理轴 '" + axisName + "' 的 FS_LIMIT 或 RS_LIMIT 读回值无效，无法判断对应方向。";
+            }
+        }
+
+        /// <summary>判断一个软限位位置是否处于正运动规定的 REP_DIST 有效范围内。</summary>
+        private static bool? IsSoftLimitWithinRepeatDistance(double limitPosition, double repeatDistance)
+        {
+            if (!IsFinite(limitPosition) || !IsFinite(repeatDistance) || repeatDistance <= 0)
+            {
+                return null;
+            }
+
+            return limitPosition > -repeatDistance && limitPosition < repeatDistance;
         }
 
         /// <summary>检查物理轴通道范围，防止访问超过当前适配器支持范围的轴。</summary>

@@ -43,6 +43,15 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>控制卡当前正向软限位位置。</summary>
         public double MaximumPosition { get; set; }
 
+        /// <summary>控制卡正向软限位当前是否生效；空值表示当前厂商接口无法可靠判断。</summary>
+        public bool? PositiveSoftLimitEffective { get; set; }
+
+        /// <summary>控制卡负向软限位当前是否生效；空值表示当前厂商接口无法可靠判断。</summary>
+        public bool? NegativeSoftLimitEffective { get; set; }
+
+        /// <summary>软限位状态无法判断时提供的厂商读回诊断信息。</summary>
+        public string SoftLimitStatusDiagnostic { get; set; }
+
         /// <summary>控制卡当前读取到的速度参数。</summary>
         public double Speed { get; set; }
 

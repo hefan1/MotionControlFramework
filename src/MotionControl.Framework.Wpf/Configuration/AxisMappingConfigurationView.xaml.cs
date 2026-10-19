@@ -487,6 +487,8 @@ namespace MotionControl.Framework.Wpf.Configuration
         private async void AxisMappingGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             SelectAxis(AxisMappingGrid.SelectedItem as AxisMappingEntry);
+            CardReadbackText.Text = (string)FindResource("控制器参数未读取");
+            CardSoftLimitStatusText.Text = (string)FindResource("控制器软限位状态未读取");
             if (!_loadingConfiguration && _cardConnection.IsConnected)
             {
                 await ReadSelectedAxisParametersAsync(false);
@@ -515,6 +517,7 @@ namespace MotionControl.Framework.Wpf.Configuration
                 await _cardConnection.DisconnectAsync(CancellationToken.None);
                 CardConnectionStatusText.Text = (string)FindResource("控制卡连接已断开");
                 CardReadbackText.Text = (string)FindResource("控制器参数未读取");
+                CardSoftLimitStatusText.Text = (string)FindResource("控制器软限位状态未读取");
             }
             catch (Exception error)
             {
@@ -653,6 +656,16 @@ namespace MotionControl.Framework.Wpf.Configuration
                     parameters.CreepSpeed,
                     parameters.Acceleration,
                     parameters.Deceleration);
+                CardSoftLimitStatusText.Text = string.Format(
+                    CultureInfo.CurrentCulture,
+                    (string)FindResource("控制器软限位状态格式"),
+                    GetSoftLimitStateText(parameters.PositiveSoftLimitEffective),
+                    GetSoftLimitStateText(parameters.NegativeSoftLimitEffective));
+                if (!string.IsNullOrWhiteSpace(parameters.SoftLimitStatusDiagnostic))
+                {
+                    CardSoftLimitStatusText.Text += " " + parameters.SoftLimitStatusDiagnostic;
+                }
+
                 return parameters;
             }
             catch (Exception error)
@@ -662,6 +675,7 @@ namespace MotionControl.Framework.Wpf.Configuration
                     (string)FindResource("控制器参数读取失败格式"),
                     SelectedAxis.AxisNumber,
                     error.Message);
+                CardSoftLimitStatusText.Text = (string)FindResource("控制器软限位状态读取失败");
                 if (showError)
                 {
                     MessageBox.Show(
@@ -673,6 +687,19 @@ namespace MotionControl.Framework.Wpf.Configuration
 
                 return null;
             }
+        }
+
+        /// <summary>把卡上软限位状态转换成当前界面的本地化文字。</summary>
+        private string GetSoftLimitStateText(bool? isEnabled)
+        {
+            if (!isEnabled.HasValue)
+            {
+                return (string)FindResource("软限位状态无法判断");
+            }
+
+            return isEnabled.Value
+                ? (string)FindResource("软限位已启用")
+                : (string)FindResource("软限位未启用");
         }
 
         /// <summary>按用户操作读取卡上参数并回填当前轴编辑区，不自动保存配置或写卡。</summary>

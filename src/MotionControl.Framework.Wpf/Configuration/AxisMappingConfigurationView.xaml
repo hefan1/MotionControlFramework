@@ -460,9 +460,15 @@
                     <StackPanel Grid.Row="2" Margin="0,8,0,0">
                         <Border Padding="8,5" Background="#F6F8FB" BorderBrush="#E4EAF1" BorderThickness="1"
                                 CornerRadius="4" ToolTip="{Binding Text, ElementName=CardReadbackText}">
-                            <TextBlock x:Name="CardReadbackText" Text="{DynamicResource 控制器参数未读取}"
-                                       FontSize="10" Foreground="#5C6E82" TextWrapping="Wrap" MaxHeight="34"
-                                       TextTrimming="CharacterEllipsis" />
+                            <StackPanel>
+                                <TextBlock x:Name="CardReadbackText" Text="{DynamicResource 控制器参数未读取}"
+                                           FontSize="10" Foreground="#5C6E82" TextWrapping="Wrap" MaxHeight="34"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="CardSoftLimitStatusText" Text="{DynamicResource 控制器软限位状态未读取}"
+                                           Margin="0,3,0,0" FontSize="10" Foreground="#40536A"
+                                           TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                                           ToolTip="{Binding Text, ElementName=CardSoftLimitStatusText}" />
+                            </StackPanel>
                         </Border>
                         <TextBlock x:Name="ConfigurationStatusText" Text="{DynamicResource 轴映射尚未保存}"
                                    Margin="1,5,1,5" FontSize="11" Foreground="#586B80"
