@@ -1,6 +1,8 @@
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -23,6 +25,18 @@ namespace MotionControl.Host.Wpf
     {
         /// <summary>当前 Host 示例所使用设备的稳定编号。</summary>
         private const string MachineId = "Machine01";
+
+        /// <summary>限制同一 Windows 登录会话只运行一个 Host，避免多个实例争用控制卡。</summary>
+        private const string SingleInstanceMutexName = @"Local\MotionControl.Host.Wpf.Machine01";
+
+        /// <summary>恢复已有主窗口时使用的 Win32 显示方式。</summary>
+        private const int RestoreWindowCommand = 9;
+
+        /// <summary>当前 Host 持有的单实例互斥锁。</summary>
+        private Mutex _singleInstanceMutex;
+
+        /// <summary>标记当前进程是否创建并持有单实例互斥锁。</summary>
+        private bool _ownsSingleInstanceMutex;
 
         /// <summary>由 Host 创建并在应用退出时释放的运动卡连接服务。</summary>
         private IMotionCardHostConnection _cardConnection;
@@ -53,6 +67,23 @@ namespace MotionControl.Host.Wpf
         {
             base.OnStartup(e);
 
+            _singleInstanceMutex = new Mutex(true, SingleInstanceMutexName, out _ownsSingleInstanceMutex);
+            if (!_ownsSingleInstanceMutex)
+            {
+                bool existingWindowActivated = TryActivateExistingInstance();
+                if (!existingWindowActivated)
+                {
+                    MessageBox.Show(
+                        "运动控制上位机已经运行，但未能自动切换到现有窗口。请从任务栏切换到已打开的程序。",
+                        "程序已在运行",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+
+                Shutdown();
+                return;
+            }
+
             string configurationRoot = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "MotionControlFramework",
@@ -75,6 +106,68 @@ namespace MotionControl.Host.Wpf
             MainWindow = _mainWindow;
             _mainWindow.Show();
         }
+
+        /// <summary>查找同一会话的 Host 主窗口，将其恢复并切到前台。</summary>
+        private bool TryActivateExistingInstance()
+        {
+            int currentProcessId = Process.GetCurrentProcess().Id;
+            DateTime retryUntil = DateTime.UtcNow.AddSeconds(2);
+
+            do
+            {
+                Process[] runningProcesses = Process.GetProcessesByName("MotionControl.Host.Wpf");
+                foreach (Process runningProcess in runningProcesses)
+                {
+                    using (runningProcess)
+                    {
+                        if (runningProcess.Id == currentProcessId)
+                        {
+                            continue;
+                        }
+
+                        try
+                        {
+                            runningProcess.Refresh();
+                            IntPtr windowHandle = runningProcess.MainWindowHandle;
+                            if (windowHandle == IntPtr.Zero)
+                            {
+                                continue;
+                            }
+
+                            ShowWindowAsync(windowHandle, RestoreWindowCommand);
+                            if (SetForegroundWindow(windowHandle))
+                            {
+                                return true;
+                            }
+                        }
+                        catch (InvalidOperationException error)
+                        {
+                            Trace.TraceWarning("读取已有 Host 窗口失败：" + error.Message);
+                        }
+                        catch (System.ComponentModel.Win32Exception error)
+                        {
+                            Trace.TraceWarning("切换到已有 Host 窗口失败：" + error.Message);
+                        }
+                    }
+                }
+
+                if (DateTime.UtcNow < retryUntil)
+                {
+                    Thread.Sleep(100);
+                }
+            }
+            while (DateTime.UtcNow < retryUntil);
+
+            return false;
+        }
+
+        /// <summary>通过 Windows 窗口句柄恢复已有 Host 主窗口。</summary>
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindowAsync(IntPtr windowHandle, int command);
+
+        /// <summary>请求 Windows 将已有 Host 主窗口切换到前台。</summary>
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr windowHandle);
 
         /// <summary>在 Host 组合入口选择本次运行使用的运动卡连接实现。</summary>
         private IMotionCardHostConnection CreateMotionCardConnection()
@@ -217,7 +310,27 @@ namespace MotionControl.Host.Wpf
                 }
             }
 
+            ReleaseSingleInstanceMutex();
+
             base.OnExit(e);
+        }
+
+        /// <summary>应用退出时释放本进程持有的单实例互斥锁。</summary>
+        private void ReleaseSingleInstanceMutex()
+        {
+            if (_singleInstanceMutex == null)
+            {
+                return;
+            }
+
+            if (_ownsSingleInstanceMutex)
+            {
+                _singleInstanceMutex.ReleaseMutex();
+            }
+
+            _singleInstanceMutex.Dispose();
+            _singleInstanceMutex = null;
+            _ownsSingleInstanceMutex = false;
         }
 
         /// <summary>尚未映射急停 DI 时返回触发状态，避免整机复位或启动绕过安全输入。</summary>

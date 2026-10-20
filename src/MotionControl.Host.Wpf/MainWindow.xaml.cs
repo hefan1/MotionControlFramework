@@ -320,6 +320,7 @@ namespace MotionControl.Host.Wpf
             };
 
             ReplaceLanguageResources(languageResources);
+            Title = GetLocalizedText("运动控制上位机");
 
             // 左侧导航由代码生成，切换语言后重新生成当前导航项；保留当前选中页面。
             NavigateToSection(_currentSectionKey);

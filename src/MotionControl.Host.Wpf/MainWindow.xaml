@@ -1,7 +1,7 @@
 <Window x:Class="MotionControl.Host.Wpf.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="{DynamicResource 运动控制上位机}"
+        Title="运动控制上位机"
         Height="900"
         Width="1440"
         MinHeight="700"
