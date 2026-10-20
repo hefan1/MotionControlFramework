@@ -85,6 +85,12 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>当前按住点动按钮、需要在松开时停止的轴。</summary>
         private IAxis _joggingAxis;
 
+        /// <summary>记录当前按住的点动按钮，覆盖启动命令尚未返回时的按压状态。</summary>
+        private Button _pressedJogButton;
+
+        /// <summary>按下或松开点动按钮时递增，用于识别过期的异步启动请求。</summary>
+        private long _jogButtonPressVersion;
+
         /// <summary>当前连续点动捕获鼠标的按钮；停止后释放，保证其它页面控件仍可操作。</summary>
         private Button _joggingButton;
 
@@ -353,6 +359,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>页面离开时停止此卡片可能仍在运行的按住式点动。</summary>
         public async Task StopJogIfActiveAsync()
         {
+            CancelJogButtonPress(_pressedJogButton);
             await StopJogAsync().ConfigureAwait(true);
         }
 
@@ -945,6 +952,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>按受控停止方式停止当前轴。</summary>
         private async void StopButton_Click(object sender, RoutedEventArgs e)
         {
+            CancelJogButtonPress(_pressedJogButton);
             if (_joggingAxis != null)
             {
                 bool stopped = await StopJogAsync().ConfigureAwait(true);
@@ -980,38 +988,46 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             JogModeToggleButton.Content = GetText(JogModeToggleButton.IsChecked == true ? "连续点动" : "寸动模式");
         }
 
-        /// <summary>按下负向点动按钮时，按连续或寸动模式执行负向动作。</summary>
+        /// <summary>记录负向按钮本次按压，再按连续或寸动模式执行动作。</summary>
         private async void NegativeJogButton_MouseDown(object sender, MouseButtonEventArgs e)
         {
             e.Handled = true;
-            await BeginJogAsync(MotionDirection.Negative, sender as Button).ConfigureAwait(true);
+            Button jogButton = sender as Button;
+            long pressVersion = RegisterJogButtonPress(jogButton);
+            await BeginJogAsync(MotionDirection.Negative, jogButton, pressVersion).ConfigureAwait(true);
         }
 
-        /// <summary>按下正向点动按钮时，按连续或寸动模式执行正向动作。</summary>
+        /// <summary>记录正向按钮本次按压，再按连续或寸动模式执行动作。</summary>
         private async void PositiveJogButton_MouseDown(object sender, MouseButtonEventArgs e)
         {
             e.Handled = true;
-            await BeginJogAsync(MotionDirection.Positive, sender as Button).ConfigureAwait(true);
+            Button jogButton = sender as Button;
+            long pressVersion = RegisterJogButtonPress(jogButton);
+            await BeginJogAsync(MotionDirection.Positive, jogButton, pressVersion).ConfigureAwait(true);
         }
 
-        /// <summary>点动按钮松开时停止当前轴。</summary>
+        /// <summary>点动按钮松开时使对应按压请求失效，并停止已经启动的点动。</summary>
         private async void JogButton_MouseUp(object sender, MouseButtonEventArgs e)
         {
             e.Handled = true;
+            CancelJogButtonPress(sender as Button);
             await StopJogAsync().ConfigureAwait(true);
         }
 
-        /// <summary>点动按钮失去鼠标捕获时停止当前轴，避免轴继续运行。</summary>
+        /// <summary>点动按钮失去鼠标捕获时使按压请求失效并停止当前轴。</summary>
         private async void JogButton_LostMouseCapture(object sender, MouseEventArgs e)
         {
-            if (ReferenceEquals(sender, _joggingButton))
+            Button lostButton = sender as Button;
+            if (ReferenceEquals(lostButton, _joggingButton)
+                || ReferenceEquals(lostButton, _pressedJogButton))
             {
+                CancelJogButtonPress(lostButton);
                 await StopJogAsync().ConfigureAwait(true);
             }
         }
 
         /// <summary>连续模式启动按住式点动；寸动模式按当前步长执行一次相对定位。</summary>
-        private async Task BeginJogAsync(MotionDirection direction, Button jogButton)
+        private async Task BeginJogAsync(MotionDirection direction, Button jogButton, long pressVersion)
         {
             bool continuousJog = JogModeToggleButton.IsChecked == true;
             await RunAxisActionAsync(GetText(continuousJog ? "连续点动" : "寸动模式"), async () =>
@@ -1036,6 +1052,17 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                     await _axis.StartJogAsync(direction, jogProfile, CancellationToken.None).ConfigureAwait(true);
                     _joggingAxis = _axis;
                     _joggingButton = jogButton;
+                    if (!IsJogButtonPressActive(jogButton, pressVersion))
+                    {
+                        bool stoppedAfterRelease = await StopJogAsync().ConfigureAwait(true);
+                        if (!stoppedAfterRelease)
+                        {
+                            throw new InvalidOperationException(GetText("当前点动停止失败禁止继续点动"));
+                        }
+
+                        return;
+                    }
+
                     if (!Mouse.Capture(jogButton))
                     {
                         await StopJogAsync().ConfigureAwait(true);
@@ -1058,6 +1085,34 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 AxisMotionProfile profile = ReadMotionProfile();
                 await _axis.MoveRelativeAsync(distance, profile, CancellationToken.None).ConfigureAwait(true);
             }, true).ConfigureAwait(true);
+        }
+
+        /// <summary>登记点动按钮本次按下操作，并返回后续异步启动所用的版本号。</summary>
+        private long RegisterJogButtonPress(Button jogButton)
+        {
+            _jogButtonPressVersion++;
+            _pressedJogButton = jogButton;
+            return _jogButtonPressVersion;
+        }
+
+        /// <summary>松开当前按钮时递增版本号，使尚未完成的旧启动请求不能继续运行。</summary>
+        private void CancelJogButtonPress(Button jogButton)
+        {
+            if (jogButton == null || !ReferenceEquals(_pressedJogButton, jogButton))
+            {
+                return;
+            }
+
+            _pressedJogButton = null;
+            _jogButtonPressVersion++;
+        }
+
+        /// <summary>确认启动请求仍对应当前按压，并检查鼠标左键仍处于按下状态。</summary>
+        private bool IsJogButtonPressActive(Button jogButton, long pressVersion)
+        {
+            return ReferenceEquals(_pressedJogButton, jogButton)
+                && _jogButtonPressVersion == pressVersion
+                && Mouse.LeftButton == MouseButtonState.Pressed;
         }
 
         /// <summary>显示本软件能核对的连接、伺服、运动、报警和限位条件，不替代硬件安全检查。</summary>
