@@ -276,11 +276,16 @@ namespace MotionControl.Framework.Wpf.Configuration
             SetConfigurationStatus("IO映射检查通过");
         }
 
-        /// <summary>放弃当前未保存修改并重新读取本机配置文件。</summary>
+        /// <summary>放弃当前未保存修改，重读配置并恢复已探测的 DI/DO 通道。</summary>
         private void CancelChangesButton_Click(object sender, RoutedEventArgs e)
         {
             LoadConfiguration();
             LoadControllerIds();
+
+            if (_cardConnection.IsConnected && _lastIoCapabilities != null)
+            {
+                PopulateDetectedChannels(_lastIoCapabilities);
+            }
         }
 
         /// <summary>结束两个表格当前单元格和行编辑，确保校验读取到最新输入值。</summary>
