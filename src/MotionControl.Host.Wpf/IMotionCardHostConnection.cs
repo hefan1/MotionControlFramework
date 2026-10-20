@@ -23,8 +23,5 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>当前卡配置的逻辑数字输出映射。</summary>
         IReadOnlyList<DigitalIoHardwareDefinition> DigitalOutputs { get; }
-
-        /// <summary>设备配置中代表整机急停状态的逻辑输入名称；未配置时为空。</summary>
-        string EmergencyStopInputName { get; }
     }
 }

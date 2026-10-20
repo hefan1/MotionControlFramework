@@ -3,7 +3,7 @@
 新设备项目的目录模板，不是具体设备实现，也不会被 Host 自动引用。新建设备时复制此项目，按设备需要添加流程、硬件映射、页面和配置，再由对应 Host 显式引用。
 
 ```text
-HardwareConfig/   控制卡清单（MotionCards.json）、轴参数（AxisParameters.json）、逻辑 DI/DO 映射（IoMapping.json）
+HardwareConfig/   控制卡清单（MotionCards.json）、轴参数（AxisParameters.json）、逻辑 DI/DO 映射（IoMapping.json）、安全联锁（SafetyInterlock.json）
 Communications/   设备专属 PLC 数据点与命令握手、自定义 TCP 设备协议
 Flows/Initialization/  可选的单机启动前初始化流程，例如回零、移动安全位、初始化设备输出
 Flows/Stations/   各工位独立的 C# 流程步；并行工位通过设备定义的请求/完成信号协作

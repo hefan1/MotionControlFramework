@@ -40,12 +40,6 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>当前页面编辑的数字输出映射。</summary>
         public ObservableCollection<DigitalIoHardwareDefinition> DigitalOutputs { get; private set; }
 
-        /// <summary>从当前 DI 名称生成的急停输入候选项。</summary>
-        public ObservableCollection<string> EmergencyStopInputNames { get; private set; }
-
-        /// <summary>急停状态对应的逻辑输入名称。</summary>
-        public string EmergencyStopInputName { get; set; }
-
         /// <summary>控制卡重新连接后通知 Host 刷新手动调试页。</summary>
         public event EventHandler CardConnectionChanged;
 
@@ -84,7 +78,6 @@ namespace MotionControl.Framework.Wpf.Configuration
             ControllerIds = new ObservableCollection<string>();
             DigitalInputs = new ObservableCollection<DigitalIoHardwareDefinition>();
             DigitalOutputs = new ObservableCollection<DigitalIoHardwareDefinition>();
-            EmergencyStopInputNames = new ObservableCollection<string>();
             DataContext = this;
 
             LoadConfiguration();
@@ -97,7 +90,6 @@ namespace MotionControl.Framework.Wpf.Configuration
             bool canEdit = _cardConnection.IsConnected
                 && _configurationCanBeSaved
                 && !_configurationApplyInProgress;
-            EmergencyStopInputComboBox.IsEnabled = canEdit;
             DigitalInputsGrid.IsEnabled = canEdit;
             DigitalOutputsGrid.IsEnabled = canEdit;
             CheckMappingButton.IsEnabled = !_configurationApplyInProgress;
@@ -170,7 +162,6 @@ namespace MotionControl.Framework.Wpf.Configuration
             ConfigurationFileText.Text = mappingPath;
             DigitalInputs.Clear();
             DigitalOutputs.Clear();
-            EmergencyStopInputName = string.Empty;
 
             try
             {
@@ -180,21 +171,16 @@ namespace MotionControl.Framework.Wpf.Configuration
                         _machineId,
                         IoMappingFilePath);
                     ValidateDocumentVersion(configuration);
-                    EmergencyStopInputName = configuration.EmergencyStopInputName ?? string.Empty;
                     AddPoints(DigitalInputs, configuration.DigitalInputs);
                     AddPoints(DigitalOutputs, configuration.DigitalOutputs);
                 }
 
-                RefreshEmergencyStopInputNames();
                 SetConfigurationStatus("IO映射读取完成");
             }
             catch (Exception error)
             {
                 DigitalInputs.Clear();
                 DigitalOutputs.Clear();
-                EmergencyStopInputName = string.Empty;
-                EmergencyStopInputNames.Clear();
-                EmergencyStopInputComboBox.GetBindingExpression(ComboBox.TextProperty)?.UpdateTarget();
                 _configurationCanBeSaved = false;
                 SetConfigurationStatus("IO映射读取失败", error.Message);
             }
@@ -251,7 +237,6 @@ namespace MotionControl.Framework.Wpf.Configuration
             if (selectedPoint != null)
             {
                 selectedPoint.Name = string.Empty;
-                RefreshEmergencyStopInputNames();
                 MarkConfigurationAsChanged();
             }
         }
@@ -267,7 +252,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
         }
 
-        /// <summary>检查当前 IO 名称、卡关联、通道唯一性和急停输入引用。</summary>
+        /// <summary>检查当前 DI/DO 名称、卡关联和通道唯一性。</summary>
         private void CheckMappingButton_Click(object sender, RoutedEventArgs e)
         {
             if (!CommitGridEdits())
@@ -304,22 +289,9 @@ namespace MotionControl.Framework.Wpf.Configuration
             return inputCellCommitted && inputRowCommitted && outputCellCommitted && outputRowCommitted;
         }
 
-        /// <summary>打开急停下拉框时刷新候选项，便于从已配置 DI 名称中选择。</summary>
-        private void EmergencyStopInputComboBox_DropDownOpened(object sender, EventArgs e)
-        {
-            RefreshEmergencyStopInputNames();
-        }
-
-        /// <summary>离开急停输入编辑框后提示配置已改变但尚未保存。</summary>
-        private void EmergencyStopInputComboBox_LostFocus(object sender, RoutedEventArgs e)
-        {
-            MarkConfigurationAsChanged();
-        }
-
         /// <summary>结束 DI 单元格编辑时提示配置已改变但尚未保存。</summary>
         private void DigitalInputsGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
         {
-            RefreshEmergencyStopInputNames();
             MarkConfigurationAsChanged();
         }
 
@@ -345,37 +317,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
         }
 
-        /// <summary>把当前已填写的 DI 名称放入急停候选列表，并清除已删除的引用。</summary>
-        private void RefreshEmergencyStopInputNames()
-        {
-            string selectedName = EmergencyStopInputName;
-            EmergencyStopInputNames.Clear();
-
-            foreach (DigitalIoHardwareDefinition input in DigitalInputs)
-            {
-                if (string.IsNullOrWhiteSpace(input.Name)
-                    || EmergencyStopInputNames.Any(name => string.Equals(
-                        name,
-                        input.Name,
-                        StringComparison.OrdinalIgnoreCase)))
-                {
-                    continue;
-                }
-
-                EmergencyStopInputNames.Add(input.Name);
-            }
-
-            bool selectedNameStillExists = !string.IsNullOrWhiteSpace(selectedName)
-                && EmergencyStopInputNames.Any(name => string.Equals(
-                    name,
-                    selectedName,
-                    StringComparison.OrdinalIgnoreCase));
-            EmergencyStopInputName = selectedNameStillExists ? selectedName : string.Empty;
-
-            EmergencyStopInputComboBox.GetBindingExpression(ComboBox.TextProperty)?.UpdateTarget();
-        }
-
-        /// <summary>校验两类 IO 的逻辑名称、卡号、物理通道及急停输入配置。</summary>
+        /// <summary>校验两类 IO 的逻辑名称、卡号和物理通道。</summary>
         private bool TryValidateConfiguration(out string errorMessage)
         {
             if (!_configurationCanBeSaved)
@@ -397,16 +339,6 @@ namespace MotionControl.Framework.Wpf.Configuration
 
             if (!ValidatePoints(DigitalOutputs, (string)FindResource("数字输出"), false, out errorMessage))
             {
-                return false;
-            }
-
-            if (string.IsNullOrWhiteSpace(EmergencyStopInputName)
-                || !DigitalInputs.Any(point => string.Equals(
-                    point.Name,
-                    EmergencyStopInputName.Trim(),
-                    StringComparison.OrdinalIgnoreCase)))
-            {
-                errorMessage = (string)FindResource("IO映射急停必须关联DI");
                 return false;
             }
 

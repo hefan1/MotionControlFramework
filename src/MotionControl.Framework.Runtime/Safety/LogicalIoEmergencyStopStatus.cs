@@ -13,9 +13,12 @@ namespace MotionControl.Framework.Runtime.Safety
         private readonly ILogicalIo _logicalIo;
 
         /// <summary>设备配置中代表急停回路状态的逻辑 DI 名称。</summary>
-        private readonly string _emergencyStopInputName;
+        private string _emergencyStopInputName;
 
-        /// <summary>创建急停输入读取器，并保存已校验的逻辑输入名称。</summary>
+        /// <summary>保护运行中更新急停 DI 名称时的配置锁。</summary>
+        private readonly object _configurationLock = new object();
+
+        /// <summary>创建急停输入读取器；名称为空时按急停已触发处理。</summary>
         public LogicalIoEmergencyStopStatus(ILogicalIo logicalIo, string emergencyStopInputName)
         {
             if (logicalIo == null)
@@ -23,20 +26,39 @@ namespace MotionControl.Framework.Runtime.Safety
                 throw new ArgumentNullException(nameof(logicalIo));
             }
 
-            if (string.IsNullOrWhiteSpace(emergencyStopInputName)
-                || !string.Equals(emergencyStopInputName, emergencyStopInputName.Trim(), StringComparison.Ordinal))
-            {
-                throw new ArgumentException("急停逻辑输入名称不能为空或包含首尾空格。", nameof(emergencyStopInputName));
-            }
-
             _logicalIo = logicalIo;
-            _emergencyStopInputName = emergencyStopInputName;
+            _emergencyStopInputName = string.Empty;
+            UpdateEmergencyStopInputName(emergencyStopInputName);
         }
 
-        /// <summary>读取配置的逻辑 DI；逻辑 true 表示急停已按下或安全回路断开。</summary>
+        /// <summary>更新运行中的急停 DI；为空时保持联锁并按急停已触发处理。</summary>
+        public void UpdateEmergencyStopInputName(string emergencyStopInputName)
+        {
+            string inputName = string.IsNullOrWhiteSpace(emergencyStopInputName)
+                ? string.Empty
+                : emergencyStopInputName.Trim();
+
+            lock (_configurationLock)
+            {
+                _emergencyStopInputName = inputName;
+            }
+        }
+
+        /// <summary>读取配置的逻辑 DI；逻辑 true 表示急停触发，未配置时按触发处理。</summary>
         public Task<bool> ReadEmergencyStopActiveAsync(CancellationToken cancellationToken)
         {
-            return _logicalIo.ReadInputAsync(_emergencyStopInputName, cancellationToken);
+            string inputName;
+            lock (_configurationLock)
+            {
+                inputName = _emergencyStopInputName;
+            }
+
+            if (string.IsNullOrWhiteSpace(inputName))
+            {
+                return Task.FromResult(true);
+            }
+
+            return _logicalIo.ReadInputAsync(inputName, cancellationToken);
         }
     }
 }

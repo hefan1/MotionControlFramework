@@ -1,6 +1,5 @@
 {
   "schemaVersion": 1,
-  "emergencyStopInputName": "SimulationEmergencyStop",
   "digitalInputs": [
     {
       "controllerId": "ZMotionSimulation",

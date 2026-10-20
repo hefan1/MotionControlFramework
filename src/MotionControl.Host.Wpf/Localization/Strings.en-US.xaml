@@ -36,6 +36,7 @@
     <sys:String x:Key="轴映射配置">Axis Mapping</sys:String>
     <sys:String x:Key="轴参数">Axis Parameters</sys:String>
     <sys:String x:Key="IO映射">I/O Mapping</sys:String>
+    <sys:String x:Key="安全联锁">Safety Interlocks</sys:String>
     <sys:String x:Key="通讯设置">Communication Settings</sys:String>
     <sys:String x:Key="数据采集">Data Collection</sys:String>
     <sys:String x:Key="当前报警">Current Alarms</sys:String>
@@ -241,8 +242,6 @@
 
     <sys:String x:Key="轴映射页面说明">Select the motion card basics and map machine axis names to physical channels.</sys:String>
     <sys:String x:Key="IO映射页面说明">Map the logical DI/DO names used by machine sequences to physical card channels.</sys:String>
-    <sys:String x:Key="急停输入名称">Emergency Stop Input Name</sys:String>
-    <sys:String x:Key="IO映射急停输入提示">Select a configured DI name or enter it manually.</sys:String>
     <sys:String x:Key="IO映射说明">After connection, this page shows onboard counts, specification ranges, and bus expansion counts. Add and name the DI/DO points used by the equipment.</sys:String>
     <sys:String x:Key="IO映射连接与输出说明">Connect on the Axis Mapping page first. This page saves configuration only and never switches outputs.</sys:String>
     <sys:String x:Key="控制卡Io数量未连接">Motion card disconnected. Connect it to read onboard counts, specification limits, mappable DI/DO address ranges, and bus scan results.</sys:String>
@@ -281,12 +280,29 @@
     <sys:String x:Key="IO映射通道无效格式">{0} “{1}” cannot use a negative physical channel.</sys:String>
     <sys:String x:Key="IO映射通道超出可映射范围格式">{0} “{1}” channel {2} is outside the controller's allowed number range ({3} channels, starting at 0).</sys:String>
     <sys:String x:Key="IO映射通道重复格式">{0} maps physical channel {1} more than once.</sys:String>
-    <sys:String x:Key="IO映射急停必须关联DI">The emergency stop input name must match a configured DI logical name.</sys:String>
-    <sys:String x:Key="IO映射检查通过">DI/DO mappings and the emergency stop input passed validation.</sys:String>
+    <sys:String x:Key="IO映射检查通过">DI/DO mappings passed validation.</sys:String>
     <sys:String x:Key="IO映射保存成功">I/O mappings were saved and applied to the connected motion card.</sys:String>
     <sys:String x:Key="IO映射保存失败">Failed to save I/O mappings: {0}</sys:String>
     <sys:String x:Key="IO映射保存并应用确认标题">Save and Apply I/O Mappings</sys:String>
-    <sys:String x:Key="IO映射保存并应用确认内容">The card will reconnect and load the new DI/DO mappings and emergency-stop input. Reconnecting clears the axes' homed state, and all configured axes must be stopped. Continue?</sys:String>
+    <sys:String x:Key="IO映射保存并应用确认内容">The card will reconnect and load the new DI/DO mappings. Reconnecting clears the axes' homed state, and all configured axes must be stopped. Continue?</sys:String>
+
+    <sys:String x:Key="安全联锁页面说明">Configure the software monitored emergency-stop input separately from DI/DO physical channel mapping.</sys:String>
+    <sys:String x:Key="安全联锁标题">Software Emergency Stop Interlock</sys:String>
+    <sys:String x:Key="安全联锁说明">Select a DI already configured in I/O Mapping for runtime emergency-stop monitoring.</sys:String>
+    <sys:String x:Key="安全联锁输入名称">Emergency Stop Status DI</sys:String>
+    <sys:String x:Key="安全联锁注意事项">If no emergency-stop DI is configured, software treats the input as active and blocks manual operations. This software monitor is for workflow interlocking; the hardware safety circuit must perform the safety stop.</sys:String>
+    <sys:String x:Key="安全联锁刷新DI">Refresh DI List</sys:String>
+    <sys:String x:Key="安全联锁保存配置">Save Configuration</sys:String>
+    <sys:String x:Key="安全联锁取消修改">Cancel Changes</sys:String>
+    <sys:String x:Key="安全联锁未配置">Emergency-stop status DI is not configured; the software interlock remains active.</sys:String>
+    <sys:String x:Key="安全联锁输入未映射">The configured emergency-stop DI “{0}” is not in I/O Mapping. Select another input.</sys:String>
+    <sys:String x:Key="安全联锁读取完成">Safety interlock configuration loaded.</sys:String>
+    <sys:String x:Key="安全联锁DI刷新完成">DI list refreshed.</sys:String>
+    <sys:String x:Key="安全联锁读取失败">Could not read safety interlock configuration: {0}</sys:String>
+    <sys:String x:Key="安全联锁保存成功">Safety interlock configuration saved.</sys:String>
+    <sys:String x:Key="安全联锁保存失败">Could not save safety interlock configuration: {0}</sys:String>
+    <sys:String x:Key="安全联锁配置不可保存">The configuration file or DI mappings could not be read. Saving is unavailable.</sys:String>
+    <sys:String x:Key="安全联锁输入必须来自DI映射">Select a DI name from I/O Mapping or clear the field.</sys:String>
     <sys:String x:Key="IO映射保存并应用失败格式">I/O mappings were saved, but reconnecting or applying them failed: {0}</sys:String>
     <sys:String x:Key="控制卡厂商">Card vendor</sys:String>
     <sys:String x:Key="控制卡未连接首次提示">Not connected. Select a card to connect.</sys:String>

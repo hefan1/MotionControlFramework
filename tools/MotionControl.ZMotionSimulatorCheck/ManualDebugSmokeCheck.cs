@@ -621,8 +621,6 @@ namespace MotionControl.ZMotionSimulatorCheck
                     ActiveHigh = true
                 };
                 page.DigitalOutputs.Add(lastOutput);
-                page.EmergencyStopInputName = "EmergencyStop";
-
                 var checkMappingButton = (Button)page.FindName("CheckMappingButton");
                 checkMappingButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, checkMappingButton));
                 Ensure(

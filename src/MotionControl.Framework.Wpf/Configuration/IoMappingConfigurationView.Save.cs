@@ -61,7 +61,6 @@ namespace MotionControl.Framework.Wpf.Configuration
 
             var configuration = new IoMappingConfigurationDocument
             {
-                EmergencyStopInputName = EmergencyStopInputName.Trim(),
                 DigitalInputs = DigitalInputs
                     .Where(point => !string.IsNullOrWhiteSpace(point.Name))
                     .Select(CopyPoint)

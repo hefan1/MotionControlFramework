@@ -5,15 +5,16 @@
 - 每份 JSON 文件根节点带有正整数 `schemaVersion`。
 - `MotionCards.json`：控制卡厂商、卡类型、轴通道数量，以及本设备使用的控制卡标识、适配器名称和连接配置文件。
 - `AxisParameters.json`：逻辑轴所属控制卡、物理轴通道、工程单位换算、软限位、回零速度与模式、点动和手动调试速度/加减速度。
-- `IoMapping.json`：逻辑 DI/DO 名称、所属控制卡和物理 IO 点位映射，并用 `emergencyStopInputName` 指定急停状态输入。
+- `IoMapping.json`：逻辑 DI/DO 名称、所属控制卡和物理 IO 点位映射。
+- `SafetyInterlock.json`：软件安全联锁设置，包括用于监控急停状态的 DI 逻辑名称。
 
-这三份文件各自保存一类设置。运动卡适配器的连接配置只保存厂商连接参数，不重复保存轴参数或 IO 映射。
+这些文件各自保存一类设置。运动卡适配器的连接配置只保存厂商连接参数，不重复保存轴参数、IO 映射或安全联锁设置。
 
 轴映射页面按 Host 注入的卡型和通道数量显示 Axis0 至当前卡容量，并把设备轴中文名称和轴参数保存到 `AxisParameters.json`。控制卡厂商、卡类型和轴通道数量保存在 `MotionCards.json`。页面只显示当前 Host 已接入的卡选项；增加厂商或卡型时，由 Host 组合根接入对应连接实现并提供该卡实际支持的通道数量，未接入的厂商不会出现在可选清单中。模板的空白 `MotionCards.json` 不预选某一家厂商。
 
 Runtime 首次启动时只复制缺失的默认文件，不覆盖现场文件。现场配置升级时先读取 `schemaVersion`，由设备项目按明确版本转换并校验；保存新文件时 Runtime 会先备份旧文件。产品工艺动作参数放在 `Parameters/`，PLC 或其他设备的连接与协议参数由对应 `Communications/` 模块管理。
 
-产品设备项目的启动 Host 在建立生产运行时前，应把这些配置转换为 `MotionCardHardwareDefinition`、`AxisHardwareDefinition`、`DigitalIoHardwareDefinition`，并调用 `MachineHardwareConfigurationValidator.Validate`。校验会检查卡、轴和 IO 的名称/通道重复、关联缺失、限位范围和急停 DI 映射；急停名称必须对应一个已配置的数字输入。模板中的空配置需要设备项目补齐后才能通过校验。
+产品设备项目的启动 Host 在建立生产运行时前，应把这些配置转换为 `MotionCardHardwareDefinition`、`AxisHardwareDefinition`、`DigitalIoHardwareDefinition`，从 `SafetyInterlock.json` 读取急停 DI 名称，并调用 `MachineHardwareConfigurationValidator.Validate`。校验会检查卡、轴和 IO 的名称/通道重复、关联缺失、限位范围和急停 DI 映射；急停名称必须对应一个已配置的数字输入。模板中的空配置需要设备项目补齐后才能通过校验。
 
 本仓库的 `MotionControl.Host.Wpf` 当前是通用配置与手动调试示例，允许先连接控制卡，再逐步补齐轴和 IO 配置；它的配置页面各自校验本页内容，不调用要求整机硬件配置完整的 `MachineHardwareConfigurationValidator.Validate`。设备项目接入自动运行流程时，必须在生产运行时启动前执行全量校验，不能把手动调试 Host 的连接成功视为整机配置已就绪。
 

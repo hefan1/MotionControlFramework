@@ -225,29 +225,17 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="{DynamicResource 急停输入名称}" VerticalAlignment="Center"
-                               Margin="0,0,8,0" FontSize="12" Foreground="#40536A" />
-                    <ComboBox x:Name="EmergencyStopInputComboBox" Width="260" IsEditable="True"
-                              IsTextSearchEnabled="True" ItemsSource="{Binding EmergencyStopInputNames}"
-                              Style="{StaticResource IoMappingComboBox}"
-                              ToolTip="{DynamicResource IO映射急停输入提示}"
-                              DropDownOpened="EmergencyStopInputComboBox_DropDownOpened"
-                              LostFocus="EmergencyStopInputComboBox_LostFocus"
-                              Text="{Binding EmergencyStopInputName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                </StackPanel>
-                <TextBlock Grid.Column="1" Text="{DynamicResource IO映射说明}"
-                           VerticalAlignment="Center" Margin="18,0" FontSize="11"
+                <TextBlock Text="{DynamicResource IO映射说明}"
+                           VerticalAlignment="Center" Margin="0,0,18,0" FontSize="11"
                            Foreground="#718096" TextWrapping="Wrap" />
-                <Border Grid.Column="2" Padding="9,6" Background="#EAF3FF" CornerRadius="4">
+                <Border Grid.Column="1" Padding="9,6" Background="#EAF3FF" CornerRadius="4">
                     <TextBlock Text="{DynamicResource IO映射连接与输出说明}" FontSize="11"
                                Foreground="#37638F" VerticalAlignment="Center" />
                 </Border>
-                <Border Grid.Row="1" Grid.ColumnSpan="3" Margin="0,8,0,0" Padding="8,5"
+                <Border Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0" Padding="8,5"
                         Background="#EAF3FF" CornerRadius="4">
                     <Grid>
                         <Grid.ColumnDefinitions>

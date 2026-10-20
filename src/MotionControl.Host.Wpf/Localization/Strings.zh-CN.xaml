@@ -40,6 +40,7 @@
     <sys:String x:Key="轴映射配置">轴映射配置</sys:String>
     <sys:String x:Key="轴参数">轴参数</sys:String>
     <sys:String x:Key="IO映射">IO 映射</sys:String>
+    <sys:String x:Key="安全联锁">安全联锁</sys:String>
     <sys:String x:Key="通讯设置">通讯设置</sys:String>
     <sys:String x:Key="数据采集">数据采集</sys:String>
 
@@ -250,8 +251,6 @@
     <!-- 轴映射配置页 -->
     <sys:String x:Key="轴映射页面说明">设置控制卡基本类型，并把设备轴名称对应到物理轴通道。</sys:String>
     <sys:String x:Key="IO映射页面说明">把设备流程使用的逻辑 DI/DO 名称对应到控制卡物理通道。</sys:String>
-    <sys:String x:Key="急停输入名称">急停输入名称</sys:String>
-    <sys:String x:Key="IO映射急停输入提示">可从已配置 DI 中选择，也可手动输入名称。</sys:String>
     <sys:String x:Key="IO映射说明">连接后显示板载数量、规格范围和总线扩展点数；设备实际使用的 DI/DO 由工程师添加并命名。</sys:String>
     <sys:String x:Key="IO映射连接与输出说明">先在轴映射页连接卡；这里只保存配置，不会切换物理输出。</sys:String>
     <sys:String x:Key="控制卡Io数量未连接">控制卡未连接：连接后可查询板载数量、规格上限、可映射编号范围和总线扫描结果。</sys:String>
@@ -290,12 +289,30 @@
     <sys:String x:Key="IO映射通道无效格式">{0}“{1}”的物理通道号不能小于 0。</sys:String>
     <sys:String x:Key="IO映射通道超出可映射范围格式">{0}“{1}”通道 {2} 超出当前控制卡允许的编号范围（共 {3} 路，编号从 0 开始）。</sys:String>
     <sys:String x:Key="IO映射通道重复格式">{0}重复使用了物理通道 {1}。</sys:String>
-    <sys:String x:Key="IO映射急停必须关联DI">急停输入名称必须对应到一个已配置的 DI 逻辑名称。</sys:String>
-    <sys:String x:Key="IO映射检查通过">DI/DO 映射和急停输入检查通过。</sys:String>
+    <sys:String x:Key="IO映射检查通过">DI/DO 映射检查通过。</sys:String>
     <sys:String x:Key="IO映射保存成功">IO 映射已保存并应用到当前控制卡。</sys:String>
     <sys:String x:Key="IO映射保存失败">保存 IO 映射失败：{0}</sys:String>
     <sys:String x:Key="IO映射保存并应用确认标题">保存并应用 IO 映射</sys:String>
-    <sys:String x:Key="IO映射保存并应用确认内容">保存后会重新连接控制卡并加载新的 DI/DO 映射和急停输入。重新连接会清除轴的回零完成状态，且所有已配置轴必须停止。是否继续？</sys:String>
+    <sys:String x:Key="IO映射保存并应用确认内容">保存后会重新连接控制卡并加载新的 DI/DO 映射。重新连接会清除轴的回零完成状态，且所有已配置轴必须停止。是否继续？</sys:String>
+
+    <!-- 安全联锁配置 -->
+    <sys:String x:Key="安全联锁页面说明">在此设置软件监控的急停逻辑输入，与 DI/DO 物理通道映射分开保存。</sys:String>
+    <sys:String x:Key="安全联锁标题">软件急停联锁</sys:String>
+    <sys:String x:Key="安全联锁说明">选择一个已在 IO 映射中配置的 DI，供运行时监控急停状态。</sys:String>
+    <sys:String x:Key="安全联锁输入名称">急停状态 DI</sys:String>
+    <sys:String x:Key="安全联锁注意事项">未配置急停状态 DI 时，软件会按急停已触发处理并拦截手动操作。该软件监控只用于流程联锁，设备安全停机仍须由硬件安全回路完成。</sys:String>
+    <sys:String x:Key="安全联锁刷新DI">刷新 DI 列表</sys:String>
+    <sys:String x:Key="安全联锁保存配置">保存配置</sys:String>
+    <sys:String x:Key="安全联锁取消修改">取消修改</sys:String>
+    <sys:String x:Key="安全联锁未配置">尚未配置急停状态 DI；软件联锁保持触发。</sys:String>
+    <sys:String x:Key="安全联锁输入未映射">当前急停 DI“{0}”已不在 IO 映射中，请重新选择。</sys:String>
+    <sys:String x:Key="安全联锁读取完成">安全联锁配置已读取。</sys:String>
+    <sys:String x:Key="安全联锁DI刷新完成">DI 列表已刷新。</sys:String>
+    <sys:String x:Key="安全联锁读取失败">安全联锁配置读取失败：{0}</sys:String>
+    <sys:String x:Key="安全联锁保存成功">安全联锁配置已保存。</sys:String>
+    <sys:String x:Key="安全联锁保存失败">安全联锁配置保存失败：{0}</sys:String>
+    <sys:String x:Key="安全联锁配置不可保存">配置文件或 DI 映射读取失败，当前不能保存。</sys:String>
+    <sys:String x:Key="安全联锁输入必须来自DI映射">请选择 IO 映射中已配置的 DI 名称，或清空该项。</sys:String>
     <sys:String x:Key="IO映射保存并应用失败格式">IO 映射已保存，但重新连接或应用失败：{0}</sys:String>
     <sys:String x:Key="控制卡厂商">控制卡厂商</sys:String>
     <sys:String x:Key="控制卡未连接首次提示">未连接：选择控制卡后连接</sys:String>

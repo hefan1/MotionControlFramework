@@ -74,9 +74,6 @@ namespace MotionControl.Host.Wpf
         private IReadOnlyList<DigitalIoHardwareDefinition> _digitalOutputs =
             new List<DigitalIoHardwareDefinition>().AsReadOnly();
 
-        /// <summary>设备配置中用于整机安全检查的急停 DI 名称。</summary>
-        private string _emergencyStopInputName = string.Empty;
-
         /// <summary>创建使用指定 MachineId 保存连接资料的正运动连接服务。</summary>
         public ZMotionAxisMappingCardConnection(MachineConfigurationStore configurationStore, string machineId)
         {
@@ -134,12 +131,6 @@ namespace MotionControl.Host.Wpf
         public IReadOnlyList<DigitalIoHardwareDefinition> DigitalOutputs
         {
             get { return _digitalOutputs; }
-        }
-
-        /// <summary>返回设备配置中的急停 DI 逻辑名称；未配置时为空。</summary>
-        public string EmergencyStopInputName
-        {
-            get { return _emergencyStopInputName; }
         }
 
         /// <summary>连接后从仿真控制器读取的型号标识。</summary>
@@ -226,7 +217,6 @@ namespace MotionControl.Host.Wpf
                 _axisHardwareDefinitions = mappings.AxisHardwareDefinitions.AsReadOnly();
                 _digitalInputs = mappings.AxisDigitalInputs.AsReadOnly();
                 _digitalOutputs = mappings.AxisDigitalOutputs.AsReadOnly();
-                _emergencyStopInputName = mappings.EmergencyStopInputName;
 
                 try
                 {
@@ -275,7 +265,6 @@ namespace MotionControl.Host.Wpf
             _axisHardwareDefinitions = new List<AxisHardwareDefinition>().AsReadOnly();
             _digitalInputs = new List<DigitalIoHardwareDefinition>().AsReadOnly();
             _digitalOutputs = new List<DigitalIoHardwareDefinition>().AsReadOnly();
-            _emergencyStopInputName = string.Empty;
         }
 
         /// <summary>确认所有已映射轴停止后重连，重新加载轴、DI/DO 映射并应用轴参数。</summary>
@@ -393,7 +382,6 @@ namespace MotionControl.Host.Wpf
                 throw new InvalidOperationException("IoMapping.json 格式无效，不能创建手动调试 IO 对象。");
             }
 
-            result.EmergencyStopInputName = ioDocument.EmergencyStopInputName ?? string.Empty;
             AddIoMappings(result, ioDocument.DigitalInputs, controllerId, true);
             AddIoMappings(result, ioDocument.DigitalOutputs, controllerId, false);
             return result;
@@ -480,7 +468,6 @@ namespace MotionControl.Host.Wpf
                 DigitalOutputs = new List<ZMotionIoPointConfiguration>();
                 AxisDigitalInputs = new List<DigitalIoHardwareDefinition>();
                 AxisDigitalOutputs = new List<DigitalIoHardwareDefinition>();
-                EmergencyStopInputName = string.Empty;
             }
 
             /// <summary>交给正运动适配器创建的逻辑轴配置。</summary>
@@ -501,8 +488,6 @@ namespace MotionControl.Host.Wpf
             /// <summary>交给手动调试页显示的逻辑 DO 配置。</summary>
             public List<DigitalIoHardwareDefinition> AxisDigitalOutputs { get; private set; }
 
-            /// <summary>由 IoMapping.json 保存的急停逻辑 DI 名称。</summary>
-            public string EmergencyStopInputName { get; set; }
         }
 
         /// <summary>读取指定物理轴的 UNITS、软限位、速度、爬行速度和加减速度。</summary>

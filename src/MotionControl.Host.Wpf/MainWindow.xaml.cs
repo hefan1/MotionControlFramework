@@ -30,7 +30,7 @@ namespace MotionControl.Host.Wpf
             { "Statistics", new[] { "产量统计", "节拍统计", "运行统计" } },
             { "Monitor", new[] { "设备状态", "轴监控", "IO监控", "流程状态" } },
             { "Manual", new[] { "轴手动", "IO手动", "气缸手动", "通讯调试" } },
-            { "Settings", new[] { "轴映射配置", "IO映射", "通讯设置", "数据采集" } },
+            { "Settings", new[] { "轴映射配置", "IO映射", "安全联锁", "通讯设置", "数据采集" } },
             { "Alarms", new[] { "当前报警", "历史报警", "报警统计", "操作日志" } },
             { "Users", new[] { "密码登录", "刷卡登录", "权限管理" } },
             { "Help", new[] { "软件信息", "使用说明" } }
@@ -56,6 +56,9 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>由 Host 组合根注入的通用 DI/DO 映射配置页面。</summary>
         private UserControl _ioMappingConfigurationPage;
+
+        /// <summary>由 Host 组合根注入的软件安全联锁配置页面。</summary>
+        private UserControl _safetyInterlockConfigurationPage;
 
         /// <summary>当前界面语言代码；支持 zh-CN 和 en-US。</summary>
         public string CurrentLanguage { get; private set; }
@@ -216,6 +219,13 @@ namespace MotionControl.Host.Wpf
             UpdatePageContent();
         }
 
+        /// <summary>由 Host 组合根注入当前设备的软件安全联锁配置页面。</summary>
+        public void SetSafetyInterlockConfigurationPage(UserControl safetyInterlockConfigurationPage)
+        {
+            _safetyInterlockConfigurationPage = safetyInterlockConfigurationPage;
+            UpdatePageContent();
+        }
+
         /// <summary>由 Host 组合根按运行时连接结果更新底栏的控制卡状态。</summary>
         public void SetMotionCardConnectionStatus(bool isConnected)
         {
@@ -250,6 +260,19 @@ namespace MotionControl.Host.Wpf
                 ManualDebugContent.Visibility = Visibility.Visible;
                 PagePlaceholder.Visibility = Visibility.Collapsed;
                 PageDescription.SetResourceReference(TextBlock.TextProperty, "IO映射页面说明");
+                return;
+            }
+
+            var isSafetyInterlockPage = _safetyInterlockConfigurationPage != null
+                && string.Equals(_currentSectionKey, "Settings", StringComparison.Ordinal)
+                && string.Equals(_currentPageResourceKey, "安全联锁", StringComparison.Ordinal);
+
+            if (isSafetyInterlockPage)
+            {
+                ManualDebugContent.Content = _safetyInterlockConfigurationPage;
+                ManualDebugContent.Visibility = Visibility.Visible;
+                PagePlaceholder.Visibility = Visibility.Collapsed;
+                PageDescription.SetResourceReference(TextBlock.TextProperty, "安全联锁页面说明");
                 return;
             }
 

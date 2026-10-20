@@ -12,6 +12,7 @@ using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.Framework.Runtime.Machine;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Runtime.Safety;
+using MotionControl.Framework.Wpf.Configuration;
 using MotionControl.Host.Wpf;
 using Newtonsoft.Json;
 
@@ -225,11 +226,13 @@ namespace MotionControl.ZMotionSimulatorCheck
             var motionCardsPath = GetConfigurationFilePath(configurationDirectory, "MotionCards.json");
             var axisParametersPath = GetConfigurationFilePath(configurationDirectory, "AxisParameters.json");
             var ioMappingPath = GetConfigurationFilePath(configurationDirectory, "IoMapping.json");
+            var safetyInterlockPath = GetConfigurationFilePath(configurationDirectory, "SafetyInterlock.json");
 
             var motionCards = LoadJson<MotionCardsDocument>(motionCardsPath);
             var axisParameters = LoadJson<AxisParametersDocument>(axisParametersPath);
             var ioMapping = LoadJson<IoMappingDocument>(ioMappingPath);
-            ValidateConfigurationDocuments(motionCards, axisParameters, ioMapping);
+            var safetyInterlock = LoadJson<SafetyInterlockConfigurationDocument>(safetyInterlockPath);
+            ValidateConfigurationDocuments(motionCards, axisParameters, ioMapping, safetyInterlock);
             options.IoMapping = ioMapping;
             if (options.ValidateConfigurationOnly)
             {
@@ -283,13 +286,17 @@ namespace MotionControl.ZMotionSimulatorCheck
         private static void ValidateConfigurationDocuments(
             MotionCardsDocument motionCards,
             AxisParametersDocument axisParameters,
-            IoMappingDocument ioMapping)
+            IoMappingDocument ioMapping,
+            SafetyInterlockConfigurationDocument safetyInterlock)
         {
             if (motionCards.SchemaVersion != 1
                 || axisParameters.SchemaVersion != 1
-                || ioMapping.SchemaVersion != 1)
+                || ioMapping.SchemaVersion != 1
+                || safetyInterlock == null
+                || safetyInterlock.SchemaVersion != 1)
             {
-                throw new InvalidOperationException("仿真验证工具当前只支持 schemaVersion 1。");
+                throw new InvalidOperationException(
+                    "仿真验证工具当前要求 MotionCards、AxisParameters、IoMapping 和 SafetyInterlock 均使用 schemaVersion 1。");
             }
 
             if (motionCards.MotionCards == null || motionCards.MotionCards.Count != 1)
@@ -355,7 +362,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                     Channel = point.Channel,
                     ActiveHigh = point.ActiveHigh
                 }),
-                ioMapping.EmergencyStopInputName);
+                safetyInterlock.EmergencyStopInputName);
         }
 
         /// <summary>连接 ZDevelop 仿真器，检查身份、轴状态、DI/DO，并按选项执行运动和输出测试。</summary>
@@ -783,8 +790,6 @@ namespace MotionControl.ZMotionSimulatorCheck
         private sealed class IoMappingDocument
         {
             public int SchemaVersion { get; set; }
-
-            public string EmergencyStopInputName { get; set; }
 
             public List<ZMotionIoPointConfiguration> DigitalInputs { get; set; }
 

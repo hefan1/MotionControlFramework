@@ -132,7 +132,6 @@ namespace MotionControl.Framework.Wpf.Configuration
 
             AddDetectedChannels(DigitalInputs, inputCount, controllerId);
             AddDetectedChannels(DigitalOutputs, outputCount, controllerId);
-            RefreshEmergencyStopInputNames();
         }
 
         /// <summary>优先按逐路读取 API 确认的连续地址范围生成通道数。</summary>

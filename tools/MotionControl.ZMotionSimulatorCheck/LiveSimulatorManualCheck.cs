@@ -13,6 +13,7 @@ using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Runtime.Machine;
 using MotionControl.Framework.Runtime.Safety;
+using MotionControl.Framework.Wpf.Configuration;
 using MotionControl.Framework.Wpf.ManualDebug;
 using MotionControl.Host.Wpf;
 using Newtonsoft.Json;
@@ -38,6 +39,9 @@ namespace MotionControl.ZMotionSimulatorCheck
                 var cardsDocument = LoadJson<MotionCardsDocument>(configurationDirectory, "MotionCards.json");
                 var axesDocument = LoadJson<AxisParametersDocument>(configurationDirectory, "AxisParameters.json");
                 var ioDocument = LoadJson<IoMappingDocument>(configurationDirectory, "IoMapping.json");
+                var safetyInterlock = LoadJson<SafetyInterlockConfigurationDocument>(
+                    configurationDirectory,
+                    "SafetyInterlock.json");
                 var cardDefinition = cardsDocument.MotionCards.Single();
                 var cardConfiguration = LoadJson<ZMotionCardConfiguration>(
                     configurationDirectory,
@@ -77,7 +81,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                     cardGroup,
                     new IStationFlow[] { new WaitingStationFlow() },
                     new MachineAlarmService(),
-                    new LogicalIoEmergencyStopStatus(card, ioDocument.EmergencyStopInputName));
+                    new LogicalIoEmergencyStopStatus(card, safetyInterlock.EmergencyStopInputName));
 
                 runtime.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
                 if (!string.Equals(
@@ -257,8 +261,6 @@ namespace MotionControl.ZMotionSimulatorCheck
         private sealed class IoMappingDocument
         {
             public int SchemaVersion { get; set; }
-
-            public string EmergencyStopInputName { get; set; }
 
             public List<ZMotionIoPointConfiguration> DigitalInputs { get; set; }
 

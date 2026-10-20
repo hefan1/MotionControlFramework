@@ -10,7 +10,6 @@ using MotionControl.Adapter.MotionCard.ZMotion;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.IO;
 using MotionControl.Framework.Contracts.Motion;
-using MotionControl.Framework.Contracts.Safety;
 using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Runtime.Machine;
@@ -47,11 +46,17 @@ namespace MotionControl.Host.Wpf
         /// <summary>当前 Host 使用的 IO 映射页面，按设备配置目录读写 DI/DO 映射。</summary>
         private IoMappingConfigurationView _ioMappingPage;
 
+        /// <summary>当前 Host 使用的安全联锁页面，独立读写急停 DI 设置。</summary>
+        private SafetyInterlockConfigurationView _safetyInterlockPage;
+
         /// <summary>当前设备配置读写服务，也为示教位置提供持久化。</summary>
         private MachineConfigurationStore _configurationStore;
 
         /// <summary>由当前连接卡创建的设备运行时，仅用于手动调试页的状态和操作保护。</summary>
         private MachineRuntime _machineRuntime;
+
+        /// <summary>运行时正在使用的软件急停 DI 状态读取器。</summary>
+        private LogicalIoEmergencyStopStatus _machineSafetyStatus;
 
         /// <summary>当前已映射逻辑轴对应的手动调试页面。</summary>
         private ManualMotionDebugView _manualMotionDebugPage;
@@ -97,11 +102,14 @@ namespace MotionControl.Host.Wpf
             _axisMappingPage.CardConnectionChanged += AxisMappingPage_CardConnectionChanged;
             _ioMappingPage = new IoMappingConfigurationView(_configurationStore, MachineId, _cardConnection);
             _ioMappingPage.CardConnectionChanged += AxisMappingPage_CardConnectionChanged;
+            _safetyInterlockPage = new SafetyInterlockConfigurationView(_configurationStore, MachineId);
+            _safetyInterlockPage.ConfigurationSaved += SafetyInterlockPage_ConfigurationSaved;
             _mainWindow = new MainWindow();
             _mainWindow.Loaded += MainWindow_Loaded;
             _mainWindow.LanguageChanged += MainWindow_LanguageChanged;
             _mainWindow.SetAxisMappingConfigurationPage(_axisMappingPage);
             _mainWindow.SetIoMappingConfigurationPage(_ioMappingPage);
+            _mainWindow.SetSafetyInterlockConfigurationPage(_safetyInterlockPage);
 
             MainWindow = _mainWindow;
             _mainWindow.Show();
@@ -193,6 +201,11 @@ namespace MotionControl.Host.Wpf
             {
                 _ioMappingPage.RefreshLocalizedText();
             }
+
+            if (_safetyInterlockPage != null)
+            {
+                _safetyInterlockPage.RefreshLocalizedText();
+            }
         }
 
         /// <summary>连接状态变化后同步底栏，并用当前卡轴映射创建或移除手动调试页。</summary>
@@ -203,10 +216,16 @@ namespace MotionControl.Host.Wpf
                 return;
             }
 
+            if (_safetyInterlockPage != null)
+            {
+                _safetyInterlockPage.RefreshDigitalInputNames();
+            }
+
             _mainWindow.SetMotionCardConnectionStatus(_cardConnection.IsConnected);
             if (!_cardConnection.IsConnected)
             {
                 _machineRuntime = null;
+                _machineSafetyStatus = null;
                 _manualMotionDebugPage = null;
                 _manualIoDebugPage = null;
                 _mainWindow.SetManualMotionDebugPage(null);
@@ -229,12 +248,12 @@ namespace MotionControl.Host.Wpf
                 }
 
                 var motionCards = new MotionCardGroup(new IMotionCard[] { connectedCard });
-                IMachineSafetyStatus safetyStatus = CreateSafetyStatus(connectedLogicalIo);
+                _machineSafetyStatus = CreateSafetyStatus(connectedLogicalIo);
                 var machineRuntime = new MachineRuntime(
                     motionCards,
                     new IStationFlow[0],
                     new MachineAlarmService(),
-                    safetyStatus);
+                    _machineSafetyStatus);
                 await machineRuntime.ConnectAsync(CancellationToken.None);
 
                 ManualMotionDebugView manualPage = new ManualMotionDebugView(
@@ -261,6 +280,7 @@ namespace MotionControl.Host.Wpf
             catch (Exception error)
             {
                 _machineRuntime = null;
+                _machineSafetyStatus = null;
                 _manualMotionDebugPage = null;
                 _manualIoDebugPage = null;
                 _mainWindow.SetManualMotionDebugPage(null);
@@ -273,13 +293,31 @@ namespace MotionControl.Host.Wpf
             }
         }
 
-        /// <summary>使用已映射急停 DI 创建安全状态读取器；缺少配置时按急停触发处理。</summary>
-        private IMachineSafetyStatus CreateSafetyStatus(ILogicalIo logicalIo)
+        /// <summary>从独立安全配置读取急停 DI；未配置或映射失效时按急停触发处理。</summary>
+        private LogicalIoEmergencyStopStatus CreateSafetyStatus(ILogicalIo logicalIo)
         {
-            string emergencyStopInputName = _cardConnection.EmergencyStopInputName;
+            const string safetyInterlockFilePath = "HardwareConfig/SafetyInterlock.json";
+            string fullPath = Path.Combine(
+                _configurationStore.GetMachineDirectory(MachineId),
+                safetyInterlockFilePath.Replace('/', Path.DirectorySeparatorChar));
+            var configuration = new SafetyInterlockConfigurationDocument();
+
+            if (File.Exists(fullPath))
+            {
+                configuration = _configurationStore.LoadJson<SafetyInterlockConfigurationDocument>(
+                    MachineId,
+                    safetyInterlockFilePath);
+                if (configuration == null || configuration.SchemaVersion != 1)
+                {
+                    throw new InvalidOperationException(
+                        "SafetyInterlock.json 格式无效，只支持 schemaVersion 为 1。");
+                }
+            }
+
+            string emergencyStopInputName = configuration.EmergencyStopInputName ?? string.Empty;
             if (string.IsNullOrWhiteSpace(emergencyStopInputName))
             {
-                return new MissingEmergencyStopStatus();
+                return new LogicalIoEmergencyStopStatus(logicalIo, string.Empty);
             }
 
             if (!_cardConnection.DigitalInputs.Any(point => string.Equals(
@@ -287,11 +325,29 @@ namespace MotionControl.Host.Wpf
                 emergencyStopInputName,
                 StringComparison.OrdinalIgnoreCase)))
             {
-                throw new InvalidOperationException(
-                    "急停输入 '" + emergencyStopInputName + "' 没有对应的 DI 映射，不能创建运行时。");
+                System.Diagnostics.Trace.TraceWarning(
+                    "安全联锁配置中的急停输入 '" + emergencyStopInputName
+                    + "' 没有对应的 DI 映射，运行时将继续按急停触发处理。");
+                return new LogicalIoEmergencyStopStatus(logicalIo, string.Empty);
             }
 
             return new LogicalIoEmergencyStopStatus(logicalIo, emergencyStopInputName);
+        }
+
+        /// <summary>安全配置保存后立即更新运行时正在使用的急停 DI。</summary>
+        private void SafetyInterlockPage_ConfigurationSaved(object sender, EventArgs e)
+        {
+            if (_machineSafetyStatus != null)
+            {
+                _machineSafetyStatus.UpdateEmergencyStopInputName(
+                    _safetyInterlockPage.EmergencyStopInputName);
+                return;
+            }
+
+            if (_cardConnection != null && _cardConnection.IsConnected)
+            {
+                AxisMappingPage_CardConnectionChanged(sender, e);
+            }
         }
 
         /// <summary>应用退出时断开已连接的控制卡，并报告句柄释放失败。</summary>
@@ -336,14 +392,5 @@ namespace MotionControl.Host.Wpf
             _ownsSingleInstanceMutex = false;
         }
 
-        /// <summary>尚未映射急停 DI 时返回触发状态，避免整机复位或启动绕过安全输入。</summary>
-        private sealed class MissingEmergencyStopStatus : IMachineSafetyStatus
-        {
-            /// <summary>没有可读取的急停输入时按触发处理。</summary>
-            public Task<bool> ReadEmergencyStopActiveAsync(CancellationToken cancellationToken)
-            {
-                return Task.FromResult(true);
-            }
-        }
     }
 }

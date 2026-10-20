@@ -9,9 +9,6 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>当前 IO 映射文件格式版本。</summary>
         public int SchemaVersion { get; set; }
 
-        /// <summary>急停状态使用的 DI 逻辑名称。</summary>
-        public string EmergencyStopInputName { get; set; }
-
         /// <summary>设备流程使用的数字输入映射。</summary>
         public List<DigitalIoHardwareDefinition> DigitalInputs { get; set; }
 
@@ -22,7 +19,6 @@ namespace MotionControl.Framework.Wpf.Configuration
         public IoMappingConfigurationDocument()
         {
             SchemaVersion = 1;
-            EmergencyStopInputName = string.Empty;
             DigitalInputs = new List<DigitalIoHardwareDefinition>();
             DigitalOutputs = new List<DigitalIoHardwareDefinition>();
         }
