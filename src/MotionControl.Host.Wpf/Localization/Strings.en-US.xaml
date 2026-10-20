@@ -71,6 +71,11 @@
     <sys:String x:Key="数据库未接入">Database: not connected</sys:String>
     <sys:String x:Key="MES未配置">MES: not configured</sys:String>
     <sys:String x:Key="设备状态标题">Machine State:</sys:String>
+    <sys:String x:Key="整机复位">Reset Machine</sys:String>
+    <sys:String x:Key="整机复位中">Resetting</sys:String>
+    <sys:String x:Key="整机复位提示">Confirm the emergency stop is released and all axes are stopped before resetting machine and axis alarms.</sys:String>
+    <sys:String x:Key="整机复位失败标题">Machine Reset Failed</sys:String>
+    <sys:String x:Key="整机复位失败内容">Reset did not complete: </sys:String>
     <sys:String x:Key="当前用户">User:</sys:String>
     <sys:String x:Key="语言">Language:</sys:String>
     <sys:String x:Key="简体中文">中文</sys:String>

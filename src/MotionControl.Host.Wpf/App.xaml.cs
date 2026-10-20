@@ -209,7 +209,7 @@ namespace MotionControl.Host.Wpf
             }
         }
 
-        /// <summary>连接状态变化后同步底栏，并用当前卡轴映射创建或移除手动调试页。</summary>
+        /// <summary>连接状态变化后同步整机运行时、连接状态和映射对应的手动调试页。</summary>
         private async void AxisMappingPage_CardConnectionChanged(object sender, EventArgs e)
         {
             if (_mainWindow == null)
@@ -229,6 +229,7 @@ namespace MotionControl.Host.Wpf
                 _machineSafetyStatus = null;
                 _manualMotionDebugPage = null;
                 _manualIoDebugPage = null;
+                _mainWindow.SetMachineRuntime(null);
                 _mainWindow.SetManualMotionDebugPage(null);
                 _mainWindow.SetManualIoDebugPage(null);
                 return;
@@ -258,6 +259,7 @@ namespace MotionControl.Host.Wpf
                 await machineRuntime.ConnectAsync(CancellationToken.None);
 
                 _machineRuntime = machineRuntime;
+                _mainWindow.SetMachineRuntime(machineRuntime);
                 RefreshManualDebugPages(machineRuntime, motionCards, connectedLogicalIo);
             }
             catch (Exception error)
@@ -266,6 +268,7 @@ namespace MotionControl.Host.Wpf
                 _machineSafetyStatus = null;
                 _manualMotionDebugPage = null;
                 _manualIoDebugPage = null;
+                _mainWindow.SetMachineRuntime(null);
                 _mainWindow.SetManualMotionDebugPage(null);
                 _mainWindow.SetManualIoDebugPage(null);
                 MessageBox.Show(

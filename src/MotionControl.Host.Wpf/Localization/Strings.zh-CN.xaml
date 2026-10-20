@@ -78,6 +78,11 @@
     <sys:String x:Key="数据库未接入">数据库 未接入</sys:String>
     <sys:String x:Key="MES未配置">MES 未配置</sys:String>
     <sys:String x:Key="设备状态标题">设备状态：</sys:String>
+    <sys:String x:Key="整机复位">整机复位</sys:String>
+    <sys:String x:Key="整机复位中">正在复位</sys:String>
+    <sys:String x:Key="整机复位提示">确认急停已释放、所有轴已停止后，复位整机报警和轴报警。</sys:String>
+    <sys:String x:Key="整机复位失败标题">整机复位失败</sys:String>
+    <sys:String x:Key="整机复位失败内容">复位未完成： </sys:String>
     <sys:String x:Key="当前用户">用户：</sys:String>
     <sys:String x:Key="语言">语言：</sys:String>
     <sys:String x:Key="简体中文">简体中文</sys:String>

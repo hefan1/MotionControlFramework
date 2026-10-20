@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Threading;
+using MotionControl.Framework.Runtime.Machine;
 
 namespace MotionControl.Host.Wpf
 {
@@ -60,6 +62,12 @@ namespace MotionControl.Host.Wpf
         /// <summary>由 Host 组合根注入的软件安全联锁配置页面。</summary>
         private UserControl _safetyInterlockConfigurationPage;
 
+        /// <summary>当前已连接设备的运行时，用于显示整机状态并执行整机复位。</summary>
+        private MachineRuntime _machineRuntime;
+
+        /// <summary>标记整机复位正在执行，防止操作员重复点击复位按钮。</summary>
+        private bool _isResetting;
+
         /// <summary>当前界面语言代码；支持 zh-CN 和 en-US。</summary>
         public string CurrentLanguage { get; private set; }
 
@@ -67,7 +75,7 @@ namespace MotionControl.Host.Wpf
         public event EventHandler LanguageChanged;
 
         /// <summary>
-        /// 初始化主窗口、默认导航、多语言界面和顶部时钟。
+        /// 初始化主窗口、默认导航、多语言界面、整机状态和顶部时钟。
         /// </summary>
         public MainWindow()
         {
@@ -75,6 +83,7 @@ namespace MotionControl.Host.Wpf
 
             CurrentLanguage = "zh-CN";
             NavigateToSection("Home");
+            UpdateMachineStateDisplay();
 
             _clockTimer = new DispatcherTimer
             {
@@ -226,6 +235,29 @@ namespace MotionControl.Host.Wpf
             UpdatePageContent();
         }
 
+        /// <summary>接收当前设备运行时，并根据其状态更新整机状态文字和复位按钮。</summary>
+        public void SetMachineRuntime(MachineRuntime machineRuntime)
+        {
+            if (ReferenceEquals(_machineRuntime, machineRuntime))
+            {
+                UpdateMachineStateDisplay();
+                return;
+            }
+
+            if (_machineRuntime != null)
+            {
+                _machineRuntime.StatusChanged -= MachineRuntime_StatusChanged;
+            }
+
+            _machineRuntime = machineRuntime;
+            if (_machineRuntime != null)
+            {
+                _machineRuntime.StatusChanged += MachineRuntime_StatusChanged;
+            }
+
+            UpdateMachineStateDisplay();
+        }
+
         /// <summary>由 Host 组合根按运行时连接结果更新底栏的控制卡状态。</summary>
         public void SetMotionCardConnectionStatus(bool isConnected)
         {
@@ -344,6 +376,7 @@ namespace MotionControl.Host.Wpf
 
             ReplaceLanguageResources(languageResources);
             Title = GetLocalizedText("运动控制上位机");
+            UpdateMachineStateDisplay();
 
             // 左侧导航由代码生成，切换语言后重新生成当前导航项；保留当前选中页面。
             NavigateToSection(_currentSectionKey);
@@ -398,7 +431,91 @@ namespace MotionControl.Host.Wpf
 
             string noticeResourceKey = commandButton.Tag as string;
             HeaderMessage.SetResourceReference(TextBlock.TextProperty, noticeResourceKey);
-            CurrentMachineState.SetResourceReference(TextBlock.TextProperty, "控制逻辑未接入");
+        }
+
+        /// <summary>在界面线程上响应运行时状态变化并刷新整机状态显示。</summary>
+        private void MachineRuntime_StatusChanged(object sender, EventArgs e)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(UpdateMachineStateDisplay));
+                return;
+            }
+
+            UpdateMachineStateDisplay();
+        }
+
+        /// <summary>把运行时状态转换成当前语言资源中的简短显示文字。</summary>
+        private string GetMachineStateResourceKey(MachineRunState state)
+        {
+            switch (state)
+            {
+                case MachineRunState.ResetRequired:
+                    return "状态等待复位";
+                case MachineRunState.Ready:
+                    return "状态就绪";
+                case MachineRunState.Running:
+                    return "状态运行中";
+                case MachineRunState.Pausing:
+                    return "状态暂停中";
+                case MachineRunState.Paused:
+                    return "状态已暂停";
+                case MachineRunState.Alarmed:
+                    return "状态报警";
+                default:
+                    return "状态未连接";
+            }
+        }
+
+        /// <summary>同步顶部和底部整机状态，并按运行状态启用或禁用整机复位。</summary>
+        private void UpdateMachineStateDisplay()
+        {
+            MachineRunState state = _machineRuntime == null
+                ? MachineRunState.Disconnected
+                : _machineRuntime.State;
+            string stateResourceKey = GetMachineStateResourceKey(state);
+            string stateText = GetLocalizedText(stateResourceKey);
+
+            CurrentMachineState.SetResourceReference(TextBlock.TextProperty, stateResourceKey);
+            HeaderMessage.Text = GetLocalizedText("设备状态标题") + stateText;
+            MachineResetButton.SetResourceReference(
+                ContentControl.ContentProperty,
+                _isResetting ? "整机复位中" : "整机复位");
+            MachineResetButton.IsEnabled = !_isResetting
+                && _machineRuntime != null
+                && (state == MachineRunState.ResetRequired
+                    || state == MachineRunState.Paused
+                    || state == MachineRunState.Alarmed);
+        }
+
+        /// <summary>调用 Runtime 的整机复位流程，并向操作员显示未能完成的原因。</summary>
+        private async void MachineResetButton_Click(object sender, RoutedEventArgs e)
+        {
+            MachineRuntime runtime = _machineRuntime;
+            if (runtime == null || _isResetting)
+            {
+                return;
+            }
+
+            _isResetting = true;
+            UpdateMachineStateDisplay();
+            try
+            {
+                await runtime.ResetAsync(CancellationToken.None);
+            }
+            catch (Exception error)
+            {
+                MessageBox.Show(
+                    GetLocalizedText("整机复位失败内容") + error.Message,
+                    GetLocalizedText("整机复位失败标题"),
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+            finally
+            {
+                _isResetting = false;
+                UpdateMachineStateDisplay();
+            }
         }
 
         /// <summary>
@@ -418,11 +535,16 @@ namespace MotionControl.Host.Wpf
         }
 
         /// <summary>
-        /// 关闭主窗口时停止时钟定时器。
+        /// 关闭主窗口时停止时钟定时器并解除运行时状态事件订阅。
         /// </summary>
         private void MainWindow_Closed(object sender, EventArgs e)
         {
             _clockTimer.Stop();
+            if (_machineRuntime != null)
+            {
+                _machineRuntime.StatusChanged -= MachineRuntime_StatusChanged;
+                _machineRuntime = null;
+            }
         }
     }
 }

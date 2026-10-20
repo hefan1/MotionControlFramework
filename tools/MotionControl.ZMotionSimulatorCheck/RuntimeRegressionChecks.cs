@@ -44,6 +44,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("工位流程异常使整机进入报警", StationFailureAlarmsMachineAsync, failures);
             await RunCheckAsync("手动轴和 DO 操作实时检查急停并等待复位", EmergencyStopBlocksManualOperationsAsync, failures);
             await RunCheckAsync("急停有效时禁止复位和启动，运行期间触发会暂停流程", EmergencyStopBlocksAndStopsMachineAsync, failures);
+            await RunCheckAsync("轴仍在运动时拒绝整机复位", ResetIsRejectedWhileAxisIsMovingAsync, failures);
             await RunCheckAsync("急停状态通过配置的逻辑 DI 读取", EmergencyStopStatusUsesConfiguredInputAsync, failures);
             await RunCheckAsync("设备硬件配置关联和急停输入校验", HardwareConfigurationValidationAsync, failures);
             await RunCheckAsync("通用框架程序集不引用厂商适配器或原生 API", SharedFrameworkAssembliesDoNotReferenceVendorAdaptersAsync, failures);
@@ -623,6 +624,23 @@ namespace MotionControl.ZMotionSimulatorCheck
             await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
+        /// <summary>确认整机复位会先读轴状态，发现轴仍运动时不下发轴报警复位。</summary>
+        private static async Task ResetIsRejectedWhileAxisIsMovingAsync()
+        {
+            var movingAxis = new FakeAxis("MovingAxis") { IsMoving = true };
+            var flow = new WaitingStationFlow("测试工位", "等待测试");
+            var runtime = CreateRuntime(flow, new MachineAlarmService(), axis: movingAxis);
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+
+            await ExpectExceptionAsync<InvalidOperationException>(
+                () => runtime.ResetAsync(CancellationToken.None)).ConfigureAwait(false);
+
+            Ensure(runtime.State == MachineRunState.Alarmed, "轴仍在运动时复位失败，没有保留报警状态。");
+            Ensure(movingAxis.AlarmResetCount == 0, "轴仍在运动时 Runtime 仍下发了轴报警复位。");
+            movingAxis.IsMoving = false;
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
         /// <summary>确认非停机报警会在条件恢复后自动从报警列表中清除。</summary>
         private static Task NonStopAlarmClearsWhenRecoveredAsync()
         {
@@ -983,13 +1001,14 @@ namespace MotionControl.ZMotionSimulatorCheck
                 "硬件配置没有因为预期问题而被拒绝：" + expectedMessage + "。");
         }
 
-        /// <summary>使用单张模拟卡、一个测试轴和指定工位创建 Runtime。</summary>
+        /// <summary>使用单张模拟卡、指定测试轴和工位创建 Runtime。</summary>
         private static MachineRuntime CreateRuntime(
             IStationFlow flow,
             IMachineAlarmService alarms,
-            FakeSafetyStatus safetyStatus = null)
+            FakeSafetyStatus safetyStatus = null,
+            FakeAxis axis = null)
         {
-            var card = new FakeMotionCard("TestCard", new FakeAxis("TestAxis"));
+            var card = new FakeMotionCard("TestCard", axis ?? new FakeAxis("TestAxis"));
             return new MachineRuntime(
                 new MotionCardGroup(new[] { card }),
                 new[] { flow },
@@ -1118,6 +1137,9 @@ namespace MotionControl.ZMotionSimulatorCheck
             /// <summary>设置测试轴是否仍处于运动状态。</summary>
             public bool IsMoving { get; set; }
 
+            /// <summary>记录测试期间收到的轴报警复位次数。</summary>
+            public int AlarmResetCount { get; private set; }
+
             /// <summary>设置测试轴是否带有硬限位恢复后必须回零的标记。</summary>
             public bool RequiresHomingAfterLimitAlarm { get; set; }
 
@@ -1161,8 +1183,13 @@ namespace MotionControl.ZMotionSimulatorCheck
             /// <summary>模拟停止轴运动。</summary>
             public Task StopAsync(AxisStopMode stopMode, CancellationToken cancellationToken) { cancellationToken.ThrowIfCancellationRequested(); return Task.CompletedTask; }
 
-            /// <summary>模拟轴报警复位。</summary>
-            public Task ResetAlarmAsync(CancellationToken cancellationToken) { cancellationToken.ThrowIfCancellationRequested(); return Task.CompletedTask; }
+            /// <summary>模拟轴报警复位并记录调用次数。</summary>
+            public Task ResetAlarmAsync(CancellationToken cancellationToken)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                AlarmResetCount++;
+                return Task.CompletedTask;
+            }
         }
 
         /// <summary>提供可由回归用例切换的急停输入状态。</summary>

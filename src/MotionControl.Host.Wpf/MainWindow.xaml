@@ -98,7 +98,7 @@
                         Background="#EEF0F2"
                         CornerRadius="6">
                     <TextBlock x:Name="HeaderMessage"
-                               Text="{DynamicResource 设备状态待机}"
+                               Text="{DynamicResource 设备状态标题}"
                                FontSize="15"
                                Foreground="#44494D"
                                VerticalAlignment="Center"
@@ -123,6 +123,13 @@
                             Style="{StaticResource MachineCommandButton}"
                             Click="MachineCommandButton_Click"
                             ToolTip="{DynamicResource 外壳预览停止命令提示}" />
+                    <Button x:Name="MachineResetButton"
+                            Content="{DynamicResource 整机复位}"
+                            Background="#F4D78B"
+                            IsEnabled="False"
+                            Style="{StaticResource MachineCommandButton}"
+                            Click="MachineResetButton_Click"
+                            ToolTip="{DynamicResource 整机复位提示}" />
                 </StackPanel>
             </Grid>
         </Border>
@@ -251,7 +258,7 @@
                             Orientation="Horizontal"
                             VerticalAlignment="Center">
                     <TextBlock Text="{DynamicResource 设备状态标题}" Foreground="#555C61" />
-                    <TextBlock x:Name="CurrentMachineState" Text="{DynamicResource 待机占位}" Foreground="#25282B" />
+                    <TextBlock x:Name="CurrentMachineState" Text="{DynamicResource 状态未连接}" Foreground="#25282B" />
                 </StackPanel>
 
                 <StackPanel Grid.Column="3"

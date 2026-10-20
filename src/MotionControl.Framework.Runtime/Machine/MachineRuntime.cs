@@ -324,7 +324,7 @@ namespace MotionControl.Framework.Runtime.Machine
             }
         }
 
-        /// <summary>复位运动轴、设备流程和停机报警，成功后允许启动。</summary>
+        /// <summary>确认所有轴停稳且安全条件恢复后，复位运动轴、设备流程和停机报警。</summary>
         public async Task ResetAsync(CancellationToken cancellationToken)
         {
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -343,6 +343,31 @@ namespace MotionControl.Framework.Runtime.Machine
 
                 try
                 {
+                    foreach (var axis in _motionCards.Axes)
+                    {
+                        AxisStatus axisStatus;
+                        try
+                        {
+                            axisStatus = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                        {
+                            throw;
+                        }
+                        catch (Exception statusError)
+                        {
+                            throw new InvalidOperationException(
+                                "整机复位前读取逻辑轴 '" + axis.Name + "' 状态失败，不能复位。",
+                                statusError);
+                        }
+
+                        if (axisStatus.Moving)
+                        {
+                            throw new InvalidOperationException(
+                                "逻辑轴 '" + axis.Name + "' 仍在运动，停止所有轴后再执行整机复位。");
+                        }
+                    }
+
                     await UpdateEmergencyStopAlarmAsync(cancellationToken).ConfigureAwait(false);
                     _alarmService.EnsureStopAlarmConditionsRecovered();
 
