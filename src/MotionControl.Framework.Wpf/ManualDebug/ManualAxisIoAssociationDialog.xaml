@@ -43,7 +43,8 @@
             </Grid.ColumnDefinitions>
             <TextBlock Text="{DynamicResource 逻辑IO名称}" VerticalAlignment="Center" />
             <ComboBox x:Name="PointNameComboBox" Grid.Column="1" MinHeight="28"
-                      DisplayMemberPath="Name" />
+                      DisplayMemberPath="Name"
+                      SelectionChanged="PointNameComboBox_SelectionChanged" />
         </Grid>
 
         <Grid Grid.Row="3" Margin="0,0,0,8">
@@ -53,7 +54,8 @@
             </Grid.ColumnDefinitions>
             <TextBlock Text="{DynamicResource 显示名称}" VerticalAlignment="Center" />
             <TextBox x:Name="DisplayNameTextBox" Grid.Column="1" MinHeight="28"
-                     Padding="5,3" VerticalContentAlignment="Center" />
+                     Padding="5,3" VerticalContentAlignment="Center"
+                     TextChanged="DisplayNameTextBox_TextChanged" />
         </Grid>
 
         <Border x:Name="OutputActionPanel" Grid.Row="4" Padding="10" Margin="0,0,0,10"

@@ -22,6 +22,15 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>正在编辑的配置；新增 IO 时为空。</summary>
         private readonly ManualAxisIoAssociation _editingAssociation;
 
+        /// <summary>刷新候选逻辑 IO 时，阻止程序自动选项触发名称联动。</summary>
+        private bool _isUpdatingPointChoices;
+
+        /// <summary>程序自动填写显示名称时，阻止文本事件误认为用户自定义。</summary>
+        private bool _isSettingSuggestedDisplayName;
+
+        /// <summary>显示名称已由用户改成与所选逻辑 IO 名称不同的文字。</summary>
+        private bool _hasCustomDisplayName;
+
         /// <summary>保存按钮验证通过后生成的关联配置。</summary>
         public ManualAxisIoAssociation Result { get; private set; }
 
@@ -59,7 +68,13 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             InitializeComponent();
             PointTypeComboBox.SelectedIndex = editingAssociation != null
                 && editingAssociation.PointType == ManualAxisIoPointType.DigitalOutput ? 1 : 0;
+            _isSettingSuggestedDisplayName = true;
             DisplayNameTextBox.Text = editingAssociation == null ? string.Empty : editingAssociation.DisplayName;
+            _isSettingSuggestedDisplayName = false;
+            _hasCustomDisplayName = editingAssociation != null
+                && !string.IsNullOrWhiteSpace(editingAssociation.DisplayName)
+                && !string.Equals(editingAssociation.DisplayName, editingAssociation.PointName,
+                    StringComparison.OrdinalIgnoreCase);
             bool editingOutput = editingAssociation != null
                 && editingAssociation.PointType == ManualAxisIoPointType.DigitalOutput;
             OnActionNameTextBox.Text = editingOutput
@@ -80,6 +95,36 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
 
             UpdateAvailablePointNames();
+        }
+
+        /// <summary>将新选中的逻辑 IO 名称填入显示名称；保留用户已设置的自定义文字。</summary>
+        private void PointNameComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isUpdatingPointChoices || _hasCustomDisplayName)
+            {
+                return;
+            }
+
+            DigitalIoHardwareDefinition selectedPoint = PointNameComboBox.SelectedItem as DigitalIoHardwareDefinition;
+            if (selectedPoint != null)
+            {
+                SetSuggestedDisplayName(selectedPoint.Name);
+            }
+        }
+
+        /// <summary>记录用户是否将显示名称改成了不同于当前逻辑 IO 名称的文字。</summary>
+        private void DisplayNameTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_isSettingSuggestedDisplayName)
+            {
+                return;
+            }
+
+            DigitalIoHardwareDefinition selectedPoint = PointNameComboBox.SelectedItem as DigitalIoHardwareDefinition;
+            _hasCustomDisplayName = selectedPoint == null
+                ? !string.IsNullOrWhiteSpace(DisplayNameTextBox.Text)
+                : !string.Equals(DisplayNameTextBox.Text.Trim(), selectedPoint.Name,
+                    StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>刷新候选项，只显示当前轴尚未关联的同类型逻辑点。</summary>
@@ -103,12 +148,30 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                     || string.Equals(point.Name, editingName, StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
-            PointNameComboBox.ItemsSource = choices;
-            PointNameComboBox.SelectedItem = choices.FirstOrDefault(point =>
-                string.Equals(point.Name, editingName, StringComparison.OrdinalIgnoreCase));
+            _isUpdatingPointChoices = true;
+            try
+            {
+                PointNameComboBox.ItemsSource = choices;
+                PointNameComboBox.SelectedItem = choices.FirstOrDefault(point =>
+                    string.Equals(point.Name, editingName, StringComparison.OrdinalIgnoreCase));
+            }
+            finally
+            {
+                _isUpdatingPointChoices = false;
+            }
+
             OutputActionPanel.Visibility = pointType == ManualAxisIoPointType.DigitalOutput
                 ? Visibility.Visible
                 : Visibility.Collapsed;
+        }
+
+        /// <summary>填写逻辑 IO 的建议名称，并标记这是程序同步值而非用户自定义。</summary>
+        private void SetSuggestedDisplayName(string displayName)
+        {
+            _isSettingSuggestedDisplayName = true;
+            DisplayNameTextBox.Text = displayName;
+            _isSettingSuggestedDisplayName = false;
+            _hasCustomDisplayName = false;
         }
 
         /// <summary>验证当前输入并返回新建或更新后的 IO 关联配置。</summary>
