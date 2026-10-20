@@ -50,6 +50,9 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>串行化连接、复位、启动、暂停和断开等整机命令。</summary>
         private readonly SemaphoreSlim _commandLock = new SemaphoreSlim(1, 1);
 
+        /// <summary>当前仍在执行的手动轴或 IO 操作数量，防止其间启动、复位或断卡。</summary>
+        private int _activeManualOperationCount;
+
         /// <summary>保护整机状态及最近错误，供不同线程安全读取和更新。</summary>
         private readonly object _statusLock = new object();
 
@@ -161,6 +164,101 @@ namespace MotionControl.Framework.Runtime.Machine
             get { return _alarmService; }
         }
 
+        /// <summary>检查手动操作条件并刷新急停状态，返回可供界面本地化显示的阻止原因。</summary>
+        public async Task<ManualOperationBlockReason> GetManualOperationBlockReasonAsync(
+            CancellationToken cancellationToken)
+        {
+            ManualOperationBlockReason stateReason = GetManualOperationStateBlockReason();
+            if (stateReason != ManualOperationBlockReason.None)
+            {
+                return stateReason;
+            }
+
+            bool emergencyStopActive;
+            try
+            {
+                emergencyStopActive = await UpdateEmergencyStopAlarmAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                return ManualOperationBlockReason.EmergencyStopStatusUnavailable;
+            }
+
+            if (emergencyStopActive)
+            {
+                return ManualOperationBlockReason.EmergencyStopInputActive;
+            }
+
+            bool emergencyStopAlarmExists = _alarmService.Alarms.Any(
+                alarm => string.Equals(alarm.Definition.Code, "EMERGENCY_STOP", StringComparison.OrdinalIgnoreCase));
+            if (emergencyStopAlarmExists)
+            {
+                return ManualOperationBlockReason.EmergencyStopAlarmNotReset;
+            }
+
+            return GetManualOperationStateBlockReason();
+        }
+
+        /// <summary>检查联锁并执行一项手动操作；操作结束前阻止整机启动、复位和断卡。</summary>
+        public async Task<ManualOperationBlockReason> RunManualOperationAsync(
+            Func<Task> operation,
+            CancellationToken cancellationToken)
+        {
+            if (operation == null)
+            {
+                throw new ArgumentNullException(nameof(operation));
+            }
+
+            ManualOperationBlockReason blockReason = await BeginManualOperationAsync(cancellationToken)
+                .ConfigureAwait(true);
+            if (blockReason != ManualOperationBlockReason.None)
+            {
+                return blockReason;
+            }
+
+            try
+            {
+                await operation().ConfigureAwait(false);
+                return ManualOperationBlockReason.None;
+            }
+            finally
+            {
+                EndManualOperation();
+            }
+        }
+
+        /// <summary>执行手动受控停止；停止不受急停联锁阻挡，但自动流程期间仍需整机暂停。</summary>
+        public async Task<ManualOperationBlockReason> RunManualStopAsync(
+            Func<Task> stopOperation,
+            CancellationToken cancellationToken)
+        {
+            if (stopOperation == null)
+            {
+                throw new ArgumentNullException(nameof(stopOperation));
+            }
+
+            ManualOperationBlockReason blockReason = await BeginManualStopAsync(cancellationToken)
+                .ConfigureAwait(true);
+            if (blockReason != ManualOperationBlockReason.None)
+            {
+                return blockReason;
+            }
+
+            try
+            {
+                await stopOperation().ConfigureAwait(false);
+                return ManualOperationBlockReason.None;
+            }
+            finally
+            {
+                EndManualOperation();
+            }
+        }
+
         /// <summary>返回本设备配置的工位流程只读列表。</summary>
         public IReadOnlyList<IStationFlow> StationFlows
         {
@@ -202,6 +300,8 @@ namespace MotionControl.Framework.Runtime.Machine
                     throw new InvalidOperationException("工位流程仍在运行或等待停止，不能断开控制卡。");
                 }
 
+                EnsureNoManualOperationsInProgress("断开运动控制卡");
+
                 try
                 {
                     await _motionCards.DisconnectAsync(cancellationToken).ConfigureAwait(false);
@@ -233,6 +333,8 @@ namespace MotionControl.Framework.Runtime.Machine
                 {
                     throw new InvalidOperationException("工位流程仍在后台运行，不能复位；请先等待流程退出或再次请求暂停。");
                 }
+
+                EnsureNoManualOperationsInProgress("复位设备");
 
                 try
                 {
@@ -302,6 +404,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 }
 
                 EnsureState(MachineRunState.Ready, "启动前必须先成功复位设备。");
+                EnsureNoManualOperationsInProgress("启动自动流程");
                 try
                 {
                     if (await UpdateEmergencyStopAlarmAsync(cancellationToken).ConfigureAwait(false))
@@ -359,7 +462,7 @@ namespace MotionControl.Framework.Runtime.Machine
                     "整机急停输入",
                     true,
                     "读取急停状态失败，按急停触发处理。原因：" + readError.Message);
-                throw new InvalidOperationException("读取急停状态失败，设备不能启动或复位。", readError);
+                throw new InvalidOperationException("读取急停状态失败，已按急停触发处理。", readError);
             }
 
             _alarmService.ReportCondition(
@@ -786,6 +889,81 @@ namespace MotionControl.Framework.Runtime.Machine
             if (State != requiredState)
             {
                 throw new InvalidOperationException(errorMessage + " 当前状态：" + State + "。");
+            }
+        }
+
+        /// <summary>根据整机状态返回当前是否允许手动轴或 IO 操作。</summary>
+        private ManualOperationBlockReason GetManualOperationStateBlockReason()
+        {
+            MachineRunState state = State;
+            if (state == MachineRunState.Disconnected)
+            {
+                return ManualOperationBlockReason.MotionCardDisconnected;
+            }
+
+            if (state == MachineRunState.Running || state == MachineRunState.Pausing)
+            {
+                return ManualOperationBlockReason.AutomaticFlowActive;
+            }
+
+            return ManualOperationBlockReason.None;
+        }
+
+        /// <summary>在整机命令锁内检查手动联锁并登记正在执行的手动操作。</summary>
+        private async Task<ManualOperationBlockReason> BeginManualOperationAsync(
+            CancellationToken cancellationToken)
+        {
+            await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                ManualOperationBlockReason blockReason = await GetManualOperationBlockReasonAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                if (blockReason == ManualOperationBlockReason.None)
+                {
+                    Interlocked.Increment(ref _activeManualOperationCount);
+                }
+
+                return blockReason;
+            }
+            finally
+            {
+                _commandLock.Release();
+            }
+        }
+
+        /// <summary>在整机命令锁内登记手动停止；允许急停有效，但拒绝未连接或自动运行状态。</summary>
+        private async Task<ManualOperationBlockReason> BeginManualStopAsync(CancellationToken cancellationToken)
+        {
+            await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                ManualOperationBlockReason blockReason = GetManualOperationStateBlockReason();
+                if (blockReason == ManualOperationBlockReason.None)
+                {
+                    Interlocked.Increment(ref _activeManualOperationCount);
+                }
+
+                return blockReason;
+            }
+            finally
+            {
+                _commandLock.Release();
+            }
+        }
+
+        /// <summary>手动操作结束时减少运行计数，允许后续整机命令继续执行。</summary>
+        private void EndManualOperation()
+        {
+            Interlocked.Decrement(ref _activeManualOperationCount);
+        }
+
+        /// <summary>启动、复位或断卡前拒绝仍有手动操作未完成的情况。</summary>
+        private void EnsureNoManualOperationsInProgress(string operationName)
+        {
+            if (Interlocked.CompareExchange(ref _activeManualOperationCount, 0, 0) > 0)
+            {
+                throw new InvalidOperationException(
+                    "手动轴或 IO 操作仍在执行，不能" + operationName + "；请先等待动作完成或受控停止。");
             }
         }
 

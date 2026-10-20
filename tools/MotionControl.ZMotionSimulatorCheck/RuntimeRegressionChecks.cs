@@ -35,6 +35,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("停机报警暂停流程并要求复位", StopAlarmPausesMachineUntilResetAsync, failures);
             await RunCheckAsync("非停机报警在条件恢复后自动清除", NonStopAlarmClearsWhenRecoveredAsync, failures);
             await RunCheckAsync("工位流程异常使整机进入报警", StationFailureAlarmsMachineAsync, failures);
+            await RunCheckAsync("手动轴和 DO 操作实时检查急停并等待复位", EmergencyStopBlocksManualOperationsAsync, failures);
             await RunCheckAsync("急停有效时禁止复位和启动，运行期间触发会暂停流程", EmergencyStopBlocksAndStopsMachineAsync, failures);
             await RunCheckAsync("急停状态通过配置的逻辑 DI 读取", EmergencyStopStatusUsesConfiguredInputAsync, failures);
             await RunCheckAsync("设备硬件配置关联和急停输入校验", HardwareConfigurationValidationAsync, failures);
@@ -296,6 +297,100 @@ namespace MotionControl.ZMotionSimulatorCheck
             Ensure(runtime.LastError != null, "工位异常没有保存到 Runtime 最近错误。");
             Ensure(runtime.LastError.ToString().Contains("测试流程异常"), "Runtime 最近错误丢失了工位异常。");
             await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        /// <summary>确认手动操作会实时读取急停输入，且释放后仍须复位急停报警。</summary>
+        private static async Task EmergencyStopBlocksManualOperationsAsync()
+        {
+            var flow = new WaitingStationFlow("上料工位", "等待上料完成");
+            var safetyStatus = new FakeSafetyStatus { EmergencyStopActive = true };
+            var runtime = CreateRuntime(flow, new MachineAlarmService(), safetyStatus);
+
+            ManualOperationBlockReason disconnectedReason = await runtime
+                .GetManualOperationBlockReasonAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(disconnectedReason == ManualOperationBlockReason.MotionCardDisconnected,
+                "运动卡未连接时，手动联锁没有返回未连接原因。");
+
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            ManualOperationBlockReason activeReason = await runtime
+                .GetManualOperationBlockReasonAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(activeReason == ManualOperationBlockReason.EmergencyStopInputActive,
+                "手动联锁没有返回急停输入有效原因。");
+            Ensure(runtime.State == MachineRunState.Alarmed, "手动联锁读取到急停有效后没有锁存整机报警。");
+            bool stopOperationCalled = false;
+            ManualOperationBlockReason stopReason = await runtime.RunManualStopAsync(
+                () =>
+                {
+                    stopOperationCalled = true;
+                    return Task.CompletedTask;
+                },
+                CancellationToken.None).ConfigureAwait(false);
+            Ensure(stopReason == ManualOperationBlockReason.None && stopOperationCalled,
+                "急停输入有效时，停止专用入口没有允许受控停止。");
+
+            safetyStatus.EmergencyStopActive = false;
+            ManualOperationBlockReason latchedReason = await runtime
+                .GetManualOperationBlockReasonAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(latchedReason == ManualOperationBlockReason.EmergencyStopAlarmNotReset,
+                "急停释放后，手动联锁没有要求先复位报警。");
+
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            ManualOperationBlockReason readyReason = await runtime
+                .GetManualOperationBlockReasonAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(readyReason == ManualOperationBlockReason.None, "复位后手动联锁仍阻止操作。");
+
+            var manualOperationStarted = new TaskCompletionSource<bool>();
+            var releaseManualOperation = new TaskCompletionSource<bool>();
+            Task<ManualOperationBlockReason> manualOperationTask = runtime.RunManualOperationAsync(
+                async () =>
+                {
+                    manualOperationStarted.TrySetResult(true);
+                    await releaseManualOperation.Task.ConfigureAwait(false);
+                },
+                CancellationToken.None);
+            await manualOperationStarted.Task.ConfigureAwait(false);
+            await ExpectExceptionAsync<InvalidOperationException>(
+                () => runtime.StartAsync(CancellationToken.None)).ConfigureAwait(false);
+            await ExpectExceptionAsync<InvalidOperationException>(
+                () => runtime.ResetAsync(CancellationToken.None)).ConfigureAwait(false);
+            await ExpectExceptionAsync<InvalidOperationException>(
+                () => runtime.DisconnectAsync(CancellationToken.None)).ConfigureAwait(false);
+            Ensure(runtime.State == MachineRunState.Ready,
+                "手动操作期间拒绝整机命令后，Runtime 错误地改变了设备状态。");
+            releaseManualOperation.TrySetResult(true);
+            ManualOperationBlockReason operationResult = await manualOperationTask.ConfigureAwait(false);
+            Ensure(operationResult == ManualOperationBlockReason.None, "通过联锁的手动操作没有正常完成。");
+
+            safetyStatus.ReadError = new InvalidOperationException("模拟急停状态读取失败");
+            ManualOperationBlockReason readErrorReason = await runtime
+                .GetManualOperationBlockReasonAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(readErrorReason == ManualOperationBlockReason.EmergencyStopStatusUnavailable,
+                "急停读取失败时，手动联锁没有返回读取失败原因。");
+            Ensure(runtime.State == MachineRunState.Alarmed, "急停读取失败后没有锁存整机报警。");
+            bool readErrorSavedInAlarm = false;
+            foreach (var alarm in runtime.AlarmService.Alarms)
+            {
+                if (string.Equals(alarm.Definition.Code, "EMERGENCY_STOP", StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrWhiteSpace(alarm.Detail)
+                    && alarm.Detail.Contains("模拟急停状态读取失败"))
+                {
+                    readErrorSavedInAlarm = true;
+                    break;
+                }
+            }
+
+            Ensure(readErrorSavedInAlarm, "急停状态读取异常没有保存在报警详情中。");
+
+            safetyStatus.ReadError = null;
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await WaitForStateAsync(runtime, MachineRunState.Running).ConfigureAwait(false);
+            ManualOperationBlockReason runningReason = await runtime
+                .GetManualOperationBlockReasonAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(runningReason == ManualOperationBlockReason.AutomaticFlowActive,
+                "自动流程期间，手动联锁没有返回自动运行原因。");
+            await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
             await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
@@ -695,10 +790,18 @@ namespace MotionControl.ZMotionSimulatorCheck
         {
             public bool EmergencyStopActive { get; set; }
 
+            /// <summary>模拟急停输入读取失败时返回的异常。</summary>
+            public Exception ReadError { get; set; }
+
             /// <summary>返回回归用例当前设置的急停状态。</summary>
             public Task<bool> ReadEmergencyStopActiveAsync(CancellationToken cancellationToken)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (ReadError != null)
+                {
+                    throw ReadError;
+                }
+
                 return Task.FromResult(EmergencyStopActive);
             }
         }

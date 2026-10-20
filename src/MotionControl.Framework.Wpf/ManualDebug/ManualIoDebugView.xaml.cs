@@ -261,7 +261,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
-        /// <summary>先检查手动操作条件，再写入 DO 并立即读回确认结果。</summary>
+        /// <summary>通过 Runtime 实时检查手动联锁后写入 DO，并立即读回确认结果。</summary>
         private async void OutputButton_Click(object sender, RoutedEventArgs e)
         {
             Button button = sender as Button;
@@ -275,14 +275,21 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             OperationMessageText.Text = string.Empty;
             try
             {
-                EnsureManualOperationAllowed();
-                await _logicalIo.WriteOutputAsync(command.OutputName, command.Value, CancellationToken.None)
-                    .ConfigureAwait(true);
-                bool actualValue = await _logicalIo.ReadOutputAsync(command.OutputName, CancellationToken.None)
-                    .ConfigureAwait(true);
-                if (actualValue != command.Value)
+                bool actualValue = false;
+                ManualOperationBlockReason blockReason = await _machineRuntime.RunManualOperationAsync(async () =>
                 {
-                    throw new InvalidOperationException(GetText("DO写入后读回不一致"));
+                    await _logicalIo.WriteOutputAsync(command.OutputName, command.Value, CancellationToken.None)
+                        .ConfigureAwait(true);
+                    actualValue = await _logicalIo.ReadOutputAsync(command.OutputName, CancellationToken.None)
+                        .ConfigureAwait(true);
+                    if (actualValue != command.Value)
+                    {
+                        throw new InvalidOperationException(GetText("DO写入后读回不一致"));
+                    }
+                }, CancellationToken.None).ConfigureAwait(true);
+                if (blockReason != ManualOperationBlockReason.None)
+                {
+                    throw new InvalidOperationException(GetManualOperationBlockText(blockReason));
                 }
 
                 TextBlock stateText = _outputStatusTextByName[command.OutputName];
@@ -296,23 +303,23 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
-        /// <summary>确认控制卡已连接、自动流程已停止且急停报警已复位。</summary>
-        private void EnsureManualOperationAllowed()
+        /// <summary>把 Runtime 的手动联锁原因转换为当前语言的界面提示。</summary>
+        private string GetManualOperationBlockText(ManualOperationBlockReason reason)
         {
-            if (_machineRuntime.State == MachineRunState.Disconnected)
+            switch (reason)
             {
-                throw new InvalidOperationException(GetText("运动卡未连接操作被拒绝"));
-            }
-
-            if (_machineRuntime.State == MachineRunState.Running || _machineRuntime.State == MachineRunState.Pausing)
-            {
-                throw new InvalidOperationException(GetText("自动流程期间禁止手动操作"));
-            }
-
-            if (_machineRuntime.AlarmService.Alarms.Any(
-                alarm => string.Equals(alarm.Definition.Code, "EMERGENCY_STOP", StringComparison.OrdinalIgnoreCase)))
-            {
-                throw new InvalidOperationException(GetText("急停报警未复位禁止手动动作"));
+                case ManualOperationBlockReason.MotionCardDisconnected:
+                    return GetText("运动卡未连接操作被拒绝");
+                case ManualOperationBlockReason.AutomaticFlowActive:
+                    return GetText("自动流程期间禁止手动操作");
+                case ManualOperationBlockReason.EmergencyStopInputActive:
+                    return GetText("急停输入有效禁止手动操作");
+                case ManualOperationBlockReason.EmergencyStopAlarmNotReset:
+                    return GetText("急停报警未复位禁止手动动作");
+                case ManualOperationBlockReason.EmergencyStopStatusUnavailable:
+                    return GetText("急停状态读取失败禁止手动操作");
+                default:
+                    return GetText("软件手动条件未通过");
             }
         }
 

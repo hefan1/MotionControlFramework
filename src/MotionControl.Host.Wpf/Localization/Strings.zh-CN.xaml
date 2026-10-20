@@ -170,6 +170,11 @@
     <sys:String x:Key="运动卡未连接操作被拒绝">运动控制卡未连接。</sys:String>
     <sys:String x:Key="自动流程期间禁止手动操作">设备自动流程运行期间禁止手动操作。</sys:String>
     <sys:String x:Key="急停报警未复位禁止手动动作">急停报警尚未复位，当前禁止手动动作。</sys:String>
+    <sys:String x:Key="急停输入有效禁止手动操作">急停输入仍有效，禁止手动轴或 IO 操作。</sys:String>
+    <sys:String x:Key="急停状态读取失败禁止手动操作">读取急停输入失败，禁止手动轴或 IO 操作。</sys:String>
+    <sys:String x:Key="当前轴操作正在执行">当前轴已有手动动作正在执行，请等待完成或先停止。</sys:String>
+    <sys:String x:Key="请先停止当前连续点动">当前轴正在连续点动，请先松开点动按钮或停止轴。</sys:String>
+    <sys:String x:Key="当前点动停止失败禁止继续点动">无法确认上一条点动已停止，已取消新的点动命令。</sys:String>
     <sys:String x:Key="请先选择一个逻辑轴">请先选择一个逻辑轴。</sys:String>
     <sys:String x:Key="当前点动按钮不存在">找不到当前点动按钮。</sys:String>
     <sys:String x:Key="参数必须为有效数字">{0}必须是有效数字。</sys:String>

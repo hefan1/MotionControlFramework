@@ -12,6 +12,6 @@
 
 回零模式编号由具体适配器提供并在该适配器内校验；通用页面只显示连接实现返回的编号。轴参数用 `HomeModeAdapterType` 记录编号所属的 API 适配器，避免更换适配器后误用相同数字；旧配置中的 `HomeModeVendor` 只用于兼容迁移。需要额外回零方向或特殊参数的卡型，应由对应 Host/适配器配置负责，不能强塞进单一通用模式编号。当前 Host 只注册 ZMotion 总线仿真选项，其他厂商和实体卡适配器尚未接入。
 
-设备项目完成硬件配置校验并创建 `MachineRuntime`、`MotionCardGroup`、`ILogicalIo` 和 `MachineConfigurationStore` 后，由 Host 组合根分别创建两个手动页面并注入 `MainWindow`。轴页面还需传入本设备 `MachineId` 以保存示教位置。页面不负责选择或创建厂商驱动；设备自动流程运行期间会拒绝手动操作，急停报警未复位时也会拒绝动作。
+设备项目完成硬件配置校验并创建 `MachineRuntime`、`MotionCardGroup`、`ILogicalIo` 和 `MachineConfigurationStore` 后，由 Host 组合根分别创建两个手动页面并注入 `MainWindow`。轴页面还需传入本设备 `MachineId` 以保存示教位置。页面不负责选择或创建厂商驱动；轴动作和手动 DO 写入前会实时读取 Runtime 的联锁结果，操作执行期间 Runtime 会阻止启动、复位和断卡。急停有效、急停状态不可读、急停报警未复位或自动流程运行时都会拒绝普通手动动作；单轴受控停止走独立入口。阻止原因由中英文资源字典显示。
 
 页面文字使用 Host 当前语言资源字典中的中文键；Host 应同时提供 `Strings.zh-CN.xaml` 和 `Strings.en-US.xaml` 中已列出的手动调试资源。急停状态文字用于软件监控，硬件安全回路仍须独立承担安全停机。

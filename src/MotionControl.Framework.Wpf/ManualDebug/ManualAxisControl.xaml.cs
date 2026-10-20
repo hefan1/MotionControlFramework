@@ -46,6 +46,9 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>当前按住点动按钮、需要在松开时停止的轴。</summary>
         private IAxis _joggingAxis;
 
+        /// <summary>当前卡片是否正在等待一项轴手动操作完成，避免同轴命令重叠。</summary>
+        private bool _axisActionInProgress;
+
         /// <summary>创建一个逻辑轴卡片，并接入该轴自己的位置列表。</summary>
         public ManualAxisControl(
             IAxis axis,
@@ -462,7 +465,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>按受控停止方式停止当前轴。</summary>
         private async void StopButton_Click(object sender, RoutedEventArgs e)
         {
-            await RunAxisActionAsync(
+            await RunAxisStopActionAsync(
                 GetText("受控停止"),
                 () => _axis.StopAsync(AxisStopMode.Controlled, CancellationToken.None)).ConfigureAwait(true);
         }
@@ -525,7 +528,11 @@ namespace MotionControl.Framework.Wpf.ManualDebug
 
                 if (_joggingAxis != null)
                 {
-                    await StopJogAsync().ConfigureAwait(true);
+                    bool previousJogStopped = await StopJogAsync().ConfigureAwait(true);
+                    if (!previousJogStopped)
+                    {
+                        throw new InvalidOperationException(GetText("当前点动停止失败禁止继续点动"));
+                    }
                 }
 
                 if (continuousJog)
@@ -549,7 +556,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 EnsurePositionWithinLimits(currentPosition + distance);
                 AxisMotionProfile profile = ReadMotionProfile();
                 await _axis.MoveRelativeAsync(distance, profile, CancellationToken.None).ConfigureAwait(true);
-            }).ConfigureAwait(true);
+            }, true).ConfigureAwait(true);
         }
 
         /// <summary>显示本软件能核对的连接、伺服、运动、报警和限位条件，不替代硬件安全检查。</summary>
@@ -563,15 +570,11 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
             else
             {
-                if (machineState == MachineRunState.Running || machineState == MachineRunState.Pausing)
+                ManualOperationBlockReason blockReason = await _machineRuntime
+                    .GetManualOperationBlockReasonAsync(CancellationToken.None).ConfigureAwait(true);
+                if (blockReason != ManualOperationBlockReason.None)
                 {
-                    issues.Add(GetText("自动流程期间禁止手动操作"));
-                }
-
-                if (_machineRuntime.AlarmService.Alarms.Any(
-                    alarm => string.Equals(alarm.Definition.Code, "EMERGENCY_STOP", StringComparison.OrdinalIgnoreCase)))
-                {
-                    issues.Add(GetText("急停报警未复位禁止手动动作"));
+                    issues.Add(GetManualOperationBlockText(blockReason));
                 }
 
                 try
@@ -608,34 +611,61 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 : GetText("软件手动条件未通过") + string.Join("；", issues);
         }
 
-        /// <summary>若当前卡片有活动点动，则受控停止并清除活动轴引用。</summary>
-        private async Task StopJogAsync()
+        /// <summary>若当前卡片有活动点动，则受控停止并在停止成功后清除活动轴引用。</summary>
+        private async Task<bool> StopJogAsync()
         {
             IAxis joggingAxis = _joggingAxis;
             if (joggingAxis == null)
             {
-                return;
+                return true;
             }
 
-            _joggingAxis = null;
             try
             {
-                await joggingAxis.StopAsync(AxisStopMode.Controlled, CancellationToken.None).ConfigureAwait(true);
+                await RunAxisStopOperationAsync(joggingAxis, CancellationToken.None).ConfigureAwait(true);
+                if (ReferenceEquals(_joggingAxis, joggingAxis))
+                {
+                    _joggingAxis = null;
+                }
+
+                return true;
             }
             catch (Exception error)
             {
                 OperationMessageText.Text = string.Format(GetText("停止点动失败"), error.Message);
+                return false;
             }
         }
 
-        /// <summary>执行轴手动命令并把成功或完整异常信息显示在当前轴卡片中。</summary>
-        private async Task RunAxisActionAsync(string operationName, Func<Task> operation)
+        /// <summary>检查联锁并等待轴手动命令完成，避免同一轴上的普通操作重叠。</summary>
+        private async Task RunAxisActionAsync(
+            string operationName,
+            Func<Task> operation,
+            bool allowExistingJog = false)
         {
+            if (_axisActionInProgress)
+            {
+                OperationMessageText.Text = GetText("当前轴操作正在执行");
+                return;
+            }
+
+            if (_joggingAxis != null && !allowExistingJog)
+            {
+                OperationMessageText.Text = GetText("请先停止当前连续点动");
+                return;
+            }
+
+            _axisActionInProgress = true;
             OperationMessageText.Text = string.Empty;
             try
             {
-                EnsureManualOperationAllowed();
-                await operation().ConfigureAwait(true);
+                ManualOperationBlockReason blockReason = await _machineRuntime
+                    .RunManualOperationAsync(operation, CancellationToken.None).ConfigureAwait(true);
+                if (blockReason != ManualOperationBlockReason.None)
+                {
+                    throw new InvalidOperationException(GetManualOperationBlockText(blockReason));
+                }
+
                 if (string.IsNullOrWhiteSpace(OperationMessageText.Text))
                 {
                     OperationMessageText.Text = string.Format(GetText("操作完成"), operationName);
@@ -647,26 +677,63 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             {
                 OperationMessageText.Text = string.Format(GetText("操作失败"), operationName, error.Message);
             }
+            finally
+            {
+                _axisActionInProgress = false;
+            }
         }
 
-        /// <summary>确认当前设备已连接且没有运行自动流程或未复位的急停报警。</summary>
-        private void EnsureManualOperationAllowed()
+        /// <summary>通过 Runtime 的停止专用入口执行手动受控停止，并显示操作结果。</summary>
+        private async Task RunAxisStopActionAsync(string operationName, Func<Task> operation)
         {
-            MachineRunState state = _machineRuntime.State;
-            if (state == MachineRunState.Disconnected)
+            OperationMessageText.Text = string.Empty;
+            try
             {
-                throw new InvalidOperationException(GetText("运动卡未连接操作被拒绝"));
-            }
+                ManualOperationBlockReason blockReason = await _machineRuntime
+                    .RunManualStopAsync(operation, CancellationToken.None).ConfigureAwait(true);
+                if (blockReason != ManualOperationBlockReason.None)
+                {
+                    throw new InvalidOperationException(GetManualOperationBlockText(blockReason));
+                }
 
-            if (state == MachineRunState.Running || state == MachineRunState.Pausing)
-            {
-                throw new InvalidOperationException(GetText("自动流程期间禁止手动操作"));
+                OperationMessageText.Text = string.Format(GetText("操作完成"), operationName);
+                await RefreshStatusAsync().ConfigureAwait(true);
             }
-
-            if (_machineRuntime.AlarmService.Alarms.Any(
-                alarm => string.Equals(alarm.Definition.Code, "EMERGENCY_STOP", StringComparison.OrdinalIgnoreCase)))
+            catch (Exception error)
             {
-                throw new InvalidOperationException(GetText("急停报警未复位禁止手动动作"));
+                OperationMessageText.Text = string.Format(GetText("操作失败"), operationName, error.Message);
+            }
+        }
+
+        /// <summary>通过 Runtime 的停止专用入口停止指定轴，急停有效时仍允许停止。</summary>
+        private async Task RunAxisStopOperationAsync(IAxis axis, CancellationToken cancellationToken)
+        {
+            ManualOperationBlockReason blockReason = await _machineRuntime.RunManualStopAsync(
+                () => axis.StopAsync(AxisStopMode.Controlled, cancellationToken),
+                cancellationToken).ConfigureAwait(true);
+            if (blockReason != ManualOperationBlockReason.None)
+            {
+                throw new InvalidOperationException(GetManualOperationBlockText(blockReason));
+            }
+        }
+
+        /// <summary>把 Runtime 的手动联锁原因转换为当前语言的界面提示。</summary>
+        private string GetManualOperationBlockText(ManualOperationBlockReason reason)
+        {
+            switch (reason)
+            {
+                case ManualOperationBlockReason.MotionCardDisconnected:
+                    return GetText("运动卡未连接操作被拒绝");
+                case ManualOperationBlockReason.AutomaticFlowActive:
+                    return GetText("自动流程期间禁止手动操作");
+                case ManualOperationBlockReason.EmergencyStopInputActive:
+                    return GetText("急停输入有效禁止手动操作");
+                case ManualOperationBlockReason.EmergencyStopAlarmNotReset:
+                    return GetText("急停报警未复位禁止手动动作");
+                case ManualOperationBlockReason.EmergencyStopStatusUnavailable:
+                    return GetText("急停状态读取失败禁止手动操作");
+                default:
+                    return GetText("软件手动条件未通过");
             }
         }
 
