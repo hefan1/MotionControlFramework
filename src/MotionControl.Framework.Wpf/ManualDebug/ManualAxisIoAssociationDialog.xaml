@@ -7,7 +7,194 @@
         MinHeight="330"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
-        Background="#F5F7FA">
+        Background="#F3F6FA"
+        FontSize="12"
+        Foreground="#26384D">
+    <Window.Resources>
+        <!-- 输入框和下拉框沿用轴映射页的浅色边框与蓝色聚焦状态。 -->
+        <Style x:Key="DialogTextBoxStyle" TargetType="TextBox">
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Padding" Value="9,4" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="#26384D" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="#CAD5E2" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type TextBox}">
+                        <Border x:Name="Chrome" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#A9C6E8" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#2475D0" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Background" Value="#F2F5F9" />
+                                <Setter Property="Foreground" Value="#8A96A5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="DialogComboBoxItemStyle" TargetType="ComboBoxItem">
+            <Setter Property="Padding" Value="9,6" />
+            <Setter Property="Foreground" Value="#26384D" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ComboBoxItem}">
+                        <Border x:Name="ItemChrome" Background="Transparent" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="ItemChrome" Property="Background" Value="#EEF5FD" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemChrome" Property="Background" Value="#E5F0FF" />
+                                <Setter Property="Foreground" Value="#176BD0" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#9AA4B1" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="DialogComboBoxStyle" TargetType="ComboBox">
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Padding" Value="9,3" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="#26384D" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="#CAD5E2" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="ItemContainerStyle" Value="{StaticResource DialogComboBoxItemStyle}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ComboBox}">
+                        <Grid>
+                            <Border x:Name="Chrome" Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" />
+                            <ToggleButton Focusable="False" ClickMode="Press" Background="Transparent"
+                                          BorderThickness="0"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="Transparent" />
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter IsHitTestVisible="False" Margin="{TemplateBinding Padding}"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                              VerticalAlignment="Center" HorizontalAlignment="Left" />
+                            <Path Margin="0,0,11,0" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                  Width="8" Height="4" Stretch="Fill" Fill="#66788C"
+                                  Data="M 0 0 L 4 4 L 8 0 Z" IsHitTestVisible="False" />
+                            <Popup x:Name="PART_Popup" AllowsTransparency="True" Focusable="False"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom"
+                                   PlacementTarget="{Binding RelativeSource={RelativeSource TemplatedParent}}"
+                                   PopupAnimation="Fade">
+                                <Border Background="White" BorderBrush="#CAD5E2" BorderThickness="1"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                        MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                    <ScrollViewer CanContentScroll="True">
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#A9C6E8" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#2475D0" />
+                            </Trigger>
+                            <Trigger Property="IsDropDownOpen" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#2475D0" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Background" Value="#F2F5F9" />
+                                <Setter Property="Foreground" Value="#8A96A5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="DialogFieldLabelStyle" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#40536A" />
+        </Style>
+
+        <!-- 普通按钮保持轻量，保存按钮使用蓝色主操作样式。 -->
+        <Style x:Key="DialogButtonStyle" TargetType="Button">
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Padding" Value="12,5" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#33485F" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="#C9D5E3" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="Chrome" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              Margin="{TemplateBinding Padding}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#82B5F5" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#2475D0" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.84" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Background" Value="#F1F3F6" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#E1E6EC" />
+                                <Setter Property="Foreground" Value="#9AA4B1" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="DialogPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource DialogButtonStyle}">
+            <Setter Property="Background" Value="#2375D1" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#2375D1" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </Window.Resources>
+
     <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -18,18 +205,19 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <TextBlock Text="{DynamicResource 关联IO设置说明}"
-                   TextWrapping="Wrap"
-                   Foreground="#52677A"
-                   Margin="0,0,0,12" />
+        <Border Padding="9,7" Margin="0,0,0,12" Background="#F1F7FF"
+                BorderBrush="#D5E6FC" BorderThickness="1" CornerRadius="5">
+            <TextBlock Text="{DynamicResource 关联IO设置说明}"
+                       TextWrapping="Wrap" Foreground="#52677A" />
+        </Border>
 
         <Grid Grid.Row="1" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="105" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
-            <TextBlock Text="{DynamicResource IO类型}" VerticalAlignment="Center" />
-            <ComboBox x:Name="PointTypeComboBox" Grid.Column="1" MinHeight="28"
+            <TextBlock Text="{DynamicResource IO类型}" Style="{StaticResource DialogFieldLabelStyle}" />
+            <ComboBox x:Name="PointTypeComboBox" Grid.Column="1" Style="{StaticResource DialogComboBoxStyle}"
                       SelectionChanged="PointTypeComboBox_SelectionChanged">
                 <ComboBoxItem Content="DI" Tag="DigitalInput" />
                 <ComboBoxItem Content="DO" Tag="DigitalOutput" />
@@ -41,8 +229,8 @@
                 <ColumnDefinition Width="105" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
-            <TextBlock Text="{DynamicResource 逻辑IO名称}" VerticalAlignment="Center" />
-            <ComboBox x:Name="PointNameComboBox" Grid.Column="1" MinHeight="28"
+            <TextBlock Text="{DynamicResource 逻辑IO名称}" Style="{StaticResource DialogFieldLabelStyle}" />
+            <ComboBox x:Name="PointNameComboBox" Grid.Column="1" Style="{StaticResource DialogComboBoxStyle}"
                       DisplayMemberPath="Name"
                       SelectionChanged="PointNameComboBox_SelectionChanged" />
         </Grid>
@@ -52,45 +240,42 @@
                 <ColumnDefinition Width="105" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
-            <TextBlock Text="{DynamicResource 显示名称}" VerticalAlignment="Center" />
-            <TextBox x:Name="DisplayNameTextBox" Grid.Column="1" MinHeight="28"
-                     Padding="5,3" VerticalContentAlignment="Center"
+            <TextBlock Text="{DynamicResource 显示名称}" Style="{StaticResource DialogFieldLabelStyle}" />
+            <TextBox x:Name="DisplayNameTextBox" Grid.Column="1" Style="{StaticResource DialogTextBoxStyle}"
                      TextChanged="DisplayNameTextBox_TextChanged" />
         </Grid>
 
         <Border x:Name="OutputActionPanel" Grid.Row="4" Padding="10" Margin="0,0,0,10"
-                Background="White" BorderBrush="#D4DEE8" BorderThickness="1" CornerRadius="4"
+                Background="#F8FBFF" BorderBrush="#D9E7F6" BorderThickness="1" CornerRadius="5"
                 Visibility="Collapsed">
             <StackPanel>
-                <TextBlock Text="{DynamicResource DO按钮文字说明}" Foreground="#52677A"
+                <TextBlock Text="{DynamicResource DO按钮文字说明}" Foreground="#52677A" FontSize="12"
                            TextWrapping="Wrap" Margin="0,0,0,8" />
                 <Grid Margin="0,0,0,6">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="105" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Text="{DynamicResource 逻辑ON按钮名称}" VerticalAlignment="Center" />
-                    <TextBox x:Name="OnActionNameTextBox" Grid.Column="1" MinHeight="28"
-                             Padding="5,3" VerticalContentAlignment="Center" />
+                    <TextBlock Text="{DynamicResource 逻辑ON按钮名称}" Style="{StaticResource DialogFieldLabelStyle}" />
+                    <TextBox x:Name="OnActionNameTextBox" Grid.Column="1" Style="{StaticResource DialogTextBoxStyle}" />
                 </Grid>
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="105" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Text="{DynamicResource 逻辑OFF按钮名称}" VerticalAlignment="Center" />
-                    <TextBox x:Name="OffActionNameTextBox" Grid.Column="1" MinHeight="28"
-                             Padding="5,3" VerticalContentAlignment="Center" />
+                    <TextBlock Text="{DynamicResource 逻辑OFF按钮名称}" Style="{StaticResource DialogFieldLabelStyle}" />
+                    <TextBox x:Name="OffActionNameTextBox" Grid.Column="1" Style="{StaticResource DialogTextBoxStyle}" />
                 </Grid>
             </StackPanel>
         </Border>
 
         <TextBlock x:Name="ValidationMessageText" Grid.Row="5" Foreground="#B3362D"
-                   TextWrapping="Wrap" Margin="0,0,0,8" />
+                   FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8" />
         <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="{DynamicResource 取消修改}" MinWidth="82" Margin="0,0,8,0"
-                    Padding="10,5" IsCancel="True" />
-            <Button Content="{DynamicResource 保存配置}" MinWidth="82" Padding="10,5"
+            <Button Content="{DynamicResource 取消修改}" Margin="0,0,8,0"
+                    Style="{StaticResource DialogButtonStyle}" MinWidth="88" IsCancel="True" />
+            <Button Content="{DynamicResource 保存配置}" Style="{StaticResource DialogPrimaryButtonStyle}" MinWidth="88"
                     IsDefault="True" Click="SaveButton_Click" />
         </StackPanel>
     </Grid>
