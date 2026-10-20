@@ -23,6 +23,9 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>按逻辑轴名称查找轴实例，名称比较不区分大小写。</summary>
         private readonly Dictionary<string, IAxis> _axesByName;
 
+        /// <summary>供本机所有工位共用的单轴和轴组占用协调器。</summary>
+        private readonly IAxisResourceCoordinator _axisResources;
+
         /// <summary>串行化多卡连接和断开，避免生命周期操作互相交错。</summary>
         private readonly SemaphoreSlim _lifecycleLock = new SemaphoreSlim(1, 1);
 
@@ -84,6 +87,7 @@ namespace MotionControl.Framework.Runtime.Machine
             }
 
             _axes = axisList.AsReadOnly();
+            _axisResources = new AxisResourceCoordinator(_axesByName.Keys);
         }
 
         /// <summary>本机配置的运动卡。顺序与 Host 传入顺序一致。</summary>
@@ -96,6 +100,12 @@ namespace MotionControl.Framework.Runtime.Machine
         public IReadOnlyCollection<IAxis> Axes
         {
             get { return _axes; }
+        }
+
+        /// <summary>返回本机共享的轴资源协调器；未使用共享轴的流程可以忽略此能力。</summary>
+        public IAxisResourceCoordinator AxisResources
+        {
+            get { return _axisResources; }
         }
 
         /// <summary>所有卡均已连接时返回 true。</summary>

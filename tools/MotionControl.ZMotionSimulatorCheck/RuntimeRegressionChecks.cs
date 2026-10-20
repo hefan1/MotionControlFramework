@@ -34,6 +34,8 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("硬限位后未配置初始化流程时必须先回零", HomingRequiredAxisBlocksStartWithoutInitializationAsync, failures);
             await RunCheckAsync("可选初始化先于工位、暂停续跑且每个连接周期只执行一次", EquipmentInitializationRunsBeforeStationsAndResumesAsync, failures);
             await RunCheckAsync("初始化结束后仍检查轴是否真正完成回零", EquipmentInitializationMustClearHomingRequirementAsync, failures);
+            await RunCheckAsync("共享轴等待释放且不同轴可以并行申请", AxisResourcesSerializeSharedAxesAsync, failures);
+            await RunCheckAsync("轴组整体占用并在等待取消时归还已申请轴", AxisGroupResourcesReleaseAfterCancellationAsync, failures);
             await RunCheckAsync("多卡断开先检查所有轴，不留下半连接状态", MovingAxisPreventsPartialCardDisconnectAsync, failures);
             await RunCheckAsync("必须复位后启动，暂停后保留当前步骤", ResetAndPauseKeepCurrentStepAsync, failures);
             await RunCheckAsync("停机报警暂停流程并要求复位", StopAlarmPausesMachineUntilResetAsync, failures);
@@ -380,6 +382,129 @@ namespace MotionControl.ZMotionSimulatorCheck
 
             await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
             await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        /// <summary>确认同一逻辑轴只能被一个流程占用，不同逻辑轴可以同时使用。</summary>
+        private static async Task AxisResourcesSerializeSharedAxesAsync()
+        {
+            var motionCards = new MotionCardGroup(new IMotionCard[]
+            {
+                new FakeMotionCard(
+                    "ResourceCard",
+                    new FakeAxis("AxisX"),
+                    new FakeAxis("AxisY"))
+            });
+            IAxisResourceCoordinator resources = motionCards.AxisResources;
+
+            IDisposable firstAxisLease = await resources
+                .AcquireAxisAsync("AxisX", CancellationToken.None)
+                .ConfigureAwait(false);
+            Task<IDisposable> secondAxisLeaseTask = resources
+                .AcquireAxisAsync("axisx", CancellationToken.None);
+            bool secondRequestWaited = !secondAxisLeaseTask.IsCompleted;
+
+            firstAxisLease.Dispose();
+            IDisposable secondAxisLease = await WaitForResourceLeaseAsync(
+                secondAxisLeaseTask,
+                "释放第一份轴占用后，第二个流程仍未获得轴资源。").ConfigureAwait(false);
+            Ensure(secondRequestWaited, "同一逻辑轴被两个流程同时占用。");
+            secondAxisLease.Dispose();
+            secondAxisLease.Dispose();
+
+            IDisposable xAxisLease = await resources
+                .AcquireAxisAsync("AxisX", CancellationToken.None)
+                .ConfigureAwait(false);
+            IDisposable yAxisLease = null;
+            try
+            {
+                yAxisLease = await resources
+                    .AcquireAxisAsync("AxisY", CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                xAxisLease.Dispose();
+                if (yAxisLease != null)
+                {
+                    yAxisLease.Dispose();
+                }
+            }
+
+            await ExpectExceptionAsync<KeyNotFoundException>(
+                () => resources.AcquireAxisAsync("未配置轴", CancellationToken.None)).ConfigureAwait(false);
+        }
+
+        /// <summary>确认轴组按整体占用，并在等待取消后释放已经取得的轴。</summary>
+        private static async Task AxisGroupResourcesReleaseAfterCancellationAsync()
+        {
+            var motionCards = new MotionCardGroup(new IMotionCard[]
+            {
+                new FakeMotionCard(
+                    "ResourceCard",
+                    new FakeAxis("AxisA"),
+                    new FakeAxis("AxisB"))
+            });
+            IAxisResourceCoordinator resources = motionCards.AxisResources;
+
+            IDisposable axisBLease = await resources
+                .AcquireAxisAsync("AxisB", CancellationToken.None)
+                .ConfigureAwait(false);
+            Task<IDisposable> axisGroupLeaseTask = resources
+                .AcquireAxisGroupAsync(new[] { "AxisB", "AxisA", "axisa" }, CancellationToken.None);
+            Task<IDisposable> axisALeaseTask = resources
+                .AcquireAxisAsync("AxisA", CancellationToken.None);
+
+            bool axisGroupWaitedForAxisB = !axisGroupLeaseTask.IsCompleted;
+            bool axisGroupReservedAxisA = !axisALeaseTask.IsCompleted;
+            axisBLease.Dispose();
+
+            IDisposable axisGroupLease = await WaitForResourceLeaseAsync(
+                axisGroupLeaseTask,
+                "轴组在两根轴都释放后仍未获得完整占用。").ConfigureAwait(false);
+            bool otherFlowWaitedForWholeGroup = !axisALeaseTask.IsCompleted;
+            axisGroupLease.Dispose();
+            IDisposable axisALease = await WaitForResourceLeaseAsync(
+                axisALeaseTask,
+                "释放完整轴组后，等待中的单轴流程仍未获得资源。").ConfigureAwait(false);
+            axisALease.Dispose();
+
+            Ensure(axisGroupWaitedForAxisB, "轴组没有等待被占用的第二根轴。");
+            Ensure(axisGroupReservedAxisA, "轴组等待期间没有保护已先申请的第一根轴。");
+            Ensure(otherFlowWaitedForWholeGroup, "轴组占用期间另一工位提前使用了组内轴。");
+
+            IDisposable heldAxisBLease = await resources
+                .AcquireAxisAsync("AxisB", CancellationToken.None)
+                .ConfigureAwait(false);
+            var cancellation = new CancellationTokenSource();
+            Task<IDisposable> cancelledGroupTask = resources
+                .AcquireAxisGroupAsync(new[] { "AxisA", "AxisB" }, cancellation.Token);
+            Task<IDisposable> axisAWaitingTask = resources
+                .AcquireAxisAsync("AxisA", CancellationToken.None);
+
+            bool cancelledGroupReservedAxisA = !axisAWaitingTask.IsCompleted;
+            cancellation.Cancel();
+            await ExpectExceptionAsync<OperationCanceledException>(
+                () => cancelledGroupTask).ConfigureAwait(false);
+
+            heldAxisBLease.Dispose();
+            IDisposable recoveredAxisALease = await WaitForResourceLeaseAsync(
+                axisAWaitingTask,
+                "轴组等待取消后，已先占用的 AxisA 没有归还给其他流程。").ConfigureAwait(false);
+            recoveredAxisALease.Dispose();
+            cancellation.Dispose();
+
+            Ensure(cancelledGroupReservedAxisA, "取消测试没有验证轴组等待过程中的部分占用释放。");
+        }
+
+        /// <summary>等待异步资源申请完成，超时后给出可定位的测试错误。</summary>
+        private static async Task<IDisposable> WaitForResourceLeaseAsync(
+            Task<IDisposable> leaseTask,
+            string timeoutMessage)
+        {
+            Task completedTask = await Task.WhenAny(leaseTask, Task.Delay(TimeSpan.FromSeconds(3)))
+                .ConfigureAwait(false);
+            Ensure(ReferenceEquals(completedTask, leaseTask), timeoutMessage);
+            return await leaseTask.ConfigureAwait(false);
         }
 
         /// <summary>确认第二张卡的轴仍在运动时，断开操作不会先断开第一张卡。</summary>

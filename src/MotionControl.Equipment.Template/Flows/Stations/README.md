@@ -37,3 +37,21 @@ public async Task ExecuteCurrentStepAsync(CancellationToken cancellationToken)
 ```
 
 轴对象由 Host 通过 `MotionCardGroup.GetAxis("逻辑轴名")` 显式交给工位；IO 使用逻辑点位名；动作位置和速度从设备工艺参数读取。不要在流程里写物理轴号、脉冲换算或厂商 API 调用。
+
+## 多工位共用轴
+
+如果两个工位可能同时使用同一根轴，Host 应把同一个 `MotionCardGroup.AxisResources` 交给相关工位。工位在共享动作前申请逻辑轴；多轴动作一次申请整组轴。持有占用凭证时不要嵌套申请其他轴资源，避免并行流程各持有一部分资源后互相等待。用 `using` 覆盖完整动作过程，取消时等轴受控停稳后再释放：
+
+```csharp
+using (IDisposable axisLease = await _axisResources
+    .AcquireAxisAsync(_xAxis.Name, cancellationToken)
+    .ConfigureAwait(false))
+{
+    await _xAxis.MoveAbsoluteAsync(
+        _parameters.PickPositionMm,
+        _parameters.PickMoveProfile,
+        cancellationToken);
+}
+```
+
+占用协调只防止并行流程同时操作同一轴；碰撞区域判断、让位条件和安全位置要由设备工艺流程明确编写。持续点动或其他长动作必须在动作停止后才退出 `using`。
