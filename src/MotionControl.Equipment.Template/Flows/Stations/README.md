@@ -2,11 +2,12 @@
 
 一个工位对应一个普通 C# 类，并实现 `IStationFlow`。流程类自己保存当前步骤；Runtime 只负责并行调用各工位的 `ExecuteCurrentStepAsync`，不把工艺步骤塞进通用流程引擎。
 
-每次调用只处理当前一步。动作或等待条件完成后再切换到下一步。收到暂停取消时，让取消继续向外传递，当前步骤保持不变；运动接口会在动作取消时执行受控停止。复位只清理可复位报警，不改当前步骤。
+每次调用只处理当前一步。动作或等待条件完成后再切换到下一步。收到暂停取消时，让取消继续向外传递，当前步骤保持不变；运动接口会在动作取消时执行受控停止。复位只清理可复位报警，不改当前步骤。Runtime 在后台线程调用流程，不要直接访问 WPF 控件；界面状态通过 Runtime 事件更新。
 
 示意写法（仅说明步骤组织，不是可直接运行的设备程序）：
 
 ```csharp
+/// <summary>执行上料工位当前步骤。</summary>
 public async Task ExecuteCurrentStepAsync(CancellationToken cancellationToken)
 {
     switch (_currentStep)

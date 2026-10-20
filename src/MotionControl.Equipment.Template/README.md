@@ -16,9 +16,7 @@ Views/            设备操作、调试和参数页面
 
 设备项目里的 JSON 文件是同型号设备共用的默认模板，构建后放在 `EquipmentTemplates/`。首次部署时，Runtime 为物理设备建立独立的生效配置，并关联唯一 `MachineId`；后续升级只补入缺少的模板文件，不覆盖现场值。生效配置保存在软件发布目录之外；每份配置带 `schemaVersion`，设备项目按明确版本迁移和校验，Runtime 保存时自动备份旧文件。产品配方与设备级调试参数分开管理。
 
-Runtime 管理整机运行状态和流程启停协调。设备项目可选提供一个 `IEquipmentInitializationFlow`，在工位并行运行前按顺序执行启动准备；不需要启动准备的设备不传此参数。初始化步骤和工位步骤都保留自己的当前步骤；暂停时当前步骤退出并保留位置，复位后启动从中断步骤重新进入。初始化完成后，同一控制卡连接周期内不会重复运行；断开后重新连接会从初始化第一步开始。
-
-设备初始化流程实现 `IEquipmentInitializationFlow`：每次 `ExecuteCurrentStepAsync` 只完成当前一步，全部完成后将 `IsCompleted` 设为 `true`；收到取消时保留当前步骤并按受控停止语义结束动作。`ResetAsync` 清除流程报警但保留当前步骤和完成状态；`ResetForNewConnection` 将步骤恢复到第一步并清除完成状态。设备 Host 创建 `MachineRuntime` 时，通过 `equipmentInitializationFlow` 参数注入该流程。
+Runtime 管理整机运行状态和流程启停协调。可选启动准备的编写方式和生命周期见 [Flows/Initialization/README.md](Flows/Initialization/README.md)；产品工艺步骤见 [Flows/Stations/README.md](Flows/Stations/README.md)。
 
 需要共享轴或轴组的并行工位，可在构造流程时接收同一个 `MotionCardGroup.AxisResources`（类型为 `IAxisResourceCoordinator`）。在共享动作开始前调用 `AcquireAxisAsync("X", cancellationToken)`，或用 `AcquireAxisGroupAsync(new[] { "X", "Y" }, cancellationToken)` 一次申请多根轴；用 `using` 包住完整动作，确保运动受控停止后才释放。持有占用凭证期间不要嵌套申请其他轴资源；涉及多轴的动作应一次申请完整轴组。框架按逻辑轴名互斥，不会判断机械区域或多动子间距；对应的让位条件和安全顺序仍写在工艺步骤里。不共享运动资源的设备流程忽略这项能力。
 

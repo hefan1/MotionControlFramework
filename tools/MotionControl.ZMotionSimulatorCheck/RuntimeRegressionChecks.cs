@@ -33,6 +33,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("任一轴仍在运动时禁止启动自动流程", MovingAxisBlocksAutomaticStartAsync, failures);
             await RunCheckAsync("硬限位后未配置初始化流程时必须先回零", HomingRequiredAxisBlocksStartWithoutInitializationAsync, failures);
             await RunCheckAsync("可选初始化先于工位、暂停续跑且每个连接周期只执行一次", EquipmentInitializationRunsBeforeStationsAndResumesAsync, failures);
+            await RunCheckAsync("启动后立即暂停也能等待后台初始化调度收尾", PauseImmediatelyAfterStartWaitsForInitializationAsync, failures);
             await RunCheckAsync("初始化结束后仍检查轴是否真正完成回零", EquipmentInitializationMustClearHomingRequirementAsync, failures);
             await RunCheckAsync("共享轴等待释放且不同轴可以并行申请", AxisResourcesSerializeSharedAxesAsync, failures);
             await RunCheckAsync("轴组整体占用并在等待取消时归还已申请轴", AxisGroupResourcesReleaseAfterCancellationAsync, failures);
@@ -275,7 +276,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
-        /// <summary>确认可选初始化先于工位执行，暂停保留步骤，完成后不重复运行且重连会重新执行。</summary>
+        /// <summary>确认初始化在后台先于工位执行，暂停保留步骤，重连后重新执行。</summary>
         private static async Task EquipmentInitializationRunsBeforeStationsAndResumesAsync()
         {
             var axis = new FakeAxis("HomeAxis")
@@ -299,9 +300,25 @@ namespace MotionControl.ZMotionSimulatorCheck
 
             await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
             await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
-            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            SynchronizationContext previousContext = SynchronizationContext.Current;
+            var startCallingContext = new SynchronizationContext();
+            Task startTask;
+            try
+            {
+                SynchronizationContext.SetSynchronizationContext(startCallingContext);
+                startTask = runtime.StartAsync(CancellationToken.None);
+            }
+            finally
+            {
+                SynchronizationContext.SetSynchronizationContext(previousContext);
+            }
+
+            await startTask.ConfigureAwait(false);
             await initializationFlow.WaitUntilStartedAsync().ConfigureAwait(false);
 
+            Ensure(
+                !initializationFlow.SawSynchronizationContext,
+                "设备初始化在启动调用线程内执行，可能阻塞 WPF 界面。");
             Ensure(stationFlow.StartCount == 0, "设备初始化完成前启动了并行工位流程。");
             Ensure(
                 initializationFlow.CurrentStepName == "检查轴回零条件",
@@ -338,6 +355,37 @@ namespace MotionControl.ZMotionSimulatorCheck
             Ensure(initializationFlow.ExecutionCount == 3, "新的控制卡连接周期没有重新执行设备初始化。");
 
             await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        /// <summary>确认启动后立即暂停时，后台初始化调度仍能收尾并保留当前步骤。</summary>
+        private static async Task PauseImmediatelyAfterStartWaitsForInitializationAsync()
+        {
+            var card = new FakeMotionCard("ImmediatePauseCard", new FakeAxis("X"));
+            var stationFlow = new WaitingStationFlow("上料工位", "等待产品到位");
+            var initializationFlow = new FakeEquipmentInitializationFlow();
+            var runtime = new MachineRuntime(
+                new MotionCardGroup(new IMotionCard[] { card }),
+                new IStationFlow[] { stationFlow },
+                new MachineAlarmService(),
+                new FakeSafetyStatus(),
+                TimeSpan.FromSeconds(2),
+                TimeSpan.FromMilliseconds(10),
+                initializationFlow);
+
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+
+            Ensure(runtime.State == MachineRunState.Paused, "启动后立即暂停没有等待流程进入暂停状态。");
+            Ensure(!initializationFlow.IsCompleted, "启动后立即暂停错误地将初始化标记为完成。");
+            Ensure(
+                initializationFlow.CurrentStepName == "检查轴回零条件",
+                "启动后立即暂停没有保留初始化当前步骤。");
+            Ensure(stationFlow.StartCount == 0, "初始化尚未完成时，立即暂停测试启动了工位流程。");
+
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
             await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
@@ -1241,6 +1289,9 @@ namespace MotionControl.ZMotionSimulatorCheck
             /// <summary>记录初始化步骤执行次数，包含暂停后重新进入当前步。</summary>
             public int ExecutionCount { get; private set; }
 
+            /// <summary>记录初始化是否运行在启动调用方的同步上下文中。</summary>
+            public bool SawSynchronizationContext { get; private set; }
+
             /// <summary>步骤完成时执行的测试状态更新。</summary>
             public Action OnComplete { get; set; }
 
@@ -1253,8 +1304,9 @@ namespace MotionControl.ZMotionSimulatorCheck
             /// <summary>等待测试许可时保持当前步骤，收到暂停取消后从同一步继续。</summary>
             public async Task ExecuteCurrentStepAsync(CancellationToken cancellationToken)
             {
-                _started.TrySetResult(true);
+                SawSynchronizationContext = SynchronizationContext.Current != null;
                 ExecutionCount++;
+                _started.TrySetResult(true);
                 if (!AllowCompletion)
                 {
                     await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);

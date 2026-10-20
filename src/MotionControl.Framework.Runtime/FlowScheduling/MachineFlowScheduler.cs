@@ -171,7 +171,7 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
             }
         }
 
-        /// <summary>先执行未完成的设备初始化，再并行启动所有工位流程。</summary>
+        /// <summary>把设备初始化和工位调度放到后台执行，避免初始化同步代码卡住界面线程。</summary>
         public Task Start()
         {
             lock (_runSync)
@@ -186,8 +186,10 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
                     _runCancellation.Dispose();
                 }
 
-                _runCancellation = new CancellationTokenSource();
-                _runTask = RunAllStationsAsync(_runCancellation);
+                var runCancellation = new CancellationTokenSource();
+                _runCancellation = runCancellation;
+                // 不把暂停令牌交给 Task.Run；即使刚启动就暂停，也让调度方法运行并正常收尾。
+                _runTask = Task.Run(() => RunAllStationsAsync(runCancellation));
                 return _runTask;
             }
         }

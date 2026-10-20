@@ -12,13 +12,13 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>复位完成，允许启动。</summary>
         Ready,
 
-        /// <summary>工位流程正在并行运行。</summary>
+        /// <summary>整机自动流程正在运行，可能正在执行设备初始化或并行工位步骤。</summary>
         Running,
 
-        /// <summary>正在等待工位完成当前步骤并安全停下。</summary>
+        /// <summary>正在等待初始化或工位完成当前步骤并安全停下。</summary>
         Pausing,
 
-        /// <summary>流程已暂停，保留当前步骤；再次启动前必须复位。</summary>
+        /// <summary>整机流程已暂停并保留当前步骤；再次启动前必须复位。</summary>
         Paused,
 
         /// <summary>运行或复位出现故障，需要处理并复位。</summary>

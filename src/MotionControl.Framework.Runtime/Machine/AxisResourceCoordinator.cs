@@ -104,7 +104,7 @@ namespace MotionControl.Framework.Runtime.Machine
             }
         }
 
-        /// <summary>按相反顺序释放当前已申请的轴，避免取消等待后遗留占用。</summary>
+        /// <summary>按申请顺序的反方向释放轴资源，确保失败或取消后归还已申请的轴。</summary>
         private static void ReleaseAxisLocks(IReadOnlyList<SemaphoreSlim> axisLocks)
         {
             for (int index = axisLocks.Count - 1; index >= 0; index--)
