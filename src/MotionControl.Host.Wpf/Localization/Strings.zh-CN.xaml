@@ -253,7 +253,7 @@
     <!-- 轴映射配置页 -->
     <sys:String x:Key="轴映射页面说明">设置控制卡基本类型，并把设备轴名称对应到物理轴通道。</sys:String>
     <sys:String x:Key="IO映射页面说明">把设备流程使用的逻辑 DI/DO 名称对应到控制卡物理通道。</sys:String>
-    <sys:String x:Key="IO映射说明">连接后显示板载数量、规格范围和总线扩展点数；设备实际使用的 DI/DO 由工程师添加并命名。</sys:String>
+    <sys:String x:Key="IO映射说明">连接后自动列出接口可读的 DI/DO 通道；只需为设备实际使用的通道填写逻辑名称。</sys:String>
     <sys:String x:Key="IO映射连接与输出说明">先在轴映射页连接卡；这里只保存配置，不会切换物理输出。</sys:String>
     <sys:String x:Key="控制卡Io数量未连接">控制卡未连接：连接后可查询板载数量、规格上限、可映射编号范围和总线扫描结果。</sys:String>
     <sys:String x:Key="控制卡Io数量能力不支持">当前控制卡适配器未提供 I/O 数量查询能力。</sys:String>

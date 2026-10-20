@@ -244,7 +244,7 @@
 
     <sys:String x:Key="轴映射页面说明">Select the motion card basics and map machine axis names to physical channels.</sys:String>
     <sys:String x:Key="IO映射页面说明">Map the logical DI/DO names used by machine sequences to physical card channels.</sys:String>
-    <sys:String x:Key="IO映射说明">After connection, this page shows onboard counts, specification ranges, and bus expansion counts. Add and name the DI/DO points used by the equipment.</sys:String>
+    <sys:String x:Key="IO映射说明">After connection, all DI/DO channels readable through the card API are listed automatically. Enter logical names only for channels used by the equipment.</sys:String>
     <sys:String x:Key="IO映射连接与输出说明">Connect on the Axis Mapping page first. This page saves configuration only and never switches outputs.</sys:String>
     <sys:String x:Key="控制卡Io数量未连接">Motion card disconnected. Connect it to read onboard counts, specification limits, mappable DI/DO address ranges, and bus scan results.</sys:String>
     <sys:String x:Key="控制卡Io数量能力不支持">The current card adapter does not provide I/O count queries.</sys:String>
