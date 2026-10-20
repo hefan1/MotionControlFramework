@@ -95,6 +95,10 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(axisCards.Children.Count == 1, "已映射一个轴时没有生成对应的单轴调试卡片。");
                 var axisControl = (ManualAxisControl)axisCards.Children[0];
                 Ensure(axisControl.FindName("FeedbackPositionText") is TextBlock, "轴卡片没有加载轴当前位置显示。");
+                var homedStatusText = (TextBlock)axisControl.FindName("HomedStatusText");
+                Ensure(
+                    homedStatusText.Text == chineseResources["状态未连接"] as string,
+                    "轴卡片断开时没有显示中文未连接状态。");
                 Ensure(((TextBox)axisControl.FindName("SpeedTextBox")).Text == "23", "轴卡片没有从轴配置加载手动速度。");
                 Ensure(((TextBox)axisControl.FindName("AccelerationTextBox")).Text == "34", "轴卡片没有从轴配置加载手动加速度。");
                 Ensure(((TextBox)axisControl.FindName("DecelerationTextBox")).Text == "45", "轴卡片没有从轴配置加载手动减速度。");
@@ -116,6 +120,17 @@ namespace MotionControl.ZMotionSimulatorCheck
 
                 runtime.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
                 runtime.ResetAsync(CancellationToken.None).GetAwaiter().GetResult();
+                var smokeAxis = (SmokeAxis)card.Axes.Single();
+                smokeAxis.IsHomed = true;
+                axisControl.RefreshStatusAsync().GetAwaiter().GetResult();
+                Ensure(
+                    homedStatusText.Text == chineseResources["已回零"] as string,
+                    "轴状态显示没有区分已回零状态。");
+                smokeAxis.IsHomed = false;
+                axisControl.RefreshStatusAsync().GetAwaiter().GetResult();
+                Ensure(
+                    homedStatusText.Text == chineseResources["未回零"] as string,
+                    "轴状态显示没有区分未回零状态。");
                 VerifyConnectedControlsUseCommonContracts(page, ioPage, card);
 
                 var hostWindow = new MainWindow();
@@ -133,6 +148,16 @@ namespace MotionControl.ZMotionSimulatorCheck
                 var manualContent = (ContentControl)hostWindow.FindName("ManualDebugContent");
                 Ensure(ReferenceEquals(manualContent.Content, page), "Host 手动页面没有显示注入的通用调试页。");
                 Ensure(manualContent.Visibility == Visibility.Visible, "Host 手动调试内容当前不可见。");
+                application.Resources.MergedDictionaries[0] = englishResources;
+                axisControl.RefreshStatusAsync().GetAwaiter().GetResult();
+                Ensure(
+                    homedStatusText.Text == englishResources["未回零"] as string,
+                    "Host 显示轴卡片时切换英文没有更新未回零状态文字。");
+                application.Resources.MergedDictionaries[0] = chineseResources;
+                axisControl.RefreshStatusAsync().GetAwaiter().GetResult();
+                Ensure(
+                    homedStatusText.Text == chineseResources["未回零"] as string,
+                    "Host 显示轴卡片时切回中文没有更新未回零状态文字。");
                 var sidebar = (StackPanel)hostWindow.FindName("SidebarNavigation");
                 var ioManualNavigation = sidebar.Children
                     .OfType<ToggleButton>()
@@ -975,6 +1000,9 @@ namespace MotionControl.ZMotionSimulatorCheck
         /// <summary>提供页面构造所需的无动作测试轴。</summary>
         private sealed class SmokeAxis : IAxis
         {
+            /// <summary>控制内存测试轴报告的回零状态。</summary>
+            public bool IsHomed { get; set; }
+
             public int CommandCount { get; private set; }
 
             public MotionDirection? LastJogDirection { get; private set; }
@@ -990,7 +1018,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             /// <summary>返回固定无报警状态，不读取真实设备。</summary>
             public Task<AxisStatus> ReadStatusAsync(CancellationToken cancellationToken)
             {
-                return Task.FromResult(new AxisStatus(0, 0, false, false, false, false, false, false, false, false, null, false));
+                return Task.FromResult(new AxisStatus(0, 0, false, false, IsHomed, false, false, false, false, false, null, false));
             }
 
             /// <summary>本次离屏检查不发出轴使能命令。</summary>

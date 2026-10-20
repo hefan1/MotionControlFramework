@@ -54,7 +54,7 @@
                     </StackPanel>
                     <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center">
                         <Ellipse x:Name="HomedIndicator" Width="10" Height="10" Fill="#9AA4AD" Margin="0,0,4,0" />
-                        <TextBlock x:Name="HomedStatusText" Text="{DynamicResource 回零完成}" FontSize="10" VerticalAlignment="Center" />
+                        <TextBlock x:Name="HomedStatusText" Text="{DynamicResource 状态未连接}" FontSize="10" VerticalAlignment="Center" />
                     </StackPanel>
                     <TextBlock x:Name="MotionStateText" Grid.Row="0" Grid.Column="2" Text="—" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,4,0,0">

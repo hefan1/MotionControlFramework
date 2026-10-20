@@ -140,6 +140,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 UpdateIndicator(PositiveLimitIndicator, false, false);
                 UpdateIndicator(NegativeLimitIndicator, false, false);
                 UpdateIndicator(OriginIndicator, false, false);
+                HomedStatusText.Text = GetText("状态未连接");
                 OriginStatusText.ToolTip = GetText("控制卡未连接");
                 MotionStateText.Text = GetText("状态未连接");
                 ServoToggleButton.Content = GetText("伺服使能");
@@ -153,6 +154,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             FeedbackPositionText.Text = status.Position.ToString("F3", CultureInfo.CurrentCulture);
             UpdateIndicator(AlarmIndicator, status.AlarmActive, status.AlarmActive);
             UpdateIndicator(HomedIndicator, status.Homed, false);
+            HomedStatusText.Text = GetText(status.Homed ? "已回零" : "未回零");
             UpdateIndicator(PositiveLimitIndicator, status.PositiveLimitActive, status.PositiveLimitActive);
             UpdateIndicator(NegativeLimitIndicator, status.NegativeLimitActive, status.NegativeLimitActive);
             UpdateIndicator(OriginIndicator, status.OriginInputActive == true, false);
@@ -176,6 +178,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
 
             CommandPositionText.Text = "—";
             FeedbackPositionText.Text = "—";
+            HomedStatusText.Text = "—";
             AlarmMessageText.Text = string.Format(GetText("读取轴状态失败"), error.Message);
         }
 
