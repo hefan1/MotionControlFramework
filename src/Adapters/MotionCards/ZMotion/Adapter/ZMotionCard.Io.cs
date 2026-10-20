@@ -53,14 +53,16 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                         MaximumDigitalOutputCount = maximumOutputs
                     };
 
-                    capabilities.DigitalInputChannelRange = new MotionCardIoChannelRange
-                    {
-                        MappableChannelCount = maximumInputs
-                    };
-                    capabilities.DigitalOutputChannelRange = new MotionCardIoChannelRange
-                    {
-                        MappableChannelCount = maximumOutputs
-                    };
+                    capabilities.DigitalInputChannelRange = ProbeIoChannelRange(
+                        handle,
+                        maximumInputs,
+                        true,
+                        cancellationToken);
+                    capabilities.DigitalOutputChannelRange = ProbeIoChannelRange(
+                        handle,
+                        maximumOutputs,
+                        false,
+                        cancellationToken);
                     ReadScannedBusIoCapabilities(handle, busSlotCount, capabilities, cancellationToken);
                     return capabilities;
                 }
@@ -71,6 +73,40 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         public Task<MotionCardIoCapabilities> RefreshIoCapabilitiesAsync(CancellationToken cancellationToken)
         {
             return ReadIoCapabilitiesAsync(cancellationToken);
+        }
+
+        /// <summary>从通道 0 开始逐路读取 DI 或 DO，遇到首个失败通道时结束连续地址探测。</summary>
+        private static MotionCardIoChannelRange ProbeIoChannelRange(
+            IntPtr handle,
+            int maximumChannelCount,
+            bool input,
+            CancellationToken cancellationToken)
+        {
+            var range = new MotionCardIoChannelRange();
+            for (int channel = 0; channel < maximumChannelCount; channel++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                uint value = 0;
+                int result = input
+                    ? zmcaux.ZAux_Direct_GetIn(handle, channel, ref value)
+                    : zmcaux.ZAux_Direct_GetOp(handle, channel, ref value);
+
+                if (result == 0)
+                {
+                    continue;
+                }
+
+                range.MappableChannelCount = channel;
+                range.FirstUnavailableChannel = channel;
+                range.FirstUnavailableMessage = (input ? "ZAux_Direct_GetIn" : "ZAux_Direct_GetOp")
+                    + " 返回码："
+                    + result.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                return range;
+            }
+
+            range.MappableChannelCount = maximumChannelCount;
+            range.ReachedProbeLimit = maximumChannelCount > 0;
+            return range;
         }
 
         /// <summary>按逻辑名称读取数字输入，并转换为配置的有效电平。</summary>

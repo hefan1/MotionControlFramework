@@ -100,10 +100,6 @@ namespace MotionControl.Framework.Wpf.Configuration
             EmergencyStopInputComboBox.IsEnabled = canEdit;
             DigitalInputsGrid.IsEnabled = canEdit;
             DigitalOutputsGrid.IsEnabled = canEdit;
-            AddInputButton.IsEnabled = canEdit && !_isReadingIoCapabilities
-                && ControllerIds.Count > 0;
-            AddOutputButton.IsEnabled = canEdit && !_isReadingIoCapabilities
-                && ControllerIds.Count > 0;
             CheckMappingButton.IsEnabled = !_configurationApplyInProgress;
             SaveConfigurationButton.IsEnabled = canEdit;
             CancelChangesButton.IsEnabled = !_configurationApplyInProgress;
@@ -246,50 +242,6 @@ namespace MotionControl.Framework.Wpf.Configuration
             return Path.Combine(
                 _configurationStore.GetMachineDirectory(_machineId),
                 relativePath.Replace('/', Path.DirectorySeparatorChar));
-        }
-
-        /// <summary>新增一个未命名 DI，并自动选择当前首张卡和下一个未占用通道号。</summary>
-        private void AddInputButton_Click(object sender, RoutedEventArgs e)
-        {
-            DigitalInputs.Add(CreateNewPoint(DigitalInputs));
-            DigitalInputsGrid.SelectedIndex = DigitalInputs.Count - 1;
-            DigitalInputsGrid.ScrollIntoView(DigitalInputsGrid.SelectedItem);
-            MarkConfigurationAsChanged();
-        }
-
-        /// <summary>新增一个未命名 DO，并自动选择当前首张卡和下一个未占用通道号。</summary>
-        private void AddOutputButton_Click(object sender, RoutedEventArgs e)
-        {
-            DigitalOutputs.Add(CreateNewPoint(DigitalOutputs));
-            DigitalOutputsGrid.SelectedIndex = DigitalOutputs.Count - 1;
-            DigitalOutputsGrid.ScrollIntoView(DigitalOutputsGrid.SelectedItem);
-            MarkConfigurationAsChanged();
-        }
-
-        /// <summary>创建不带虚构逻辑名称的点位草稿，通道号取当前列表下一空闲值。</summary>
-        private DigitalIoHardwareDefinition CreateNewPoint(
-            IEnumerable<DigitalIoHardwareDefinition> existingPoints)
-        {
-            int nextChannel = 0;
-            while (existingPoints.Any(point => point.ControllerId == GetFirstControllerId()
-                && point.Channel == nextChannel))
-            {
-                nextChannel++;
-            }
-
-            return new DigitalIoHardwareDefinition
-            {
-                Name = string.Empty,
-                ControllerId = GetFirstControllerId(),
-                Channel = nextChannel,
-                ActiveHigh = true
-            };
-        }
-
-        /// <summary>返回目前卡清单中的首张控制卡；未连接控制卡时返回空值。</summary>
-        private string GetFirstControllerId()
-        {
-            return ControllerIds.Count == 0 ? string.Empty : ControllerIds[0];
         }
 
         /// <summary>清空选中 DI 的逻辑名称，通道行保留在自动探测清单中。</summary>

@@ -53,7 +53,7 @@ namespace MotionControl.Framework.Contracts.Motion
     /// <summary>记录控制卡允许配置的数字 I/O 编号范围，以及适配器提供的探测诊断。</summary>
     public sealed class MotionCardIoChannelRange
     {
-        /// <summary>允许配置的通道编号数量；实际板载和扩展点数应读取能力结果中的数量字段。</summary>
+        /// <summary>从通道 0 起连续读取成功的可用通道数；首个失败地址之后不纳入连续映射。</summary>
         public int? MappableChannelCount { get; set; }
 
         /// <summary>适配器探测时遇到的首个不可读通道号；没有逐路探测时为空。</summary>

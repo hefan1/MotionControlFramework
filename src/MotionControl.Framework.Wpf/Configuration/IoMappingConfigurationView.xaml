@@ -291,8 +291,6 @@
                             </StackPanel>
                         </StackPanel>
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
-                            <Button x:Name="AddInputButton" Content="{DynamicResource 添加其他DI}" Click="AddInputButton_Click"
-                                    Style="{StaticResource IoMappingButton}" Margin="4,0,0,0" />
                             <Button x:Name="RemoveInputButton" Content="{DynamicResource 清空逻辑名}" Click="RemoveInputButton_Click"
                                     Style="{StaticResource IoMappingButton}" Margin="4,0,0,0" />
                         </StackPanel>
@@ -359,8 +357,6 @@
                             </StackPanel>
                         </StackPanel>
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
-                            <Button x:Name="AddOutputButton" Content="{DynamicResource 添加其他DO}" Click="AddOutputButton_Click"
-                                    Style="{StaticResource IoMappingButton}" Margin="4,0,0,0" />
                             <Button x:Name="RemoveOutputButton" Content="{DynamicResource 清空逻辑名}" Click="RemoveOutputButton_Click"
                                     Style="{StaticResource IoMappingButton}" Margin="4,0,0,0" />
                         </StackPanel>

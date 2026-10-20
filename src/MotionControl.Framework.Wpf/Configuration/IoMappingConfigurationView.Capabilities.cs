@@ -89,6 +89,7 @@ namespace MotionControl.Framework.Wpf.Configuration
                 }
 
                 _lastIoCapabilities = capabilities;
+                PopulateDetectedChannels(capabilities);
                 _ioCapabilityStatusResourceKey = null;
                 UpdateIoCapabilityStatusText();
             }
@@ -104,6 +105,122 @@ namespace MotionControl.Framework.Wpf.Configuration
                 _isReadingIoCapabilities = false;
                 UpdateConnectionState();
             }
+        }
+
+        /// <summary>按控制卡探测结果列出 DI/DO 通道，同时保留已编辑的逻辑名称和有效电平。</summary>
+        private void PopulateDetectedChannels(MotionCardIoCapabilities capabilities)
+        {
+            string controllerId = capabilities.ControllerId;
+            if (string.IsNullOrWhiteSpace(controllerId) || !ControllerIds.Contains(controllerId))
+            {
+                controllerId = ControllerIds.FirstOrDefault();
+            }
+
+            if (string.IsNullOrWhiteSpace(controllerId))
+            {
+                return;
+            }
+
+            int? inputCount = GetDetectedChannelCount(
+                capabilities.BuiltInDigitalInputCount,
+                capabilities.ScannedBusDigitalInputCount,
+                capabilities.DigitalInputChannelRange);
+            int? outputCount = GetDetectedChannelCount(
+                capabilities.BuiltInDigitalOutputCount,
+                capabilities.ScannedBusDigitalOutputCount,
+                capabilities.DigitalOutputChannelRange);
+
+            AddDetectedChannels(DigitalInputs, inputCount, controllerId);
+            AddDetectedChannels(DigitalOutputs, outputCount, controllerId);
+            RefreshEmergencyStopInputNames();
+        }
+
+        /// <summary>优先按逐路读取 API 确认的连续地址范围生成通道数。</summary>
+        private static int? GetDetectedChannelCount(
+            int? builtInCount,
+            int? scannedBusCount,
+            MotionCardIoChannelRange range)
+        {
+            if (range != null
+                && range.MappableChannelCount.HasValue
+                && (range.FirstUnavailableChannel.HasValue || range.ReachedProbeLimit))
+            {
+                return Math.Max(0, range.MappableChannelCount.Value);
+            }
+
+            if (builtInCount.HasValue)
+            {
+                long detectedCount = Math.Max(0, builtInCount.Value)
+                    + Math.Max(0, scannedBusCount.GetValueOrDefault());
+                if (range != null && range.MappableChannelCount.HasValue)
+                {
+                    detectedCount = Math.Min(detectedCount, Math.Max(0, range.MappableChannelCount.Value));
+                }
+
+                return (int)Math.Min(detectedCount, int.MaxValue);
+            }
+
+            return null;
+        }
+
+        /// <summary>为已检测到的通道生成空名称行，已有配置按卡号和通道号原样保留。</summary>
+        private static void AddDetectedChannels(
+            ObservableCollection<DigitalIoHardwareDefinition> points,
+            int? detectedCount,
+            string controllerId)
+        {
+            if (!detectedCount.HasValue)
+            {
+                return;
+            }
+
+            List<DigitalIoHardwareDefinition> existingPoints = points.ToList();
+            var existingByAddress = new Dictionary<string, DigitalIoHardwareDefinition>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (DigitalIoHardwareDefinition existingPoint in existingPoints)
+            {
+                string addressKey = GetAddressKey(existingPoint.ControllerId, existingPoint.Channel);
+                if (!existingByAddress.ContainsKey(addressKey))
+                {
+                    existingByAddress.Add(addressKey, existingPoint);
+                }
+            }
+
+            var usedPoints = new HashSet<DigitalIoHardwareDefinition>();
+
+            points.Clear();
+            for (int channel = 0; channel < detectedCount.Value; channel++)
+            {
+                string addressKey = GetAddressKey(controllerId, channel);
+                DigitalIoHardwareDefinition point;
+                if (!existingByAddress.TryGetValue(addressKey, out point))
+                {
+                    point = new DigitalIoHardwareDefinition
+                    {
+                        Name = string.Empty,
+                        ControllerId = controllerId,
+                        Channel = channel,
+                        ActiveHigh = true
+                    };
+                }
+
+                points.Add(point);
+                usedPoints.Add(point);
+            }
+
+            foreach (DigitalIoHardwareDefinition point in existingPoints)
+            {
+                if (!usedPoints.Contains(point))
+                {
+                    points.Add(point);
+                }
+            }
+        }
+
+        /// <summary>创建控制卡编号和物理通道的稳定查找键。</summary>
+        private static string GetAddressKey(string controllerId, int channel)
+        {
+            return (controllerId ?? string.Empty) + "/" + channel.ToString(CultureInfo.InvariantCulture);
         }
 
         /// <summary>按缓存的能力结果或当前状态资源重新生成页面摘要文字。</summary>
