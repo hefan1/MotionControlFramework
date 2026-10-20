@@ -439,7 +439,13 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>按当前伺服状态切换使能或关闭。</summary>
         private async void ServoToggleButton_Click(object sender, RoutedEventArgs e)
         {
-            await RunAxisActionAsync(GetText("伺服状态"), async () =>
+            string operationName = ServoToggleButton.Content as string;
+            if (string.IsNullOrWhiteSpace(operationName))
+            {
+                operationName = GetText("伺服状态");
+            }
+
+            await RunAxisActionAsync(operationName, async () =>
             {
                 AxisStatus status = await _axis.ReadStatusAsync(CancellationToken.None).ConfigureAwait(true);
                 if (status.ServoEnabled)
