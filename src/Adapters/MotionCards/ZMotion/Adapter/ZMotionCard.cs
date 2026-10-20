@@ -83,10 +83,6 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         private const int HardLimitStopReasonMask = PositiveHardLimitMask | NegativeHardLimitMask;
         /// <summary>当前仿真器使用的驱动报警清除模式编号。</summary>
         private const uint CurrentDriveAlarmClearMode = 0;
-        /// <summary>当前仿真适配器点动时使用的默认加速度，沿用原仿真样例值。</summary>
-        private const double DefaultJogAcceleration = 10;
-        /// <summary>当前仿真适配器点动时使用的默认减速度，沿用原仿真样例值。</summary>
-        private const double DefaultJogDeceleration = 10;
         /// <summary>清除驱动器报警后等待控制器更新状态的时间，单位为毫秒。</summary>
         private const int DriveAlarmResetDelayMilliseconds = 50;
         /// <summary>读取控制器轴状态时两次轮询之间的间隔，单位为毫秒。</summary>

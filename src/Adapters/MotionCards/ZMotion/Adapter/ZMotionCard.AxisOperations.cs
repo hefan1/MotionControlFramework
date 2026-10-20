@@ -213,9 +213,14 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         internal Task StartJogAsync(
             ZMotionAxis axis,
             MotionDirection direction,
-            double speed,
+            AxisMotionProfile profile,
             CancellationToken cancellationToken)
         {
+            if (profile == null)
+            {
+                throw new ArgumentNullException(nameof(profile));
+            }
+
             return Task.Run(() =>
             {
                 lock (_nativeLock)
@@ -247,7 +252,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                             + BuildAxisAlarmMessage(statusBits) + "。");
                     }
 
-                    var jogSpeed = speed;
+                    var jogSpeed = profile.Speed;
                     if (axis.RequiresHomingAfterLimitAlarm || (statusBits & ActiveLimitMask) != 0)
                     {
                         var recoverySpeed = axis.Configuration.HomeCreepSpeed;
@@ -260,7 +265,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                                 + "' 需要低速退出限位，但轴参数 HomeCreepSpeed 未配置为有效正数。");
                         }
 
-                        jogSpeed = Math.Min(speed, recoverySpeed);
+                        jogSpeed = Math.Min(profile.Speed, recoverySpeed);
                     }
 
                     EnsureServoEnabled(handle, axis);
@@ -268,8 +273,8 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                         handle,
                         axis,
                         jogSpeed,
-                        DefaultJogAcceleration,
-                        DefaultJogDeceleration);
+                        profile.Acceleration,
+                        profile.Deceleration);
                     CheckResult(
                         zmcaux.ZAux_Direct_Single_Vmove(
                             handle,

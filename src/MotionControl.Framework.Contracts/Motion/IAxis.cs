@@ -37,10 +37,10 @@ namespace MotionControl.Framework.Contracts.Motion
         Task MoveRelativeAsync(double distance, AxisMotionProfile profile, CancellationToken cancellationToken);
 
         /// <summary>
-        /// 开始连续点动，命令被接受后即返回。点动请求结束时，调用方必须调用 StopAsync；
+        /// 按指定运动曲线开始连续点动，命令被接受后即返回。点动请求结束时，调用方必须调用 StopAsync；
         /// 此处取消令牌只取消点动命令的启动。
         /// </summary>
-        Task StartJogAsync(MotionDirection direction, double speed, CancellationToken cancellationToken);
+        Task StartJogAsync(MotionDirection direction, AxisMotionProfile profile, CancellationToken cancellationToken);
 
         /// <summary>按指定的普通运动停止方式停止轴；急停不通过此方法处理。</summary>
         Task StopAsync(AxisStopMode stopMode, CancellationToken cancellationToken);

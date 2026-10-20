@@ -104,7 +104,7 @@
     <sys:String x:Key="寸动步长">Step distance</sys:String>
     <sys:String x:Key="定位位置">Target position</sys:String>
     <sys:String x:Key="指令位置">Command position</sys:String>
-    <sys:String x:Key="轴当前位置">Current axis position</sys:String>
+    <sys:String x:Key="当前编码器位置">Encoder position</sys:String>
     <sys:String x:Key="原点输入状态">Current home input state</sys:String>
     <sys:String x:Key="原点输入未配置">No home input is configured or this adapter cannot read it.</sys:String>
     <sys:String x:Key="运动曲线参数">Motion profile</sys:String>

@@ -75,7 +75,7 @@
                 </Grid>
             </Border>
 
-            <!-- 指令位置、轴当前位置和常用手动参数按行排列，标签和单位对齐。 -->
+            <!-- 指令位置、编码器反馈位置和常用手动参数按行排列，标签和单位对齐。 -->
             <Grid Margin="0,0,0,5">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="92" />
@@ -92,7 +92,7 @@
                 <TextBlock Text="{DynamicResource 指令位置}" VerticalAlignment="Center" FontSize="11" Foreground="#43576A" />
                 <TextBlock x:Name="CommandPositionText" Grid.Column="1" VerticalAlignment="Center" FontSize="11" FontWeight="SemiBold" />
                 <TextBlock x:Name="PositionUnitText" Grid.Column="2" VerticalAlignment="Center" FontSize="10" Foreground="#687A8C" Margin="5,0,0,0" />
-                <TextBlock Grid.Row="1" Text="{DynamicResource 轴当前位置}" VerticalAlignment="Center" FontSize="11" Foreground="#43576A" />
+                <TextBlock Grid.Row="1" Text="{DynamicResource 当前编码器位置}" VerticalAlignment="Center" FontSize="11" Foreground="#43576A" />
                 <TextBlock x:Name="FeedbackPositionText" Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" FontSize="11" FontWeight="SemiBold" />
                 <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding ElementName=PositionUnitText, Path=Text}" VerticalAlignment="Center" FontSize="10" Foreground="#687A8C" Margin="5,0,0,0" />
                 <TextBlock Grid.Row="2" Text="{DynamicResource 手动调试速度}" VerticalAlignment="Center" FontSize="11" Foreground="#43576A" />

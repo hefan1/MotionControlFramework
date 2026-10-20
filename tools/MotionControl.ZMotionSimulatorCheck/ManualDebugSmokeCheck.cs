@@ -47,11 +47,11 @@ namespace MotionControl.ZMotionSimulatorCheck
                     string.Equals(englishResources["伺服使能"] as string, "Servo On", StringComparison.Ordinal),
                     "英文手动调试资源没有正确加载。 ");
                 Ensure(
-                    string.Equals(chineseResources["轴当前位置"] as string, "轴当前位置", StringComparison.Ordinal),
-                    "中文语言资源没有提供通用轴当前位置标签。");
+                    string.Equals(chineseResources["当前编码器位置"] as string, "当前编码器位置", StringComparison.Ordinal),
+                    "中文语言资源没有提供编码器反馈位置标签。");
                 Ensure(
-                    string.Equals(englishResources["轴当前位置"] as string, "Current axis position", StringComparison.Ordinal),
-                    "英文语言资源没有提供通用轴当前位置标签。");
+                    string.Equals(englishResources["当前编码器位置"] as string, "Encoder position", StringComparison.Ordinal),
+                    "英文语言资源没有提供编码器反馈位置标签。");
 
                 var card = new SmokeMotionCard();
                 var cards = new MotionCardGroup(new IMotionCard[] { card });
@@ -132,7 +132,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 var axisCards = (WrapPanel)page.FindName("AxisCardsPanel");
                 Ensure(axisCards.Children.Count == 1, "已映射一个轴时没有生成对应的单轴调试卡片。");
                 var axisControl = (ManualAxisControl)axisCards.Children[0];
-                Ensure(axisControl.FindName("FeedbackPositionText") is TextBlock, "轴卡片没有加载轴当前位置显示。");
+                Ensure(axisControl.FindName("FeedbackPositionText") is TextBlock, "轴卡片没有加载编码器反馈位置显示。");
                 var homedStatusText = (TextBlock)axisControl.FindName("HomedStatusText");
                 Ensure(
                     homedStatusText.Text == chineseResources["状态未连接"] as string,
@@ -171,6 +171,24 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(
                     homedStatusText.Text == chineseResources["未回零"] as string,
                     "轴状态显示没有区分未回零状态。");
+                smokeAxis.Position = 12.34567;
+                smokeAxis.IsMoving = true;
+                axisControl.RefreshStatusAsync().GetAwaiter().GetResult();
+                var feedbackPositionText = (TextBlock)axisControl.FindName("FeedbackPositionText");
+                Ensure(
+                    feedbackPositionText.Text == smokeAxis.Position.ToString("F3", CultureInfo.CurrentCulture),
+                    "轴运动时手动页没有更新编码器反馈位置。");
+                Ensure(
+                    ((TextBlock)axisControl.FindName("MotionStateText")).Text == chineseResources["运动中"] as string,
+                    "轴运动时手动页没有显示运动状态。");
+                smokeAxis.Position = 12.45678;
+                axisControl.RefreshStatusAsync().GetAwaiter().GetResult();
+                Ensure(
+                    feedbackPositionText.Text == smokeAxis.Position.ToString("F3", CultureInfo.CurrentCulture),
+                    "轴再次刷新后手动页没有显示最新编码器反馈位置。");
+                smokeAxis.Position = 0;
+                smokeAxis.IsMoving = false;
+                axisControl.RefreshStatusAsync().GetAwaiter().GetResult();
                 VerifyConnectedControlsUseCommonContracts(page, ioPage, card);
                 VerifyManualOperationButtonsFollowSafetyInterlock(page, ioPage, card, runtime, safetyStatus);
 
@@ -207,7 +225,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(ReferenceEquals(manualContent.Content, ioPage), "Host 的 IO 手动导航没有显示独立 IO 页面。");
 
                 application.Shutdown();
-                Console.WriteLine("[通过] 手动调试页与硬件配置页离屏检查完成：位置坐标精度与编辑保存、轴参数读回、I/O 能力诊断、回零模式中英资源和 Host 底栏状态；使用内存测试卡。");
+                Console.WriteLine("[通过] 手动调试页离屏检查完成：运动中编码器反馈刷新、位置坐标精度与编辑保存、轴参数读回、I/O 能力诊断、回零模式中英资源和 Host 底栏状态；使用内存测试卡。");
                 return 0;
             }
             catch (Exception error)
@@ -1063,15 +1081,25 @@ namespace MotionControl.ZMotionSimulatorCheck
                 RoutedEvent = UIElement.PreviewMouseLeftButtonDownEvent
             };
             jogButton.RaiseEvent(mouseDown);
-            Ensure(axis.CommandCount == initialCommandCount + 1, "按下点动按钮后没有调用连续点动。");
+            bool mouseCaptured = ReferenceEquals(Mouse.Captured, jogButton);
+            Ensure(
+                axis.CommandCount == initialCommandCount + (mouseCaptured ? 1 : 2),
+                "按下点动按钮后没有启动连续点动，或未捕获鼠标时没有立即停止轴。");
             Ensure(axis.LastJogDirection == expectedDirection, "点动按钮发送的运动方向不正确。");
-            Ensure(axis.LastJogSpeed == 23, "点动命令没有使用轴配置的默认速度。");
+            Ensure(axis.LastJogProfile != null, "连续点动没有使用当前手动运动曲线。");
+            Ensure(axis.LastJogProfile.Speed == 23, "连续点动没有使用轴配置的手动速度。");
+            Ensure(axis.LastJogProfile.Acceleration == 34, "连续点动没有使用轴配置的手动加速度。");
+            Ensure(axis.LastJogProfile.Deceleration == 45, "连续点动没有使用轴配置的手动减速度。");
 
-            var mouseUp = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+            if (mouseCaptured)
             {
-                RoutedEvent = UIElement.PreviewMouseLeftButtonUpEvent
-            };
-            jogButton.RaiseEvent(mouseUp);
+                var mouseUp = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+                {
+                    RoutedEvent = UIElement.PreviewMouseLeftButtonUpEvent
+                };
+                jogButton.RaiseEvent(mouseUp);
+            }
+
             Ensure(axis.CommandCount == initialCommandCount + 2, "松开点动按钮后没有调用受控停止。");
         }
 
@@ -1116,15 +1144,21 @@ namespace MotionControl.ZMotionSimulatorCheck
             /// <summary>保存页面最近一次定位命令的参数，供离屏检查确认。</summary>
             public AxisMotionProfile LastMotionProfile { get; private set; }
 
-            /// <summary>保存页面最近一次点动命令的速度，供离屏检查确认。</summary>
-            public double LastJogSpeed { get; private set; }
+            /// <summary>保存页面最近一次连续点动的运动曲线，供离屏检查确认。</summary>
+            public AxisMotionProfile LastJogProfile { get; private set; }
+
+            /// <summary>提供给手动页面刷新的模拟编码器位置。</summary>
+            public double Position { get; set; }
+
+            /// <summary>提供给手动页面刷新的模拟运动状态。</summary>
+            public bool IsMoving { get; set; }
 
             public string Name { get { return "X"; } }
 
-            /// <summary>返回固定无报警状态，不读取真实设备。</summary>
+            /// <summary>返回可变位置和运动状态的模拟快照，不读取真实设备。</summary>
             public Task<AxisStatus> ReadStatusAsync(CancellationToken cancellationToken)
             {
-                return Task.FromResult(new AxisStatus(0, 0, false, false, IsHomed, false, false, false, false, false, null, false));
+                return Task.FromResult(new AxisStatus(Position, 0, false, IsMoving, IsHomed, false, false, false, false, false, null, false));
             }
 
             /// <summary>本次离屏检查不发出轴使能命令。</summary>
@@ -1153,11 +1187,11 @@ namespace MotionControl.ZMotionSimulatorCheck
             }
 
             /// <summary>本次离屏检查不发出点动命令。</summary>
-            public Task StartJogAsync(MotionDirection direction, double speed, CancellationToken cancellationToken)
+            public Task StartJogAsync(MotionDirection direction, AxisMotionProfile profile, CancellationToken cancellationToken)
             {
                 CommandCount++;
                 LastJogDirection = direction;
-                LastJogSpeed = speed;
+                LastJogProfile = profile;
                 return Task.CompletedTask;
             }
 

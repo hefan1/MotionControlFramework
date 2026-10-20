@@ -85,6 +85,9 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>当前按住点动按钮、需要在松开时停止的轴。</summary>
         private IAxis _joggingAxis;
 
+        /// <summary>当前连续点动捕获鼠标的按钮；停止后释放，保证其它页面控件仍可操作。</summary>
+        private Button _joggingButton;
+
         /// <summary>当前卡片是否正在等待一项轴手动操作完成，避免同轴命令重叠。</summary>
         private bool _axisActionInProgress;
 
@@ -279,7 +282,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
-        /// <summary>读取并显示指令位置、轴当前位置、伺服、回零、限位和报警状态。</summary>
+        /// <summary>读取并显示指令位置、编码器反馈位置、伺服、回零、限位和报警状态。</summary>
         public async Task RefreshStatusAsync()
         {
             if (_machineRuntime.State == MachineRunState.Disconnected)
@@ -300,7 +303,6 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 return;
             }
 
-            await RefreshAssociatedIoStatusAsync().ConfigureAwait(true);
             AxisStatus status = await _axis.ReadStatusAsync(CancellationToken.None).ConfigureAwait(true);
             CommandPositionText.Text = status.CommandPosition.HasValue
                 ? status.CommandPosition.Value.ToString("F3", CultureInfo.CurrentCulture)
@@ -321,6 +323,9 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 : status.PositiveSoftLimitActive || status.NegativeSoftLimitActive
                     ? GetText("软件限位当前有效")
                     : string.Empty;
+
+            // 先完成轴反馈显示，再读取关联 IO，避免 IO 查询延迟编码器位置刷新。
+            await RefreshAssociatedIoStatusAsync().ConfigureAwait(true);
         }
 
         /// <summary>显示当前轴状态读取失败的具体原因，不影响其他轴卡片刷新。</summary>
@@ -940,6 +945,18 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>按受控停止方式停止当前轴。</summary>
         private async void StopButton_Click(object sender, RoutedEventArgs e)
         {
+            if (_joggingAxis != null)
+            {
+                bool stopped = await StopJogAsync().ConfigureAwait(true);
+                if (stopped)
+                {
+                    OperationMessageText.Text = string.Format(GetText("操作完成"), GetText("受控停止"));
+                    await RefreshStatusAsync().ConfigureAwait(true);
+                }
+
+                return;
+            }
+
             await RunAxisStopActionAsync(
                 GetText("受控停止"),
                 () => _axis.StopAsync(AxisStopMode.Controlled, CancellationToken.None)).ConfigureAwait(true);
@@ -987,7 +1004,10 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>点动按钮失去鼠标捕获时停止当前轴，避免轴继续运行。</summary>
         private async void JogButton_LostMouseCapture(object sender, MouseEventArgs e)
         {
-            await StopJogAsync().ConfigureAwait(true);
+            if (ReferenceEquals(sender, _joggingButton))
+            {
+                await StopJogAsync().ConfigureAwait(true);
+            }
         }
 
         /// <summary>连续模式启动按住式点动；寸动模式按当前步长执行一次相对定位。</summary>
@@ -1012,10 +1032,16 @@ namespace MotionControl.Framework.Wpf.ManualDebug
 
                 if (continuousJog)
                 {
-                    double jogSpeed = ReadNumber(SpeedTextBox, GetText("手动调试速度"));
-                    await _axis.StartJogAsync(direction, jogSpeed, CancellationToken.None).ConfigureAwait(true);
+                    AxisMotionProfile jogProfile = ReadMotionProfile();
+                    await _axis.StartJogAsync(direction, jogProfile, CancellationToken.None).ConfigureAwait(true);
                     _joggingAxis = _axis;
-                    Mouse.Capture(jogButton);
+                    _joggingButton = jogButton;
+                    if (!Mouse.Capture(jogButton))
+                    {
+                        await StopJogAsync().ConfigureAwait(true);
+                        throw new InvalidOperationException(GetText("连续点动按钮无法捕获鼠标，已请求停止"));
+                    }
+
                     return;
                 }
 
@@ -1092,26 +1118,35 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         private async Task<bool> StopJogAsync()
         {
             IAxis joggingAxis = _joggingAxis;
-            if (joggingAxis == null)
-            {
-                return true;
-            }
+            bool stopped = true;
 
             try
             {
-                await RunAxisStopOperationAsync(joggingAxis, CancellationToken.None).ConfigureAwait(true);
-                if (ReferenceEquals(_joggingAxis, joggingAxis))
+                if (joggingAxis != null)
                 {
-                    _joggingAxis = null;
+                    await RunAxisStopOperationAsync(joggingAxis, CancellationToken.None).ConfigureAwait(true);
+                    if (ReferenceEquals(_joggingAxis, joggingAxis))
+                    {
+                        _joggingAxis = null;
+                    }
                 }
-
-                return true;
             }
             catch (Exception error)
             {
                 OperationMessageText.Text = string.Format(GetText("停止点动失败"), error.Message);
-                return false;
+                stopped = false;
             }
+            finally
+            {
+                Button joggingButton = _joggingButton;
+                _joggingButton = null;
+                if (joggingButton != null && ReferenceEquals(Mouse.Captured, joggingButton))
+                {
+                    Mouse.Capture(null);
+                }
+            }
+
+            return stopped;
         }
 
         /// <summary>检查联锁并等待轴手动命令完成，避免同一轴上的普通操作重叠。</summary>

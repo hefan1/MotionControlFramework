@@ -36,7 +36,7 @@ namespace MotionControl.Framework.Contracts.Motion
             OriginInputActive = originInputActive;
         }
 
-        /// <summary>轴当前位置，使用该轴配置的工程单位。</summary>
+        /// <summary>控制器读取的轴实际位置反馈（通常为编码器位置），使用该轴配置的工程单位。</summary>
         public double Position { get; private set; }
 
         /// <summary>轴当前速度，正负号表示方向，单位为轴工程单位/秒。</summary>

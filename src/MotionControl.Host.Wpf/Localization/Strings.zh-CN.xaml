@@ -112,7 +112,7 @@
     <sys:String x:Key="寸动步长">寸动步长</sys:String>
     <sys:String x:Key="定位位置">定位位置</sys:String>
     <sys:String x:Key="指令位置">当前指令位置</sys:String>
-    <sys:String x:Key="轴当前位置">轴当前位置</sys:String>
+    <sys:String x:Key="当前编码器位置">当前编码器位置</sys:String>
     <sys:String x:Key="原点输入状态">原点输入当前状态</sys:String>
     <sys:String x:Key="原点输入未配置">控制器没有配置原点输入，或当前适配器无法读取该状态</sys:String>
     <sys:String x:Key="运动曲线参数">运动曲线参数</sys:String>

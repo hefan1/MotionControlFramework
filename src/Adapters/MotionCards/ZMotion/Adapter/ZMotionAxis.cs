@@ -107,10 +107,10 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             await WaitForCompletionAndStopOnFailureAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        /// <summary>按指定方向和速度启动连续点动。</summary>
+        /// <summary>按指定方向和运动曲线启动连续点动。</summary>
         public Task StartJogAsync(
             MotionDirection direction,
-            double speed,
+            AxisMotionProfile profile,
             CancellationToken cancellationToken)
         {
             if (direction != MotionDirection.Positive && direction != MotionDirection.Negative)
@@ -118,13 +118,12 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 throw new ArgumentOutOfRangeException(nameof(direction), "点动方向无效。");
             }
 
-            ValidateFinite(speed, nameof(speed));
-            if (speed <= 0)
+            if (profile == null)
             {
-                throw new ArgumentOutOfRangeException(nameof(speed), "点动速度必须大于 0。");
+                throw new ArgumentNullException(nameof(profile));
             }
 
-            return _card.StartJogAsync(this, direction, speed, cancellationToken);
+            return _card.StartJogAsync(this, direction, profile, cancellationToken);
         }
 
         /// <summary>按指定停止方式停止轴，并等待控制卡确认轴已空闲。</summary>
