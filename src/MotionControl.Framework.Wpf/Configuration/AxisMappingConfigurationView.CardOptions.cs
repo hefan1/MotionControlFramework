@@ -224,7 +224,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
         }
 
-        /// <summary>只用控制卡原始编号显示回零选项，并核对保存的适配器归属。</summary>
+        /// <summary>显示控制卡原始编号和适配器提供的回零名称，并核对保存的适配器归属。</summary>
         private void UpdateHomeModeEditor(AxisMappingEntry axis)
         {
             bool wasLoadingConfiguration = _loadingConfiguration;
@@ -249,7 +249,7 @@ namespace MotionControl.Framework.Wpf.Configuration
                         HomeModeComboBox.Items.Add(new ComboBoxItem
                         {
                             Tag = homeMode.ModeNumber.ToString(CultureInfo.InvariantCulture),
-                            Content = homeMode.ModeNumber.ToString(CultureInfo.InvariantCulture)
+                            Content = GetHomeModeDisplayText(homeMode)
                         });
                     }
                 }
@@ -289,9 +289,9 @@ namespace MotionControl.Framework.Wpf.Configuration
                         && itemMode == axis.HomeMode.Value)
                     {
                         HomeModeComboBox.SelectedItem = item;
-                        HomeModeHintTextBlock.SetResourceReference(
-                            TextBlock.TextProperty,
-                            "回零模式适用提示");
+                        AxisHomeModeOption selectedHomeMode = homeModes.FirstOrDefault(
+                            mode => mode != null && mode.ModeNumber == itemMode);
+                        SetHomeModeDescription(selectedHomeMode);
                         return;
                     }
                 }
@@ -305,6 +305,29 @@ namespace MotionControl.Framework.Wpf.Configuration
             {
                 _loadingConfiguration = wasLoadingConfiguration;
             }
+        }
+
+        /// <summary>组合控制卡原始模式编号和当前语言的简明名称；缺少资源时保留原编号。</summary>
+        private string GetHomeModeDisplayText(AxisHomeModeOption homeMode)
+        {
+            string modeNumber = homeMode.ModeNumber.ToString(CultureInfo.InvariantCulture);
+            string displayName = TryFindResource(homeMode.DisplayNameResourceKey) as string;
+            return string.IsNullOrWhiteSpace(displayName)
+                ? modeNumber
+                : modeNumber + " - " + displayName;
+        }
+
+        /// <summary>在回零模式提示区显示当前适配器提供的动作说明，并保留通用安全提示作工具提示。</summary>
+        private void SetHomeModeDescription(AxisHomeModeOption homeMode)
+        {
+            string descriptionKey = homeMode == null ? null : homeMode.DescriptionResourceKey;
+            if (string.IsNullOrWhiteSpace(descriptionKey) || TryFindResource(descriptionKey) == null)
+            {
+                descriptionKey = "回零模式适用提示";
+            }
+
+            HomeModeHintTextBlock.SetResourceReference(TextBlock.TextProperty, descriptionKey);
+            HomeModeHintTextBlock.ToolTip = TryFindResource("回零模式适用提示");
         }
 
         /// <summary>将当前选择的回零模式编号和适配器归属保存到所选物理轴。</summary>

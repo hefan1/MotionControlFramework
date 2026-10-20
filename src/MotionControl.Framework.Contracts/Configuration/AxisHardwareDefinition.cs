@@ -27,10 +27,10 @@ namespace MotionControl.Framework.Contracts.Configuration
         /// <summary>手动调试时默认使用的速度，直线轴为 mm/s，旋转轴为度/s。</summary>
         public double ManualSpeed { get; set; }
 
-        /// <summary>手动调试定位的可选初始加速度；轴映射页不保存，0 表示由调试人员现场填写。</summary>
+        /// <summary>手动调试定位和寸动的初始加速度；由 Host 从轴参数配置提供，0 表示未配置。</summary>
         public double ManualAcceleration { get; set; }
 
-        /// <summary>手动调试定位的可选初始减速度；轴映射页不保存，0 表示由调试人员现场填写。</summary>
+        /// <summary>手动调试定位和寸动的初始减速度；由 Host 从轴参数配置提供，0 表示未配置。</summary>
         public double ManualDeceleration { get; set; }
     }
 }

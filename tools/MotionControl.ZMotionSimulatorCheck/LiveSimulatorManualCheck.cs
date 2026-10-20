@@ -117,6 +117,9 @@ namespace MotionControl.ZMotionSimulatorCheck
                     runtime,
                     cardGroup,
                     axisConfigurations.Select(CreateAxisHardwareDefinition),
+                    card,
+                    inputs.Select(CreateDigitalIoHardwareDefinition),
+                    outputs.Select(CreateDigitalIoHardwareDefinition),
                     manualPositionConfigurationStore,
                     cardDefinition.ControllerId);
                 var ioManualPage = new ManualIoDebugView(
@@ -227,7 +230,22 @@ namespace MotionControl.ZMotionSimulatorCheck
                 MinimumPosition = axisConfiguration.MinimumPosition,
                 MaximumPosition = axisConfiguration.MaximumPosition,
                 SoftLimitEnabled = axisConfiguration.SoftLimitEnabled,
-                ManualSpeed = axisConfiguration.ManualSpeed
+                ManualSpeed = axisConfiguration.ManualSpeed,
+                ManualAcceleration = axisConfiguration.HomeAcceleration,
+                ManualDeceleration = axisConfiguration.HomeDeceleration
+            };
+        }
+
+        /// <summary>把仿真器逻辑 IO 映射转换为手动页面显示和操作的通道定义。</summary>
+        private static DigitalIoHardwareDefinition CreateDigitalIoHardwareDefinition(
+            ZMotionIoPointConfiguration ioPoint)
+        {
+            return new DigitalIoHardwareDefinition
+            {
+                ControllerId = ioPoint.ControllerId,
+                Name = ioPoint.Name,
+                Channel = ioPoint.Channel,
+                ActiveHigh = ioPoint.ActiveHigh
             };
         }
 

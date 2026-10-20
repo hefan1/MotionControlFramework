@@ -506,9 +506,27 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
-        /// <summary>更新整机状态和各轴状态。</summary>
+        /// <summary>读取一次手动联锁并更新整机状态、轴卡按钮可用状态和各轴状态。</summary>
         private async Task RefreshAllStatusAsync()
         {
+            ManualOperationBlockReason blockReason;
+            try
+            {
+                blockReason = await _machineRuntime
+                    .GetManualOperationBlockReasonAsync(CancellationToken.None)
+                    .ConfigureAwait(true);
+            }
+            catch (Exception)
+            {
+                // 联锁状态读取异常时按禁止普通手动操作处理。
+                blockReason = ManualOperationBlockReason.EmergencyStopStatusUnavailable;
+            }
+
+            foreach (ManualAxisControl axisControl in _axisControls)
+            {
+                axisControl.SetManualOperationAvailability(blockReason);
+            }
+
             MachineStateText.Text = GetText("整机状态") + GetText("状态分隔符")
                 + GetMachineStateText(_machineRuntime.State);
 

@@ -110,16 +110,23 @@
             <UniformGrid Rows="3" Columns="3" Margin="-1,0,-1,7">
                 <Button x:Name="PositiveJogButton"
                         Content="{DynamicResource 正向点动}"
+                        IsEnabled="{Binding CanRunManualOperations, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                        ToolTipService.ShowOnDisabled="True"
                         PreviewMouseLeftButtonDown="PositiveJogButton_MouseDown"
                         PreviewMouseLeftButtonUp="JogButton_MouseUp"
                         LostMouseCapture="JogButton_LostMouseCapture"
                         Style="{StaticResource AxisActionButtonStyle}"
                         Background="#EAF3FC"
                         BorderBrush="#BDD5EE" />
-                <Button x:Name="HomeButton" Content="{DynamicResource 回零}" Click="HomeButton_Click" Style="{StaticResource AxisActionButtonStyle}" />
+                <Button x:Name="HomeButton" Content="{DynamicResource 回零}"
+                        IsEnabled="{Binding CanRunManualOperations, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                        ToolTipService.ShowOnDisabled="True"
+                        Click="HomeButton_Click" Style="{StaticResource AxisActionButtonStyle}" />
                 <ToggleButton x:Name="JogModeToggleButton" Content="{DynamicResource 连续点动}" IsChecked="True" Click="JogModeToggleButton_Click" Margin="2" MinHeight="30" Padding="5,4" FontSize="11" />
                 <Button x:Name="NegativeJogButton"
                         Content="{DynamicResource 负向点动}"
+                        IsEnabled="{Binding CanRunManualOperations, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                        ToolTipService.ShowOnDisabled="True"
                         PreviewMouseLeftButtonDown="NegativeJogButton_MouseDown"
                         PreviewMouseLeftButtonUp="JogButton_MouseUp"
                         LostMouseCapture="JogButton_LostMouseCapture"
@@ -128,21 +135,30 @@
                         BorderBrush="#BDD5EE" />
                 <Button x:Name="StopButton"
                         Content="{DynamicResource 受控停止}"
+                        ToolTipService.ShowOnDisabled="True"
                         Click="StopButton_Click"
                         Style="{StaticResource AxisActionButtonStyle}"
                         Background="#FCEDEA"
                         BorderBrush="#E8C1BB"
                         Foreground="#9C3429" />
-                <Button x:Name="ServoToggleButton" Content="{DynamicResource 伺服使能}" Click="ServoToggleButton_Click" Style="{StaticResource AxisActionButtonStyle}" />
+                <Button x:Name="ServoToggleButton" Content="{DynamicResource 伺服使能}"
+                        IsEnabled="{Binding CanRunManualOperations, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                        ToolTipService.ShowOnDisabled="True"
+                        Click="ServoToggleButton_Click" Style="{StaticResource AxisActionButtonStyle}" />
                 <Button x:Name="MoveAbsoluteButton"
                         Content="{DynamicResource 定位}"
+                        IsEnabled="{Binding CanRunManualOperations, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                        ToolTipService.ShowOnDisabled="True"
                         Click="MoveAbsoluteButton_Click"
                         Style="{StaticResource AxisActionButtonStyle}"
                         Background="#E8F1FC"
                         BorderBrush="#B9D1F0"
                         Foreground="#175BA6" />
                 <Button x:Name="SafetyCheckButton" Content="{DynamicResource 安全条件}" Click="SafetyCheckButton_Click" Style="{StaticResource AxisActionButtonStyle}" />
-                <Button x:Name="ResetAxisAlarmButton" Content="{DynamicResource 轴报警复位}" Click="ResetAxisAlarmButton_Click" Style="{StaticResource AxisActionButtonStyle}" />
+                <Button x:Name="ResetAxisAlarmButton" Content="{DynamicResource 轴报警复位}"
+                        IsEnabled="{Binding CanRunManualOperations, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                        ToolTipService.ShowOnDisabled="True"
+                        Click="ResetAxisAlarmButton_Click" Style="{StaticResource AxisActionButtonStyle}" />
             </UniformGrid>
 
             <!-- 运动曲线参数不常用，默认收起，避免挤占手动操作空间。 -->
@@ -230,8 +246,13 @@
                                                      Margin="1"
                                                      FontSize="10"
                                                      ToolTip="{DynamicResource 直接编辑目标位置}" />
-                                            <Button Grid.Column="2" Content="{DynamicResource 写入短标签}" Click="TeachPositionButton_Click" Margin="1" Padding="2,1" MinHeight="24" FontSize="10" ToolTip="{DynamicResource 写入当前位置}" />
-                                            <Button Grid.Column="3" Content="{DynamicResource 定位}" Click="MoveToPositionButton_Click" Margin="1" Padding="2,1" MinHeight="24" FontSize="10" />
+                                            <Button Grid.Column="2" Content="{DynamicResource 写入短标签}"
+                                                    IsEnabled="{Binding CanRunManualOperations, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                                    Click="TeachPositionButton_Click" Margin="1" Padding="2,1" MinHeight="24" FontSize="10"
+                                                    ToolTip="{DynamicResource 写入当前位置}" />
+                                            <Button Grid.Column="3" Content="{DynamicResource 定位}"
+                                                    IsEnabled="{Binding CanRunManualOperations, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                                    Click="MoveToPositionButton_Click" Margin="1" Padding="2,1" MinHeight="24" FontSize="10" />
                                             <Button Grid.Column="4" Content="×" Click="DeletePositionButton_Click" Margin="1" Padding="1" MinHeight="24" FontSize="10" ToolTip="{DynamicResource 删除位置}" />
                                         </Grid>
                                     </Border>
@@ -317,11 +338,13 @@
                                                     Click="SetAssociatedOutputButton_Click" Margin="0,0,5,0"
                                                     Padding="8,3" MinHeight="25" FontSize="10"
                                                     IsEnabled="{Binding CanWriteOutput}"
+                                                    ToolTip="{Binding StateToolTip}" ToolTipService.ShowOnDisabled="True"
                                                     Background="#E8F5EA" BorderBrush="#B9D8BE" />
                                             <Button Content="{Binding OffActionName}" Tag="False"
                                                     Click="SetAssociatedOutputButton_Click" Padding="8,3"
                                                     MinHeight="25" FontSize="10"
                                                     IsEnabled="{Binding CanWriteOutput}"
+                                                    ToolTip="{Binding StateToolTip}" ToolTipService.ShowOnDisabled="True"
                                                     Background="#F3F4F6" BorderBrush="#D2D8DE" />
                                         </StackPanel>
                                     </Grid>

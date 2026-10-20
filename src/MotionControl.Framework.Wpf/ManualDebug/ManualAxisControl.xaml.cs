@@ -22,6 +22,22 @@ namespace MotionControl.Framework.Wpf.ManualDebug
     /// <summary>显示一个已映射轴的状态、手动操作和人工示教位置。</summary>
     public partial class ManualAxisControl : UserControl
     {
+        /// <summary>控制轴卡中需要真实轴动作的按钮是否可用；默认禁用，等待 Runtime 完成联锁检查。</summary>
+        public static readonly DependencyProperty CanRunManualOperationsProperty =
+            DependencyProperty.Register(
+                nameof(CanRunManualOperations),
+                typeof(bool),
+                typeof(ManualAxisControl),
+                new PropertyMetadata(false));
+
+        /// <summary>向操作员说明当前禁用轴动作的联锁原因。</summary>
+        public static readonly DependencyProperty ManualOperationBlockTextProperty =
+            DependencyProperty.Register(
+                nameof(ManualOperationBlockText),
+                typeof(string),
+                typeof(ManualAxisControl),
+                new PropertyMetadata(string.Empty));
+
         /// <summary>当前卡片对应的逻辑轴。</summary>
         private readonly IAxis _axis;
 
@@ -74,6 +90,9 @@ namespace MotionControl.Framework.Wpf.ManualDebug
 
         /// <summary>当前卡片是否正在执行一项手动 DO 写入。</summary>
         private bool _ioOperationInProgress;
+
+        /// <summary>最近一次 Runtime 检查是否允许执行普通手动轴和 DO 操作。</summary>
+        private bool _manualOperationAllowed;
 
         /// <summary>创建一个逻辑轴卡片，并接入该轴自己的位置列表。</summary>
         public ManualAxisControl(
@@ -198,6 +217,66 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             UpdateAddAssociatedIoButton();
 
             UpdateEmptyPositionsText();
+        }
+
+        /// <summary>供 XAML 绑定普通轴动作按钮的联锁可用状态。</summary>
+        public bool CanRunManualOperations
+        {
+            get { return (bool)GetValue(CanRunManualOperationsProperty); }
+            private set { SetValue(CanRunManualOperationsProperty, value); }
+        }
+
+        /// <summary>供禁用按钮提示当前手动联锁未通过的原因。</summary>
+        public string ManualOperationBlockText
+        {
+            get { return (string)GetValue(ManualOperationBlockTextProperty); }
+            private set { SetValue(ManualOperationBlockTextProperty, value); }
+        }
+
+        /// <summary>按整机 Runtime 返回的联锁结果更新轴卡动作按钮；安全检查和允许的停止入口保持可用。</summary>
+        public void SetManualOperationAvailability(ManualOperationBlockReason blockReason)
+        {
+            _manualOperationAllowed = blockReason == ManualOperationBlockReason.None;
+            CanRunManualOperations = _manualOperationAllowed;
+            ManualOperationBlockText = _manualOperationAllowed
+                ? string.Empty
+                : GetManualOperationBlockText(blockReason);
+
+            PositiveJogButton.IsEnabled = _manualOperationAllowed;
+            NegativeJogButton.IsEnabled = _manualOperationAllowed;
+            HomeButton.IsEnabled = _manualOperationAllowed;
+            ServoToggleButton.IsEnabled = _manualOperationAllowed;
+            MoveAbsoluteButton.IsEnabled = _manualOperationAllowed;
+            ResetAxisAlarmButton.IsEnabled = _manualOperationAllowed;
+            StopButton.IsEnabled = blockReason != ManualOperationBlockReason.MotionCardDisconnected
+                && blockReason != ManualOperationBlockReason.AutomaticFlowActive;
+
+            PositiveJogButton.ToolTip = ManualOperationBlockText;
+            NegativeJogButton.ToolTip = ManualOperationBlockText;
+            HomeButton.ToolTip = ManualOperationBlockText;
+            ServoToggleButton.ToolTip = ManualOperationBlockText;
+            MoveAbsoluteButton.ToolTip = ManualOperationBlockText;
+            ResetAxisAlarmButton.ToolTip = ManualOperationBlockText;
+            StopButton.ToolTip = StopButton.IsEnabled ? null : ManualOperationBlockText;
+
+            foreach (ManualAxisIoAssociationViewItem viewItem in _ioAssociationItems)
+            {
+                if (!viewItem.IsOutput)
+                {
+                    continue;
+                }
+
+                bool isMapped = IsIoAssociationMapped(viewItem.Association);
+                bool canWriteOutput = _manualOperationAllowed && isMapped && !_ioOperationInProgress;
+                string stateToolTip = _manualOperationAllowed
+                    ? viewItem.StateToolTip
+                    : ManualOperationBlockText;
+                viewItem.SetStatus(
+                    viewItem.StateText,
+                    viewItem.StateBackground,
+                    canWriteOutput,
+                    stateToolTip);
+            }
         }
 
         /// <summary>读取并显示指令位置、轴当前位置、伺服、回零、限位和报警状态。</summary>
@@ -443,6 +522,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
 
                 if (blockReason != ManualOperationBlockReason.None)
                 {
+                    SetManualOperationAvailability(blockReason);
                     throw new InvalidOperationException(GetManualOperationBlockText(blockReason));
                 }
 
@@ -557,13 +637,17 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                     else
                     {
                         stateText = GetText(isActive ? "逻辑ON" : "逻辑OFF");
-                        stateToolTip = GetText("轴关联DO状态说明");
+                        stateToolTip = _manualOperationAllowed
+                            ? GetText("轴关联DO状态说明")
+                            : ManualOperationBlockText;
                     }
 
                     viewItem.SetStatus(
                         stateText,
                         isActive ? Brushes.Honeydew : Brushes.Gainsboro,
-                        association.PointType == ManualAxisIoPointType.DigitalOutput && !_ioOperationInProgress,
+                        association.PointType == ManualAxisIoPointType.DigitalOutput
+                            && _manualOperationAllowed
+                            && !_ioOperationInProgress,
                         stateToolTip);
                 }
                 catch (Exception error)
@@ -571,8 +655,12 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                     viewItem.SetStatus(
                         GetText("IO读取失败简短"),
                         Brushes.MistyRose,
-                        association.PointType == ManualAxisIoPointType.DigitalOutput && !_ioOperationInProgress,
-                        error.Message);
+                        association.PointType == ManualAxisIoPointType.DigitalOutput
+                            && _manualOperationAllowed
+                            && !_ioOperationInProgress,
+                        _manualOperationAllowed
+                            ? error.Message
+                            : ManualOperationBlockText + Environment.NewLine + error.Message);
                 }
             }
         }
@@ -953,12 +1041,14 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             MachineRunState machineState = _machineRuntime.State;
             if (machineState == MachineRunState.Disconnected)
             {
+                SetManualOperationAvailability(ManualOperationBlockReason.MotionCardDisconnected);
                 issues.Add(GetText("运动卡未连接操作被拒绝"));
             }
             else
             {
                 ManualOperationBlockReason blockReason = await _machineRuntime
                     .GetManualOperationBlockReasonAsync(CancellationToken.None).ConfigureAwait(true);
+                SetManualOperationAvailability(blockReason);
                 if (blockReason != ManualOperationBlockReason.None)
                 {
                     issues.Add(GetManualOperationBlockText(blockReason));
@@ -1050,6 +1140,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                     .RunManualOperationAsync(operation, CancellationToken.None).ConfigureAwait(true);
                 if (blockReason != ManualOperationBlockReason.None)
                 {
+                    SetManualOperationAvailability(blockReason);
                     throw new InvalidOperationException(GetManualOperationBlockText(blockReason));
                 }
 

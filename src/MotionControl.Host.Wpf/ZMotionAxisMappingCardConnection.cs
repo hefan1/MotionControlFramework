@@ -410,7 +410,9 @@ namespace MotionControl.Host.Wpf
                         MinimumPosition = axis.MinimumPosition.Value,
                         MaximumPosition = axis.MaximumPosition.Value,
                         SoftLimitEnabled = axis.SoftLimitEnabled.Value,
-                        ManualSpeed = axis.ManualSpeed.Value
+                        ManualSpeed = axis.ManualSpeed.Value,
+                        ManualAcceleration = axis.HomeAcceleration.GetValueOrDefault(),
+                        ManualDeceleration = axis.HomeDeceleration.GetValueOrDefault()
                     });
                 }
             }

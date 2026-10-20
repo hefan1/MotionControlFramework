@@ -36,6 +36,10 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         private readonly Dictionary<string, TextBlock> _outputStatusTextByName =
             new Dictionary<string, TextBlock>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>按逻辑 DO 名称保存两枚操作按钮，便于按 Runtime 联锁统一启用或禁用。</summary>
+        private readonly Dictionary<string, List<Button>> _outputActionButtonsByName =
+            new Dictionary<string, List<Button>>(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>定时刷新 DI 和 DO 状态。</summary>
         private readonly DispatcherTimer _refreshTimer;
 
@@ -127,10 +131,13 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                     Margin = new Thickness(8, 0, 6, 0)
                 };
                 row.Children.Add(stateText);
-                row.Children.Add(CreateOutputButton("输出打开", outputName, true));
-                row.Children.Add(CreateOutputButton("输出关闭", outputName, false));
+                Button openButton = CreateOutputButton("输出打开", outputName, true);
+                Button closeButton = CreateOutputButton("输出关闭", outputName, false);
+                row.Children.Add(openButton);
+                row.Children.Add(closeButton);
                 DigitalOutputsPanel.Children.Add(row);
                 _outputStatusTextByName.Add(outputName, stateText);
+                _outputActionButtonsByName.Add(outputName, new List<Button> { openButton, closeButton });
             }
         }
 
@@ -160,6 +167,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             var button = new Button
             {
                 Tag = new OutputCommand(outputName, value),
+                IsEnabled = false,
                 Padding = new Thickness(7, 3, 7, 3),
                 Margin = new Thickness(2, 3, 2, 3)
             };
@@ -203,6 +211,20 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>读取已映射的 DI 和 DO；单点读取失败时把错误显示在对应点位上。</summary>
         private async Task RefreshIoStatusAsync()
         {
+            ManualOperationBlockReason blockReason;
+            try
+            {
+                blockReason = await _machineRuntime
+                    .GetManualOperationBlockReasonAsync(CancellationToken.None)
+                    .ConfigureAwait(true);
+            }
+            catch (Exception)
+            {
+                // 联锁状态读取异常时按禁止手动写入处理。
+                blockReason = ManualOperationBlockReason.EmergencyStopStatusUnavailable;
+            }
+
+            UpdateOutputButtonAvailability(blockReason);
             MachineStateText.Text = GetText("整机状态") + GetText("状态分隔符")
                 + GetMachineStateText(_machineRuntime.State);
 
@@ -241,6 +263,25 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 {
                     _outputStatusTextByName[outputName].Text = string.Format(GetText("IO读取失败"), error.Message);
                     _outputStatusTextByName[outputName].Foreground = Brushes.Firebrick;
+                }
+            }
+        }
+
+        /// <summary>按当前 Runtime 联锁结果设置所有 DO 按钮，并为禁用状态提供原因提示。</summary>
+        private void UpdateOutputButtonAvailability(ManualOperationBlockReason blockReason)
+        {
+            bool canWriteOutput = blockReason == ManualOperationBlockReason.None;
+            string toolTip = canWriteOutput
+                ? null
+                : GetManualOperationBlockText(blockReason);
+
+            foreach (List<Button> buttons in _outputActionButtonsByName.Values)
+            {
+                foreach (Button button in buttons)
+                {
+                    button.IsEnabled = canWriteOutput;
+                    button.ToolTip = toolTip;
+                    button.SetValue(ToolTipService.ShowOnDisabledProperty, true);
                 }
             }
         }
@@ -289,6 +330,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 }, CancellationToken.None).ConfigureAwait(true);
                 if (blockReason != ManualOperationBlockReason.None)
                 {
+                    UpdateOutputButtonAvailability(blockReason);
                     throw new InvalidOperationException(GetManualOperationBlockText(blockReason));
                 }
 

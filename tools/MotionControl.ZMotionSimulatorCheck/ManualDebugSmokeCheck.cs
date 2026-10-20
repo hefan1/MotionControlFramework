@@ -55,15 +55,41 @@ namespace MotionControl.ZMotionSimulatorCheck
 
                 var card = new SmokeMotionCard();
                 var cards = new MotionCardGroup(new IMotionCard[] { card });
+                var safetyStatus = new SmokeSafetyStatus();
                 var runtime = new MachineRuntime(
                     cards,
                     new IStationFlow[] { new SmokeStationFlow() },
                     new MachineAlarmService(),
-                    new SmokeSafetyStatus());
+                    safetyStatus);
                 string positionConfigurationRoot = Path.Combine(
-                    AppDomain.CurrentDomain.BaseDirectory,
+                    Path.GetTempPath(),
                     "ManualAxisPositionsSmokeData_" + Guid.NewGuid().ToString("N"));
                 var positionConfigurationStore = new MachineConfigurationStore(positionConfigurationRoot);
+                positionConfigurationStore.SaveJson(
+                    "ManualDebugSmoke",
+                    "Parameters/ManualAxisIoAssociations.json",
+                    new ManualAxisIoAssociationConfigurationDocument
+                    {
+                        Axes = new List<ManualAxisIoAssociationGroup>
+                        {
+                            new ManualAxisIoAssociationGroup
+                            {
+                                AxisKey = card.ControllerId + ".Axis0",
+                                Points = new List<ManualAxisIoAssociation>
+                                {
+                                    new ManualAxisIoAssociation
+                                    {
+                                        Id = "SmokeVacuum",
+                                        PointType = ManualAxisIoPointType.DigitalOutput,
+                                        PointName = "Vacuum",
+                                        DisplayName = "真空",
+                                        OnActionName = "真空打开",
+                                        OffActionName = "真空关闭"
+                                    }
+                                }
+                            }
+                        }
+                    });
                 var page = new ManualMotionDebugView(
                     runtime,
                     cards,
@@ -81,6 +107,18 @@ namespace MotionControl.ZMotionSimulatorCheck
                             ManualSpeed = 23,
                             ManualAcceleration = 34,
                             ManualDeceleration = 45
+                        }
+                    },
+                    card.LogicalIo,
+                    new List<DigitalIoHardwareDefinition>(),
+                    new List<DigitalIoHardwareDefinition>
+                    {
+                        new DigitalIoHardwareDefinition
+                        {
+                            Name = "Vacuum",
+                            ControllerId = card.ControllerId,
+                            Channel = 0,
+                            ActiveHigh = true
                         }
                     },
                     positionConfigurationStore,
@@ -120,6 +158,8 @@ namespace MotionControl.ZMotionSimulatorCheck
 
                 runtime.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
                 runtime.ResetAsync(CancellationToken.None).GetAwaiter().GetResult();
+                page.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
+                ioPage.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
                 var smokeAxis = (SmokeAxis)card.Axes.Single();
                 smokeAxis.IsHomed = true;
                 axisControl.RefreshStatusAsync().GetAwaiter().GetResult();
@@ -132,6 +172,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                     homedStatusText.Text == chineseResources["未回零"] as string,
                     "轴状态显示没有区分未回零状态。");
                 VerifyConnectedControlsUseCommonContracts(page, ioPage, card);
+                VerifyManualOperationButtonsFollowSafetyInterlock(page, ioPage, card, runtime, safetyStatus);
 
                 var hostWindow = new MainWindow();
                 hostWindow.SetManualMotionDebugPage(page);
@@ -204,11 +245,17 @@ namespace MotionControl.ZMotionSimulatorCheck
                 axisConfiguration,
                 runtime,
                 positions,
-                () => null,
+                new ManualAxisIoAssociationGroup(),
+                card.LogicalIo,
+                new List<DigitalIoHardwareDefinition>(),
+                new List<DigitalIoHardwareDefinition>(),
+                () => new ManualAxisPosition(),
                 () =>
                 {
                     saveCount++;
-                });
+                },
+                () => { },
+                true);
             var positionsList = (ItemsControl)axisControl.FindName("PositionsList");
 
             axisControl.Measure(new Size(600, 700));
@@ -651,7 +698,10 @@ namespace MotionControl.ZMotionSimulatorCheck
         }
 
         /// <summary>提供无硬件的轴映射页连接替身，记录自动连接及参数读取调用。</summary>
-        private sealed class SmokeAxisMappingCardConnection : IAxisMappingCardConnection, IMotionCardIoCapabilityProvider
+        private sealed class SmokeAxisMappingCardConnection :
+            IAxisMappingCardConnection,
+            IIoMappingCardConnection,
+            IMotionCardIoCapabilityProvider
         {
             /// <summary>测试卡当前报告的 DI 可映射通道数量。</summary>
             public int DigitalInputChannelCount { get; set; } = 3;
@@ -803,6 +853,15 @@ namespace MotionControl.ZMotionSimulatorCheck
                 return ReadIoCapabilitiesAsync(cancellationToken);
             }
 
+            /// <summary>接受测试页面的映射热更新请求，但不连接或写入任何真实控制器。</summary>
+            public Task ApplyIoMappingsAsync(
+                IReadOnlyList<DigitalIoHardwareDefinition> digitalInputs,
+                IReadOnlyList<DigitalIoHardwareDefinition> digitalOutputs,
+                CancellationToken cancellationToken)
+            {
+                return Task.CompletedTask;
+            }
+
             /// <summary>接受轴参数写入调用但不操作任何硬件。</summary>
             public Task WriteAxisParametersAsync(
                 AxisMappingCardParameters parameters,
@@ -916,6 +975,55 @@ namespace MotionControl.ZMotionSimulatorCheck
             Ensure(outputStatusText.Text == "输出已关", "DO 关闭后页面没有显示读回状态。");
             Ensure(card.LogicalIo.WriteCount == 2, "DO 开启和关闭按钮没有各写入一次逻辑 IO。");
             Ensure(!card.LogicalIo.ReadOutput("Vacuum"), "DO 关闭后读回状态仍然为开启。");
+        }
+
+        /// <summary>检查急停联锁有效时轴动作和 DO 按钮禁用，联锁恢复并复位后重新启用。</summary>
+        private static void VerifyManualOperationButtonsFollowSafetyInterlock(
+            ManualMotionDebugView page,
+            ManualIoDebugView ioPage,
+            SmokeMotionCard card,
+            MachineRuntime runtime,
+            SmokeSafetyStatus safetyStatus)
+        {
+            ManualAxisControl axisControl = GetFirstAxisControl(page);
+            Button servoButton = (Button)axisControl.FindName("ServoToggleButton");
+            Button jogButton = (Button)axisControl.FindName("PositiveJogButton");
+            var axisIoList = (ItemsControl)axisControl.FindName("AxisIoAssociationList");
+            ManualAxisIoAssociationViewItem associatedOutput = axisIoList.Items
+                .Cast<ManualAxisIoAssociationViewItem>()
+                .Single(item => item.IsOutput);
+            var outputRows = (StackPanel)ioPage.FindName("DigitalOutputsPanel");
+            var firstOutputRow = (StackPanel)outputRows.Children[0];
+            Button outputOnButton = (Button)firstOutputRow.Children[2];
+
+            Ensure(servoButton.IsEnabled && jogButton.IsEnabled, "联锁正常且控制卡连接时轴操作按钮仍被禁用。");
+            Ensure(associatedOutput.CanWriteOutput, "联锁正常时轴卡片的 DO 操作仍被禁用。");
+            Ensure(outputOnButton.IsEnabled, "联锁正常时 IO 手动页的 DO 操作仍被禁用。");
+
+            int axisCommandCount = ((SmokeAxis)card.Axes.Single()).CommandCount;
+            int outputWriteCount = card.LogicalIo.WriteCount;
+            safetyStatus.EmergencyStopActive = true;
+            page.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
+            ioPage.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
+
+            Ensure(!servoButton.IsEnabled && !jogButton.IsEnabled, "急停有效时轴动作按钮没有禁用。");
+            Ensure(!associatedOutput.CanWriteOutput, "急停有效时轴卡片的 DO 按钮没有禁用。");
+            Ensure(!outputOnButton.IsEnabled, "急停有效时 IO 手动页的 DO 按钮没有禁用。");
+
+            servoButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, servoButton));
+            outputOnButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, outputOnButton));
+            Ensure(
+                ((SmokeAxis)card.Axes.Single()).CommandCount == axisCommandCount,
+                "急停有效时轴操作仍调用了运动卡契约。");
+            Ensure(card.LogicalIo.WriteCount == outputWriteCount, "急停有效时 IO 手动页仍写入了 DO。");
+
+            safetyStatus.EmergencyStopActive = false;
+            runtime.ResetAsync(CancellationToken.None).GetAwaiter().GetResult();
+            page.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
+            ioPage.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
+            Ensure(servoButton.IsEnabled && jogButton.IsEnabled, "急停释放并复位后轴操作按钮没有重新启用。");
+            Ensure(associatedOutput.CanWriteOutput, "急停释放并复位后轴卡片 DO 没有重新启用。");
+            Ensure(outputOnButton.IsEnabled, "急停释放并复位后 IO 手动页 DO 没有重新启用。");
         }
 
         /// <summary>通过页面名称点击指定按钮，便于检查页面到契约的命令连接。</summary>
@@ -1060,13 +1168,16 @@ namespace MotionControl.ZMotionSimulatorCheck
             public Task ResetAlarmAsync(CancellationToken cancellationToken) { CommandCount++; return Task.CompletedTask; }
         }
 
-        /// <summary>提供未触发急停的测试安全状态。</summary>
+        /// <summary>提供可在内存测试中切换的急停输入状态。</summary>
         private sealed class SmokeSafetyStatus : IMachineSafetyStatus
         {
-            /// <summary>报告测试急停状态未触发。</summary>
+            /// <summary>当前内存测试安全输入是否处于急停有效状态。</summary>
+            public bool EmergencyStopActive { get; set; }
+
+            /// <summary>返回内存测试配置的急停输入状态。</summary>
             public Task<bool> ReadEmergencyStopActiveAsync(CancellationToken cancellationToken)
             {
-                return Task.FromResult(false);
+                return Task.FromResult(EmergencyStopActive);
             }
         }
 
