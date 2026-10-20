@@ -21,7 +21,7 @@ namespace MotionControl.Framework.Contracts.Motion
         /// <summary>建立控制卡连接；连接失败或操作被取消时报告错误，不返回假成功。</summary>
         Task ConnectAsync(CancellationToken cancellationToken);
 
-        /// <summary>断开控制卡连接并释放适配器持有的厂商资源。</summary>
+        /// <summary>轴停稳后断开连接并释放厂商资源；适配器必须拒绝仍有轴运动时的断开请求。</summary>
         Task DisconnectAsync(CancellationToken cancellationToken);
     }
 }

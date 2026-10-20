@@ -183,12 +183,14 @@ namespace MotionControl.Framework.Runtime.Machine
             }
         }
 
-        /// <summary>按连接顺序的反序断开所有卡，并继续尝试断开其他卡。</summary>
+        /// <summary>先确认所有已连接轴停稳，再按连接顺序的反序断开各卡。</summary>
         public async Task DisconnectAsync(CancellationToken cancellationToken)
         {
             await _lifecycleLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                await EnsureAllConnectedAxesStoppedAsync(cancellationToken).ConfigureAwait(false);
+
                 var failures = new List<Exception>();
                 var useCancellationToken = true;
                 for (var index = _cards.Count - 1; index >= 0; index--)
@@ -225,6 +227,46 @@ namespace MotionControl.Framework.Runtime.Machine
             finally
             {
                 _lifecycleLock.Release();
+            }
+        }
+
+        /// <summary>断卡前预检所有已连接轴，避免发现运动状态时已经断开部分控制卡。</summary>
+        private async Task EnsureAllConnectedAxesStoppedAsync(CancellationToken cancellationToken)
+        {
+            foreach (var card in _cards)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!card.IsConnected)
+                {
+                    continue;
+                }
+
+                foreach (IAxis axis in card.Axes)
+                {
+                    AxisStatus status;
+                    try
+                    {
+                        status = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception readError)
+                    {
+                        throw new InvalidOperationException(
+                            "断开运动控制卡 '" + card.ControllerId + "' 前读取逻辑轴 '" + axis.Name
+                            + "' 状态失败；为避免轴仍运动时断卡，已取消断开。",
+                            readError);
+                    }
+
+                    if (status.Moving)
+                    {
+                        throw new InvalidOperationException(
+                            "逻辑轴 '" + axis.Name + "'（控制卡 '" + card.ControllerId
+                            + "'）仍在运动，必须先停止并确认轴停稳后再断开控制卡。");
+                    }
+                }
             }
         }
 

@@ -96,7 +96,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             }
         }
 
-        /// <summary>释放原生连接句柄，并清除控制器身份和轴回零状态。</summary>
+        /// <summary>确认所有已映射物理轴停稳后释放句柄，并清除控制器身份和轴回零状态。</summary>
         private void Disconnect(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -109,6 +109,21 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 }
 
                 var handle = _handle;
+                foreach (ZMotionAxis axis in _axesByNumber.Values)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    int idle = 1;
+                    CheckResult(
+                        zmcaux.ZAux_Direct_GetIfIdle(handle, axis.AxisNumber, ref idle),
+                        "断开前确认轴已停止",
+                        axis.Name);
+                    if (idle == 0)
+                    {
+                        throw new InvalidOperationException(
+                            "正运动逻辑轴 '" + axis.Name + "' 仍在运动，必须先停止并确认轴停稳后再断开控制卡。");
+                    }
+                }
+
                 CheckResult(zmcaux.ZAux_Close(handle), "断开仿真器", null);
                 _handle = IntPtr.Zero;
                 _axisParametersApplied = false;

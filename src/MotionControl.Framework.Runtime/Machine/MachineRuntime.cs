@@ -191,7 +191,7 @@ namespace MotionControl.Framework.Runtime.Machine
             }
         }
 
-        /// <summary>所有工位流程退出后断开运动卡连接。</summary>
+        /// <summary>所有工位流程退出且各轴停稳后断开运动卡连接。</summary>
         public async Task DisconnectAsync(CancellationToken cancellationToken)
         {
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -459,12 +459,18 @@ namespace MotionControl.Framework.Runtime.Machine
             }
         }
 
-        /// <summary>自动流程启动前逐轴检查报警和限位恢复后的回零要求。</summary>
+        /// <summary>自动流程启动前逐轴检查运动状态、报警、限位和硬限位恢复后的回零要求。</summary>
         private async Task EnsureAxesReadyForAutomaticStartAsync(CancellationToken cancellationToken)
         {
             foreach (var axis in _motionCards.Axes)
             {
                 var status = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
+                if (status.Moving)
+                {
+                    throw new InvalidOperationException(
+                        "逻辑轴 '" + axis.Name + "' 仍在运动，禁止启动自动流程；请先停止手动动作并确认轴已停稳。");
+                }
+
                 if (status.AlarmActive
                     || status.PositiveLimitActive
                     || status.NegativeLimitActive

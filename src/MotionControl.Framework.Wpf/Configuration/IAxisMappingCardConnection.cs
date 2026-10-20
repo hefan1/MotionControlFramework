@@ -22,7 +22,7 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>按页面选择的厂商和卡类型连接控制卡，并保存成功的连接配置。</summary>
         Task ConnectAsync(MotionCardSettingsDocument settings, CancellationToken cancellationToken);
 
-        /// <summary>断开当前控制卡连接并释放厂商连接句柄。</summary>
+        /// <summary>确认所有轴停稳后断开控制卡并释放厂商连接句柄；轴仍运动时必须拒绝断开。</summary>
         Task DisconnectAsync(CancellationToken cancellationToken);
 
         /// <summary>先确认已映射轴全部停止，否则拒绝重连；成功后重新加载轴、DI/DO 映射并应用轴参数。</summary>

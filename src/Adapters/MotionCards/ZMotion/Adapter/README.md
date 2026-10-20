@@ -6,6 +6,7 @@
 
 - 只连接本机 ZDevelop 仿真器：`127.0.0.1`。
 - 连接后读取控制器身份，并且只接受 `VPLC5xx-Simu`。实体控制卡会被拒绝；实体型号确认后再增加对应支持。
+- 断开前会读取所有已映射轴的空闲状态；读状态失败或任一轴仍在运动时，拒绝关闭仿真器连接句柄。
 - 连接配置、轴参数和 IO 映射分开保存：卡地址在 `ZDevelopSimulation.json`，轴参数在 `AxisParameters.json`，IO 映射在 `IoMapping.json`。
 - 设备项目的 `HardwareConfig/AxisParameters.json` 与 `HardwareConfig/IoMapping.json` 是设备运行时的唯一参数来源；适配器样例中的同名文件只用于仿真验证。
 - 已在本机 ZDevelop V3.10.10 仿真器验证连接：控制器类型 `VPLC5xx-Simu`、版本 `20180521`、身份 `1234`。真实厂商 SDK 调用已验证轴状态、正负限位，以及 DATUM 模式 3、4、13；虚拟输入通过 `ZSIMU_IN` 切换并在测试后恢复。该结果验证仿真器和适配器调用链，不等于实体卡接线验收。

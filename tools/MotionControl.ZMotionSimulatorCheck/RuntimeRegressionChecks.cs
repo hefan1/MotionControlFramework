@@ -29,6 +29,8 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("重复逻辑轴名称被拒绝", DuplicateAxisNameIsRejectedAsync, failures);
             await RunCheckAsync("当前正运动 Host 拒绝多卡配置", ZMotionHostRejectsMultipleCardsAsync, failures);
             await RunCheckAsync("未配置自动流程时允许连接手动调试但禁止启动", ManualOnlyRuntimeConnectsButCannotStartAsync, failures);
+            await RunCheckAsync("任一轴仍在运动时禁止启动自动流程", MovingAxisBlocksAutomaticStartAsync, failures);
+            await RunCheckAsync("多卡断开先检查所有轴，不留下半连接状态", MovingAxisPreventsPartialCardDisconnectAsync, failures);
             await RunCheckAsync("必须复位后启动，暂停后保留当前步骤", ResetAndPauseKeepCurrentStepAsync, failures);
             await RunCheckAsync("停机报警暂停流程并要求复位", StopAlarmPausesMachineUntilResetAsync, failures);
             await RunCheckAsync("非停机报警在条件恢复后自动清除", NonStopAlarmClearsWhenRecoveredAsync, failures);
@@ -172,6 +174,54 @@ namespace MotionControl.ZMotionSimulatorCheck
             Ensure(runtime.State == MachineRunState.Ready, "无工位流程时误启动改变了整机状态。");
             await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
             Ensure(!card.IsConnected, "手动调试设备断开后控制卡仍处于连接状态。");
+        }
+
+        /// <summary>确认手动定位或点动尚未停止时，Runtime 不会启动并行工位流程。</summary>
+        private static async Task MovingAxisBlocksAutomaticStartAsync()
+        {
+            var movingAxis = new FakeAxis("MovingAxis");
+            var card = new FakeMotionCard("MovingCard", movingAxis);
+            var flow = new WaitingStationFlow("送料工位", "等待取料到位");
+            var runtime = new MachineRuntime(
+                new MotionCardGroup(new IMotionCard[] { card }),
+                new IStationFlow[] { flow },
+                new MachineAlarmService(),
+                new FakeSafetyStatus());
+
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            movingAxis.IsMoving = true;
+            await ExpectExceptionAsync<InvalidOperationException>(
+                () => runtime.StartAsync(CancellationToken.None)).ConfigureAwait(false);
+
+            Ensure(runtime.State == MachineRunState.Alarmed, "轴仍在运动时，Runtime 没有拒绝启动并保留报警状态。");
+            await ExpectExceptionAsync<InvalidOperationException>(
+                () => runtime.DisconnectAsync(CancellationToken.None)).ConfigureAwait(false);
+            Ensure(card.IsConnected, "轴仍在运动时，Runtime 断开请求没有保留控制卡连接。");
+
+            movingAxis.IsMoving = false;
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        /// <summary>确认第二张卡的轴仍在运动时，断开操作不会先断开第一张卡。</summary>
+        private static async Task MovingAxisPreventsPartialCardDisconnectAsync()
+        {
+            var firstCard = new FakeMotionCard("CardA", new FakeAxis("AxisA"));
+            var movingAxis = new FakeAxis("AxisB");
+            var secondCard = new FakeMotionCard("CardB", movingAxis);
+            var group = new MotionCardGroup(new IMotionCard[] { firstCard, secondCard });
+
+            await group.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            movingAxis.IsMoving = true;
+            await ExpectExceptionAsync<InvalidOperationException>(
+                () => group.DisconnectAsync(CancellationToken.None)).ConfigureAwait(false);
+
+            Ensure(firstCard.IsConnected, "发现第二张卡仍有轴运动后，第一张卡已经被断开。");
+            Ensure(secondCard.IsConnected, "发现轴仍在运动后，第二张卡不应被断开。");
+
+            movingAxis.IsMoving = false;
+            await group.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(!firstCard.IsConnected && !secondCard.IsConnected, "确认所有轴停稳后，运动卡组没有全部断开。");
         }
 
         /// <summary>确认启动前必须复位，暂停和复位后保留相同的工位步骤。</summary>
@@ -605,11 +655,14 @@ namespace MotionControl.ZMotionSimulatorCheck
 
             public string Name { get; private set; }
 
-            /// <summary>返回已回零、无报警、无活动限位的轴状态。</summary>
+            /// <summary>设置测试轴是否仍处于运动状态。</summary>
+            public bool IsMoving { get; set; }
+
+            /// <summary>返回已回零、无报警、无活动限位且按测试设置报告运动状态的轴状态。</summary>
             public Task<AxisStatus> ReadStatusAsync(CancellationToken cancellationToken)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                return Task.FromResult(new AxisStatus(0, 0, true, false, true, false, false, false, false, false, null, false));
+                return Task.FromResult(new AxisStatus(0, 0, true, IsMoving, true, false, false, false, false, false, null, false));
             }
 
             /// <summary>模拟伺服使能。</summary>
