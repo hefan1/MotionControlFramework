@@ -208,6 +208,45 @@
     <sys:String x:Key="请先写入当前位置">该位置还没有保存坐标，请先点击“写入当前位置”。</sys:String>
     <sys:String x:Key="位置已删除">已删除位置“{0}”。</sys:String>
 
+    <sys:String x:Key="轴关联IO">轴关联 IO</sys:String>
+    <sys:String x:Key="添加关联IO">＋ 添加 IO</sys:String>
+    <sys:String x:Key="编辑短标签">编辑</sys:String>
+    <sys:String x:Key="删除关联IO">删除关联 IO</sys:String>
+    <sys:String x:Key="暂无轴关联IO">还没有关联 IO，点击“添加 IO”选择已映射的 DI 或 DO。</sys:String>
+    <sys:String x:Key="关联IO设置标题">轴关联 IO 设置</sys:String>
+    <sys:String x:Key="关联IO设置说明">选择 IO 映射页中已命名的逻辑点。DI 只显示状态；DO 按钮分别写入逻辑 ON 和逻辑 OFF。</sys:String>
+    <sys:String x:Key="IO类型">IO 类型</sys:String>
+    <sys:String x:Key="逻辑IO名称">逻辑 IO 名称</sys:String>
+    <sys:String x:Key="显示名称">显示名称</sys:String>
+    <sys:String x:Key="DO按钮文字说明">按钮文字用于说明操作目的；上方按钮写入逻辑 ON，下方按钮写入逻辑 OFF。</sys:String>
+    <sys:String x:Key="逻辑ON按钮名称">逻辑 ON 按钮</sys:String>
+    <sys:String x:Key="逻辑OFF按钮名称">逻辑 OFF 按钮</sys:String>
+    <sys:String x:Key="默认逻辑ON按钮名称">置 ON</sys:String>
+    <sys:String x:Key="默认逻辑OFF按钮名称">置 OFF</sys:String>
+    <sys:String x:Key="请先选择逻辑IO">请先选择一个已映射的逻辑 IO。</sys:String>
+    <sys:String x:Key="IO显示名称不能为空">显示名称不能为空。</sys:String>
+    <sys:String x:Key="DO按钮名称必须不同">DO 的 ON 和 OFF 按钮名称不能为空且必须不同。</sys:String>
+    <sys:String x:Key="轴关联IO配置读取失败">读取轴关联 IO 配置失败：{0}；原文件不会被覆盖。</sys:String>
+    <sys:String x:Key="轴关联IO配置禁止覆盖">关联 IO 配置读取失败，为避免覆盖原文件，当前禁止保存。</sys:String>
+    <sys:String x:Key="轴关联IO已添加">已添加轴关联 IO“{0}”。</sys:String>
+    <sys:String x:Key="轴关联IO已更新">已更新轴关联 IO“{0}”。</sys:String>
+    <sys:String x:Key="轴关联IO已删除">已删除轴关联 IO“{0}”。</sys:String>
+    <sys:String x:Key="轴关联IO保存失败">保存轴关联 IO 失败：{0}</sys:String>
+    <sys:String x:Key="无法读取轴关联IO">无法读取当前轴关联 IO。</sys:String>
+    <sys:String x:Key="DO操作正在执行">当前 DO 操作正在执行，请等待完成。</sys:String>
+    <sys:String x:Key="轴关联IO映射已失效">映射已失效</sys:String>
+    <sys:String x:Key="IO有效">有效</sys:String>
+    <sys:String x:Key="IO无效">无效</sys:String>
+    <sys:String x:Key="逻辑ON">逻辑 ON</sys:String>
+    <sys:String x:Key="逻辑OFF">逻辑 OFF</sys:String>
+    <sys:String x:Key="轴关联DI状态说明">读取的逻辑 DI 当前电平状态。</sys:String>
+    <sys:String x:Key="轴关联DO状态说明">控制卡报告的逻辑 DO 命令状态，不代表外部机械状态。</sys:String>
+    <sys:String x:Key="IO读取失败简短">读取失败</sys:String>
+    <sys:String x:Key="暂无已命名IO映射">当前没有已命名的逻辑 IO，请先在 IO 映射页配置名称。</sys:String>
+    <sys:String x:Key="请先配置逻辑IO映射">请先在 IO 映射页配置并保存逻辑 DI/DO 名称。</sys:String>
+    <sys:String x:Key="轴已关联全部逻辑IO">当前轴已关联所有已命名 IO。</sys:String>
+    <sys:String x:Key="添加轴关联IO">从已命名的逻辑 IO 中添加关联。</sys:String>
+
     <!-- 轴映射配置页 -->
     <sys:String x:Key="轴映射页面说明">设置控制卡基本类型，并把设备轴名称对应到物理轴通道。</sys:String>
     <sys:String x:Key="IO映射页面说明">把设备流程使用的逻辑 DI/DO 名称对应到控制卡物理通道。</sys:String>

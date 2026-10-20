@@ -247,6 +247,93 @@
                 </StackPanel>
             </Border>
 
+            <!-- 轴关联 IO 只显示已添加的逻辑点；初始为空，可从 IO 映射中选择。 -->
+            <Border BorderBrush="#DCE4EC" BorderThickness="0,1,0,0" Padding="0,7,0,0" Margin="0,7,0,0">
+                <StackPanel>
+                    <Grid Margin="0,0,0,3">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{DynamicResource 轴关联IO}" FontWeight="SemiBold" FontSize="12"
+                                   VerticalAlignment="Center" Foreground="#284661" />
+                        <Button x:Name="AddAssociatedIoButton" Grid.Column="1"
+                                Content="{DynamicResource 添加关联IO}"
+                                Click="AddAssociatedIoButton_Click"
+                                Style="{StaticResource AxisActionButtonStyle}"
+                                MinHeight="26" Margin="0" Padding="7,2"
+                                Background="#EEF5FC" BorderBrush="#C2D8EF" Foreground="#175BA6" />
+                    </Grid>
+                    <ItemsControl x:Name="AxisIoAssociationList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Padding="5" Margin="0,3,0,0" Background="#F7F9FB"
+                                        BorderBrush="#E1E8EF" BorderThickness="1" CornerRadius="3">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding TypeText}" FontSize="9" FontWeight="Bold"
+                                                           Foreground="#175BA6" Margin="0,0,5,0" />
+                                                <TextBlock Text="{Binding DisplayName}" FontSize="11" FontWeight="SemiBold"
+                                                           Foreground="#24364B" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding PointName}" FontSize="9" Foreground="#718096"
+                                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding PointName}" />
+                                        </StackPanel>
+                                        <Border Grid.Column="1" Padding="5,2" Margin="4,0" VerticalAlignment="Center"
+                                                CornerRadius="3" Background="{Binding StateBackground}"
+                                                ToolTip="{Binding StateToolTip}">
+                                            <TextBlock Text="{Binding StateText}" FontSize="9" Foreground="#34495E" />
+                                        </Border>
+                                        <Button Grid.Column="2" Content="{DynamicResource 编辑短标签}"
+                                                Click="EditAssociatedIoButton_Click" Margin="1" Padding="5,2"
+                                                MinHeight="23" FontSize="9" />
+                                        <Button Grid.Column="3" Content="×" ToolTip="{DynamicResource 删除关联IO}"
+                                                Click="DeleteAssociatedIoButton_Click" Margin="1" Padding="4,1"
+                                                MinWidth="23" MinHeight="23" FontSize="10" />
+                                        <StackPanel x:Name="OutputActionPanel" Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4"
+                                                    Orientation="Horizontal" Margin="0,5,0,0">
+                                            <StackPanel.Style>
+                                                <Style TargetType="StackPanel">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsOutput}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </StackPanel.Style>
+                                            <Button Content="{Binding OnActionName}" Tag="True"
+                                                    Click="SetAssociatedOutputButton_Click" Margin="0,0,5,0"
+                                                    Padding="8,3" MinHeight="25" FontSize="10"
+                                                    IsEnabled="{Binding CanWriteOutput}"
+                                                    Background="#E8F5EA" BorderBrush="#B9D8BE" />
+                                            <Button Content="{Binding OffActionName}" Tag="False"
+                                                    Click="SetAssociatedOutputButton_Click" Padding="8,3"
+                                                    MinHeight="25" FontSize="10"
+                                                    IsEnabled="{Binding CanWriteOutput}"
+                                                    Background="#F3F4F6" BorderBrush="#D2D8DE" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock x:Name="EmptyAxisIoText" Text="{DynamicResource 暂无轴关联IO}"
+                               Margin="2,2,0,0" Foreground="#7A858D" FontSize="10" />
+                </StackPanel>
+            </Border>
+
             <TextBlock x:Name="AlarmMessageText" Margin="0,5,0,0" Foreground="#9B322C" TextWrapping="Wrap" FontSize="10" />
             <TextBlock x:Name="OperationMessageText" Margin="0,3,0,0" Foreground="#52677A" TextWrapping="Wrap" FontSize="10" />
         </StackPanel>

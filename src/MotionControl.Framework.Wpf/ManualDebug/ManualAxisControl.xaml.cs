@@ -13,6 +13,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using MotionControl.Framework.Contracts.Configuration;
+using MotionControl.Framework.Contracts.IO;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Runtime.Machine;
 
@@ -33,11 +34,33 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>当前逻辑轴可编辑的示教位置。</summary>
         private readonly ObservableCollection<ManualAxisPosition> _positions;
 
+        /// <summary>当前物理轴保存的关联 IO 配置。</summary>
+        private readonly ManualAxisIoAssociationGroup _ioAssociationGroup;
+
+        /// <summary>当前轴卡片显示的逻辑 IO 状态行。</summary>
+        private readonly ObservableCollection<ManualAxisIoAssociationViewItem> _ioAssociationItems =
+            new ObservableCollection<ManualAxisIoAssociationViewItem>();
+
+        /// <summary>当前设备按逻辑名称读取和写入 IO 的服务。</summary>
+        private readonly ILogicalIo _logicalIo;
+
+        /// <summary>当前设备已命名的逻辑 DI 点。</summary>
+        private readonly IReadOnlyList<DigitalIoHardwareDefinition> _digitalInputs;
+
+        /// <summary>当前设备已命名的逻辑 DO 点。</summary>
+        private readonly IReadOnlyList<DigitalIoHardwareDefinition> _digitalOutputs;
+
         /// <summary>为当前轴创建并登记一个新的稳定位置编号。</summary>
         private readonly Func<ManualAxisPosition> _createPosition;
 
         /// <summary>把当前设备的轴位置配置保存到 JSON 文件。</summary>
         private readonly Action _savePositions;
+
+        /// <summary>保存当前设备全部轴卡片的关联 IO 配置。</summary>
+        private readonly Action _saveIoAssociations;
+
+        /// <summary>关联配置读取失败时禁止编辑，防止覆盖原文件。</summary>
+        private readonly bool _canEditIoAssociations;
 
         /// <summary>记录已经保存的名称，便于拒绝空名称和重复名称后恢复文本。</summary>
         private readonly Dictionary<string, string> _savedPositionNames =
@@ -49,14 +72,23 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>当前卡片是否正在等待一项轴手动操作完成，避免同轴命令重叠。</summary>
         private bool _axisActionInProgress;
 
+        /// <summary>当前卡片是否正在执行一项手动 DO 写入。</summary>
+        private bool _ioOperationInProgress;
+
         /// <summary>创建一个逻辑轴卡片，并接入该轴自己的位置列表。</summary>
         public ManualAxisControl(
             IAxis axis,
             AxisHardwareDefinition axisConfiguration,
             MachineRuntime machineRuntime,
             ObservableCollection<ManualAxisPosition> positions,
+            ManualAxisIoAssociationGroup ioAssociationGroup,
+            ILogicalIo logicalIo,
+            IReadOnlyList<DigitalIoHardwareDefinition> digitalInputs,
+            IReadOnlyList<DigitalIoHardwareDefinition> digitalOutputs,
             Func<ManualAxisPosition> createPosition,
-            Action savePositions)
+            Action savePositions,
+            Action saveIoAssociations,
+            bool canEditIoAssociations)
         {
             if (axis == null)
             {
@@ -78,6 +110,26 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 throw new ArgumentNullException(nameof(positions));
             }
 
+            if (ioAssociationGroup == null)
+            {
+                throw new ArgumentNullException(nameof(ioAssociationGroup));
+            }
+
+            if (logicalIo == null)
+            {
+                throw new ArgumentNullException(nameof(logicalIo));
+            }
+
+            if (digitalInputs == null)
+            {
+                throw new ArgumentNullException(nameof(digitalInputs));
+            }
+
+            if (digitalOutputs == null)
+            {
+                throw new ArgumentNullException(nameof(digitalOutputs));
+            }
+
             if (createPosition == null)
             {
                 throw new ArgumentNullException(nameof(createPosition));
@@ -88,13 +140,24 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 throw new ArgumentNullException(nameof(savePositions));
             }
 
+            if (saveIoAssociations == null)
+            {
+                throw new ArgumentNullException(nameof(saveIoAssociations));
+            }
+
             InitializeComponent();
             _axis = axis;
             _axisConfiguration = axisConfiguration;
             _machineRuntime = machineRuntime;
             _positions = positions;
+            _ioAssociationGroup = ioAssociationGroup;
+            _logicalIo = logicalIo;
+            _digitalInputs = digitalInputs;
+            _digitalOutputs = digitalOutputs;
             _createPosition = createPosition;
             _savePositions = savePositions;
+            _saveIoAssociations = saveIoAssociations;
+            _canEditIoAssociations = canEditIoAssociations;
 
             AxisTitleText.Text = string.Format(
                 CultureInfo.CurrentCulture,
@@ -119,11 +182,20 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 : string.Empty;
 
             PositionsList.ItemsSource = _positions;
+            AxisIoAssociationList.ItemsSource = _ioAssociationItems;
             _positions.CollectionChanged += Positions_CollectionChanged;
             foreach (ManualAxisPosition position in _positions)
             {
                 _savedPositionNames[position.Id] = position.Name;
             }
+
+            foreach (ManualAxisIoAssociation association in _ioAssociationGroup.Points)
+            {
+                _ioAssociationItems.Add(new ManualAxisIoAssociationViewItem(association));
+            }
+
+            UpdateEmptyAxisIoText();
+            UpdateAddAssociatedIoButton();
 
             UpdateEmptyPositionsText();
         }
@@ -145,9 +217,11 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 MotionStateText.Text = GetText("状态未连接");
                 ServoStatusText.Text = GetText("轴伺服状态未连接");
                 ServoToggleButton.Content = GetText("伺服使能");
+                SetAssociatedIoDisconnected();
                 return;
             }
 
+            await RefreshAssociatedIoStatusAsync().ConfigureAwait(true);
             AxisStatus status = await _axis.ReadStatusAsync(CancellationToken.None).ConfigureAwait(true);
             CommandPositionText.Text = status.CommandPosition.HasValue
                 ? status.CommandPosition.Value.ToString("F3", CultureInfo.CurrentCulture)
@@ -208,6 +282,308 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         private void UpdateEmptyPositionsText()
         {
             EmptyPositionsText.Visibility = _positions.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        /// <summary>打开 IO 关联设置，并将新选择的映射保存到当前轴卡片。</summary>
+        private void AddAssociatedIoButton_Click(object sender, RoutedEventArgs e)
+        {
+            ManualAxisIoAssociationDialog dialog = CreateIoAssociationDialog(null);
+            if (dialog.ShowDialog() != true || dialog.Result == null)
+            {
+                return;
+            }
+
+            ManualAxisIoAssociation association = dialog.Result;
+            var viewItem = new ManualAxisIoAssociationViewItem(association);
+            _ioAssociationGroup.Points.Add(association);
+            _ioAssociationItems.Add(viewItem);
+            try
+            {
+                _saveIoAssociations();
+                UpdateEmptyAxisIoText();
+                UpdateAddAssociatedIoButton();
+                OperationMessageText.Text = string.Format(GetText("轴关联IO已添加"), association.DisplayName);
+            }
+            catch (Exception error)
+            {
+                _ioAssociationGroup.Points.Remove(association);
+                _ioAssociationItems.Remove(viewItem);
+                UpdateEmptyAxisIoText();
+                UpdateAddAssociatedIoButton();
+                OperationMessageText.Text = string.Format(GetText("轴关联IO保存失败"), error.Message);
+            }
+        }
+
+        /// <summary>打开设置窗口并更新指定关联项，保存失败时恢复原配置。</summary>
+        private void EditAssociatedIoButton_Click(object sender, RoutedEventArgs e)
+        {
+            ManualAxisIoAssociationViewItem viewItem = GetIoAssociationFromButton(sender);
+            if (viewItem == null)
+            {
+                return;
+            }
+
+            ManualAxisIoAssociation oldAssociation = viewItem.Association;
+            int index = _ioAssociationGroup.Points.IndexOf(oldAssociation);
+            if (index < 0)
+            {
+                OperationMessageText.Text = GetText("无法读取轴关联IO");
+                return;
+            }
+
+            ManualAxisIoAssociationDialog dialog = CreateIoAssociationDialog(oldAssociation);
+            if (dialog.ShowDialog() != true || dialog.Result == null)
+            {
+                return;
+            }
+
+            ManualAxisIoAssociation updatedAssociation = dialog.Result;
+            _ioAssociationGroup.Points[index] = updatedAssociation;
+            viewItem.UpdateAssociation(updatedAssociation);
+            try
+            {
+                _saveIoAssociations();
+                UpdateAddAssociatedIoButton();
+                OperationMessageText.Text = string.Format(GetText("轴关联IO已更新"), updatedAssociation.DisplayName);
+            }
+            catch (Exception error)
+            {
+                _ioAssociationGroup.Points[index] = oldAssociation;
+                viewItem.UpdateAssociation(oldAssociation);
+                UpdateAddAssociatedIoButton();
+                OperationMessageText.Text = string.Format(GetText("轴关联IO保存失败"), error.Message);
+            }
+        }
+
+        /// <summary>删除当前轴卡片中的 IO 关联，保存失败时恢复该行。</summary>
+        private void DeleteAssociatedIoButton_Click(object sender, RoutedEventArgs e)
+        {
+            ManualAxisIoAssociationViewItem viewItem = GetIoAssociationFromButton(sender);
+            if (viewItem == null)
+            {
+                return;
+            }
+
+            ManualAxisIoAssociation association = viewItem.Association;
+            int index = _ioAssociationGroup.Points.IndexOf(association);
+            if (index < 0)
+            {
+                OperationMessageText.Text = GetText("无法读取轴关联IO");
+                return;
+            }
+
+            _ioAssociationGroup.Points.RemoveAt(index);
+            _ioAssociationItems.Remove(viewItem);
+            try
+            {
+                _saveIoAssociations();
+                UpdateEmptyAxisIoText();
+                UpdateAddAssociatedIoButton();
+                OperationMessageText.Text = string.Format(GetText("轴关联IO已删除"), association.DisplayName);
+            }
+            catch (Exception error)
+            {
+                _ioAssociationGroup.Points.Insert(index, association);
+                _ioAssociationItems.Insert(index, viewItem);
+                UpdateEmptyAxisIoText();
+                UpdateAddAssociatedIoButton();
+                OperationMessageText.Text = string.Format(GetText("轴关联IO保存失败"), error.Message);
+            }
+        }
+
+        /// <summary>读取指定逻辑 DO 的目标值并通过运行时手动联锁执行写入。</summary>
+        private async void SetAssociatedOutputButton_Click(object sender, RoutedEventArgs e)
+        {
+            Button button = sender as Button;
+            ManualAxisIoAssociationViewItem viewItem = GetIoAssociationFromButton(sender);
+            bool outputValue;
+            if (button == null || viewItem == null || !viewItem.IsOutput
+                || !bool.TryParse(Convert.ToString(button.Tag), out outputValue))
+            {
+                OperationMessageText.Text = GetText("无法读取轴关联IO");
+                return;
+            }
+
+            if (_ioOperationInProgress)
+            {
+                OperationMessageText.Text = GetText("DO操作正在执行");
+                return;
+            }
+
+            ManualAxisIoAssociation association = viewItem.Association;
+            if (!IsIoAssociationMapped(association))
+            {
+                OperationMessageText.Text = GetText("轴关联IO映射已失效");
+                await RefreshAssociatedIoStatusAsync().ConfigureAwait(true);
+                return;
+            }
+
+            string operationName = outputValue ? association.OnActionName : association.OffActionName;
+            _ioOperationInProgress = true;
+            AxisIoAssociationList.IsEnabled = false;
+            OperationMessageText.Text = string.Empty;
+            try
+            {
+                ManualOperationBlockReason blockReason = await _machineRuntime.RunManualOperationAsync(
+                    async () =>
+                    {
+                        await _logicalIo.WriteOutputAsync(
+                            association.PointName,
+                            outputValue,
+                            CancellationToken.None).ConfigureAwait(false);
+                        bool actualValue = await _logicalIo.ReadOutputAsync(
+                            association.PointName,
+                            CancellationToken.None).ConfigureAwait(false);
+                        if (actualValue != outputValue)
+                        {
+                            throw new InvalidOperationException(GetText("DO写入后读回不一致"));
+                        }
+                    },
+                    CancellationToken.None).ConfigureAwait(true);
+
+                if (blockReason != ManualOperationBlockReason.None)
+                {
+                    throw new InvalidOperationException(GetManualOperationBlockText(blockReason));
+                }
+
+                OperationMessageText.Text = string.Format(GetText("操作完成"), operationName);
+            }
+            catch (Exception error)
+            {
+                OperationMessageText.Text = string.Format(GetText("操作失败"), operationName, error.Message);
+            }
+            finally
+            {
+                _ioOperationInProgress = false;
+                AxisIoAssociationList.IsEnabled = true;
+                await RefreshAssociatedIoStatusAsync().ConfigureAwait(true);
+            }
+        }
+
+        /// <summary>构造只允许选择未重复逻辑名称的关联 IO 设置窗口。</summary>
+        private ManualAxisIoAssociationDialog CreateIoAssociationDialog(ManualAxisIoAssociation association)
+        {
+            var dialog = new ManualAxisIoAssociationDialog(
+                _digitalInputs,
+                _digitalOutputs,
+                _ioAssociationGroup.Points,
+                association)
+            {
+                Owner = Window.GetWindow(this)
+            };
+            return dialog;
+        }
+
+        /// <summary>从按钮数据上下文取得对应的逻辑 IO 行。</summary>
+        private static ManualAxisIoAssociationViewItem GetIoAssociationFromButton(object sender)
+        {
+            Button button = sender as Button;
+            return button == null ? null : button.DataContext as ManualAxisIoAssociationViewItem;
+        }
+
+        /// <summary>根据当前 IO 行数显示紧凑的空关联提示。</summary>
+        private void UpdateEmptyAxisIoText()
+        {
+            EmptyAxisIoText.Visibility = _ioAssociationItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            if (_ioAssociationItems.Count == 0)
+            {
+                bool hasMappedIo = _digitalInputs.Count > 0 || _digitalOutputs.Count > 0;
+                EmptyAxisIoText.Text = GetText(hasMappedIo ? "暂无轴关联IO" : "暂无已命名IO映射");
+            }
+        }
+
+        /// <summary>没有可添加的命名逻辑点或配置不可保存时禁用关联按钮。</summary>
+        private void UpdateAddAssociatedIoButton()
+        {
+            bool hasUnusedInput = _digitalInputs.Any(point => !_ioAssociationGroup.Points.Any(association =>
+                association.PointType == ManualAxisIoPointType.DigitalInput
+                && string.Equals(association.PointName, point.Name, StringComparison.OrdinalIgnoreCase)));
+            bool hasUnusedOutput = _digitalOutputs.Any(point => !_ioAssociationGroup.Points.Any(association =>
+                association.PointType == ManualAxisIoPointType.DigitalOutput
+                && string.Equals(association.PointName, point.Name, StringComparison.OrdinalIgnoreCase)));
+            bool hasUnusedPoint = hasUnusedInput || hasUnusedOutput;
+
+            AddAssociatedIoButton.IsEnabled = _canEditIoAssociations && hasUnusedPoint;
+            string toolTipKey = !_canEditIoAssociations
+                ? "轴关联IO配置禁止覆盖"
+                : !hasUnusedPoint
+                    ? (_digitalInputs.Count == 0 && _digitalOutputs.Count == 0
+                        ? "请先配置逻辑IO映射"
+                        : "轴已关联全部逻辑IO")
+                    : "添加轴关联IO";
+            AddAssociatedIoButton.ToolTip = GetText(toolTipKey);
+        }
+
+        /// <summary>按关联类型和逻辑名称检查映射是否仍存在。</summary>
+        private bool IsIoAssociationMapped(ManualAxisIoAssociation association)
+        {
+            IReadOnlyList<DigitalIoHardwareDefinition> points = association.PointType == ManualAxisIoPointType.DigitalInput
+                ? _digitalInputs
+                : _digitalOutputs;
+            return points.Any(point => string.Equals(
+                point.Name,
+                association.PointName,
+                StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>轮询所有关联 DI/DO 状态，读取失败时显示错误而不伪装为关闭。</summary>
+        private async Task RefreshAssociatedIoStatusAsync()
+        {
+            foreach (ManualAxisIoAssociationViewItem viewItem in _ioAssociationItems)
+            {
+                ManualAxisIoAssociation association = viewItem.Association;
+                if (!IsIoAssociationMapped(association))
+                {
+                    viewItem.SetStatus(
+                        GetText("轴关联IO映射已失效"),
+                        Brushes.MistyRose,
+                        false,
+                        GetText("轴关联IO映射已失效"));
+                    continue;
+                }
+
+                try
+                {
+                    bool isActive = association.PointType == ManualAxisIoPointType.DigitalInput
+                        ? await _logicalIo.ReadInputAsync(association.PointName, CancellationToken.None).ConfigureAwait(true)
+                        : await _logicalIo.ReadOutputAsync(association.PointName, CancellationToken.None).ConfigureAwait(true);
+                    string stateText;
+                    string stateToolTip;
+                    if (association.PointType == ManualAxisIoPointType.DigitalInput)
+                    {
+                        stateText = GetText(isActive ? "IO有效" : "IO无效");
+                        stateToolTip = GetText("轴关联DI状态说明");
+                    }
+                    else
+                    {
+                        stateText = GetText(isActive ? "逻辑ON" : "逻辑OFF");
+                        stateToolTip = GetText("轴关联DO状态说明");
+                    }
+
+                    viewItem.SetStatus(
+                        stateText,
+                        isActive ? Brushes.Honeydew : Brushes.Gainsboro,
+                        association.PointType == ManualAxisIoPointType.DigitalOutput && !_ioOperationInProgress,
+                        stateToolTip);
+                }
+                catch (Exception error)
+                {
+                    viewItem.SetStatus(
+                        GetText("IO读取失败简短"),
+                        Brushes.MistyRose,
+                        association.PointType == ManualAxisIoPointType.DigitalOutput && !_ioOperationInProgress,
+                        error.Message);
+                }
+            }
+        }
+
+        /// <summary>控制卡断开时清除关联 IO 的旧状态并禁用 DO 操作。</summary>
+        private void SetAssociatedIoDisconnected()
+        {
+            foreach (ManualAxisIoAssociationViewItem viewItem in _ioAssociationItems)
+            {
+                viewItem.SetStatus(GetText("状态未连接"), Brushes.LightGray, false, GetText("控制卡未连接"));
+            }
         }
 
         /// <summary>添加一个空目标位置；调试人员可立即修改自动生成的名称。</summary>

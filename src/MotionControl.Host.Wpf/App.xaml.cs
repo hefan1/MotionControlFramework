@@ -241,6 +241,9 @@ namespace MotionControl.Host.Wpf
                     machineRuntime,
                     motionCards,
                     _cardConnection.AxisHardwareDefinitions,
+                    connectedLogicalIo,
+                    _cardConnection.DigitalInputs,
+                    _cardConnection.DigitalOutputs,
                     _configurationStore,
                     MachineId);
                 ManualIoDebugView ioManualPage = new ManualIoDebugView(
