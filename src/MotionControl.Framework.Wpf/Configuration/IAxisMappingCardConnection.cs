@@ -37,6 +37,21 @@ namespace MotionControl.Framework.Wpf.Configuration
             int axisNumber);
     }
 
+    /// <summary>可在不重新连接控制卡的情况下应用轴映射的适配器能力。</summary>
+    public interface IAxisMappingCardOnlineApply
+    {
+        /// <summary>判断当前控制器和物理轴集合是否支持在线应用这份轴配置。</summary>
+        bool CanApplyAxisMappingsWithoutReconnect(
+            MotionCardSettingsDocument cardSettings,
+            AxisMappingConfigurationDocument axisConfiguration);
+
+        /// <summary>在线更新已映射轴及卡参数；返回值表示运行时轴配置是否发生变化。</summary>
+        Task<bool> ApplyAxisMappingsWithoutReconnectAsync(
+            MotionCardSettingsDocument cardSettings,
+            AxisMappingConfigurationDocument axisConfiguration,
+            CancellationToken cancellationToken);
+    }
+
     /// <summary>轴映射页面从控制卡读取的一组轴参数。</summary>
     public sealed class AxisMappingCardParameters
     {

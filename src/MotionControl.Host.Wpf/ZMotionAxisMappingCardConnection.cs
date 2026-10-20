@@ -17,7 +17,8 @@ namespace MotionControl.Host.Wpf
     public sealed class ZMotionAxisMappingCardConnection :
         IMotionCardHostConnection,
         IMotionCardIoCapabilityProvider,
-        IIoMappingCardConnection
+        IIoMappingCardConnection,
+        IAxisMappingCardOnlineApply
     {
         /// <summary>运动卡选择配置在单机配置目录中的相对路径。</summary>
         private const string MotionCardsFilePath = "HardwareConfig/MotionCards.json";
@@ -64,6 +65,18 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>当前连接的控制卡标识，用于把新 IO 映射应用到对应卡实例。</summary>
         private string _connectedControllerId;
+
+        /// <summary>记录当前连接成功时选择的卡厂商，避免在线应用跨卡型配置。</summary>
+        private string _connectedMotionCardVendor;
+
+        /// <summary>记录当前连接成功时选择的卡类型，避免在线应用跨卡型配置。</summary>
+        private string _connectedMotionCardType;
+
+        /// <summary>记录当前连接使用的适配器类型和连接配置文件。</summary>
+        private string _connectedAdapterType;
+
+        /// <summary>记录当前连接使用的适配器配置文件路径。</summary>
+        private string _connectedConfigurationFile;
 
         /// <summary>控制卡连接成功后预扫描并缓存的 I/O 能力。</summary>
         private MotionCardIoCapabilities _cachedIoCapabilities;
@@ -221,6 +234,10 @@ namespace MotionControl.Host.Wpf
                 _configurationStore.SaveJson(_machineId, MotionCardsFilePath, settings);
                 _card = newCard;
                 _connectedControllerId = connectionDefinition.ControllerId;
+                _connectedMotionCardVendor = settings.MotionCardVendor;
+                _connectedMotionCardType = settings.MotionCardType;
+                _connectedAdapterType = connectionDefinition.AdapterType;
+                _connectedConfigurationFile = connectionDefinition.ConnectionConfigurationFile;
                 _axisHardwareDefinitions = mappings.AxisHardwareDefinitions.AsReadOnly();
                 _digitalInputs = mappings.AxisDigitalInputs.AsReadOnly();
                 _digitalOutputs = mappings.AxisDigitalOutputs.AsReadOnly();
@@ -269,6 +286,10 @@ namespace MotionControl.Host.Wpf
             await currentCard.DisconnectAsync(cancellationToken).ConfigureAwait(false);
             _card = null;
             _connectedControllerId = null;
+            _connectedMotionCardVendor = null;
+            _connectedMotionCardType = null;
+            _connectedAdapterType = null;
+            _connectedConfigurationFile = null;
             _cachedIoCapabilities = null;
             _axisHardwareDefinitions = new List<AxisHardwareDefinition>().AsReadOnly();
             _digitalInputs = new List<DigitalIoHardwareDefinition>().AsReadOnly();
@@ -297,6 +318,93 @@ namespace MotionControl.Host.Wpf
             }
 
             await ConnectAsync(settings, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>仅当卡型、连接资料和已映射物理轴集合都未变化时允许在线应用轴映射。</summary>
+        public bool CanApplyAxisMappingsWithoutReconnect(
+            MotionCardSettingsDocument cardSettings,
+            AxisMappingConfigurationDocument axisConfiguration)
+        {
+            if (!IsConnected
+                || _card == null
+                || !_card.AxisParametersApplied
+                || cardSettings == null
+                || axisConfiguration == null
+                || axisConfiguration.SchemaVersion != 1
+                || axisConfiguration.Axes == null
+                || cardSettings.MotionCards == null
+                || cardSettings.MotionCards.Count != 1)
+            {
+                return false;
+            }
+
+            MotionCardConnectionDefinition connection = cardSettings.MotionCards[0];
+            if (!string.Equals(cardSettings.MotionCardVendor, _connectedMotionCardVendor, StringComparison.Ordinal)
+                || !string.Equals(cardSettings.MotionCardType, _connectedMotionCardType, StringComparison.Ordinal)
+                || !string.Equals(connection.ControllerId, _connectedControllerId, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(connection.AdapterType, _connectedAdapterType, StringComparison.Ordinal)
+                || !string.Equals(
+                    connection.ConnectionConfigurationFile,
+                    _connectedConfigurationFile,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var configuredAxisNumbers = new List<int>();
+            foreach (AxisMappingEntry axis in axisConfiguration.Axes)
+            {
+                if (axis == null)
+                {
+                    return false;
+                }
+
+                if (!axis.IsConfigured)
+                {
+                    continue;
+                }
+
+                if (!string.Equals(axis.ControllerId, _connectedControllerId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                configuredAxisNumbers.Add(axis.AxisNumber);
+            }
+
+            int[] currentAxisNumbers = _axisHardwareDefinitions
+                .Select(axis => axis.AxisNumber)
+                .OrderBy(axisNumber => axisNumber)
+                .ToArray();
+            configuredAxisNumbers.Sort();
+            return currentAxisNumbers.SequenceEqual(configuredAxisNumbers);
+        }
+
+        /// <summary>使用现有正运动卡实例在线更新轴配置并刷新手动页需要的轴定义。</summary>
+        public async Task<bool> ApplyAxisMappingsWithoutReconnectAsync(
+            MotionCardSettingsDocument cardSettings,
+            AxisMappingConfigurationDocument axisConfiguration,
+            CancellationToken cancellationToken)
+        {
+            if (!CanApplyAxisMappingsWithoutReconnect(cardSettings, axisConfiguration))
+            {
+                throw new InvalidOperationException(
+                    "当前运动卡、连接资料或物理轴集合不支持在线应用轴映射，请重新连接后应用。");
+            }
+
+            LoadedMotionMappings mappings = LoadMotionMappings(
+                _connectedControllerId,
+                _connectedAdapterType,
+                axisConfiguration);
+            bool displayDefinitionsChanged = !AxisHardwareDefinitionsEqual(
+                _axisHardwareDefinitions,
+                mappings.AxisHardwareDefinitions);
+            bool axisConfigurationsChanged = await _card.ApplyAxisMappingsAsync(
+                mappings.AxisConfigurations,
+                cancellationToken).ConfigureAwait(false);
+
+            _axisHardwareDefinitions = mappings.AxisHardwareDefinitions.AsReadOnly();
+            return axisConfigurationsChanged || displayDefinitionsChanged;
         }
 
         /// <summary>确认已映射轴全部停止后，在当前正运动卡实例内替换 DI/DO 逻辑名称映射。</summary>
@@ -338,16 +446,28 @@ namespace MotionControl.Host.Wpf
             _digitalOutputs = mappings.AxisDigitalOutputs.AsReadOnly();
         }
 
-        /// <summary>把设备已保存的轴和 DI/DO 映射转换成当前正运动卡实例所需的对象。</summary>
-        private LoadedMotionMappings LoadMotionMappings(string controllerId, string adapterType)
+        /// <summary>把给定或已保存的轴和 DI/DO 映射转换成当前正运动卡实例所需的对象。</summary>
+        private LoadedMotionMappings LoadMotionMappings(
+            string controllerId,
+            string adapterType,
+            AxisMappingConfigurationDocument axisConfiguration = null)
         {
             var result = new LoadedMotionMappings();
             string axisPath = GetConfigurationPath(AxisParametersFilePath);
-            if (File.Exists(axisPath))
+            AxisMappingConfigurationDocument axisDocument = axisConfiguration;
+            if (axisConfiguration == null && File.Exists(axisPath))
             {
-                AxisMappingConfigurationDocument axisDocument = _configurationStore
+                axisDocument = _configurationStore
                     .LoadJson<AxisMappingConfigurationDocument>(_machineId, AxisParametersFilePath);
-                if (axisDocument == null || axisDocument.SchemaVersion != 1 || axisDocument.Axes == null)
+                if (axisDocument == null)
+                {
+                    throw new InvalidOperationException("AxisParameters.json 为空，不能创建手动调试轴对象。");
+                }
+            }
+
+            if (axisDocument != null)
+            {
+                if (axisDocument.SchemaVersion != 1 || axisDocument.Axes == null)
                 {
                     throw new InvalidOperationException("AxisParameters.json 格式无效，不能创建手动调试轴对象。");
                 }
@@ -390,6 +510,7 @@ namespace MotionControl.Host.Wpf
                         ControllerId = axis.ControllerId,
                         Name = axis.Name,
                         AxisNumber = axis.AxisNumber,
+                        EngineeringUnit = axis.EngineeringUnit,
                         UnitsPerEngineeringUnit = axis.UnitsPerEngineeringUnit.Value,
                         MinimumPosition = axis.MinimumPosition.Value,
                         MaximumPosition = axis.MaximumPosition.Value,
@@ -434,6 +555,39 @@ namespace MotionControl.Host.Wpf
             AddIoMappings(result, ioDocument.DigitalInputs, controllerId, true);
             AddIoMappings(result, ioDocument.DigitalOutputs, controllerId, false);
             return result;
+        }
+
+        /// <summary>比较手动调试页使用的映射定义，判断是否需要刷新显示。</summary>
+        private static bool AxisHardwareDefinitionsEqual(
+            IReadOnlyList<AxisHardwareDefinition> first,
+            IReadOnlyList<AxisHardwareDefinition> second)
+        {
+            if (first == null || second == null || first.Count != second.Count)
+            {
+                return false;
+            }
+
+            for (int index = 0; index < first.Count; index++)
+            {
+                AxisHardwareDefinition left = first[index];
+                AxisHardwareDefinition right = second[index];
+                if (left == null || right == null
+                    || !string.Equals(left.Name, right.Name, StringComparison.Ordinal)
+                    || !string.Equals(left.ControllerId, right.ControllerId, StringComparison.OrdinalIgnoreCase)
+                    || left.AxisNumber != right.AxisNumber
+                    || !string.Equals(left.EngineeringUnit, right.EngineeringUnit, StringComparison.Ordinal)
+                    || left.MinimumPosition != right.MinimumPosition
+                    || left.MaximumPosition != right.MaximumPosition
+                    || left.SoftLimitEnabled != right.SoftLimitEnabled
+                    || left.ManualSpeed != right.ManualSpeed
+                    || left.ManualAcceleration != right.ManualAcceleration
+                    || left.ManualDeceleration != right.ManualDeceleration)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         /// <summary>为旧版 ZMotion 轴配置补全适配器标识，其他情况不跨适配器推断。</summary>

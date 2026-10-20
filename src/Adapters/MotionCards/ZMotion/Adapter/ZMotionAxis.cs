@@ -39,6 +39,37 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         /// <summary>该轴对应的设备参数，包括工程单位、限位和回零设置。</summary>
         internal ZMotionAxisConfiguration Configuration { get; private set; }
 
+        /// <summary>更新同一物理通道的逻辑配置；坐标单位或换算比例变化时清除回零状态。</summary>
+        internal void UpdateConfiguration(ZMotionAxisConfiguration configuration)
+        {
+            if (configuration == null)
+            {
+                throw new ArgumentNullException(nameof(configuration));
+            }
+
+            configuration.Validate();
+            if (configuration.AxisNumber != AxisNumber
+                || !string.Equals(
+                    configuration.ControllerId,
+                    Configuration.ControllerId,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "在线更新只能修改同一控制卡上的同一物理轴配置。轴号或控制卡标识发生变化时必须重新连接。");
+            }
+
+            bool coordinateMeaningChanged = !string.Equals(
+                Configuration.EngineeringUnit,
+                configuration.EngineeringUnit,
+                StringComparison.Ordinal)
+                || Configuration.UnitsPerEngineeringUnit != configuration.UnitsPerEngineeringUnit;
+            Configuration = configuration;
+            if (coordinateMeaningChanged)
+            {
+                ClearHomedState();
+            }
+        }
+
         /// <summary>记录本次控制器连接期间是否已完成回零。</summary>
         internal bool IsHomed
         {

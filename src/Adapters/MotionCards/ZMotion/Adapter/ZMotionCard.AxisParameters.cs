@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.VendorApi.ZMotion.Native;
@@ -12,6 +14,21 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         public Task ApplyAxisParametersAsync(CancellationToken cancellationToken)
         {
             return Task.Run(() => ApplyAxisParameters(cancellationToken), cancellationToken);
+        }
+
+        /// <summary>在物理轴集合不变且轴全部停稳时在线更新映射和轴参数，不重建卡实例。</summary>
+        public Task<bool> ApplyAxisMappingsAsync(
+            IReadOnlyCollection<ZMotionAxisConfiguration> axisConfigurations,
+            CancellationToken cancellationToken)
+        {
+            if (axisConfigurations == null)
+            {
+                throw new ArgumentNullException(nameof(axisConfigurations));
+            }
+
+            return Task.Run(
+                () => ApplyAxisMappings(axisConfigurations, cancellationToken),
+                cancellationToken);
         }
 
         /// <summary>读取控制器指定物理轴的单位、软限位和当前运动参数。</summary>
@@ -102,70 +119,212 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     cancellationToken.ThrowIfCancellationRequested();
                     EnsureAxisIdle(handle, axis);
                     axis.Configuration.ValidateHomeParameters();
-                    double minimumPosition = axis.Configuration.MinimumPosition;
-                    double maximumPosition = axis.Configuration.MaximumPosition;
-                    if (!axis.Configuration.SoftLimitEnabled)
-                    {
-                        GetDisabledSoftLimitPositions(
-                            handle,
-                            axis.AxisNumber,
-                            axis.Name,
-                            out minimumPosition,
-                            out maximumPosition);
-                    }
-                    CheckResult(
-                        zmcaux.ZAux_Direct_SetUnits(
-                            handle,
-                            axis.AxisNumber,
-                            (float)axis.Configuration.UnitsPerEngineeringUnit),
-                        "应用工程单位换算",
-                        axis.Name);
-                    CheckResult(
-                        zmcaux.ZAux_Direct_SetRsLimit(
-                            handle,
-                            axis.AxisNumber,
-                            (float)minimumPosition),
-                        "应用负向软件限位",
-                        axis.Name);
-                    CheckResult(
-                        zmcaux.ZAux_Direct_SetFsLimit(
-                            handle,
-                            axis.AxisNumber,
-                            (float)maximumPosition),
-                        "应用正向软件限位",
-                        axis.Name);
-                    CheckResult(
-                        zmcaux.ZAux_Direct_SetSpeed(
-                            handle,
-                            axis.AxisNumber,
-                            (float)axis.Configuration.HomeSearchSpeed),
-                        "应用回零搜索速度",
-                        axis.Name);
-                    CheckResult(
-                        zmcaux.ZAux_Direct_SetCreep(
-                            handle,
-                            axis.AxisNumber,
-                            (float)axis.Configuration.HomeCreepSpeed),
-                        "应用回零爬行速度",
-                        axis.Name);
-                    CheckResult(
-                        zmcaux.ZAux_Direct_SetAccel(
-                            handle,
-                            axis.AxisNumber,
-                            (float)axis.Configuration.HomeAcceleration),
-                        "应用回零加速度",
-                        axis.Name);
-                    CheckResult(
-                        zmcaux.ZAux_Direct_SetDecel(
-                            handle,
-                            axis.AxisNumber,
-                            (float)axis.Configuration.HomeDeceleration),
-                        "应用回零减速度",
-                        axis.Name);
+                    ApplyAxisParameters(handle, axis.Configuration, cancellationToken);
                 }
 
                 _axisParametersApplied = true;
             }
+        }
+
+        /// <summary>核对物理轴集合后在线更新运行时轴配置，并只下发发生变化的卡参数。</summary>
+        private bool ApplyAxisMappings(
+            IReadOnlyCollection<ZMotionAxisConfiguration> axisConfigurations,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var configurationsByNumber = new Dictionary<int, ZMotionAxisConfiguration>();
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (ZMotionAxisConfiguration configuration in axisConfigurations)
+            {
+                if (configuration == null)
+                {
+                    throw new ArgumentException("在线轴映射中包含空配置。", nameof(axisConfigurations));
+                }
+
+                configuration.Validate();
+                configuration.ValidateHomeParameters();
+                if (!string.Equals(configuration.ControllerId, _controllerId, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        "逻辑轴 '" + configuration.Name + "' 属于其他控制卡，不能在线应用到当前卡。");
+                }
+
+                if (!names.Add(configuration.Name))
+                {
+                    throw new InvalidOperationException("在线轴映射中存在重复逻辑名称：" + configuration.Name + "。");
+                }
+
+                if (configurationsByNumber.ContainsKey(configuration.AxisNumber))
+                {
+                    throw new InvalidOperationException("在线轴映射中存在重复物理轴号：" + configuration.AxisNumber + "。");
+                }
+
+                configurationsByNumber.Add(configuration.AxisNumber, configuration);
+            }
+
+            if (configurationsByNumber.Count != _axesByNumber.Count
+                || _axesByNumber.Keys.Any(axisNumber => !configurationsByNumber.ContainsKey(axisNumber)))
+            {
+                throw new InvalidOperationException(
+                    "在线更新要求已映射的物理轴集合保持不变；新增或移除轴时必须重新连接控制卡。");
+            }
+
+            lock (_nativeLock)
+            {
+                IntPtr handle = GetConnectedHandle();
+                bool configurationChanged = false;
+                bool controllerParametersChanged = !_axisParametersApplied;
+
+                foreach (KeyValuePair<int, ZMotionAxis> item in _axesByNumber)
+                {
+                    ZMotionAxisConfiguration current = item.Value.Configuration;
+                    ZMotionAxisConfiguration updated = configurationsByNumber[item.Key];
+                    configurationChanged |= !AxisConfigurationsEqual(current, updated);
+                    controllerParametersChanged |= !ControllerParametersEqual(current, updated);
+                }
+
+                if (!configurationChanged && _axisParametersApplied)
+                {
+                    return false;
+                }
+
+                foreach (KeyValuePair<int, ZMotionAxis> item in _axesByNumber)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    EnsureAxisIdle(handle, item.Key, configurationsByNumber[item.Key].Name);
+                }
+
+                if (controllerParametersChanged)
+                {
+                    bool applyAllAxisParameters = !_axisParametersApplied;
+                    _axisParametersApplied = false;
+                    foreach (KeyValuePair<int, ZMotionAxis> item in _axesByNumber)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        ZMotionAxisConfiguration current = item.Value.Configuration;
+                        ZMotionAxisConfiguration updated = configurationsByNumber[item.Key];
+                        if (applyAllAxisParameters || !ControllerParametersEqual(current, updated))
+                        {
+                            ApplyAxisParameters(handle, updated, cancellationToken);
+                        }
+                    }
+                }
+
+                foreach (KeyValuePair<int, ZMotionAxis> item in _axesByNumber)
+                {
+                    item.Value.UpdateConfiguration(configurationsByNumber[item.Key]);
+                }
+
+                _axisParametersApplied = true;
+                return configurationChanged;
+            }
+        }
+
+        /// <summary>按候选配置调用正运动 API 写入一个轴的单位、软限位和回零运动参数。</summary>
+        private void ApplyAxisParameters(
+            IntPtr handle,
+            ZMotionAxisConfiguration configuration,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            double minimumPosition = configuration.MinimumPosition;
+            double maximumPosition = configuration.MaximumPosition;
+            if (!configuration.SoftLimitEnabled)
+            {
+                GetDisabledSoftLimitPositions(
+                    handle,
+                    configuration.AxisNumber,
+                    configuration.Name,
+                    out minimumPosition,
+                    out maximumPosition);
+            }
+
+            CheckResult(
+                zmcaux.ZAux_Direct_SetUnits(
+                    handle,
+                    configuration.AxisNumber,
+                    (float)configuration.UnitsPerEngineeringUnit),
+                "应用工程单位换算",
+                configuration.Name);
+            CheckResult(
+                zmcaux.ZAux_Direct_SetRsLimit(
+                    handle,
+                    configuration.AxisNumber,
+                    (float)minimumPosition),
+                "应用负向软件限位",
+                configuration.Name);
+            CheckResult(
+                zmcaux.ZAux_Direct_SetFsLimit(
+                    handle,
+                    configuration.AxisNumber,
+                    (float)maximumPosition),
+                "应用正向软件限位",
+                configuration.Name);
+            CheckResult(
+                zmcaux.ZAux_Direct_SetSpeed(
+                    handle,
+                    configuration.AxisNumber,
+                    (float)configuration.HomeSearchSpeed),
+                "应用回零搜索速度",
+                configuration.Name);
+            CheckResult(
+                zmcaux.ZAux_Direct_SetCreep(
+                    handle,
+                    configuration.AxisNumber,
+                    (float)configuration.HomeCreepSpeed),
+                "应用回零爬行速度",
+                configuration.Name);
+            CheckResult(
+                zmcaux.ZAux_Direct_SetAccel(
+                    handle,
+                    configuration.AxisNumber,
+                    (float)configuration.HomeAcceleration),
+                "应用回零加速度",
+                configuration.Name);
+            CheckResult(
+                zmcaux.ZAux_Direct_SetDecel(
+                    handle,
+                    configuration.AxisNumber,
+                    (float)configuration.HomeDeceleration),
+                "应用回零减速度",
+                configuration.Name);
+        }
+
+        /// <summary>比较运行时轴映射中的全部正运动参数和逻辑名称。</summary>
+        private static bool AxisConfigurationsEqual(
+            ZMotionAxisConfiguration first,
+            ZMotionAxisConfiguration second)
+        {
+            return string.Equals(first.ControllerId, second.ControllerId, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(first.Name, second.Name, StringComparison.Ordinal)
+                && string.Equals(first.EngineeringUnit, second.EngineeringUnit, StringComparison.Ordinal)
+                && first.AxisNumber == second.AxisNumber
+                && first.UnitsPerEngineeringUnit == second.UnitsPerEngineeringUnit
+                && first.MinimumPosition == second.MinimumPosition
+                && first.MaximumPosition == second.MaximumPosition
+                && first.SoftLimitEnabled == second.SoftLimitEnabled
+                && first.ManualSpeed == second.ManualSpeed
+                && first.HomeMode == second.HomeMode
+                && first.HomeSearchSpeed == second.HomeSearchSpeed
+                && first.HomeCreepSpeed == second.HomeCreepSpeed
+                && first.HomeAcceleration == second.HomeAcceleration
+                && first.HomeDeceleration == second.HomeDeceleration;
+        }
+
+        /// <summary>比较会写入正运动控制器的轴参数。</summary>
+        private static bool ControllerParametersEqual(
+            ZMotionAxisConfiguration first,
+            ZMotionAxisConfiguration second)
+        {
+            return first.UnitsPerEngineeringUnit == second.UnitsPerEngineeringUnit
+                && first.MinimumPosition == second.MinimumPosition
+                && first.MaximumPosition == second.MaximumPosition
+                && first.SoftLimitEnabled == second.SoftLimitEnabled
+                && first.HomeSearchSpeed == second.HomeSearchSpeed
+                && first.HomeCreepSpeed == second.HomeCreepSpeed
+                && first.HomeAcceleration == second.HomeAcceleration
+                && first.HomeDeceleration == second.HomeDeceleration;
         }
 
         /// <summary>使用正运动 API 读取一个浮点轴参数，并保留参数名和轴号。</summary>

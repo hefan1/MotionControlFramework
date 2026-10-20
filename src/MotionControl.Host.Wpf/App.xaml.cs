@@ -100,6 +100,7 @@ namespace MotionControl.Host.Wpf
                 MachineId,
                 _cardConnection);
             _axisMappingPage.CardConnectionChanged += AxisMappingPage_CardConnectionChanged;
+            _axisMappingPage.AxisMappingApplied += AxisMappingPage_AxisMappingApplied;
             _ioMappingPage = new IoMappingConfigurationView(_configurationStore, MachineId, _cardConnection);
             _ioMappingPage.IoMappingApplied += IoMappingPage_IoMappingApplied;
             _safetyInterlockPage = new SafetyInterlockConfigurationView(_configurationStore, MachineId);
@@ -349,6 +350,36 @@ namespace MotionControl.Host.Wpf
                 MessageBox.Show(
                     "IO 映射已应用，但刷新手动调试页面失败：" + error.Message,
                     "IO 映射",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }
+
+        /// <summary>轴映射在线应用后更新手动页显示，并保留当前控制卡和运行时对象。</summary>
+        private void AxisMappingPage_AxisMappingApplied(object sender, EventArgs e)
+        {
+            if (_mainWindow == null || !_cardConnection.IsConnected || _machineRuntime == null)
+            {
+                return;
+            }
+
+            try
+            {
+                IMotionCard connectedCard = _cardConnection.ConnectedMotionCard;
+                ILogicalIo connectedLogicalIo = _cardConnection.ConnectedLogicalIo;
+                if (connectedCard == null || connectedLogicalIo == null)
+                {
+                    throw new InvalidOperationException("当前控制卡连接缺少手动调试所需的轴或逻辑 IO 对象。");
+                }
+
+                var motionCards = new MotionCardGroup(new[] { connectedCard });
+                RefreshManualDebugPages(_machineRuntime, motionCards, connectedLogicalIo);
+            }
+            catch (Exception error)
+            {
+                MessageBox.Show(
+                    "轴映射已在线应用，但刷新手动调试页面失败：" + error.Message,
+                    "轴映射",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
             }

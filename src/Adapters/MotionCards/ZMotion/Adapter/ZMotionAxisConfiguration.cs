@@ -24,6 +24,9 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         /// <summary>正运动控制器上的物理轴通道号，从 0 开始。</summary>
         public int AxisNumber { get; set; }
 
+        /// <summary>当前轴映射使用的工程单位名称，用于识别坐标含义变化。</summary>
+        public string EngineeringUnit { get; set; }
+
         /// <summary>控制器 UNITS：每个工程单位对应的脉冲数。</summary>
         public double UnitsPerEngineeringUnit { get; set; }
 

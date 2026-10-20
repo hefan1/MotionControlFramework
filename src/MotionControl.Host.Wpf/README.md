@@ -7,8 +7,9 @@ Host 是设备上位机的组合入口：它创建当前设备配置、通用页
 - `App.xaml.cs` 的 `CreateMotionCardConnection()` 是当前 Host 选择控制卡实现的位置。设备流程和通用页面不在这里选择厂商。
 - `IMotionCardHostConnection` 给 Host 提供通用的 `IMotionCard`、`ILogicalIo` 和已加载硬件映射。Host 运行逻辑通过这些契约创建运行时及手动调试页。
 - `ZMotionAxisMappingCardConnection` 是当前正运动仿真器的 Host 接入实现，负责读取设备配置、建立 ZMotion 适配器并提供轴映射页需要的参数读写。
-- 轴映射页使用 `IAxisMappingCardConnection`；可读取卡上 IO 能力时，由连接实现另外提供 `IMotionCardIoCapabilityProvider`。
-- IO 映射保存会先确认操作，再检查轴已停止、重连控制卡并重新加载 DI/DO 映射；重新连接会清除回零完成状态。若重连失败，页面会显示配置已保存但未应用的错误，并按实际连接状态刷新手动调试页。
+- 轴映射页使用 `IAxisMappingCardConnection`；可读取卡上 IO 能力时，由连接实现另外提供 `IMotionCardIoCapabilityProvider`。适配器还可以单独实现 `IAxisMappingCardOnlineApply`，在卡型、连接资料和物理轴集合未变化时保留卡连接并在线应用轴映射；其他情况由页面提示后走重连路径。
+- 当前正运动适配器支持相同物理轴集合的在线更新。参数确有变化时先确认已映射轴全部停止，再通过正运动 API 更新需要改变的参数，并复用现有轴对象；如果只改显示名称等运行时映射资料，不会重复写卡参数。新增或移除物理轴仍需重连，重连会清除回零完成状态。
+- IO 映射保存会检查轴已停止后，在当前卡实例内替换 DI/DO 逻辑映射，不重连控制卡。配置已保存但在线应用失败时，页面显示错误并按实际运行状态刷新手动调试页。
 
 ## 增加另一种控制卡
 

@@ -69,6 +69,9 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>通知 Host 当前控制卡连接状态已经变化。</summary>
         public event EventHandler CardConnectionChanged;
 
+        /// <summary>通知 Host 当前卡实例已在线应用轴映射，手动页需要刷新显示定义。</summary>
+        public event EventHandler AxisMappingApplied;
+
         /// <summary>当前轴数量范围内显示的物理轴通道。</summary>
         public ObservableCollection<AxisMappingEntry> VisibleAxes { get; private set; }
 
@@ -155,6 +158,16 @@ namespace MotionControl.Framework.Wpf.Configuration
         private void NotifyCardConnectionChanged()
         {
             EventHandler handler = CardConnectionChanged;
+            if (handler != null)
+            {
+                handler(this, EventArgs.Empty);
+            }
+        }
+
+        /// <summary>通知 Host 刷新手动页中的逻辑轴名称和工程单位。</summary>
+        private void NotifyAxisMappingApplied()
+        {
+            EventHandler handler = AxisMappingApplied;
             if (handler != null)
             {
                 handler(this, EventArgs.Empty);
@@ -458,7 +471,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
         }
 
-        /// <summary>保存轴映射；连接时重载运行时轴并应用参数，断开时保存为待应用配置。</summary>
+        /// <summary>保存轴映射；适配器支持且物理轴集合未变时在线应用，否则确认后重新连接。</summary>
         private async void SaveConfigurationButton_Click(object sender, RoutedEventArgs e)
         {
             if (!_configurationCanBeSaved)
@@ -479,8 +492,22 @@ namespace MotionControl.Framework.Wpf.Configuration
                 return;
             }
 
+            var configurationToSave = new AxisMappingConfigurationDocument
+            {
+                SchemaVersion = _configuration.SchemaVersion,
+                Axes = _allAxes
+                    .Where(axis => axis.AxisNumber < _cardConfiguration.AxisCount && axis.IsConfigured)
+                    .OrderBy(axis => axis.AxisNumber)
+                    .ToList()
+            };
+
             bool applyToConnectedCard = _cardConnection.IsConnected;
-            if (applyToConnectedCard
+            IAxisMappingCardOnlineApply onlineApply = _cardConnection as IAxisMappingCardOnlineApply;
+            bool canApplyWithoutReconnect = applyToConnectedCard
+                && onlineApply != null
+                && onlineApply.CanApplyAxisMappingsWithoutReconnect(_cardConfiguration, configurationToSave);
+            bool requiresReconnect = applyToConnectedCard && !canApplyWithoutReconnect;
+            if (requiresReconnect
                 && MessageBox.Show(
                     (string)FindResource("保存并应用轴映射确认内容"),
                     (string)FindResource("保存并应用轴映射确认标题"),
@@ -490,13 +517,11 @@ namespace MotionControl.Framework.Wpf.Configuration
                 return;
             }
 
-            _configuration.Axes = _allAxes
-                .Where(axis => axis.AxisNumber < _cardConfiguration.AxisCount && axis.IsConfigured)
-                .OrderBy(axis => axis.AxisNumber)
-                .ToList();
+            _configuration.Axes = configurationToSave.Axes;
 
             bool configurationSaved = false;
-            bool refreshManualPage = false;
+            bool connectionChanged = false;
+            bool axisMappingChanged = false;
             _connectionInProgress = true;
             UpdateCardConnectionUiState();
             try
@@ -507,15 +532,29 @@ namespace MotionControl.Framework.Wpf.Configuration
 
                 if (applyToConnectedCard)
                 {
-                    SetCardConnectionStatus("正在连接控制卡");
-                    await _cardConnection.ReconnectAsync(_cardConfiguration, CancellationToken.None);
-                    refreshManualPage = true;
-                    SetCardConnectionStatus(
-                        "控制卡连接成功格式",
-                        _cardConnection.ActualControllerType,
-                        _cardConnection.ActualControllerVersion);
+                    if (canApplyWithoutReconnect)
+                    {
+                        SetConfigurationStatus("正在在线应用轴映射");
+                        axisMappingChanged = await onlineApply.ApplyAxisMappingsWithoutReconnectAsync(
+                            _cardConfiguration,
+                            configurationToSave,
+                            CancellationToken.None);
+                    }
+                    else
+                    {
+                        SetCardConnectionStatus("正在连接控制卡");
+                        await _cardConnection.ReconnectAsync(_cardConfiguration, CancellationToken.None);
+                        connectionChanged = true;
+                        SetCardConnectionStatus(
+                            "控制卡连接成功格式",
+                            _cardConnection.ActualControllerType,
+                            _cardConnection.ActualControllerVersion);
+                    }
+
                     await ReadSelectedAxisParametersAsync(false);
-                    SetConfigurationStatus("轴映射保存成功");
+                    SetConfigurationStatus(canApplyWithoutReconnect
+                        ? "轴映射在线应用成功"
+                        : "轴映射保存成功");
                 }
                 else
                 {
@@ -542,7 +581,7 @@ namespace MotionControl.Framework.Wpf.Configuration
                 if (configurationSaved)
                 {
                     SetConfigurationStatus("轴映射保存下发失败", error.Message);
-                    refreshManualPage = !_cardConnection.IsConnected;
+                    connectionChanged = connectionChanged || !_cardConnection.IsConnected;
                 }
                 else
                 {
@@ -559,9 +598,14 @@ namespace MotionControl.Framework.Wpf.Configuration
             {
                 _connectionInProgress = false;
                 UpdateCardConnectionUiState();
-                if (refreshManualPage)
+                if (connectionChanged)
                 {
                     NotifyCardConnectionChanged();
+                }
+
+                if (axisMappingChanged)
+                {
+                    NotifyAxisMappingApplied();
                 }
             }
         }
