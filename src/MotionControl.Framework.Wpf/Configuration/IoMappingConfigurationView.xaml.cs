@@ -31,6 +31,9 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>轴映射页共用的控制卡连接，确保断连时不能改 IO 映射。</summary>
         private readonly IAxisMappingCardConnection _cardConnection;
 
+        /// <summary>当前控制卡连接提供的映射热更新能力；不支持时禁止保存，避免文件与运行时不一致。</summary>
+        private readonly IIoMappingCardConnection _ioMappingCardConnection;
+
         /// <summary>从控制卡配置读取出的可选控制卡标识。</summary>
         public ObservableCollection<string> ControllerIds { get; private set; }
 
@@ -40,13 +43,13 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>当前页面编辑的数字输出映射。</summary>
         public ObservableCollection<DigitalIoHardwareDefinition> DigitalOutputs { get; private set; }
 
-        /// <summary>控制卡重新连接后通知 Host 刷新手动调试页。</summary>
-        public event EventHandler CardConnectionChanged;
+        /// <summary>IO 映射已热更新后通知 Host 刷新相关手动调试和安全配置页面。</summary>
+        public event EventHandler IoMappingApplied;
 
         /// <summary>保存检查通过后可以覆盖当前 IO 映射文件。</summary>
         private bool _configurationCanBeSaved = true;
 
-        /// <summary>标记 IO 配置正在保存并重新连接控制卡，防止重复提交。</summary>
+        /// <summary>标记 IO 配置正在保存和热更新，防止重复提交。</summary>
         private bool _configurationApplyInProgress;
 
         /// <summary>创建 IO 映射页并读取设备自己的 IO 和控制卡配置。</summary>
@@ -74,6 +77,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             _configurationStore = configurationStore;
             _machineId = machineId;
             _cardConnection = cardConnection;
+            _ioMappingCardConnection = cardConnection as IIoMappingCardConnection;
             _ioCapabilityProvider = cardConnection as IMotionCardIoCapabilityProvider;
             ControllerIds = new ObservableCollection<string>();
             DigitalInputs = new ObservableCollection<DigitalIoHardwareDefinition>();
@@ -84,10 +88,11 @@ namespace MotionControl.Framework.Wpf.Configuration
             Loaded += IoMappingConfigurationView_Loaded;
         }
 
-        /// <summary>根据连接和应用状态启用配置控件，并在重连期间锁定保存操作。</summary>
+        /// <summary>根据连接、热更新能力和保存状态启用配置控件。</summary>
         private void UpdateConnectionState()
         {
             bool canEdit = _cardConnection.IsConnected
+                && _ioMappingCardConnection != null
                 && _configurationCanBeSaved
                 && !_configurationApplyInProgress;
             DigitalInputsGrid.IsEnabled = canEdit;
@@ -304,7 +309,9 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>DI 或 DO 行选择变化后，更新对应删除按钮的可用状态。</summary>
         private void MappingGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            bool canEdit = _cardConnection.IsConnected && _configurationCanBeSaved;
+            bool canEdit = _cardConnection.IsConnected
+                && _ioMappingCardConnection != null
+                && _configurationCanBeSaved;
             UpdateRemoveButtons(canEdit);
         }
 

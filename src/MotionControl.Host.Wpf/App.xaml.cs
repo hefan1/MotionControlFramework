@@ -101,7 +101,7 @@ namespace MotionControl.Host.Wpf
                 _cardConnection);
             _axisMappingPage.CardConnectionChanged += AxisMappingPage_CardConnectionChanged;
             _ioMappingPage = new IoMappingConfigurationView(_configurationStore, MachineId, _cardConnection);
-            _ioMappingPage.CardConnectionChanged += AxisMappingPage_CardConnectionChanged;
+            _ioMappingPage.IoMappingApplied += IoMappingPage_IoMappingApplied;
             _safetyInterlockPage = new SafetyInterlockConfigurationView(_configurationStore, MachineId);
             _safetyInterlockPage.ConfigurationSaved += SafetyInterlockPage_ConfigurationSaved;
             _mainWindow = new MainWindow();
@@ -256,26 +256,8 @@ namespace MotionControl.Host.Wpf
                     _machineSafetyStatus);
                 await machineRuntime.ConnectAsync(CancellationToken.None);
 
-                ManualMotionDebugView manualPage = new ManualMotionDebugView(
-                    machineRuntime,
-                    motionCards,
-                    _cardConnection.AxisHardwareDefinitions,
-                    connectedLogicalIo,
-                    _cardConnection.DigitalInputs,
-                    _cardConnection.DigitalOutputs,
-                    _configurationStore,
-                    MachineId);
-                ManualIoDebugView ioManualPage = new ManualIoDebugView(
-                    machineRuntime,
-                    connectedLogicalIo,
-                    _cardConnection.DigitalInputs.Select(point => point.Name),
-                    _cardConnection.DigitalOutputs.Select(point => point.Name));
-
                 _machineRuntime = machineRuntime;
-                _manualMotionDebugPage = manualPage;
-                _manualIoDebugPage = ioManualPage;
-                _mainWindow.SetManualMotionDebugPage(manualPage);
-                _mainWindow.SetManualIoDebugPage(ioManualPage);
+                RefreshManualDebugPages(machineRuntime, motionCards, connectedLogicalIo);
             }
             catch (Exception error)
             {
@@ -288,6 +270,85 @@ namespace MotionControl.Host.Wpf
                 MessageBox.Show(
                     "控制卡已连接，但创建轴手动页面失败：" + error.Message,
                     "轴手动页面",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }
+
+        /// <summary>使用当前运行时和逻辑映射重建手动轴、IO 页面，不创建或连接新的 Runtime。</summary>
+        private void RefreshManualDebugPages(
+            MachineRuntime machineRuntime,
+            MotionCardGroup motionCards,
+            ILogicalIo connectedLogicalIo)
+        {
+            ManualMotionDebugView manualPage = new ManualMotionDebugView(
+                machineRuntime,
+                motionCards,
+                _cardConnection.AxisHardwareDefinitions,
+                connectedLogicalIo,
+                _cardConnection.DigitalInputs,
+                _cardConnection.DigitalOutputs,
+                _configurationStore,
+                MachineId);
+            ManualIoDebugView ioManualPage = new ManualIoDebugView(
+                machineRuntime,
+                connectedLogicalIo,
+                _cardConnection.DigitalInputs.Select(point => point.Name),
+                _cardConnection.DigitalOutputs.Select(point => point.Name));
+
+            _manualMotionDebugPage = manualPage;
+            _manualIoDebugPage = ioManualPage;
+            _mainWindow.SetManualMotionDebugPage(manualPage);
+            _mainWindow.SetManualIoDebugPage(ioManualPage);
+        }
+
+        /// <summary>IO 映射热更新后刷新安全 DI 选项和手动页，保留现有控制卡与 Runtime。</summary>
+        private void IoMappingPage_IoMappingApplied(object sender, EventArgs e)
+        {
+            if (_safetyInterlockPage != null)
+            {
+                _safetyInterlockPage.RefreshDigitalInputNames();
+            }
+
+            if (_mainWindow == null || !_cardConnection.IsConnected || _machineRuntime == null)
+            {
+                return;
+            }
+
+            try
+            {
+                IMotionCard connectedCard = _cardConnection.ConnectedMotionCard;
+                ILogicalIo connectedLogicalIo = _cardConnection.ConnectedLogicalIo;
+                if (connectedCard == null || connectedLogicalIo == null)
+                {
+                    throw new InvalidOperationException("当前控制卡连接缺少手动调试所需的轴或逻辑 IO 对象。");
+                }
+
+                string emergencyStopInputName = _safetyInterlockPage == null
+                    ? string.Empty
+                    : _safetyInterlockPage.EmergencyStopInputName;
+                bool emergencyInputIsMapped = _cardConnection.DigitalInputs.Any(point => string.Equals(
+                    point.Name,
+                    emergencyStopInputName,
+                    StringComparison.OrdinalIgnoreCase));
+                if (!emergencyInputIsMapped)
+                {
+                    emergencyStopInputName = string.Empty;
+                }
+
+                if (_machineSafetyStatus != null)
+                {
+                    _machineSafetyStatus.UpdateEmergencyStopInputName(emergencyStopInputName);
+                }
+
+                var motionCards = new MotionCardGroup(new[] { connectedCard });
+                RefreshManualDebugPages(_machineRuntime, motionCards, connectedLogicalIo);
+            }
+            catch (Exception error)
+            {
+                MessageBox.Show(
+                    "IO 映射已应用，但刷新手动调试页面失败：" + error.Message,
+                    "IO 映射",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
             }

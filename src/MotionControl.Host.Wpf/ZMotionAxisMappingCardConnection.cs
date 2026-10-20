@@ -14,7 +14,10 @@ using MotionControl.Framework.Wpf.Configuration;
 namespace MotionControl.Host.Wpf
 {
     /// <summary>由 Host 选择正运动适配器，并为轴映射页面提供连接和参数读写。</summary>
-    public sealed class ZMotionAxisMappingCardConnection : IMotionCardHostConnection, IMotionCardIoCapabilityProvider
+    public sealed class ZMotionAxisMappingCardConnection :
+        IMotionCardHostConnection,
+        IMotionCardIoCapabilityProvider,
+        IIoMappingCardConnection
     {
         /// <summary>运动卡选择配置在单机配置目录中的相对路径。</summary>
         private const string MotionCardsFilePath = "HardwareConfig/MotionCards.json";
@@ -58,6 +61,9 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>当前由本页面连接并维护的正运动仿真器实例。</summary>
         private ZMotionCard _card;
+
+        /// <summary>当前连接的控制卡标识，用于把新 IO 映射应用到对应卡实例。</summary>
+        private string _connectedControllerId;
 
         /// <summary>控制卡连接成功后预扫描并缓存的 I/O 能力。</summary>
         private MotionCardIoCapabilities _cachedIoCapabilities;
@@ -214,6 +220,7 @@ namespace MotionControl.Host.Wpf
                     connectionConfiguration);
                 _configurationStore.SaveJson(_machineId, MotionCardsFilePath, settings);
                 _card = newCard;
+                _connectedControllerId = connectionDefinition.ControllerId;
                 _axisHardwareDefinitions = mappings.AxisHardwareDefinitions.AsReadOnly();
                 _digitalInputs = mappings.AxisDigitalInputs.AsReadOnly();
                 _digitalOutputs = mappings.AxisDigitalOutputs.AsReadOnly();
@@ -261,6 +268,7 @@ namespace MotionControl.Host.Wpf
             ZMotionCard currentCard = _card;
             await currentCard.DisconnectAsync(cancellationToken).ConfigureAwait(false);
             _card = null;
+            _connectedControllerId = null;
             _cachedIoCapabilities = null;
             _axisHardwareDefinitions = new List<AxisHardwareDefinition>().AsReadOnly();
             _digitalInputs = new List<DigitalIoHardwareDefinition>().AsReadOnly();
@@ -289,6 +297,45 @@ namespace MotionControl.Host.Wpf
             }
 
             await ConnectAsync(settings, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>确认已映射轴全部停止后，在当前正运动卡实例内替换 DI/DO 逻辑名称映射。</summary>
+        public async Task ApplyIoMappingsAsync(
+            IReadOnlyList<DigitalIoHardwareDefinition> digitalInputs,
+            IReadOnlyList<DigitalIoHardwareDefinition> digitalOutputs,
+            CancellationToken cancellationToken)
+        {
+            if (digitalInputs == null)
+            {
+                throw new ArgumentNullException(nameof(digitalInputs));
+            }
+
+            if (digitalOutputs == null)
+            {
+                throw new ArgumentNullException(nameof(digitalOutputs));
+            }
+
+            EnsureConnected();
+
+            var mappings = new LoadedMotionMappings();
+            AddIoMappings(mappings, digitalInputs, _connectedControllerId, true);
+            AddIoMappings(mappings, digitalOutputs, _connectedControllerId, false);
+
+            foreach (IAxis axis in _card.Axes)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                AxisStatus status = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
+                if (status.Moving)
+                {
+                    throw new InvalidOperationException(
+                        "逻辑轴 '" + axis.Name + "' 仍在运动，停止所有轴后再保存 IO 映射。");
+                }
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            _card.UpdateIoMappings(mappings.DigitalInputs, mappings.DigitalOutputs);
+            _digitalInputs = mappings.AxisDigitalInputs.AsReadOnly();
+            _digitalOutputs = mappings.AxisDigitalOutputs.AsReadOnly();
         }
 
         /// <summary>把设备已保存的轴和 DI/DO 映射转换成当前正运动卡实例所需的对象。</summary>

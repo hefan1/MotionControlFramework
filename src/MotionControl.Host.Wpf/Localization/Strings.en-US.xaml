@@ -281,10 +281,9 @@
     <sys:String x:Key="IO映射通道超出可映射范围格式">{0} “{1}” channel {2} is outside the controller's allowed number range ({3} channels, starting at 0).</sys:String>
     <sys:String x:Key="IO映射通道重复格式">{0} maps physical channel {1} more than once.</sys:String>
     <sys:String x:Key="IO映射检查通过">DI/DO mappings passed validation.</sys:String>
-    <sys:String x:Key="IO映射保存成功">I/O mappings were saved and applied to the connected motion card.</sys:String>
+    <sys:String x:Key="IO映射保存成功">I/O mappings are active on the current connection. The card and homed axis states were preserved.</sys:String>
     <sys:String x:Key="IO映射保存失败">Failed to save I/O mappings: {0}</sys:String>
-    <sys:String x:Key="IO映射保存并应用确认标题">Save and Apply I/O Mappings</sys:String>
-    <sys:String x:Key="IO映射保存并应用确认内容">The card will reconnect and load the new DI/DO mappings. Reconnecting clears the axes' homed state, and all configured axes must be stopped. Continue?</sys:String>
+    <sys:String x:Key="IO映射控制卡不支持热更新">This controller connection cannot apply I/O mappings online, so saving is disabled.</sys:String>
 
     <sys:String x:Key="安全联锁页面说明">Configure the software monitored emergency-stop input separately from DI/DO physical channel mapping.</sys:String>
     <sys:String x:Key="安全联锁标题">Software Emergency Stop Interlock</sys:String>
@@ -303,7 +302,7 @@
     <sys:String x:Key="安全联锁保存失败">Could not save safety interlock configuration: {0}</sys:String>
     <sys:String x:Key="安全联锁配置不可保存">The configuration file or DI mappings could not be read. Saving is unavailable.</sys:String>
     <sys:String x:Key="安全联锁输入必须来自DI映射">Select a DI name from I/O Mapping or clear the field.</sys:String>
-    <sys:String x:Key="IO映射保存并应用失败格式">I/O mappings were saved, but reconnecting or applying them failed: {0}</sys:String>
+    <sys:String x:Key="IO映射恢复失败格式">Saving or applying I/O mappings failed, and restoring the previous configuration also failed: {0}</sys:String>
     <sys:String x:Key="控制卡厂商">Card vendor</sys:String>
     <sys:String x:Key="控制卡未连接首次提示">Not connected. Select a card to connect.</sys:String>
     <sys:String x:Key="连接运动控制卡">Connect Motion Card</sys:String>

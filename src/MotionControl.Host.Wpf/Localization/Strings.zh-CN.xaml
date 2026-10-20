@@ -290,10 +290,9 @@
     <sys:String x:Key="IO映射通道超出可映射范围格式">{0}“{1}”通道 {2} 超出当前控制卡允许的编号范围（共 {3} 路，编号从 0 开始）。</sys:String>
     <sys:String x:Key="IO映射通道重复格式">{0}重复使用了物理通道 {1}。</sys:String>
     <sys:String x:Key="IO映射检查通过">DI/DO 映射检查通过。</sys:String>
-    <sys:String x:Key="IO映射保存成功">IO 映射已保存并应用到当前控制卡。</sys:String>
+    <sys:String x:Key="IO映射保存成功">IO 映射已在当前连接中生效，控制卡和轴回零状态保持不变。</sys:String>
     <sys:String x:Key="IO映射保存失败">保存 IO 映射失败：{0}</sys:String>
-    <sys:String x:Key="IO映射保存并应用确认标题">保存并应用 IO 映射</sys:String>
-    <sys:String x:Key="IO映射保存并应用确认内容">保存后会重新连接控制卡并加载新的 DI/DO 映射。重新连接会清除轴的回零完成状态，且所有已配置轴必须停止。是否继续？</sys:String>
+    <sys:String x:Key="IO映射控制卡不支持热更新">当前控制卡连接不支持在线应用 IO 映射，已禁止保存。</sys:String>
 
     <!-- 安全联锁配置 -->
     <sys:String x:Key="安全联锁页面说明">在此设置软件监控的急停逻辑输入，与 DI/DO 物理通道映射分开保存。</sys:String>
@@ -313,7 +312,7 @@
     <sys:String x:Key="安全联锁保存失败">安全联锁配置保存失败：{0}</sys:String>
     <sys:String x:Key="安全联锁配置不可保存">配置文件或 DI 映射读取失败，当前不能保存。</sys:String>
     <sys:String x:Key="安全联锁输入必须来自DI映射">请选择 IO 映射中已配置的 DI 名称，或清空该项。</sys:String>
-    <sys:String x:Key="IO映射保存并应用失败格式">IO 映射已保存，但重新连接或应用失败：{0}</sys:String>
+    <sys:String x:Key="IO映射恢复失败格式">IO 映射保存或应用失败，恢复原配置时也发生错误：{0}</sys:String>
     <sys:String x:Key="控制卡厂商">控制卡厂商</sys:String>
     <sys:String x:Key="控制卡未连接首次提示">未连接：选择控制卡后连接</sys:String>
     <sys:String x:Key="连接运动控制卡">连接运动控制卡</sys:String>

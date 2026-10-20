@@ -112,29 +112,28 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         /// <summary>按逻辑名称读取数字输入，并转换为配置的有效电平。</summary>
         public Task<bool> ReadInputAsync(string inputName, CancellationToken cancellationToken)
         {
-            var point = FindIoPoint(_inputsByName, inputName, "输入");
-            return Task.Run(() => ReadIoBit(point, true), cancellationToken);
+            return Task.Run(() => ReadIoBit(inputName, true), cancellationToken);
         }
 
         /// <summary>按逻辑名称读取数字输出，并转换为配置的有效电平。</summary>
         public Task<bool> ReadOutputAsync(string outputName, CancellationToken cancellationToken)
         {
-            var point = FindIoPoint(_outputsByName, outputName, "输出");
-            return Task.Run(() => ReadIoBit(point, false), cancellationToken);
+            return Task.Run(() => ReadIoBit(outputName, false), cancellationToken);
         }
 
         /// <summary>按逻辑名称写入数字输出，并转换为控制卡物理电平。</summary>
         public Task WriteOutputAsync(string outputName, bool value, CancellationToken cancellationToken)
         {
-            var point = FindIoPoint(_outputsByName, outputName, "输出");
-            return Task.Run(() => WriteIoBit(point, value), cancellationToken);
+            return Task.Run(() => WriteIoBit(outputName, value), cancellationToken);
         }
 
-        /// <summary>读取物理 DI 或 DO，并按逻辑 IO 的有效电平转换结果。</summary>
-        private bool ReadIoBit(ZMotionIoPointConfiguration point, bool input)
+        /// <summary>在原生锁内读取当前逻辑名称对应的物理 DI 或 DO。</summary>
+        private bool ReadIoBit(string pointName, bool input)
         {
             lock (_nativeLock)
             {
+                var points = input ? _inputsByName : _outputsByName;
+                var point = FindIoPoint(points, pointName, input ? "输入" : "输出");
                 var handle = GetConnectedHandle();
                 uint physicalValue = 0;
                 var result = input
@@ -147,11 +146,12 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             }
         }
 
-        /// <summary>将逻辑 DO 值转换为物理电平后写入正运动控制卡。</summary>
-        private void WriteIoBit(ZMotionIoPointConfiguration point, bool value)
+        /// <summary>在原生锁内查找当前 DO 映射并将逻辑值写入正运动控制卡。</summary>
+        private void WriteIoBit(string outputName, bool value)
         {
             lock (_nativeLock)
             {
+                var point = FindIoPoint(_outputsByName, outputName, "输出");
                 var handle = GetConnectedHandle();
                 var physicalHigh = value == point.ActiveHigh;
                 CheckResult(
@@ -159,6 +159,32 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     "写入 DO",
                     "逻辑 IO",
                     point.Name);
+            }
+        }
+
+        /// <summary>在当前连接内校验并整体替换逻辑 DI/DO 名称映射，不重新创建控制卡或轴对象。</summary>
+        public void UpdateIoMappings(
+            IReadOnlyCollection<ZMotionIoPointConfiguration> digitalInputs,
+            IReadOnlyCollection<ZMotionIoPointConfiguration> digitalOutputs)
+        {
+            if (digitalInputs == null)
+            {
+                throw new ArgumentNullException(nameof(digitalInputs));
+            }
+
+            if (digitalOutputs == null)
+            {
+                throw new ArgumentNullException(nameof(digitalOutputs));
+            }
+
+            var newInputsByName = CreateIoPointMap(digitalInputs.ToList(), "输入", _controllerId);
+            var newOutputsByName = CreateIoPointMap(digitalOutputs.ToList(), "输出", _controllerId);
+
+            lock (_nativeLock)
+            {
+                GetConnectedHandle();
+                _inputsByName = newInputsByName;
+                _outputsByName = newOutputsByName;
             }
         }
 

@@ -110,10 +110,10 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         private readonly ReadOnlyCollection<IAxis> _axes;
         /// <summary>按物理轴号查找正运动轴对象。</summary>
         private readonly Dictionary<int, ZMotionAxis> _axesByNumber;
-        /// <summary>按逻辑名称查找数字输入映射。</summary>
-        private readonly Dictionary<string, ZMotionIoPointConfiguration> _inputsByName;
-        /// <summary>按逻辑名称查找数字输出映射。</summary>
-        private readonly Dictionary<string, ZMotionIoPointConfiguration> _outputsByName;
+        /// <summary>按逻辑名称查找数字输入映射；在原生锁内整体替换，避免读到半更新配置。</summary>
+        private Dictionary<string, ZMotionIoPointConfiguration> _inputsByName;
+        /// <summary>按逻辑名称查找数字输出映射；在原生锁内整体替换，避免读到半更新配置。</summary>
+        private Dictionary<string, ZMotionIoPointConfiguration> _outputsByName;
         /// <summary>正运动 SDK 返回的原生连接句柄；零值表示未连接。</summary>
         private IntPtr _handle;
         /// <summary>当前轴参数是否已成功写入控制器。</summary>

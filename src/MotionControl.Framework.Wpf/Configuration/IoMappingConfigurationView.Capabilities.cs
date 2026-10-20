@@ -30,11 +30,16 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>最近一次 I/O 能力读取异常，用于切换语言后重新显示本地化提示。</summary>
         private string _ioCapabilityFailureMessage;
 
-        /// <summary>每次打开页面都刷新控制卡清单，取得轴映射页刚保存的卡标识。</summary>
+        /// <summary>每次打开页面刷新控制卡清单，并提示当前连接是否支持映射热更新。</summary>
         private async void IoMappingConfigurationView_Loaded(object sender, RoutedEventArgs e)
         {
             LoadControllerIds();
             UpdateConnectionState();
+            if (_cardConnection.IsConnected && _ioMappingCardConnection == null)
+            {
+                SetConfigurationStatus("IO映射控制卡不支持热更新");
+            }
+
             await RefreshIoCapabilitiesAsync(false);
         }
 
