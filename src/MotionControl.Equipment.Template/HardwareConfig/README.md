@@ -13,6 +13,8 @@
 
 Runtime 首次启动时只复制缺失的默认文件，不覆盖现场文件。现场配置升级时先读取 `schemaVersion`，由设备项目按明确版本转换并校验；保存新文件时 Runtime 会先备份旧文件。产品工艺动作参数放在 `Parameters/`，PLC 或其他设备的连接与协议参数由对应 `Communications/` 模块管理。
 
-Host 在创建运动卡适配器和单机 Runtime 前，应把这些配置转换为 `MotionCardHardwareDefinition`、`AxisHardwareDefinition`、`DigitalIoHardwareDefinition`，并调用 `MachineHardwareConfigurationValidator.Validate`。校验会检查卡、轴和 IO 的名称/通道重复、关联缺失、限位范围和急停 DI 映射；急停名称必须对应一个已配置的数字输入。模板中的空配置需要设备项目补齐后才能通过校验。
+产品设备项目的启动 Host 在建立生产运行时前，应把这些配置转换为 `MotionCardHardwareDefinition`、`AxisHardwareDefinition`、`DigitalIoHardwareDefinition`，并调用 `MachineHardwareConfigurationValidator.Validate`。校验会检查卡、轴和 IO 的名称/通道重复、关联缺失、限位范围和急停 DI 映射；急停名称必须对应一个已配置的数字输入。模板中的空配置需要设备项目补齐后才能通过校验。
+
+本仓库的 `MotionControl.Host.Wpf` 当前是通用配置与手动调试示例，允许先连接控制卡，再逐步补齐轴和 IO 配置；它的配置页面各自校验本页内容，不调用要求整机硬件配置完整的 `MachineHardwareConfigurationValidator.Validate`。设备项目接入自动运行流程时，必须在生产运行时启动前执行全量校验，不能把手动调试 Host 的连接成功视为整机配置已就绪。
 
 Runtime 通过 `IMachineSafetyStatus` 周期读取急停逻辑输入。急停有效或状态读取失败时会产生锁存停机报警、请求流程暂停，并禁止复位或启动；输入恢复后仍须人工复位。此软件状态用于监控和流程联锁，不代替硬件急停安全回路。

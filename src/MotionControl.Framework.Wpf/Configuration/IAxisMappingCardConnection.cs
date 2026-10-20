@@ -25,7 +25,7 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>断开当前控制卡连接并释放厂商连接句柄。</summary>
         Task DisconnectAsync(CancellationToken cancellationToken);
 
-        /// <summary>停止状态下重新加载当前设备保存的轴映射并应用轴参数。</summary>
+        /// <summary>先确认已映射轴全部停止，否则拒绝重连；成功后重新加载轴、DI/DO 映射并应用轴参数。</summary>
         Task ReconnectAsync(MotionCardSettingsDocument settings, CancellationToken cancellationToken);
 
         /// <summary>读取指定物理轴的单位换算、软限位和当前运动参数。</summary>

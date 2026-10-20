@@ -8,6 +8,7 @@ Host 是设备上位机的组合入口：它创建当前设备配置、通用页
 - `IMotionCardHostConnection` 给 Host 提供通用的 `IMotionCard`、`ILogicalIo` 和已加载硬件映射。Host 运行逻辑通过这些契约创建运行时及手动调试页。
 - `ZMotionAxisMappingCardConnection` 是当前正运动仿真器的 Host 接入实现，负责读取设备配置、建立 ZMotion 适配器并提供轴映射页需要的参数读写。
 - 轴映射页使用 `IAxisMappingCardConnection`；可读取卡上 IO 能力时，由连接实现另外提供 `IMotionCardIoCapabilityProvider`。
+- IO 映射保存会先确认操作，再检查轴已停止、重连控制卡并重新加载 DI/DO 映射；重新连接会清除回零完成状态。若重连失败，页面会显示配置已保存但未应用的错误，并按实际连接状态刷新手动调试页。
 
 ## 增加另一种控制卡
 

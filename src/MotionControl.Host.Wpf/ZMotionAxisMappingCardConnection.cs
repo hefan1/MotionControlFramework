@@ -278,7 +278,7 @@ namespace MotionControl.Host.Wpf
             _emergencyStopInputName = string.Empty;
         }
 
-        /// <summary>确认当前已映射轴均停止后重新连接，使保存的映射和参数进入运行时。</summary>
+        /// <summary>确认所有已映射轴停止后重连，重新加载轴、DI/DO 映射并应用轴参数。</summary>
         public async Task ReconnectAsync(
             MotionCardSettingsDocument settings,
             CancellationToken cancellationToken)

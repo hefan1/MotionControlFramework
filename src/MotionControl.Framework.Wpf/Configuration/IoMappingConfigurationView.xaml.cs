@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using MotionControl.Framework.Contracts.Configuration;
@@ -45,8 +46,14 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>急停状态对应的逻辑输入名称。</summary>
         public string EmergencyStopInputName { get; set; }
 
+        /// <summary>控制卡重新连接后通知 Host 刷新手动调试页。</summary>
+        public event EventHandler CardConnectionChanged;
+
         /// <summary>保存检查通过后可以覆盖当前 IO 映射文件。</summary>
         private bool _configurationCanBeSaved = true;
+
+        /// <summary>标记 IO 配置正在保存并重新连接控制卡，防止重复提交。</summary>
+        private bool _configurationApplyInProgress;
 
         /// <summary>创建 IO 映射页并读取设备自己的 IO 和控制卡配置。</summary>
         public IoMappingConfigurationView(
@@ -84,10 +91,12 @@ namespace MotionControl.Framework.Wpf.Configuration
             Loaded += IoMappingConfigurationView_Loaded;
         }
 
-        /// <summary>根据轴映射页共用的实时连接状态锁定或开放 IO 配置控件。</summary>
+        /// <summary>根据连接和应用状态启用配置控件，并在重连期间锁定保存操作。</summary>
         private void UpdateConnectionState()
         {
-            bool canEdit = _cardConnection.IsConnected && _configurationCanBeSaved;
+            bool canEdit = _cardConnection.IsConnected
+                && _configurationCanBeSaved
+                && !_configurationApplyInProgress;
             EmergencyStopInputComboBox.IsEnabled = canEdit;
             DigitalInputsGrid.IsEnabled = canEdit;
             DigitalOutputsGrid.IsEnabled = canEdit;
@@ -95,9 +104,13 @@ namespace MotionControl.Framework.Wpf.Configuration
                 && ControllerIds.Count > 0;
             AddOutputButton.IsEnabled = canEdit && !_isReadingIoCapabilities
                 && ControllerIds.Count > 0;
+            CheckMappingButton.IsEnabled = !_configurationApplyInProgress;
+            SaveConfigurationButton.IsEnabled = canEdit;
+            CancelChangesButton.IsEnabled = !_configurationApplyInProgress;
             RefreshIoCapabilitiesButton.IsEnabled = _cardConnection.IsConnected
                 && _ioCapabilityProvider != null
-                && !_isReadingIoCapabilities;
+                && !_isReadingIoCapabilities
+                && !_configurationApplyInProgress;
             UpdateRemoveButtons(canEdit);
         }
 
@@ -319,52 +332,6 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
 
             SetConfigurationStatus("IO映射检查通过");
-        }
-
-        /// <summary>检查通过后，将 DI/DO 与急停名称保存到本设备的 IoMapping.json。</summary>
-        private void SaveConfigurationButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (!CommitGridEdits())
-            {
-                SetConfigurationStatus("IO映射表格输入无效");
-                return;
-            }
-
-            if (!_configurationCanBeSaved)
-            {
-                SetConfigurationStatus("IO映射禁止保存");
-                return;
-            }
-
-            string errorMessage;
-            if (!TryValidateConfiguration(out errorMessage))
-            {
-                SetConfigurationStatusText(errorMessage, true);
-                return;
-            }
-
-            var configuration = new IoMappingConfigurationDocument
-            {
-                EmergencyStopInputName = EmergencyStopInputName.Trim(),
-                DigitalInputs = DigitalInputs
-                    .Where(point => !string.IsNullOrWhiteSpace(point.Name))
-                    .Select(CopyPoint)
-                    .ToList(),
-                DigitalOutputs = DigitalOutputs
-                    .Where(point => !string.IsNullOrWhiteSpace(point.Name))
-                    .Select(CopyPoint)
-                    .ToList()
-            };
-
-            try
-            {
-                _configurationStore.SaveJson(_machineId, IoMappingFilePath, configuration);
-                SetConfigurationStatus("IO映射保存成功");
-            }
-            catch (Exception error)
-            {
-                SetConfigurationStatus("IO映射保存失败", error.Message);
-            }
         }
 
         /// <summary>放弃当前未保存修改并重新读取本机配置文件。</summary>

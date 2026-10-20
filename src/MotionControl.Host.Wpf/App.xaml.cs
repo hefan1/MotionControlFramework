@@ -65,6 +65,7 @@ namespace MotionControl.Host.Wpf
                 _cardConnection);
             _axisMappingPage.CardConnectionChanged += AxisMappingPage_CardConnectionChanged;
             _ioMappingPage = new IoMappingConfigurationView(_configurationStore, MachineId, _cardConnection);
+            _ioMappingPage.CardConnectionChanged += AxisMappingPage_CardConnectionChanged;
             _mainWindow = new MainWindow();
             _mainWindow.Loaded += MainWindow_Loaded;
             _mainWindow.LanguageChanged += MainWindow_LanguageChanged;

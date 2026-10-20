@@ -236,8 +236,11 @@
     <sys:String x:Key="IO映射通道重复格式">{0} maps physical channel {1} more than once.</sys:String>
     <sys:String x:Key="IO映射急停必须关联DI">The emergency stop input name must match a configured DI logical name.</sys:String>
     <sys:String x:Key="IO映射检查通过">DI/DO mappings and the emergency stop input passed validation.</sys:String>
-    <sys:String x:Key="IO映射保存成功">I/O mappings were saved to this machine configuration.</sys:String>
+    <sys:String x:Key="IO映射保存成功">I/O mappings were saved and applied to the connected motion card.</sys:String>
     <sys:String x:Key="IO映射保存失败">Failed to save I/O mappings: {0}</sys:String>
+    <sys:String x:Key="IO映射保存并应用确认标题">Save and Apply I/O Mappings</sys:String>
+    <sys:String x:Key="IO映射保存并应用确认内容">The card will reconnect and load the new DI/DO mappings and emergency-stop input. Reconnecting clears the axes' homed state, and all configured axes must be stopped. Continue?</sys:String>
+    <sys:String x:Key="IO映射保存并应用失败格式">I/O mappings were saved, but reconnecting or applying them failed: {0}</sys:String>
     <sys:String x:Key="控制卡厂商">Card vendor</sys:String>
     <sys:String x:Key="控制卡未连接首次提示">Not connected. Select a card to connect.</sys:String>
     <sys:String x:Key="连接运动控制卡">Connect Motion Card</sys:String>
