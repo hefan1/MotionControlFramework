@@ -154,12 +154,20 @@ namespace MotionControl.Host.Wpf
             get { return _card == null ? string.Empty : _card.ActualControllerVersion; }
         }
 
-        /// <summary>校验所选厂商和卡类型，连接正运动仿真器，并保存连接资料供下次启动使用。</summary>
+        /// <summary>校验单卡配置后连接正运动仿真器；发现多卡配置时拒绝只连接其中一张。</summary>
         public async Task ConnectAsync(MotionCardSettingsDocument settings, CancellationToken cancellationToken)
         {
             if (settings == null)
             {
                 throw new ArgumentNullException(nameof(settings));
+            }
+
+            if (settings.MotionCards != null && settings.MotionCards.Count > 1)
+            {
+                throw new NotSupportedException(
+                    "当前正运动 Host 暂不支持同时连接多张运动控制卡；配置中检测到 "
+                    + settings.MotionCards.Count
+                    + " 张。为避免只连接第一张卡而遗漏其他卡，已拒绝连接。");
             }
 
             MotionCardSelectionOption selectedCard = SupportedCardOptions.FirstOrDefault(option =>

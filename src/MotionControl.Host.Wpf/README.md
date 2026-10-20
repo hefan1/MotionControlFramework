@@ -15,4 +15,4 @@ Host 是设备上位机的组合入口：它创建当前设备配置、通用页
 
 设备流程继续使用逻辑轴、逻辑 IO 和工程单位。新适配器需要按目标卡型和 SDK 版本单独验证；API 声明或其他卡型的仿真结果不能代替验证。
 
-当前 Host 只接入一张 ZDevelop `VPLC5xx-Simu` 仿真卡。Runtime 的 `MotionCardGroup` 虽然可以管理多张卡，但当前 Host 连接接口和轴/IO 配置页只接入一张卡；`MotionCards.json` 中的列表目前只读取第一项。雷赛、固高、ADLINK 等目录中的原生 API 声明不代表已有可运行的驱动适配器。
+当前 Host 只接入一张 ZDevelop `VPLC5xx-Simu` 仿真卡。Runtime 的 `MotionCardGroup` 虽然可以管理多张卡，但当前 Host 连接接口和轴/IO 配置页只接入一张卡；连接时发现 `MotionCards.json` 配置多张卡会明确拒绝，避免只连接第一张卡而遗漏其余卡。雷赛、固高、ADLINK 等目录中的原生 API 声明不代表已有可运行的驱动适配器。

@@ -13,6 +13,8 @@ using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Runtime.Machine;
 using MotionControl.Framework.Runtime.Safety;
+using MotionControl.Framework.Wpf.Configuration;
+using MotionControl.Host.Wpf;
 
 namespace MotionControl.ZMotionSimulatorCheck
 {
@@ -25,6 +27,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             var failures = new List<string>();
             await RunCheckAsync("连接中途失败后回收已连接卡", ConnectionFailureRollsBackEarlierCardsAsync, failures);
             await RunCheckAsync("重复逻辑轴名称被拒绝", DuplicateAxisNameIsRejectedAsync, failures);
+            await RunCheckAsync("当前正运动 Host 拒绝多卡配置", ZMotionHostRejectsMultipleCardsAsync, failures);
             await RunCheckAsync("未配置自动流程时允许连接手动调试但禁止启动", ManualOnlyRuntimeConnectsButCannotStartAsync, failures);
             await RunCheckAsync("必须复位后启动，暂停后保留当前步骤", ResetAndPauseKeepCurrentStepAsync, failures);
             await RunCheckAsync("停机报警暂停流程并要求复位", StopAlarmPausesMachineUntilResetAsync, failures);
@@ -101,6 +104,44 @@ namespace MotionControl.ZMotionSimulatorCheck
 
             Ensure(!firstCard.IsConnected, "连接回滚后第一张卡仍处于连接状态。");
             Ensure(!failedCard.IsConnected, "连接失败的卡不应处于连接状态。");
+        }
+
+        /// <summary>确认当前单卡正运动 Host 遇到多卡配置时会在调用厂商 API 前明确拒绝。</summary>
+        private static async Task ZMotionHostRejectsMultipleCardsAsync()
+        {
+            var connection = new ZMotionAxisMappingCardConnection(
+                new MachineConfigurationStore(System.IO.Path.GetTempPath()),
+                "MultiCardConfigurationCheck");
+            IReadOnlyList<MotionCardSelectionOption> supportedCards = connection.SupportedMotionCards;
+            Ensure(supportedCards.Count > 0, "正运动 Host 没有提供可用于配置检查的卡型。");
+
+            MotionCardSelectionOption selectedCard = supportedCards[0];
+            var settings = new MotionCardSettingsDocument
+            {
+                MotionCardVendor = selectedCard.VendorCode,
+                MotionCardType = selectedCard.CardTypeCode,
+                MotionCards = new List<MotionCardConnectionDefinition>
+                {
+                    new MotionCardConnectionDefinition { ControllerId = "CardA" },
+                    new MotionCardConnectionDefinition { ControllerId = "CardB" }
+                }
+            };
+
+            try
+            {
+                await connection.ConnectAsync(settings, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (NotSupportedException error)
+            {
+                Ensure(
+                    error.Message.Contains("多张运动控制卡")
+                        && error.Message.Contains("已拒绝连接"),
+                    "多卡配置错误没有说明 Host 暂不支持并已拒绝连接。 " + error.Message);
+                Ensure(!connection.IsConnected, "拒绝多卡配置后 Host 不应保持连接状态。");
+                return;
+            }
+
+            throw new InvalidOperationException("当前正运动 Host 没有拒绝两张卡的配置。");
         }
 
         /// <summary>确认不同控制卡上的逻辑轴名称不能重复。</summary>
