@@ -14,6 +14,7 @@ using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Runtime.Machine;
 using MotionControl.Framework.Runtime.Safety;
 using MotionControl.Framework.Wpf.Configuration;
+using MotionControl.Framework.Wpf.ManualDebug;
 using MotionControl.Host.Wpf;
 
 namespace MotionControl.ZMotionSimulatorCheck
@@ -39,8 +40,43 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("急停有效时禁止复位和启动，运行期间触发会暂停流程", EmergencyStopBlocksAndStopsMachineAsync, failures);
             await RunCheckAsync("急停状态通过配置的逻辑 DI 读取", EmergencyStopStatusUsesConfiguredInputAsync, failures);
             await RunCheckAsync("设备硬件配置关联和急停输入校验", HardwareConfigurationValidationAsync, failures);
+            await RunCheckAsync("通用框架程序集不引用厂商适配器或原生 API", SharedFrameworkAssembliesDoNotReferenceVendorAdaptersAsync, failures);
             await RunCheckAsync("正运动轴号超出控制器范围时在连接前被拒绝", ZMotionAxisNumberOutsideControllerRangeIsRejectedAsync, failures);
             return failures.AsReadOnly();
+        }
+
+        /// <summary>检查 Contracts、Runtime 和通用 WPF 页面没有引用具体厂商适配器或原生 API 项目。</summary>
+        private static Task SharedFrameworkAssembliesDoNotReferenceVendorAdaptersAsync()
+        {
+            var frameworkAssemblies = new[]
+            {
+                typeof(IMotionCard).Assembly,
+                typeof(MachineRuntime).Assembly,
+                typeof(ManualMotionDebugView).Assembly
+            };
+
+            foreach (var frameworkAssembly in frameworkAssemblies)
+            {
+                foreach (var reference in frameworkAssembly.GetReferencedAssemblies())
+                {
+                    bool isVendorAdapter = reference.Name.StartsWith(
+                        "MotionControl.Adapter.MotionCard.",
+                        StringComparison.Ordinal);
+                    bool isVendorApi = reference.Name.StartsWith(
+                        "MotionControl.VendorApi.",
+                        StringComparison.Ordinal);
+
+                    if (isVendorAdapter || isVendorApi)
+                    {
+                        throw new InvalidOperationException(
+                            "通用程序集 '" + frameworkAssembly.GetName().Name
+                            + "' 引用了厂商程序集 '" + reference.Name
+                            + "'；厂商 SDK 应只由对应适配器引用。");
+                    }
+                }
+            }
+
+            return Task.CompletedTask;
         }
 
         /// <summary>确认正运动物理轴号 64 在创建适配器时被拒绝，不会等到连接后才调用 SDK。</summary>
