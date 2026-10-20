@@ -31,6 +31,9 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("当前正运动 Host 拒绝多卡配置", ZMotionHostRejectsMultipleCardsAsync, failures);
             await RunCheckAsync("未配置自动流程时允许连接手动调试但禁止启动", ManualOnlyRuntimeConnectsButCannotStartAsync, failures);
             await RunCheckAsync("任一轴仍在运动时禁止启动自动流程", MovingAxisBlocksAutomaticStartAsync, failures);
+            await RunCheckAsync("硬限位后未配置初始化流程时必须先回零", HomingRequiredAxisBlocksStartWithoutInitializationAsync, failures);
+            await RunCheckAsync("可选初始化先于工位、暂停续跑且每个连接周期只执行一次", EquipmentInitializationRunsBeforeStationsAndResumesAsync, failures);
+            await RunCheckAsync("初始化结束后仍检查轴是否真正完成回零", EquipmentInitializationMustClearHomingRequirementAsync, failures);
             await RunCheckAsync("多卡断开先检查所有轴，不留下半连接状态", MovingAxisPreventsPartialCardDisconnectAsync, failures);
             await RunCheckAsync("必须复位后启动，暂停后保留当前步骤", ResetAndPauseKeepCurrentStepAsync, failures);
             await RunCheckAsync("停机报警暂停流程并要求复位", StopAlarmPausesMachineUntilResetAsync, failures);
@@ -237,6 +240,145 @@ namespace MotionControl.ZMotionSimulatorCheck
             Ensure(card.IsConnected, "轴仍在运动时，Runtime 断开请求没有保留控制卡连接。");
 
             movingAxis.IsMoving = false;
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        /// <summary>确认没有设备初始化流程时，硬限位恢复留下的回零要求仍会阻止自动启动。</summary>
+        private static async Task HomingRequiredAxisBlocksStartWithoutInitializationAsync()
+        {
+            var axis = new FakeAxis("LimitAxis")
+            {
+                RequiresHomingAfterLimitAlarm = true
+            };
+            var card = new FakeMotionCard("LimitCard", axis);
+            var flow = new WaitingStationFlow("送料工位", "等待取料到位");
+            var runtime = new MachineRuntime(
+                new MotionCardGroup(new IMotionCard[] { card }),
+                new IStationFlow[] { flow },
+                new MachineAlarmService(),
+                new FakeSafetyStatus());
+
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await ExpectExceptionAsync<InvalidOperationException>(
+                () => runtime.StartAsync(CancellationToken.None)).ConfigureAwait(false);
+
+            Ensure(runtime.State == MachineRunState.Alarmed, "硬限位恢复后没有回零时，整机未进入报警状态。");
+            Ensure(flow.StartCount == 0, "硬限位回零要求未满足时启动了工位流程。");
+            Ensure(
+                runtime.LastError.Message.Contains("必须先完成回零"),
+                "硬限位回零拦截没有说明需要先完成回零。");
+
+            axis.RequiresHomingAfterLimitAlarm = false;
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        /// <summary>确认可选初始化先于工位执行，暂停保留步骤，完成后不重复运行且重连会重新执行。</summary>
+        private static async Task EquipmentInitializationRunsBeforeStationsAndResumesAsync()
+        {
+            var axis = new FakeAxis("HomeAxis")
+            {
+                RequiresHomingAfterLimitAlarm = true
+            };
+            var card = new FakeMotionCard("HomeCard", axis);
+            var stationFlow = new WaitingStationFlow("上料工位", "等待产品到位");
+            var initializationFlow = new FakeEquipmentInitializationFlow
+            {
+                OnComplete = () => axis.RequiresHomingAfterLimitAlarm = false
+            };
+            var runtime = new MachineRuntime(
+                new MotionCardGroup(new IMotionCard[] { card }),
+                new IStationFlow[] { stationFlow },
+                new MachineAlarmService(),
+                new FakeSafetyStatus(),
+                TimeSpan.FromSeconds(2),
+                TimeSpan.FromMilliseconds(10),
+                initializationFlow);
+
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await initializationFlow.WaitUntilStartedAsync().ConfigureAwait(false);
+
+            Ensure(stationFlow.StartCount == 0, "设备初始化完成前启动了并行工位流程。");
+            Ensure(
+                initializationFlow.CurrentStepName == "检查轴回零条件",
+                "设备初始化开始时没有显示当前准备步骤。");
+
+            await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(!initializationFlow.IsCompleted, "暂停初始化时错误地标记为已完成。");
+            Ensure(
+                initializationFlow.CurrentStepName == "检查轴回零条件",
+                "暂停初始化时没有保留当前步骤。");
+            Ensure(stationFlow.StartCount == 0, "初始化暂停时提前启动了工位流程。");
+
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            initializationFlow.AllowCompletion = true;
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await WaitForStartCountAsync(stationFlow, 1).ConfigureAwait(false);
+
+            Ensure(initializationFlow.IsCompleted, "初始化步骤成功后没有标记完成。");
+            Ensure(initializationFlow.ExecutionCount == 2, "暂停恢复后没有从保留步骤继续执行初始化。");
+            Ensure(!axis.RequiresHomingAfterLimitAlarm, "初始化没有清除测试轴的硬限位后回零要求。");
+
+            await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await WaitForStartCountAsync(stationFlow, 2).ConfigureAwait(false);
+            Ensure(initializationFlow.ExecutionCount == 2, "同一连接周期内复位重启重复执行了已完成初始化。");
+
+            await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await WaitForStartCountAsync(stationFlow, 3).ConfigureAwait(false);
+            Ensure(initializationFlow.ExecutionCount == 3, "新的控制卡连接周期没有重新执行设备初始化。");
+
+            await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        /// <summary>确认初始化流程报告完成但轴仍需回零时，工位不会启动；人工回零后可继续。</summary>
+        private static async Task EquipmentInitializationMustClearHomingRequirementAsync()
+        {
+            var axis = new FakeAxis("HomeAxis")
+            {
+                RequiresHomingAfterLimitAlarm = true
+            };
+            var card = new FakeMotionCard("HomeCard", axis);
+            var stationFlow = new WaitingStationFlow("上料工位", "等待产品到位");
+            var initializationFlow = new FakeEquipmentInitializationFlow
+            {
+                AllowCompletion = true
+            };
+            var runtime = new MachineRuntime(
+                new MotionCardGroup(new IMotionCard[] { card }),
+                new IStationFlow[] { stationFlow },
+                new MachineAlarmService(),
+                new FakeSafetyStatus(),
+                TimeSpan.FromSeconds(2),
+                TimeSpan.FromMilliseconds(10),
+                initializationFlow);
+
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await WaitForStateAsync(runtime, MachineRunState.Alarmed).ConfigureAwait(false);
+
+            Ensure(initializationFlow.IsCompleted, "测试初始化流程没有报告完成。");
+            Ensure(stationFlow.StartCount == 0, "轴仍要求回零时，初始化流程后启动了工位。");
+            Ensure(
+                runtime.LastError.ToString().Contains("必须先完成回零"),
+                "初始化后的轴状态检查没有说明仍需回零。");
+
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            axis.RequiresHomingAfterLimitAlarm = false;
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await WaitForStartCountAsync(stationFlow, 1).ConfigureAwait(false);
+            Ensure(initializationFlow.ExecutionCount == 1, "初始化状态检查失败后不必要地重跑了已完成初始化步骤。");
+
+            await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
             await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
@@ -696,6 +838,20 @@ namespace MotionControl.ZMotionSimulatorCheck
             Ensure(runtime.State == expectedState, "等待状态 " + expectedState + " 超时，实际为 " + runtime.State + "。");
         }
 
+        /// <summary>等待指定工位流程至少启动到预期次数，超时后报告实际次数。</summary>
+        private static async Task WaitForStartCountAsync(WaitingStationFlow flow, int expectedStartCount)
+        {
+            DateTime timeout = DateTime.UtcNow.AddSeconds(3);
+            while (flow.StartCount < expectedStartCount && DateTime.UtcNow < timeout)
+            {
+                await Task.Delay(10).ConfigureAwait(false);
+            }
+
+            Ensure(
+                flow.StartCount >= expectedStartCount,
+                "等待工位流程启动 " + expectedStartCount + " 次超时，实际为 " + flow.StartCount + " 次。");
+        }
+
         /// <summary>执行一个应同步抛出指定类型异常的操作。</summary>
         private static void ExpectException<TException>(Action action) where TException : Exception
         {
@@ -789,11 +945,26 @@ namespace MotionControl.ZMotionSimulatorCheck
             /// <summary>设置测试轴是否仍处于运动状态。</summary>
             public bool IsMoving { get; set; }
 
+            /// <summary>设置测试轴是否带有硬限位恢复后必须回零的标记。</summary>
+            public bool RequiresHomingAfterLimitAlarm { get; set; }
+
             /// <summary>返回已回零、无报警、无活动限位且按测试设置报告运动状态的轴状态。</summary>
             public Task<AxisStatus> ReadStatusAsync(CancellationToken cancellationToken)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                return Task.FromResult(new AxisStatus(0, 0, true, IsMoving, true, false, false, false, false, false, null, false));
+                return Task.FromResult(new AxisStatus(
+                    0,
+                    0,
+                    true,
+                    IsMoving,
+                    true,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    null,
+                    RequiresHomingAfterLimitAlarm));
             }
 
             /// <summary>模拟伺服使能。</summary>
@@ -883,6 +1054,9 @@ namespace MotionControl.ZMotionSimulatorCheck
         {
             private readonly TaskCompletionSource<bool> _started = new TaskCompletionSource<bool>();
 
+            /// <summary>记录工位流程已进入执行步骤的次数。</summary>
+            private int _startCount;
+
             /// <summary>创建有固定工位名称和当前步骤的等待流程。</summary>
             public WaitingStationFlow(string stationName, string stepName)
             {
@@ -894,9 +1068,16 @@ namespace MotionControl.ZMotionSimulatorCheck
 
             public string CurrentStepName { get; private set; }
 
+            /// <summary>返回工位流程已经启动执行的次数。</summary>
+            public int StartCount
+            {
+                get { return Interlocked.CompareExchange(ref _startCount, 0, 0); }
+            }
+
             /// <summary>通知检查程序流程已开始，再等待 Runtime 发出暂停取消。</summary>
             public Task ExecuteCurrentStepAsync(CancellationToken cancellationToken)
             {
+                Interlocked.Increment(ref _startCount);
                 _started.TrySetResult(true);
                 return Task.Delay(Timeout.Infinite, cancellationToken);
             }
@@ -910,6 +1091,74 @@ namespace MotionControl.ZMotionSimulatorCheck
 
             /// <summary>等待测试确认工位流程已经进入当前步骤。</summary>
             public Task WaitUntilStartedAsync() { return _started.Task; }
+        }
+
+        /// <summary>提供可暂停的设备初始化替身，用于验证步骤保留和连接周期行为。</summary>
+        private sealed class FakeEquipmentInitializationFlow : IEquipmentInitializationFlow
+        {
+            private readonly TaskCompletionSource<bool> _started = new TaskCompletionSource<bool>();
+
+            /// <summary>创建处于第一步且尚未完成的测试初始化流程。</summary>
+            public FakeEquipmentInitializationFlow()
+            {
+                CurrentStepName = "检查轴回零条件";
+            }
+
+            /// <summary>当前测试初始化步骤名称。</summary>
+            public string CurrentStepName { get; private set; }
+
+            /// <summary>测试初始化步骤全部完成后返回 true。</summary>
+            public bool IsCompleted { get; private set; }
+
+            /// <summary>控制本次步骤是否结束等待并完成初始化。</summary>
+            public bool AllowCompletion { get; set; }
+
+            /// <summary>记录初始化步骤执行次数，包含暂停后重新进入当前步。</summary>
+            public int ExecutionCount { get; private set; }
+
+            /// <summary>步骤完成时执行的测试状态更新。</summary>
+            public Action OnComplete { get; set; }
+
+            /// <summary>等待测试确认初始化流程已经开始执行。</summary>
+            public Task WaitUntilStartedAsync()
+            {
+                return _started.Task;
+            }
+
+            /// <summary>等待测试许可时保持当前步骤，收到暂停取消后从同一步继续。</summary>
+            public async Task ExecuteCurrentStepAsync(CancellationToken cancellationToken)
+            {
+                _started.TrySetResult(true);
+                ExecutionCount++;
+                if (!AllowCompletion)
+                {
+                    await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                if (OnComplete != null)
+                {
+                    OnComplete();
+                }
+
+                CurrentStepName = "初始化完成";
+                IsCompleted = true;
+            }
+
+            /// <summary>模拟复位初始化报警并保留当前步骤和完成状态。</summary>
+            public Task ResetAsync(CancellationToken cancellationToken)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.CompletedTask;
+            }
+
+            /// <summary>新连接周期将测试初始化状态恢复到第一步。</summary>
+            public void ResetForNewConnection()
+            {
+                CurrentStepName = "检查轴回零条件";
+                IsCompleted = false;
+            }
         }
 
         /// <summary>立即抛出异常的测试工位。</summary>

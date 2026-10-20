@@ -33,7 +33,7 @@ namespace MotionControl.Framework.Runtime.Machine
         private readonly MotionCardGroup _motionCards;
 
         /// <summary>负责并行调度本设备的各工位流程。</summary>
-        private readonly StationFlowScheduler _flowScheduler;
+        private readonly MachineFlowScheduler _flowScheduler;
 
         /// <summary>保存、查询和复位设备报警的服务。</summary>
         private readonly IMachineAlarmService _alarmService;
@@ -71,14 +71,15 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>取消当前急停监控任务的令牌源。</summary>
         private CancellationTokenSource _safetyMonitorCancellation;
 
-        /// <summary>创建单机运行上下文；工位流程可以为空，并设置暂停时限和急停轮询间隔。</summary>
+        /// <summary>创建单机运行上下文；可选设置启动前初始化流程、暂停时限和急停轮询间隔。</summary>
         public MachineRuntime(
             MotionCardGroup motionCards,
             IEnumerable<IStationFlow> stationFlows,
             IMachineAlarmService alarmService,
             IMachineSafetyStatus safetyStatus,
             TimeSpan? pauseTimeout = null,
-            TimeSpan? safetyPollInterval = null)
+            TimeSpan? safetyPollInterval = null,
+            IEquipmentInitializationFlow equipmentInitializationFlow = null)
         {
             if (motionCards == null)
             {
@@ -111,7 +112,10 @@ namespace MotionControl.Framework.Runtime.Machine
             }
 
             _motionCards = motionCards;
-            _flowScheduler = new StationFlowScheduler(stationFlows);
+            _flowScheduler = new MachineFlowScheduler(
+                motionCards,
+                stationFlows,
+                equipmentInitializationFlow);
             _alarmService = alarmService;
             _safetyStatus = safetyStatus;
             _pauseTimeout = pauseTimeout ?? DefaultPauseTimeout;
@@ -274,6 +278,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 EnsureState(MachineRunState.Disconnected, "只有断开状态的设备可以连接运动控制卡。");
                 try
                 {
+                    _flowScheduler.ResetForNewConnection();
                     await _motionCards.ConnectAsync(cancellationToken).ConfigureAwait(false);
                     SetStatus(MachineRunState.ResetRequired, null);
                 }
@@ -359,6 +364,21 @@ namespace MotionControl.Framework.Runtime.Machine
                         }
                     }
 
+                    try
+                    {
+                        await _flowScheduler
+                            .ResetEquipmentInitializationAsync(cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception initializationError)
+                    {
+                        throw new InvalidOperationException("设备启动前初始化流程复位失败。", initializationError);
+                    }
+
                     foreach (var flow in _flowScheduler.StationFlows)
                     {
                         try
@@ -392,7 +412,7 @@ namespace MotionControl.Framework.Runtime.Machine
             }
         }
 
-        /// <summary>从各工位保留的当前步骤启动设备流程。</summary>
+        /// <summary>执行可选设备初始化后，从各工位保留的当前步骤启动设备流程。</summary>
         public async Task StartAsync(CancellationToken cancellationToken)
         {
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -412,7 +432,11 @@ namespace MotionControl.Framework.Runtime.Machine
                         throw new InvalidOperationException("急停输入仍处于触发状态，设备不能启动。");
                     }
 
-                    await EnsureAxesReadyForAutomaticStartAsync(cancellationToken).ConfigureAwait(false);
+                    await _flowScheduler
+                        .EnsureAxesReadyForAutomaticStartAsync(
+                            _flowScheduler.HasPendingInitialization,
+                            cancellationToken)
+                        .ConfigureAwait(false);
                     SetRunningIfNoStopAlarm();
                     StartEmergencyStopMonitor();
                     var runTask = _flowScheduler.Start();
@@ -558,39 +582,6 @@ namespace MotionControl.Framework.Runtime.Machine
                 {
                     _safetyMonitorCancellation = null;
                     cancellation.Dispose();
-                }
-            }
-        }
-
-        /// <summary>自动流程启动前逐轴检查运动状态、报警、限位和硬限位恢复后的回零要求。</summary>
-        private async Task EnsureAxesReadyForAutomaticStartAsync(CancellationToken cancellationToken)
-        {
-            foreach (var axis in _motionCards.Axes)
-            {
-                var status = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
-                if (status.Moving)
-                {
-                    throw new InvalidOperationException(
-                        "逻辑轴 '" + axis.Name + "' 仍在运动，禁止启动自动流程；请先停止手动动作并确认轴已停稳。");
-                }
-
-                if (status.AlarmActive
-                    || status.PositiveLimitActive
-                    || status.NegativeLimitActive
-                    || status.PositiveSoftLimitActive
-                    || status.NegativeSoftLimitActive)
-                {
-                    var reason = status.AlarmMessage;
-                    throw new InvalidOperationException(
-                        "逻辑轴 '" + axis.Name + "' 当前存在报警或限位，禁止启动自动流程。"
-                        + (string.IsNullOrWhiteSpace(reason) ? string.Empty : "原因：" + reason + "。"));
-                }
-
-                if (status.RequiresHomingAfterLimitAlarm)
-                {
-                    throw new InvalidOperationException(
-                        "逻辑轴 '" + axis.Name
-                        + "' 曾触发硬限位，恢复后必须先完成回零，才能启动自动流程。");
                 }
             }
         }
