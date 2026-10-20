@@ -218,6 +218,8 @@
     <sys:String x:Key="关联IO设置说明">选择 IO 映射页中已命名的逻辑点。DI 只显示状态；DO 按钮分别写入逻辑 ON 和逻辑 OFF。</sys:String>
     <sys:String x:Key="IO类型">IO 类型</sys:String>
     <sys:String x:Key="逻辑IO名称">逻辑 IO 名称</sys:String>
+    <sys:String x:Key="当前轴无可新增DI">当前轴没有可新增的 DI 点。请检查 IO 映射中是否已命名 DI，以及是否已关联到本轴。</sys:String>
+    <sys:String x:Key="当前轴无可新增DO">当前轴没有可新增的 DO 点。请检查 IO 映射中是否已命名 DO，以及是否已关联到本轴。</sys:String>
     <sys:String x:Key="显示名称">显示名称</sys:String>
     <sys:String x:Key="DO按钮文字说明">按钮文字用于说明操作目的；上方按钮写入逻辑 ON，下方按钮写入逻辑 OFF。</sys:String>
     <sys:String x:Key="逻辑ON按钮名称">逻辑 ON 按钮</sys:String>

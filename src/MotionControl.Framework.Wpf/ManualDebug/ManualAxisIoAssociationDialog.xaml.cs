@@ -66,8 +66,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             _editingAssociation = editingAssociation;
 
             InitializeComponent();
-            PointTypeComboBox.SelectedIndex = editingAssociation != null
-                && editingAssociation.PointType == ManualAxisIoPointType.DigitalOutput ? 1 : 0;
+            PointTypeComboBox.SelectedIndex = GetInitialPointTypeIndex();
             _isSettingSuggestedDisplayName = true;
             DisplayNameTextBox.Text = editingAssociation == null ? string.Empty : editingAssociation.DisplayName;
             _isSettingSuggestedDisplayName = false;
@@ -84,6 +83,27 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 ? editingAssociation.OffActionName
                 : GetText("默认逻辑OFF按钮名称");
             UpdateAvailablePointNames();
+            if (editingAssociation == null)
+            {
+                DigitalIoHardwareDefinition selectedPoint = PointNameComboBox.SelectedItem as DigitalIoHardwareDefinition;
+                if (selectedPoint != null)
+                {
+                    SetSuggestedDisplayName(selectedPoint.Name);
+                }
+            }
+        }
+
+        /// <summary>新增关联时优先选择当前轴有可用点位的类型；编辑时保留原类型。</summary>
+        private int GetInitialPointTypeIndex()
+        {
+            if (_editingAssociation != null)
+            {
+                return _editingAssociation.PointType == ManualAxisIoPointType.DigitalOutput ? 1 : 0;
+            }
+
+            return GetAvailablePointChoices(ManualAxisIoPointType.DigitalInput).Count > 0
+                ? 0
+                : GetAvailablePointChoices(ManualAxisIoPointType.DigitalOutput).Count > 0 ? 1 : 0;
         }
 
         /// <summary>按 DI/DO 类型刷新下拉框，并保留正在编辑的已映射名称。</summary>
@@ -131,22 +151,10 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         private void UpdateAvailablePointNames()
         {
             ManualAxisIoPointType pointType = GetSelectedPointType();
-            List<DigitalIoHardwareDefinition> availablePoints = pointType == ManualAxisIoPointType.DigitalInput
-                ? _digitalInputs
-                : _digitalOutputs;
+            List<DigitalIoHardwareDefinition> choices = GetAvailablePointChoices(pointType);
             string editingName = _editingAssociation != null && _editingAssociation.PointType == pointType
                 ? _editingAssociation.PointName
                 : null;
-            var usedNames = new HashSet<string>(
-                _existingAssociations
-                    .Where(item => item != null && !ReferenceEquals(item, _editingAssociation)
-                        && item.PointType == pointType)
-                    .Select(item => item.PointName),
-                StringComparer.OrdinalIgnoreCase);
-            List<DigitalIoHardwareDefinition> choices = availablePoints
-                .Where(point => !usedNames.Contains(point.Name)
-                    || string.Equals(point.Name, editingName, StringComparison.OrdinalIgnoreCase))
-                .ToList();
 
             _isUpdatingPointChoices = true;
             try
@@ -160,9 +168,37 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 _isUpdatingPointChoices = false;
             }
 
+            PointNameComboBox.IsEnabled = choices.Count > 0;
+            SaveButton.IsEnabled = choices.Count > 0;
+            PointChoiceHintText.Text = GetText(pointType == ManualAxisIoPointType.DigitalInput
+                ? "当前轴无可新增DI"
+                : "当前轴无可新增DO");
+            PointChoiceHintText.Visibility = choices.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
             OutputActionPanel.Visibility = pointType == ManualAxisIoPointType.DigitalOutput
                 ? Visibility.Visible
                 : Visibility.Collapsed;
+        }
+
+        /// <summary>筛出当前轴尚未关联的指定类型逻辑 IO，并在编辑时保留原点位。</summary>
+        private List<DigitalIoHardwareDefinition> GetAvailablePointChoices(ManualAxisIoPointType pointType)
+        {
+            List<DigitalIoHardwareDefinition> availablePoints = pointType == ManualAxisIoPointType.DigitalInput
+                ? _digitalInputs
+                : _digitalOutputs;
+            string editingName = _editingAssociation != null && _editingAssociation.PointType == pointType
+                ? _editingAssociation.PointName
+                : null;
+            var usedNames = new HashSet<string>(
+                _existingAssociations
+                    .Where(item => item != null && !ReferenceEquals(item, _editingAssociation)
+                        && item.PointType == pointType)
+                    .Select(item => item.PointName),
+                StringComparer.OrdinalIgnoreCase);
+
+            return availablePoints
+                .Where(point => !usedNames.Contains(point.Name)
+                    || string.Equals(point.Name, editingName, StringComparison.OrdinalIgnoreCase))
+                .ToList();
         }
 
         /// <summary>填写逻辑 IO 的建议名称，并标记这是程序同步值而非用户自定义。</summary>

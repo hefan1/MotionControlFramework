@@ -225,14 +225,21 @@
         </Grid>
 
         <Grid Grid.Row="2" Margin="0,0,0,8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="105" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
-            <TextBlock Text="{DynamicResource 逻辑IO名称}" Style="{StaticResource DialogFieldLabelStyle}" />
+            <TextBlock Grid.Row="0" Text="{DynamicResource 逻辑IO名称}" Style="{StaticResource DialogFieldLabelStyle}" />
             <ComboBox x:Name="PointNameComboBox" Grid.Column="1" Style="{StaticResource DialogComboBoxStyle}"
                       DisplayMemberPath="Name"
                       SelectionChanged="PointNameComboBox_SelectionChanged" />
+            <TextBlock x:Name="PointChoiceHintText" Grid.Row="1" Grid.Column="1"
+                       Foreground="#8A5C00" FontSize="11" TextWrapping="Wrap"
+                       Margin="0,3,0,0" Visibility="Collapsed" />
         </Grid>
 
         <Grid Grid.Row="3" Margin="0,0,0,8">
@@ -275,7 +282,7 @@
         <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="{DynamicResource 取消修改}" Margin="0,0,8,0"
                     Style="{StaticResource DialogButtonStyle}" MinWidth="88" IsCancel="True" />
-            <Button Content="{DynamicResource 保存配置}" Style="{StaticResource DialogPrimaryButtonStyle}" MinWidth="88"
+            <Button x:Name="SaveButton" Content="{DynamicResource 保存配置}" Style="{StaticResource DialogPrimaryButtonStyle}" MinWidth="88"
                     IsDefault="True" Click="SaveButton_Click" />
         </StackPanel>
     </Grid>

@@ -210,6 +210,8 @@
     <sys:String x:Key="关联IO设置说明">Select a named point from I/O Mapping. DI only displays its state; DO buttons write logical ON and OFF.</sys:String>
     <sys:String x:Key="IO类型">I/O type</sys:String>
     <sys:String x:Key="逻辑IO名称">Logical I/O name</sys:String>
+    <sys:String x:Key="当前轴无可新增DI">No DI point can be added to this axis. Check whether a DI is named in I/O Mapping and already associated with this axis.</sys:String>
+    <sys:String x:Key="当前轴无可新增DO">No DO point can be added to this axis. Check whether a DO is named in I/O Mapping and already associated with this axis.</sys:String>
     <sys:String x:Key="显示名称">Display name</sys:String>
     <sys:String x:Key="DO按钮文字说明">Button captions describe the action. The first button writes logical ON; the second writes logical OFF.</sys:String>
     <sys:String x:Key="逻辑ON按钮名称">Logical ON button</sys:String>
