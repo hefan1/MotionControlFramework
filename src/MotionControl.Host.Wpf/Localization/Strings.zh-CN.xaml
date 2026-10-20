@@ -90,6 +90,9 @@
     <sys:String x:Key="逻辑轴">逻辑轴：</sys:String>
     <sys:String x:Key="伺服使能">伺服使能</sys:String>
     <sys:String x:Key="伺服关闭">伺服关闭</sys:String>
+    <sys:String x:Key="轴伺服状态未连接">伺服：未连接</sys:String>
+    <sys:String x:Key="轴伺服状态已使能">伺服：已使能</sys:String>
+    <sys:String x:Key="轴伺服状态未使能">伺服：未使能</sys:String>
     <sys:String x:Key="回零">回零</sys:String>
     <sys:String x:Key="轴报警复位">轴报警复位</sys:String>
     <sys:String x:Key="受控停止">受控停止</sys:String>

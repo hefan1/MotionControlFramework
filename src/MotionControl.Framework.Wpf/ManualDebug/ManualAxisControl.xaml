@@ -56,7 +56,10 @@
                         <Ellipse x:Name="HomedIndicator" Width="10" Height="10" Fill="#9AA4AD" Margin="0,0,4,0" />
                         <TextBlock x:Name="HomedStatusText" Text="{DynamicResource 状态未连接}" FontSize="10" VerticalAlignment="Center" />
                     </StackPanel>
-                    <TextBlock x:Name="MotionStateText" Grid.Row="0" Grid.Column="2" Text="—" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <StackPanel Grid.Row="0" Grid.Column="2" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock x:Name="MotionStateText" Text="—" FontSize="10" HorizontalAlignment="Center" />
+                        <TextBlock x:Name="ServoStatusText" Text="{DynamicResource 轴伺服状态未连接}" Margin="0,2,0,0" FontSize="9" Foreground="#52677A" HorizontalAlignment="Center" />
+                    </StackPanel>
                     <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,4,0,0">
                         <Ellipse x:Name="PositiveLimitIndicator" Width="10" Height="10" Fill="#9AA4AD" Margin="0,0,4,0" />
                         <TextBlock Text="LMT+" FontSize="10" VerticalAlignment="Center" ToolTip="{DynamicResource 正限位}" />

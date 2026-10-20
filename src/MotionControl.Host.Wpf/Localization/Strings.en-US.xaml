@@ -82,6 +82,9 @@
     <sys:String x:Key="逻辑轴">Logical axis:</sys:String>
     <sys:String x:Key="伺服使能">Servo On</sys:String>
     <sys:String x:Key="伺服关闭">Servo Off</sys:String>
+    <sys:String x:Key="轴伺服状态未连接">Servo: Disconnected</sys:String>
+    <sys:String x:Key="轴伺服状态已使能">Servo: Enabled</sys:String>
+    <sys:String x:Key="轴伺服状态未使能">Servo: Disabled</sys:String>
     <sys:String x:Key="回零">Home</sys:String>
     <sys:String x:Key="轴报警复位">Reset Axis Alarm</sys:String>
     <sys:String x:Key="受控停止">Controlled Stop</sys:String>

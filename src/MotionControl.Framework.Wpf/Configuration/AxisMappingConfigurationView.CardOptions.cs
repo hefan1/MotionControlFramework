@@ -224,7 +224,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
         }
 
-        /// <summary>使用适配器提供的名称和动作说明刷新回零选项，并核对保存的适配器归属。</summary>
+        /// <summary>只用控制卡原始编号显示回零选项，并核对保存的适配器归属。</summary>
         private void UpdateHomeModeEditor(AxisMappingEntry axis)
         {
             bool wasLoadingConfiguration = _loadingConfiguration;
@@ -246,30 +246,10 @@ namespace MotionControl.Framework.Wpf.Configuration
                             continue;
                         }
 
-                        string modeName = GetResourceText(
-                            homeMode.DisplayNameResourceKey,
-                            null);
-                        string description = GetResourceText(
-                            homeMode.DescriptionResourceKey,
-                            GetResourceText(
-                                "回零模式手册提示",
-                                "Check the selected controller manual and input mapping."));
-                        string modeLabel = string.IsNullOrWhiteSpace(modeName)
-                            ? string.Format(
-                                CultureInfo.CurrentCulture,
-                                GetResourceText("回零模式编号格式", "Mode {0}"),
-                                homeMode.ModeNumber)
-                            : string.Format(
-                                CultureInfo.CurrentCulture,
-                                GetResourceText("回零模式选项格式", "Mode {0}: {1}"),
-                                homeMode.ModeNumber,
-                                modeName);
-
                         HomeModeComboBox.Items.Add(new ComboBoxItem
                         {
                             Tag = homeMode.ModeNumber.ToString(CultureInfo.InvariantCulture),
-                            Content = modeLabel,
-                            ToolTip = description
+                            Content = homeMode.ModeNumber.ToString(CultureInfo.InvariantCulture)
                         });
                     }
                 }
@@ -309,13 +289,9 @@ namespace MotionControl.Framework.Wpf.Configuration
                         && itemMode == axis.HomeMode.Value)
                     {
                         HomeModeComboBox.SelectedItem = item;
-                        string description = item.ToolTip as string;
-                        string applicabilityHint = GetResourceText(
-                            "回零模式适用提示",
-                            "Confirm the controller model, firmware, and input mapping. Homing is not a safety circuit.");
-                        HomeModeHintTextBlock.Text = string.IsNullOrWhiteSpace(description)
-                            ? applicabilityHint
-                            : description + Environment.NewLine + applicabilityHint;
+                        HomeModeHintTextBlock.SetResourceReference(
+                            TextBlock.TextProperty,
+                            "回零模式适用提示");
                         return;
                     }
                 }

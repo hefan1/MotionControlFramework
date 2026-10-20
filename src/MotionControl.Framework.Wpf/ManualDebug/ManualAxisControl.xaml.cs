@@ -143,6 +143,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 HomedStatusText.Text = GetText("状态未连接");
                 OriginStatusText.ToolTip = GetText("控制卡未连接");
                 MotionStateText.Text = GetText("状态未连接");
+                ServoStatusText.Text = GetText("轴伺服状态未连接");
                 ServoToggleButton.Content = GetText("伺服使能");
                 return;
             }
@@ -160,6 +161,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             UpdateIndicator(OriginIndicator, status.OriginInputActive == true, false);
             OriginStatusText.ToolTip = GetText(status.OriginInputActive.HasValue ? "原点输入状态" : "原点输入未配置");
             MotionStateText.Text = GetText(status.Moving ? "运动中" : "已停止");
+            ServoStatusText.Text = GetText(status.ServoEnabled ? "轴伺服状态已使能" : "轴伺服状态未使能");
             ServoToggleButton.Content = GetText(status.ServoEnabled ? "伺服关闭" : "伺服使能");
             AlarmMessageText.Text = status.AlarmActive
                 ? (string.IsNullOrWhiteSpace(status.AlarmMessage) ? GetText("轴报警有效") : status.AlarmMessage)
