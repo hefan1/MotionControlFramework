@@ -206,7 +206,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             }
         }
 
-        /// <summary>从通道 0 起批量读取到最高请求通道，减少 IO 监控页的单点通讯次数。</summary>
+        /// <summary>从通道 0 起批量读取到最高请求通道（结束通道包含在内），减少 IO 监控页的单点通讯次数。</summary>
         private Task<IReadOnlyDictionary<int, bool>> ReadPhysicalIoChannelsAsync(
             IReadOnlyCollection<int> channels,
             bool input,
@@ -233,8 +233,8 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                int lastChannelExclusive = checked(requestedChannels[requestedChannels.Length - 1] + 1);
-                int wordCount = checked((lastChannelExclusive + 31) / 32);
+                int lastChannelInclusive = requestedChannels[requestedChannels.Length - 1];
+                int wordCount = checked((lastChannelInclusive / 32) + 1);
                 var states = new Dictionary<int, bool>(requestedChannels.Length);
 
                 lock (_nativeLock)
@@ -244,10 +244,10 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     {
                         var packedValues = new int[wordCount];
                         CheckResult(
-                            zmcaux.ZAux_Direct_GetInMulti(handle, 0, lastChannelExclusive, packedValues),
+                            zmcaux.ZAux_Direct_GetInMulti(handle, 0, lastChannelInclusive, packedValues),
                             "批量读取物理 DI",
                             "物理 IO",
-                            "DI0-DI" + (lastChannelExclusive - 1).ToString(CultureInfo.InvariantCulture));
+                            "DI0-DI" + lastChannelInclusive.ToString(CultureInfo.InvariantCulture));
 
                         foreach (int channel in requestedChannels)
                         {
@@ -257,7 +257,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     }
                     else
                     {
-                        if (lastChannelExclusive > ushort.MaxValue)
+                        if (lastChannelInclusive > ushort.MaxValue)
                         {
                             throw new ArgumentOutOfRangeException(
                                 nameof(channels),
@@ -269,11 +269,11 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                             zmcaux.ZAux_Direct_GetOutMulti(
                                 handle,
                                 0,
-                                (ushort)lastChannelExclusive,
+                                (ushort)lastChannelInclusive,
                                 packedValues),
                             "批量读取物理 DO",
                             "物理 IO",
-                            "DO0-DO" + (lastChannelExclusive - 1).ToString(CultureInfo.InvariantCulture));
+                            "DO0-DO" + lastChannelInclusive.ToString(CultureInfo.InvariantCulture));
 
                         foreach (int channel in requestedChannels)
                         {

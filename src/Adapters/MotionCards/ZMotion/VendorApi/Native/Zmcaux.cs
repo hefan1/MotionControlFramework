@@ -3194,7 +3194,7 @@ namespace MotionControl.VendorApi.ZMotion.Native
         /// </summary>
         /// <param name="handle">连接句柄</param>
         /// <param name="startio">起始输入口编号</param>
-        /// <param name="endio">结束输入口编号</param>
+        /// <param name="endio">结束输入口编号（包含该通道）</param>
         /// <param name="piValue">输入口状态反馈值</param>
         /// <returns>错误码</returns>
         [DllImport("zauxdll.dll", EntryPoint = "ZAux_Direct_GetInMulti", CharSet = CharSet.Ansi, CallingConvention = CallingConvention.StdCall)]
@@ -3303,7 +3303,7 @@ namespace MotionControl.VendorApi.ZMotion.Native
         /// </summary>
         /// <param name="handle">连接句柄</param>
         /// <param name="iofirst">IO口起始编号</param>
-        /// <param name="ioend">IO口结束编号</param>
+        /// <param name="ioend">IO 口结束编号（包含该通道）</param>
         /// <param name="istate">输出口状态</param>
         /// <returns>错误码</returns>
         [DllImport("zauxdll.dll", EntryPoint = "ZAux_Direct_SetOutMulti", CharSet = CharSet.Ansi, CallingConvention = CallingConvention.StdCall)]
@@ -3314,7 +3314,7 @@ namespace MotionControl.VendorApi.ZMotion.Native
         /// </summary>
         /// <param name="handle">连接句柄</param>
         /// <param name="iofirst">IO口起始编号</param>
-        /// <param name="ioend">IO口结束编号</param>
+        /// <param name="ioend">IO 口结束编号（包含该通道）</param>
         /// <param name="istate">输出口状态</param>
         /// <returns>错误码</returns>
         [DllImport("zauxdll.dll", EntryPoint = "ZAux_Direct_GetOutMulti", CharSet = CharSet.Ansi, CallingConvention = CallingConvention.StdCall)]
