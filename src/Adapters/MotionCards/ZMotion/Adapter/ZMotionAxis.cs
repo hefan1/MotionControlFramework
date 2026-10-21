@@ -118,8 +118,13 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 throw new ArgumentNullException(nameof(profile));
             }
 
-            await _card.StartMoveAsync(this, position, profile, true, cancellationToken).ConfigureAwait(false);
-            await WaitForCompletionAndStopOnFailureAsync(cancellationToken).ConfigureAwait(false);
+            double targetPosition = await _card.StartMoveAsync(
+                this,
+                position,
+                profile,
+                true,
+                cancellationToken).ConfigureAwait(false);
+            await WaitForCompletionAndStopOnFailureAsync(targetPosition, cancellationToken).ConfigureAwait(false);
         }
 
         /// <summary>以工程单位相对当前位置移动，并等待轴停止。</summary>
@@ -134,8 +139,13 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 throw new ArgumentNullException(nameof(profile));
             }
 
-            await _card.StartMoveAsync(this, distance, profile, false, cancellationToken).ConfigureAwait(false);
-            await WaitForCompletionAndStopOnFailureAsync(cancellationToken).ConfigureAwait(false);
+            double targetPosition = await _card.StartMoveAsync(
+                this,
+                distance,
+                profile,
+                false,
+                cancellationToken).ConfigureAwait(false);
+            await WaitForCompletionAndStopOnFailureAsync(targetPosition, cancellationToken).ConfigureAwait(false);
         }
 
         /// <summary>按指定方向和运动曲线启动连续点动。</summary>
@@ -199,12 +209,15 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         }
 
         /// <summary>等待运动完成；取消或超时时先请求受控停止，再保留原异常。</summary>
-        private async Task WaitForCompletionAndStopOnFailureAsync(CancellationToken cancellationToken)
+        private async Task WaitForCompletionAndStopOnFailureAsync(
+            double targetPosition,
+            CancellationToken cancellationToken)
         {
             try
             {
-                await _card.WaitForAxisIdleAsync(
+                await _card.WaitForAxisMoveCompletedAsync(
                     this,
+                    targetPosition,
                     _card.MotionTimeoutMilliseconds,
                     cancellationToken).ConfigureAwait(false);
             }

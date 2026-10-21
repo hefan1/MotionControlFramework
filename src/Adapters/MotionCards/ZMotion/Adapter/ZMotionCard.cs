@@ -89,6 +89,8 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         private const int PollIntervalMilliseconds = 20;
         /// <summary>发送回零命令后等待控制器进入回零状态的最长时间，单位为毫秒。</summary>
         private const int HomingStartTimeoutMilliseconds = 1000;
+        /// <summary>定位指令下发后等待控制器开始运动的最长时间，单位为毫秒。</summary>
+        private const int MoveStartTimeoutMilliseconds = 1000;
         /// <summary>发送停止命令后等待控制器确认轴空闲的最长时间，单位为毫秒。</summary>
         private const int StopConfirmationTimeoutMilliseconds = 5000;
         /// <summary>正运动 DATUM 返回的成功状态编号。</summary>

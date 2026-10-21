@@ -208,7 +208,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
-        /// <summary>读取已映射的 DI 和 DO；单点读取失败时把错误显示在对应点位上。</summary>
+        /// <summary>读取已映射的 DI 和 DO；DI 区分触发状态与读取失败，单点失败不影响其他点位。</summary>
         private async Task RefreshIoStatusAsync()
         {
             ManualOperationBlockReason blockReason;
@@ -240,7 +240,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 {
                     bool active = await _logicalIo.ReadInputAsync(inputName, CancellationToken.None).ConfigureAwait(true);
                     TextBlock stateText = _inputStatusTextByName[inputName];
-                    stateText.Text = GetText(active ? "有效" : "无效");
+                    stateText.Text = GetText(active ? "IO有效" : "IO无效");
                     stateText.Foreground = active ? Brushes.ForestGreen : Brushes.Gray;
                 }
                 catch (Exception error)

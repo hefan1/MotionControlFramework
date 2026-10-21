@@ -164,8 +164,8 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             }, cancellationToken);
         }
 
-        /// <summary>检查运动参数和软限位，然后下发绝对或相对定位命令。</summary>
-        internal Task StartMoveAsync(
+        /// <summary>检查运动参数和软限位，下发定位命令并返回控制器目标位置。</summary>
+        internal Task<double> StartMoveAsync(
             ZMotionAxis axis,
             double positionOrDistance,
             AxisMotionProfile profile,
@@ -205,6 +205,66 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                         ? zmcaux.ZAux_Direct_Single_MoveAbs(handle, axis.AxisNumber, (float)positionOrDistance)
                         : zmcaux.ZAux_Direct_Single_Move(handle, axis.AxisNumber, (float)positionOrDistance);
                     CheckResult(result, absolute ? "绝对运动" : "相对运动", axis.Name);
+                    return targetPosition;
+                }
+            }, cancellationToken);
+        }
+
+        /// <summary>等待定位轴停稳且指令位置到达目标，防止控制卡尚未启动时被误判完成。</summary>
+        internal Task WaitForAxisMoveCompletedAsync(
+            ZMotionAxis axis,
+            double targetPosition,
+            int timeoutMilliseconds,
+            CancellationToken cancellationToken)
+        {
+            return Task.Run(async () =>
+            {
+                var startedAt = DateTime.UtcNow;
+                bool observedMotion = false;
+                double positionTolerance = 0.5 / axis.Configuration.UnitsPerEngineeringUnit + 0.000001;
+
+                while (true)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    AxisStatus status = await ReadAxisStatusAsync(axis, cancellationToken).ConfigureAwait(false);
+                    if (status.Moving)
+                    {
+                        observedMotion = true;
+                    }
+
+                    double commandPosition = status.CommandPosition ?? status.Position;
+                    bool targetReached = Math.Abs(commandPosition - (double)(float)targetPosition)
+                        <= positionTolerance;
+
+                    if (!status.Moving && targetReached)
+                    {
+                        return;
+                    }
+
+                    double elapsedMilliseconds = (DateTime.UtcNow - startedAt).TotalMilliseconds;
+                    if (observedMotion && !status.Moving)
+                    {
+                        throw new InvalidOperationException(
+                            "正运动逻辑轴 '" + axis.Name + "' 已停止，但指令位置 "
+                            + commandPosition + " 未到达目标位置 " + targetPosition + "。");
+                    }
+
+                    if (!observedMotion && elapsedMilliseconds >= MoveStartTimeoutMilliseconds)
+                    {
+                        throw new TimeoutException(
+                            "正运动逻辑轴 '" + axis.Name + "' 定位命令下发后未观察到轴启动或到达目标位置。目标位置："
+                            + targetPosition + "，当前指令位置：" + commandPosition + "。");
+                    }
+
+                    if (elapsedMilliseconds >= timeoutMilliseconds)
+                    {
+                        throw new TimeoutException(
+                            "正运动控制卡 '" + ControllerId + "' 逻辑轴 '" + axis.Name
+                            + "' 等待定位完成超时，目标位置：" + targetPosition
+                            + "，超时毫秒数：" + timeoutMilliseconds + "。");
+                    }
+
+                    await Task.Delay(PollIntervalMilliseconds, cancellationToken).ConfigureAwait(false);
                 }
             }, cancellationToken);
         }
