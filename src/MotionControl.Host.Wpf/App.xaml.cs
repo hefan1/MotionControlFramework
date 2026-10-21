@@ -64,6 +64,9 @@ namespace MotionControl.Host.Wpf
         /// <summary>当前设备已映射 DI/DO 对应的 IO 手动页面。</summary>
         private ManualIoDebugView _manualIoDebugPage;
 
+        /// <summary>当前控制卡 DI/DO 物理通道对应的 IO 监控页面。</summary>
+        private IoMonitorView _ioMonitorPage;
+
         /// <summary>当前 Host 主窗口，用于显示控制卡的统一连接状态。</summary>
         private MainWindow _mainWindow;
 
@@ -111,6 +114,7 @@ namespace MotionControl.Host.Wpf
             _mainWindow.SetAxisMappingConfigurationPage(_axisMappingPage);
             _mainWindow.SetIoMappingConfigurationPage(_ioMappingPage);
             _mainWindow.SetSafetyInterlockConfigurationPage(_safetyInterlockPage);
+            RefreshIoMonitorPage();
 
             MainWindow = _mainWindow;
             _mainWindow.Show();
@@ -207,6 +211,11 @@ namespace MotionControl.Host.Wpf
             {
                 _safetyInterlockPage.RefreshLocalizedText();
             }
+
+            if (_ioMonitorPage != null)
+            {
+                _ioMonitorPage.RefreshLocalizedText();
+            }
         }
 
         /// <summary>连接状态变化后同步整机运行时、连接状态和映射对应的手动调试页。</summary>
@@ -232,6 +241,7 @@ namespace MotionControl.Host.Wpf
                 _mainWindow.SetMachineRuntime(null);
                 _mainWindow.SetManualMotionDebugPage(null);
                 _mainWindow.SetManualIoDebugPage(null);
+                RefreshIoMonitorPage();
                 return;
             }
 
@@ -271,6 +281,7 @@ namespace MotionControl.Host.Wpf
                 _mainWindow.SetMachineRuntime(null);
                 _mainWindow.SetManualMotionDebugPage(null);
                 _mainWindow.SetManualIoDebugPage(null);
+                RefreshIoMonitorPage();
                 MessageBox.Show(
                     "控制卡已连接，但创建轴手动页面失败：" + error.Message,
                     "轴手动页面",
@@ -279,7 +290,7 @@ namespace MotionControl.Host.Wpf
             }
         }
 
-        /// <summary>使用当前运行时和逻辑映射重建手动轴、IO 页面，不创建或连接新的 Runtime。</summary>
+        /// <summary>使用当前运行时和映射重建轴手动、IO 手动及 IO 监控页，不创建或连接新的 Runtime。</summary>
         private void RefreshManualDebugPages(
             MachineRuntime machineRuntime,
             MotionCardGroup motionCards,
@@ -304,9 +315,30 @@ namespace MotionControl.Host.Wpf
             _manualIoDebugPage = ioManualPage;
             _mainWindow.SetManualMotionDebugPage(manualPage);
             _mainWindow.SetManualIoDebugPage(ioManualPage);
+            RefreshIoMonitorPage();
         }
 
-        /// <summary>IO 映射热更新后刷新安全 DI 选项和手动页，保留现有控制卡与 Runtime。</summary>
+        /// <summary>按当前连接对象和 IO 映射刷新监控页，不连接控制卡或发送 IO 命令。</summary>
+        private void RefreshIoMonitorPage()
+        {
+            if (_mainWindow == null || _cardConnection == null)
+            {
+                return;
+            }
+
+            IMotionCard connectedCard = _cardConnection.ConnectedMotionCard;
+            bool isCardConnected = _cardConnection.IsConnected && connectedCard != null;
+            _ioMonitorPage = new IoMonitorView(
+                isCardConnected,
+                _machineRuntime,
+                isCardConnected ? _cardConnection as IMotionCardIoCapabilityProvider : null,
+                isCardConnected ? connectedCard as IPhysicalDigitalIoMonitor : null,
+                _cardConnection.DigitalInputs,
+                _cardConnection.DigitalOutputs);
+            _mainWindow.SetIoMonitorPage(_ioMonitorPage);
+        }
+
+        /// <summary>IO 映射热更新后刷新安全 DI 选项、手动页和 IO 监控页，保留现有控制卡与 Runtime。</summary>
         private void IoMappingPage_IoMappingApplied(object sender, EventArgs e)
         {
             if (_safetyInterlockPage != null)
@@ -349,7 +381,7 @@ namespace MotionControl.Host.Wpf
             }
         }
 
-        /// <summary>轴映射在线应用后更新手动页显示，并保留当前控制卡和运行时对象。</summary>
+        /// <summary>轴映射在线应用后更新调试页显示，并保留当前控制卡和运行时对象。</summary>
         private void AxisMappingPage_AxisMappingApplied(object sender, EventArgs e)
         {
             if (_mainWindow == null || !_cardConnection.IsConnected || _machineRuntime == null)

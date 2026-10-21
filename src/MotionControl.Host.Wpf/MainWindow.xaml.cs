@@ -53,6 +53,9 @@ namespace MotionControl.Host.Wpf
         /// <summary>由组合根注入的通用 IO 手动调试页面。</summary>
         private UserControl _manualIoDebugPage;
 
+        /// <summary>由组合根注入显示全部物理 DI/DO 状态的 IO 监控页面。</summary>
+        private UserControl _ioMonitorPage;
+
         /// <summary>由 Host 组合根注入的通用轴映射配置页面。</summary>
         private UserControl _axisMappingConfigurationPage;
 
@@ -214,6 +217,13 @@ namespace MotionControl.Host.Wpf
             UpdatePageContent();
         }
 
+        /// <summary>由 Host 组合根注入当前控制卡对应的物理 IO 监控页面。</summary>
+        public void SetIoMonitorPage(UserControl ioMonitorPage)
+        {
+            _ioMonitorPage = ioMonitorPage;
+            UpdatePageContent();
+        }
+
         /// <summary>由 Host 组合根注入按设备配置存储创建的轴映射页面。</summary>
         public void SetAxisMappingConfigurationPage(UserControl axisMappingConfigurationPage)
         {
@@ -292,6 +302,19 @@ namespace MotionControl.Host.Wpf
                 ManualDebugContent.Visibility = Visibility.Visible;
                 PagePlaceholder.Visibility = Visibility.Collapsed;
                 PageDescription.SetResourceReference(TextBlock.TextProperty, "IO映射页面说明");
+                return;
+            }
+
+            var isIoMonitorPage = _ioMonitorPage != null
+                && string.Equals(_currentSectionKey, "Monitor", StringComparison.Ordinal)
+                && string.Equals(_currentPageResourceKey, "IO监控", StringComparison.Ordinal);
+
+            if (isIoMonitorPage)
+            {
+                ManualDebugContent.Content = _ioMonitorPage;
+                ManualDebugContent.Visibility = Visibility.Visible;
+                PagePlaceholder.Visibility = Visibility.Collapsed;
+                PageDescription.SetResourceReference(TextBlock.TextProperty, "IO监控页面说明");
                 return;
             }
 

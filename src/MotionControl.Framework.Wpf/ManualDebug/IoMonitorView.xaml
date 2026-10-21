@@ -1,0 +1,178 @@
+<UserControl x:Class="MotionControl.Framework.Wpf.ManualDebug.IoMonitorView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#F5F6F7">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   Text="{DynamicResource IO监控页面说明}"
+                   FontSize="13"
+                   Foreground="#555B60"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,10" />
+
+        <DockPanel Grid.Row="1" Margin="0,0,0,8">
+            <Button DockPanel.Dock="Right"
+                    Content="{DynamicResource 刷新状态}"
+                    Padding="14,5"
+                    Click="RefreshButton_Click" />
+            <TextBlock x:Name="MonitorStatusText"
+                       VerticalAlignment="Center"
+                       Foreground="#315F8C"
+                       TextWrapping="Wrap" />
+        </DockPanel>
+
+        <TabControl x:Name="MonitorTabs"
+                    Grid.Row="2"
+                    SelectionChanged="MonitorTabs_SelectionChanged">
+            <TabItem x:Name="DigitalInputTab" Header="{DynamicResource 数字输入}">
+                <Grid>
+                <ListView x:Name="DigitalInputList"
+                          Background="White"
+                          BorderThickness="0"
+                          ScrollViewer.CanContentScroll="True"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling">
+                    <ListView.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <VirtualizingStackPanel />
+                        </ItemsPanelTemplate>
+                    </ListView.ItemsPanel>
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="Height" Value="32" />
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="0" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="BorderThickness" Value="0,0,0,1" />
+                            <Setter Property="BorderBrush" Value="#E5E9ED" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Height="30" Background="#F8FAFB">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="34" />
+                                    <ColumnDefinition Width="92" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="100" />
+                                </Grid.ColumnDefinitions>
+                                <Ellipse Grid.Column="0"
+                                         Width="14"
+                                         Height="14"
+                                         Fill="{Binding IndicatorBrush}"
+                                         HorizontalAlignment="Center"
+                                         VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding Address}"
+                                           Foreground="#54616A"
+                                           VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding DisplayName}"
+                                           Foreground="#20282E"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Column="3"
+                                           Text="{Binding StateText}"
+                                           Foreground="#647078"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+                <TextBlock x:Name="NoDigitalInputsText"
+                           Text="{DynamicResource IO监控没有可读通道}"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Foreground="#7A858D"
+                           Visibility="Collapsed" />
+                </Grid>
+            </TabItem>
+            <TabItem x:Name="DigitalOutputTab" Header="{DynamicResource 数字输出}">
+                <Grid>
+                <ListView x:Name="DigitalOutputList"
+                          Background="White"
+                          BorderThickness="0"
+                          ScrollViewer.CanContentScroll="True"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling">
+                    <ListView.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <VirtualizingStackPanel />
+                        </ItemsPanelTemplate>
+                    </ListView.ItemsPanel>
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="Height" Value="32" />
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="0" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="BorderThickness" Value="0,0,0,1" />
+                            <Setter Property="BorderBrush" Value="#E5E9ED" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Height="30" Background="#F8FAFB">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="34" />
+                                    <ColumnDefinition Width="92" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="100" />
+                                </Grid.ColumnDefinitions>
+                                <Button Grid.Column="0"
+                                        Tag="{Binding}"
+                                        IsEnabled="{Binding CanToggleOutput}"
+                                        Click="OutputIndicator_Click"
+                                        Padding="0"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        ToolTip="{DynamicResource DO状态灯操作提示}">
+                                    <Ellipse Width="14"
+                                             Height="14"
+                                             Fill="{Binding IndicatorBrush}"
+                                             HorizontalAlignment="Center"
+                                             VerticalAlignment="Center" />
+                                </Button>
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding Address}"
+                                           Foreground="#54616A"
+                                           VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding DisplayName}"
+                                           Foreground="#20282E"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Column="3"
+                                           Text="{Binding StateText}"
+                                           Foreground="#647078"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+                <TextBlock x:Name="NoDigitalOutputsText"
+                           Text="{DynamicResource IO监控没有可读通道}"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Foreground="#7A858D"
+                           Visibility="Collapsed" />
+                </Grid>
+            </TabItem>
+        </TabControl>
+
+        <TextBlock x:Name="OperationMessageText"
+                   Grid.Row="3"
+                   Margin="0,8,0,0"
+                   Foreground="#9B322C"
+                   TextWrapping="Wrap" />
+    </Grid>
+</UserControl>

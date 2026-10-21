@@ -6,6 +6,8 @@
 
 `ManualDebug/ManualIoDebugView` 单独处理逻辑 DI/DO 状态和手动输出。Host 将它注入“IO 手动”导航，避免在轴手动卡片下方重复放置 IO 面板。
 
+`ManualDebug/IoMonitorView` 用 DI、DO 两个标签页按物理通道显示状态灯和 IO 映射名称；未映射通道也会显示为“未命名”，方便现场人员逐点查线。列表按可见行轮询，支持大量通道的虚拟化显示。点击 DO 灯会将当前逻辑状态（已映射）或物理高低电平（未映射）切换到相反状态，并读回控制卡状态确认结果。通用页面通过可选的 `IPhysicalDigitalIoMonitor` 访问物理通道，厂商适配器负责实现原始读写、通道编号和电平语义；尚未实现该能力的适配器会明确显示不支持。
+
 `Configuration/AxisMappingConfigurationView` 提供控制卡选择、轴通道数量和物理轴映射配置。厂商、卡类型、适配器和通道数量选项由 Host 注入的连接实现提供；通用页面不维护厂商清单。控制卡选项保存到 `HardwareConfig/MotionCards.json`，设备轴名称和轴参数保存到 `HardwareConfig/AxisParameters.json`；两个文件按 MachineId 独立保存并由 Runtime 配置存储备份。
 
 `Configuration/IoMappingConfigurationView` 编辑 `HardwareConfig/IoMapping.json` 中的逻辑 DI/DO 名称、控制卡标识、物理通道、有效电平和急停输入名称。此页面与轴映射页共用控制卡连接状态；断开时锁定编辑，检查和保存只修改配置文件，不会直接切换物理输出。

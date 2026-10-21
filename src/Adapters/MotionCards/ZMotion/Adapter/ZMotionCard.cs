@@ -16,7 +16,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
     /// 正运动 ZDevelop 本机仿真器适配器。当前只接受 127.0.0.1 上的 VPLC5xx-Simu，
     /// 不连接实体控制卡。
     /// </summary>
-    public sealed partial class ZMotionCard : IMotionCard, ILogicalIo, IMotionCardIoCapabilityProvider
+    public sealed partial class ZMotionCard : IMotionCard, ILogicalIo, IMotionCardIoCapabilityProvider, IPhysicalDigitalIoMonitor
     {
         /// <summary>读取正运动控制器的单个浮点轴参数。</summary>
         private delegate int AxisFloatParameterReader(IntPtr handle, int axisNumber, ref float value);

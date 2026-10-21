@@ -127,6 +127,27 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             return Task.Run(() => WriteIoBit(outputName, value), cancellationToken);
         }
 
+        /// <summary>读取指定物理 DI 通道的原始电平，不依赖逻辑名称映射。</summary>
+        public Task<bool> ReadDigitalInputChannelAsync(int channel, CancellationToken cancellationToken)
+        {
+            return Task.Run(() => ReadPhysicalIoBit(channel, true), cancellationToken);
+        }
+
+        /// <summary>读取指定物理 DO 通道的原始电平，不依赖逻辑名称映射。</summary>
+        public Task<bool> ReadDigitalOutputChannelAsync(int channel, CancellationToken cancellationToken)
+        {
+            return Task.Run(() => ReadPhysicalIoBit(channel, false), cancellationToken);
+        }
+
+        /// <summary>按物理高低电平写入 DO；通道编号由控制卡能力扫描结果限定。</summary>
+        public Task WriteDigitalOutputChannelAsync(
+            int channel,
+            bool physicalHigh,
+            CancellationToken cancellationToken)
+        {
+            return Task.Run(() => WritePhysicalOutputBit(channel, physicalHigh), cancellationToken);
+        }
+
         /// <summary>在原生锁内读取当前逻辑名称对应的物理 DI 或 DO。</summary>
         private bool ReadIoBit(string pointName, bool input)
         {
@@ -143,6 +164,48 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
 
                 var physicalHigh = physicalValue != 0;
                 return physicalHigh == point.ActiveHigh;
+            }
+        }
+
+        /// <summary>在原生锁内读取未映射或已映射的物理 DI/DO 通道电平。</summary>
+        private bool ReadPhysicalIoBit(int channel, bool input)
+        {
+            if (channel < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(channel), "物理 IO 通道号不能小于零。");
+            }
+
+            lock (_nativeLock)
+            {
+                IntPtr handle = GetConnectedHandle();
+                uint physicalValue = 0;
+                int result = input
+                    ? zmcaux.ZAux_Direct_GetIn(handle, channel, ref physicalValue)
+                    : zmcaux.ZAux_Direct_GetOp(handle, channel, ref physicalValue);
+                string channelName = (input ? "DI" : "DO")
+                    + channel.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                CheckResult(result, input ? "读取物理 DI" : "读取物理 DO", "物理 IO", channelName);
+                return physicalValue != 0;
+            }
+        }
+
+        /// <summary>在原生锁内写入指定物理 DO 通道的高低电平。</summary>
+        private void WritePhysicalOutputBit(int channel, bool physicalHigh)
+        {
+            if (channel < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(channel), "物理 IO 通道号不能小于零。");
+            }
+
+            lock (_nativeLock)
+            {
+                IntPtr handle = GetConnectedHandle();
+                string channelName = "DO" + channel.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                CheckResult(
+                    zmcaux.ZAux_Direct_SetOp(handle, channel, physicalHigh ? 1u : 0u),
+                    "写入物理 DO",
+                    "物理 IO",
+                    channelName);
             }
         }
 
