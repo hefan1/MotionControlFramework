@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Threading;
 using MotionControl.Framework.Contracts.Configuration;
 using MotionControl.Framework.Contracts.IO;
@@ -162,6 +163,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         private async void RefreshButton_Click(object sender, RoutedEventArgs e)
         {
             OperationMessageText.Text = string.Empty;
+            OperationMessageText.Foreground = new SolidColorBrush(Color.FromRgb(89, 107, 125));
             if (!_channelsInitialized)
             {
                 await LoadChannelRangesAsync().ConfigureAwait(true);
@@ -524,6 +526,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 }
 
                 SetChannelReadSuccess(channel, actualPhysicalHigh);
+                OperationMessageText.Foreground = new SolidColorBrush(Color.FromRgb(39, 118, 77));
                 OperationMessageText.Text = string.Format(
                     GetText("IO监控DO切换成功"),
                     channel.Address,
@@ -540,6 +543,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                     channel.SetReadFailure(error.Message, GetText("IO读取失败"));
                 }
 
+                OperationMessageText.Foreground = new SolidColorBrush(Color.FromRgb(163, 59, 53));
                 OperationMessageText.Text = string.Format(
                     GetText("操作失败"),
                     channel.Address,
