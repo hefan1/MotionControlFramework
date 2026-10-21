@@ -4,6 +4,8 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
+                <!-- 跨页面统一控件样式，确保滚动条与框架蓝灰色界面一致。 -->
+                <ResourceDictionary Source="/MotionControl.Framework.Wpf;component/Styles/ScrollBarStyles.xaml" />
                 <!-- 界面文字集中在 Localization 目录，默认使用简体中文。 -->
                 <ResourceDictionary Source="Localization/Strings.zh-CN.xaml" />
             </ResourceDictionary.MergedDictionaries>
