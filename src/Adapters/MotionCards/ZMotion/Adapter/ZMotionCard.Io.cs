@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -139,6 +140,22 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             return Task.Run(() => ReadPhysicalIoBit(channel, false), cancellationToken);
         }
 
+        /// <summary>通过正运动多路输入 API 批量读取物理 DI，按通道号还原各路电平。</summary>
+        public Task<IReadOnlyDictionary<int, bool>> ReadDigitalInputChannelsAsync(
+            IReadOnlyCollection<int> channels,
+            CancellationToken cancellationToken)
+        {
+            return ReadPhysicalIoChannelsAsync(channels, true, cancellationToken);
+        }
+
+        /// <summary>通过正运动多路输出 API 批量读取物理 DO，按通道号还原各路电平。</summary>
+        public Task<IReadOnlyDictionary<int, bool>> ReadDigitalOutputChannelsAsync(
+            IReadOnlyCollection<int> channels,
+            CancellationToken cancellationToken)
+        {
+            return ReadPhysicalIoChannelsAsync(channels, false, cancellationToken);
+        }
+
         /// <summary>按物理高低电平写入 DO；通道编号由控制卡能力扫描结果限定。</summary>
         public Task WriteDigitalOutputChannelAsync(
             int channel,
@@ -187,6 +204,88 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 CheckResult(result, input ? "读取物理 DI" : "读取物理 DO", "物理 IO", channelName);
                 return physicalValue != 0;
             }
+        }
+
+        /// <summary>从通道 0 起批量读取到最高请求通道，减少 IO 监控页的单点通讯次数。</summary>
+        private Task<IReadOnlyDictionary<int, bool>> ReadPhysicalIoChannelsAsync(
+            IReadOnlyCollection<int> channels,
+            bool input,
+            CancellationToken cancellationToken)
+        {
+            if (channels == null)
+            {
+                throw new ArgumentNullException(nameof(channels));
+            }
+
+            int[] requestedChannels = channels.Distinct().OrderBy(channel => channel).ToArray();
+            if (requestedChannels.Any(channel => channel < 0))
+            {
+                throw new ArgumentOutOfRangeException(nameof(channels), "物理 IO 通道号不能小于零。");
+            }
+
+            if (requestedChannels.Length == 0)
+            {
+                return Task.FromResult<IReadOnlyDictionary<int, bool>>(
+                    new Dictionary<int, bool>());
+            }
+
+            return Task.Run<IReadOnlyDictionary<int, bool>>(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                int lastChannelExclusive = checked(requestedChannels[requestedChannels.Length - 1] + 1);
+                int wordCount = checked((lastChannelExclusive + 31) / 32);
+                var states = new Dictionary<int, bool>(requestedChannels.Length);
+
+                lock (_nativeLock)
+                {
+                    IntPtr handle = GetConnectedHandle();
+                    if (input)
+                    {
+                        var packedValues = new int[wordCount];
+                        CheckResult(
+                            zmcaux.ZAux_Direct_GetInMulti(handle, 0, lastChannelExclusive, packedValues),
+                            "批量读取物理 DI",
+                            "物理 IO",
+                            "DI0-DI" + (lastChannelExclusive - 1).ToString(CultureInfo.InvariantCulture));
+
+                        foreach (int channel in requestedChannels)
+                        {
+                            uint packedWord = unchecked((uint)packedValues[channel / 32]);
+                            states.Add(channel, (packedWord & (1u << (channel % 32))) != 0);
+                        }
+                    }
+                    else
+                    {
+                        if (lastChannelExclusive > ushort.MaxValue)
+                        {
+                            throw new ArgumentOutOfRangeException(
+                                nameof(channels),
+                                "正运动多路 DO 读取接口的结束通道超出 UInt16 范围。");
+                        }
+
+                        var packedValues = new uint[wordCount];
+                        CheckResult(
+                            zmcaux.ZAux_Direct_GetOutMulti(
+                                handle,
+                                0,
+                                (ushort)lastChannelExclusive,
+                                packedValues),
+                            "批量读取物理 DO",
+                            "物理 IO",
+                            "DO0-DO" + (lastChannelExclusive - 1).ToString(CultureInfo.InvariantCulture));
+
+                        foreach (int channel in requestedChannels)
+                        {
+                            states.Add(
+                                channel,
+                                (packedValues[channel / 32] & (1u << (channel % 32))) != 0);
+                        }
+                    }
+                }
+
+                return (IReadOnlyDictionary<int, bool>)states;
+            }, cancellationToken);
         }
 
         /// <summary>在原生锁内写入指定物理 DO 通道的高低电平。</summary>

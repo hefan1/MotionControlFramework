@@ -344,21 +344,47 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 bool isInput = MonitorTabs.SelectedIndex == 0;
                 ListBox channelList = isInput ? DigitalInputList : DigitalOutputList;
                 List<IoMonitorChannel> visibleChannels = GetVisibleChannels(channelList);
-                foreach (IoMonitorChannel channel in visibleChannels)
+                if (visibleChannels.Count == 0)
+                {
+                    UpdateMonitorStatusText();
+                    return;
+                }
+
+                var batchMonitor = _physicalIoMonitor as IPhysicalDigitalIoBatchMonitor;
+                if (batchMonitor != null)
                 {
                     try
                     {
-                        bool physicalHigh = isInput
-                            ? await _physicalIoMonitor.ReadDigitalInputChannelAsync(channel.Channel, CancellationToken.None)
+                        int[] channels = visibleChannels.Select(channel => channel.Channel).ToArray();
+                        IReadOnlyDictionary<int, bool> physicalStates = isInput
+                            ? await batchMonitor.ReadDigitalInputChannelsAsync(channels, CancellationToken.None)
                                 .ConfigureAwait(true)
-                            : await _physicalIoMonitor.ReadDigitalOutputChannelAsync(channel.Channel, CancellationToken.None)
+                            : await batchMonitor.ReadDigitalOutputChannelsAsync(channels, CancellationToken.None)
                                 .ConfigureAwait(true);
-                        SetChannelReadSuccess(channel, physicalHigh);
+
+                        foreach (IoMonitorChannel channel in visibleChannels)
+                        {
+                            bool physicalHigh;
+                            if (physicalStates.TryGetValue(channel.Channel, out physicalHigh))
+                            {
+                                SetChannelReadSuccess(channel, physicalHigh);
+                            }
+                            else
+                            {
+                                channel.SetReadFailure("批量读取结果缺少该通道。", GetText("IO读取失败"));
+                            }
+                        }
                     }
-                    catch (Exception error)
+                    catch (Exception)
                     {
-                        channel.SetReadFailure(error.Message, GetText("IO读取失败"));
+                        await ReadVisibleChannelsIndividuallyAsync(visibleChannels, isInput)
+                            .ConfigureAwait(true);
                     }
+                }
+                else
+                {
+                    await ReadVisibleChannelsIndividuallyAsync(visibleChannels, isInput)
+                        .ConfigureAwait(true);
                 }
 
                 UpdateMonitorStatusText();
@@ -369,16 +395,55 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
-        /// <summary>只返回当前 ListBox 已创建并显示的列内通道，不读取屏外的通道。</summary>
+        /// <summary>逐路读取当前可见通道；批量接口不支持或读取失败时仍保留单路监控。</summary>
+        private async Task ReadVisibleChannelsIndividuallyAsync(
+            IReadOnlyList<IoMonitorChannel> visibleChannels,
+            bool isInput)
+        {
+            foreach (IoMonitorChannel channel in visibleChannels)
+            {
+                try
+                {
+                    bool physicalHigh = isInput
+                        ? await _physicalIoMonitor.ReadDigitalInputChannelAsync(channel.Channel, CancellationToken.None)
+                            .ConfigureAwait(true)
+                        : await _physicalIoMonitor.ReadDigitalOutputChannelAsync(channel.Channel, CancellationToken.None)
+                            .ConfigureAwait(true);
+                    SetChannelReadSuccess(channel, physicalHigh);
+                }
+                catch (Exception error)
+                {
+                    channel.SetReadFailure(error.Message, GetText("IO读取失败"));
+                }
+            }
+        }
+
+        /// <summary>返回当前滚动视口内全部可见列的通道，包含视口边缘的部分列。</summary>
         private static List<IoMonitorChannel> GetVisibleChannels(ListBox channelList)
         {
             var visibleChannels = new List<IoMonitorChannel>();
+            ScrollViewer scrollViewer = FindVisualChild<ScrollViewer>(channelList);
+            Rect viewportBounds = scrollViewer == null
+                ? new Rect(new Point(0, 0), channelList.RenderSize)
+                : new Rect(new Point(0, 0), new Size(scrollViewer.ViewportWidth, scrollViewer.ViewportHeight));
+
             for (int index = 0; index < channelList.Items.Count; index++)
             {
                 var container = channelList.ItemContainerGenerator.ContainerFromIndex(index) as ListBoxItem;
                 if (container == null || !container.IsVisible)
                 {
                     continue;
+                }
+
+                if (scrollViewer != null)
+                {
+                    Rect containerBounds = container
+                        .TransformToAncestor(scrollViewer)
+                        .TransformBounds(new Rect(new Point(0, 0), container.RenderSize));
+                    if (!viewportBounds.IntersectsWith(containerBounds))
+                    {
+                        continue;
+                    }
                 }
 
                 var columnChannels = container.DataContext as ObservableCollection<IoMonitorChannel>;
@@ -389,6 +454,34 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
 
             return visibleChannels;
+        }
+
+        /// <summary>在通道列表的可视树中查找滚动视口，用于判断列是否真的显示在窗口内。</summary>
+        private static T FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+        {
+            if (parent == null)
+            {
+                return null;
+            }
+
+            int childCount = VisualTreeHelper.GetChildrenCount(parent);
+            for (int index = 0; index < childCount; index++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(parent, index);
+                T target = child as T;
+                if (target != null)
+                {
+                    return target;
+                }
+
+                T descendant = FindVisualChild<T>(child);
+                if (descendant != null)
+                {
+                    return descendant;
+                }
+            }
+
+            return null;
         }
 
         /// <summary>按页面可用高度计算每列行数，并预留水平滚动条和列边框空间。</summary>
