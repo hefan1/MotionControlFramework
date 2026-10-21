@@ -108,21 +108,21 @@
                 <StackPanel Grid.Column="2"
                             Orientation="Horizontal"
                             VerticalAlignment="Center">
-                    <Button Tag="外壳预览启动命令未接入设备控制逻辑" Content="{DynamicResource 启动}"
+                    <Button x:Name="MachineStartButton" Content="{DynamicResource 启动}"
                             Background="#B8E6A5"
                             Style="{StaticResource MachineCommandButton}"
-                            Click="MachineCommandButton_Click"
-                            ToolTip="{DynamicResource 外壳预览启动命令提示}" />
-                    <Button Tag="外壳预览暂停命令未接入设备控制逻辑" Content="{DynamicResource 暂停}"
+                            Click="MachineStartButton_Click"
+                            ToolTip="{DynamicResource 自动启动提示}" />
+                    <Button x:Name="MachinePauseButton" Content="{DynamicResource 暂停}"
                             Background="#8BC4F2"
                             Style="{StaticResource MachineCommandButton}"
-                            Click="MachineCommandButton_Click"
-                            ToolTip="{DynamicResource 外壳预览暂停命令提示}" />
-                    <Button Tag="外壳预览停止命令未接入设备控制逻辑" Content="{DynamicResource 停止}"
+                            Click="MachinePauseButton_Click"
+                            ToolTip="{DynamicResource 自动暂停提示}" />
+                    <Button x:Name="MachineStopButton" Content="{DynamicResource 停止}"
                             Background="#E99691"
                             Style="{StaticResource MachineCommandButton}"
-                            Click="MachineCommandButton_Click"
-                            ToolTip="{DynamicResource 外壳预览停止命令提示}" />
+                            Click="MachineStopButton_Click"
+                            ToolTip="{DynamicResource 自动停止提示}" />
                     <Button x:Name="MachineResetButton"
                             Content="{DynamicResource 整机复位}"
                             Background="#F4D78B"

@@ -60,6 +60,17 @@
     <sys:String x:Key="启动">▶ 启动</sys:String>
     <sys:String x:Key="暂停">Ⅱ 暂停</sys:String>
     <sys:String x:Key="停止">■ 停止</sys:String>
+    <sys:String x:Key="自动启动提示">复位就绪后启动已配置的自动工位。</sys:String>
+    <sys:String x:Key="自动暂停提示">受控停止当前动作，并保留工位步骤。</sys:String>
+    <sys:String x:Key="自动停止提示">当前示例流程按受控暂停处理停止，复位后从保留步骤继续。</sys:String>
+    <sys:String x:Key="自动流程命令失败标题">自动流程命令失败</sys:String>
+    <sys:String x:Key="工位流程状态说明">自动工位与手动页面共用当前控制卡、逻辑轴和 IO 映射；运行时手动操作会被阻止。</sys:String>
+    <sys:String x:Key="工位当前步骤">工位当前步骤</sys:String>
+    <sys:String x:Key="整机当前状态">整机状态：</sys:String>
+    <sys:String x:Key="未配置自动工位">未启用自动工位；可继续使用轴手动和 IO 手动页面。</sys:String>
+    <sys:String x:Key="无当前报警">当前无报警。</sys:String>
+    <sys:String x:Key="报警待复位">（待复位）</sys:String>
+    <sys:String x:Key="最近故障">最近故障：</sys:String>
     <sys:String x:Key="外壳预览启动命令未接入设备控制逻辑">外壳预览 · 启动命令尚未接入设备控制逻辑</sys:String>
     <sys:String x:Key="外壳预览暂停命令未接入设备控制逻辑">外壳预览 · 暂停命令尚未接入设备控制逻辑</sys:String>
     <sys:String x:Key="外壳预览停止命令未接入设备控制逻辑">外壳预览 · 停止命令尚未接入设备控制逻辑</sys:String>

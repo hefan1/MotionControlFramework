@@ -7,6 +7,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using MotionControl.Adapter.MotionCard.ZMotion;
+using MotionControl.Equipment.Demo;
+using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.IO;
 using MotionControl.Framework.Contracts.Motion;
@@ -52,7 +54,7 @@ namespace MotionControl.Host.Wpf
         /// <summary>当前设备配置读写服务，也为示教位置提供持久化。</summary>
         private MachineConfigurationStore _configurationStore;
 
-        /// <summary>由当前连接卡创建的设备运行时，仅用于手动调试页的状态和操作保护。</summary>
+        /// <summary>由当前连接卡创建的设备运行时，供自动示例流程与手动调试页共同使用。</summary>
         private MachineRuntime _machineRuntime;
 
         /// <summary>运行时正在使用的软件急停 DI 状态读取器。</summary>
@@ -66,6 +68,9 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>当前控制卡 DI/DO 物理通道对应的 IO 监控页面。</summary>
         private IoMonitorView _ioMonitorPage;
+
+        /// <summary>与轴手动、IO 手动共用当前 Runtime 的工位状态页面。</summary>
+        private FlowStatusView _flowStatusPage;
 
         /// <summary>当前 Host 主窗口，用于显示控制卡的统一连接状态。</summary>
         private MainWindow _mainWindow;
@@ -216,6 +221,11 @@ namespace MotionControl.Host.Wpf
             {
                 _ioMonitorPage.RefreshLocalizedText();
             }
+
+            if (_flowStatusPage != null)
+            {
+                _flowStatusPage.RefreshLocalizedText();
+            }
         }
 
         /// <summary>连接状态变化后同步整机运行时、连接状态和映射对应的手动调试页。</summary>
@@ -238,7 +248,9 @@ namespace MotionControl.Host.Wpf
                 _machineSafetyStatus = null;
                 _manualMotionDebugPage = null;
                 _manualIoDebugPage = null;
+                _flowStatusPage = null;
                 _mainWindow.SetMachineRuntime(null);
+                _mainWindow.SetFlowStatusPage(null);
                 _mainWindow.SetManualMotionDebugPage(null);
                 _mainWindow.SetManualIoDebugPage(null);
                 RefreshIoMonitorPage();
@@ -261,15 +273,34 @@ namespace MotionControl.Host.Wpf
 
                 var motionCards = new MotionCardGroup(new IMotionCard[] { connectedCard });
                 _machineSafetyStatus = CreateSafetyStatus(connectedLogicalIo);
+                var alarmService = new MachineAlarmService();
+                IStationFlow[] stationFlows;
+                try
+                {
+                    stationFlows = CreateDemoStationFlows(
+                        motionCards, connectedLogicalIo, alarmService);
+                }
+                catch (Exception error)
+                {
+                    stationFlows = new IStationFlow[0];
+                    MessageBox.Show(
+                        "示例工位配置无法启用，自动流程已关闭；轴手动和 IO 手动仍可使用。\n"
+                        + error.Message,
+                        "示例工位配置",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
                 var machineRuntime = new MachineRuntime(
                     motionCards,
-                    new IStationFlow[0],
-                    new MachineAlarmService(),
+                    stationFlows,
+                    alarmService,
                     _machineSafetyStatus);
                 await machineRuntime.ConnectAsync(CancellationToken.None);
 
                 _machineRuntime = machineRuntime;
                 _mainWindow.SetMachineRuntime(machineRuntime);
+                _flowStatusPage = new FlowStatusView(machineRuntime);
+                _mainWindow.SetFlowStatusPage(_flowStatusPage);
                 RefreshManualDebugPages(machineRuntime, motionCards, connectedLogicalIo);
             }
             catch (Exception error)
@@ -278,16 +309,74 @@ namespace MotionControl.Host.Wpf
                 _machineSafetyStatus = null;
                 _manualMotionDebugPage = null;
                 _manualIoDebugPage = null;
+                _flowStatusPage = null;
                 _mainWindow.SetMachineRuntime(null);
+                _mainWindow.SetFlowStatusPage(null);
                 _mainWindow.SetManualMotionDebugPage(null);
                 _mainWindow.SetManualIoDebugPage(null);
                 RefreshIoMonitorPage();
                 MessageBox.Show(
-                    "控制卡已连接，但创建轴手动页面失败：" + error.Message,
-                    "轴手动页面",
+                    "控制卡已连接，但创建运行时或调试页面失败：" + error.Message,
+                    "设备运行时",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
             }
+        }
+
+        /// <summary>只有设备目录显式启用示例配置时才创建工位，并核对轴范围及逻辑 IO 映射。</summary>
+        private IStationFlow[] CreateDemoStationFlows(
+            MotionCardGroup motionCards,
+            ILogicalIo logicalIo,
+            IMachineAlarmService alarmService)
+        {
+            const string relativePath = "Parameters/DemoStation.json";
+            string fullPath = Path.Combine(
+                _configurationStore.GetMachineDirectory(MachineId),
+                relativePath.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(fullPath))
+            {
+                return new IStationFlow[0];
+            }
+
+            DemoStationSettings settings = _configurationStore.LoadJson<DemoStationSettings>(MachineId, relativePath);
+            if (settings == null || !settings.Enabled)
+            {
+                return new IStationFlow[0];
+            }
+
+            settings.Validate();
+            var axisDefinition = _cardConnection.AxisHardwareDefinitions.SingleOrDefault(
+                axis => string.Equals(axis.Name, settings.AxisName, StringComparison.OrdinalIgnoreCase));
+            if (axisDefinition == null)
+            {
+                throw new InvalidOperationException("示例工位找不到已映射逻辑轴：" + settings.AxisName + "。");
+            }
+
+            if (settings.TargetPosition < axisDefinition.MinimumPosition
+                || settings.TargetPosition > axisDefinition.MaximumPosition)
+            {
+                throw new InvalidOperationException(
+                    "示例工位目标位置 " + settings.TargetPosition + " 超出逻辑轴 '"
+                    + settings.AxisName + "' 的配置行程 [" + axisDefinition.MinimumPosition
+                    + ", " + axisDefinition.MaximumPosition + "]。");
+            }
+
+            if (!_cardConnection.DigitalInputs.Any(
+                point => string.Equals(point.Name, settings.SensorInputName, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException("示例工位找不到已映射逻辑 DI：" + settings.SensorInputName + "。");
+            }
+
+            if (!_cardConnection.DigitalOutputs.Any(
+                point => string.Equals(point.Name, settings.OutputName, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException("示例工位找不到已映射逻辑 DO：" + settings.OutputName + "。");
+            }
+
+            return new IStationFlow[]
+            {
+                new DemoStationFlow(motionCards.GetAxis(settings.AxisName), logicalIo, alarmService, settings)
+            };
         }
 
         /// <summary>使用当前运行时和映射重建轴手动、IO 手动及 IO 监控页，不创建或连接新的 Runtime。</summary>

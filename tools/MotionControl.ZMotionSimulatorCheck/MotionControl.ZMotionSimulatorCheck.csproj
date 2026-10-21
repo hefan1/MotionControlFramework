@@ -8,6 +8,7 @@
     <UseWPF>true</UseWPF>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\MotionControl.Equipment.Demo\MotionControl.Equipment.Demo.csproj" />
     <ProjectReference Include="..\..\src\Adapters\MotionCards\ZMotion\Adapter\MotionControl.Adapter.MotionCard.ZMotion.csproj" />
     <ProjectReference Include="..\..\src\MotionControl.Framework.Contracts\MotionControl.Framework.Contracts.csproj" />
     <ProjectReference Include="..\..\src\MotionControl.Framework.Runtime\MotionControl.Framework.Runtime.csproj" />

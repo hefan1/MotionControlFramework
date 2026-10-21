@@ -53,6 +53,17 @@
     <sys:String x:Key="启动">▶ Start</sys:String>
     <sys:String x:Key="暂停">Ⅱ Pause</sys:String>
     <sys:String x:Key="停止">■ Stop</sys:String>
+    <sys:String x:Key="自动启动提示">Start the configured station after the machine is ready.</sys:String>
+    <sys:String x:Key="自动暂停提示">Stop the current action in a controlled way and retain the station step.</sys:String>
+    <sys:String x:Key="自动停止提示">This demo uses a controlled pause for Stop; reset resumes from the retained step.</sys:String>
+    <sys:String x:Key="自动流程命令失败标题">Automatic Sequence Command Failed</sys:String>
+    <sys:String x:Key="工位流程状态说明">Automatic and manual pages share the same card, logical axes, and I/O mapping. Manual commands are blocked while running.</sys:String>
+    <sys:String x:Key="工位当前步骤">Current Station Step</sys:String>
+    <sys:String x:Key="整机当前状态">Machine state: </sys:String>
+    <sys:String x:Key="未配置自动工位">No automatic station is enabled; axis and I/O manual pages remain available.</sys:String>
+    <sys:String x:Key="无当前报警">No current alarms.</sys:String>
+    <sys:String x:Key="报警待复位"> (reset required)</sys:String>
+    <sys:String x:Key="最近故障">Last fault: </sys:String>
     <sys:String x:Key="外壳预览启动命令未接入设备控制逻辑">Shell preview · Start command is not connected</sys:String>
     <sys:String x:Key="外壳预览暂停命令未接入设备控制逻辑">Shell preview · Pause command is not connected</sys:String>
     <sys:String x:Key="外壳预览停止命令未接入设备控制逻辑">Shell preview · Stop command is not connected</sys:String>

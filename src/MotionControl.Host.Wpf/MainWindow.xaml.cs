@@ -56,6 +56,9 @@ namespace MotionControl.Host.Wpf
         /// <summary>由组合根注入显示全部物理 DI/DO 状态的 IO 监控页面。</summary>
         private UserControl _ioMonitorPage;
 
+        /// <summary>由 Host 注入的自动工位步骤与报警状态页面。</summary>
+        private UserControl _flowStatusPage;
+
         /// <summary>由 Host 组合根注入的通用轴映射配置页面。</summary>
         private UserControl _axisMappingConfigurationPage;
 
@@ -70,6 +73,9 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>标记整机复位正在执行，防止操作员重复点击复位按钮。</summary>
         private bool _isResetting;
+
+        /// <summary>防止启动、暂停和停止命令被重复点击。</summary>
+        private bool _isMachineCommandRunning;
 
         /// <summary>当前界面语言代码；支持 zh-CN 和 en-US。</summary>
         public string CurrentLanguage { get; private set; }
@@ -224,6 +230,13 @@ namespace MotionControl.Host.Wpf
             UpdatePageContent();
         }
 
+        /// <summary>由 Host 注入与手动页面共用同一 Runtime 的工位状态页面。</summary>
+        public void SetFlowStatusPage(UserControl flowStatusPage)
+        {
+            _flowStatusPage = flowStatusPage;
+            UpdatePageContent();
+        }
+
         /// <summary>由 Host 组合根注入按设备配置存储创建的轴映射页面。</summary>
         public void SetAxisMappingConfigurationPage(UserControl axisMappingConfigurationPage)
         {
@@ -315,6 +328,19 @@ namespace MotionControl.Host.Wpf
                 ManualDebugContent.Visibility = Visibility.Visible;
                 PagePlaceholder.Visibility = Visibility.Collapsed;
                 PageDescription.SetResourceReference(TextBlock.TextProperty, "IO监控页面说明");
+                return;
+            }
+
+            var isFlowStatusPage = _flowStatusPage != null
+                && string.Equals(_currentSectionKey, "Monitor", StringComparison.Ordinal)
+                && string.Equals(_currentPageResourceKey, "流程状态", StringComparison.Ordinal);
+
+            if (isFlowStatusPage)
+            {
+                ManualDebugContent.Content = _flowStatusPage;
+                ManualDebugContent.Visibility = Visibility.Visible;
+                PagePlaceholder.Visibility = Visibility.Collapsed;
+                PageDescription.SetResourceReference(TextBlock.TextProperty, "工位流程状态说明");
                 return;
             }
 
@@ -441,19 +467,78 @@ namespace MotionControl.Host.Wpf
             applicationDictionaries.Add(languageResources);
         }
 
-        /// <summary>
-        /// 显示设备操作提示；具体设备控制逻辑由后续模块接入。
-        /// </summary>
-        private void MachineCommandButton_Click(object sender, RoutedEventArgs e)
+        /// <summary>从顶部启动按钮调用当前 Runtime 的自动工位流程。</summary>
+        private async void MachineStartButton_Click(object sender, RoutedEventArgs e)
         {
-            Button commandButton = sender as Button;
-            if (commandButton == null)
+            MachineRuntime runtime = _machineRuntime;
+            if (runtime == null || _isMachineCommandRunning)
             {
                 return;
             }
 
-            string noticeResourceKey = commandButton.Tag as string;
-            HeaderMessage.SetResourceReference(TextBlock.TextProperty, noticeResourceKey);
+            _isMachineCommandRunning = true;
+            UpdateMachineStateDisplay();
+            try
+            {
+                await runtime.StartAsync(CancellationToken.None);
+            }
+            catch (Exception error)
+            {
+                ShowMachineCommandError("启动", error);
+            }
+            finally
+            {
+                _isMachineCommandRunning = false;
+                UpdateMachineStateDisplay();
+            }
+        }
+
+        /// <summary>从顶部暂停按钮请求工位受控退出当前步骤。</summary>
+        private async void MachinePauseButton_Click(object sender, RoutedEventArgs e)
+        {
+            await PauseMachineAsync("暂停");
+        }
+
+        /// <summary>演示工位的停止按钮也请求受控停止，步骤保留供复位后重试。</summary>
+        private async void MachineStopButton_Click(object sender, RoutedEventArgs e)
+        {
+            await PauseMachineAsync("停止");
+        }
+
+        /// <summary>串行执行页面的暂停或停止请求，并报告 Runtime 返回的具体错误。</summary>
+        private async System.Threading.Tasks.Task PauseMachineAsync(string commandName)
+        {
+            MachineRuntime runtime = _machineRuntime;
+            if (runtime == null || _isMachineCommandRunning)
+            {
+                return;
+            }
+
+            _isMachineCommandRunning = true;
+            UpdateMachineStateDisplay();
+            try
+            {
+                await runtime.PauseAsync(CancellationToken.None);
+            }
+            catch (Exception error)
+            {
+                ShowMachineCommandError(commandName, error);
+            }
+            finally
+            {
+                _isMachineCommandRunning = false;
+                UpdateMachineStateDisplay();
+            }
+        }
+
+        /// <summary>将自动命令失败原因反馈给操作员，保留异常上下文以便排查。</summary>
+        private void ShowMachineCommandError(string commandName, Exception error)
+        {
+            MessageBox.Show(
+                GetLocalizedText(commandName) + "：" + error.Message,
+                GetLocalizedText("自动流程命令失败标题"),
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
         }
 
         /// <summary>在界面线程上响应运行时状态变化并刷新整机状态显示。</summary>
@@ -505,10 +590,19 @@ namespace MotionControl.Host.Wpf
                 ContentControl.ContentProperty,
                 _isResetting ? "整机复位中" : "整机复位");
             MachineResetButton.IsEnabled = !_isResetting
+                && !_isMachineCommandRunning
                 && _machineRuntime != null
                 && (state == MachineRunState.ResetRequired
                     || state == MachineRunState.Paused
                     || state == MachineRunState.Alarmed);
+            MachineStartButton.IsEnabled = !_isResetting && !_isMachineCommandRunning
+                && _machineRuntime != null && _machineRuntime.StationFlows.Count > 0
+                && state == MachineRunState.Ready;
+            MachinePauseButton.IsEnabled = !_isMachineCommandRunning
+                && _machineRuntime != null && state == MachineRunState.Running;
+            MachineStopButton.IsEnabled = !_isMachineCommandRunning
+                && _machineRuntime != null
+                && (state == MachineRunState.Running || state == MachineRunState.Pausing);
         }
 
         /// <summary>调用 Runtime 的整机复位流程，并向操作员显示未能完成的原因。</summary>

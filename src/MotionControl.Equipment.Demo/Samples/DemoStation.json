@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "enabled": false,
+  "stationName": "流程验证工位",
+  "axisName": "AxisX",
+  "sensorInputName": "PartReady",
+  "outputName": "ActionOutput",
+  "targetPosition": 10.0,
+  "speed": 1.0,
+  "acceleration": 10.0,
+  "deceleration": 10.0,
+  "sensorTimeoutMilliseconds": 3000,
+  "sensorPollMilliseconds": 50,
+  "outputPulseMilliseconds": 1000
+}

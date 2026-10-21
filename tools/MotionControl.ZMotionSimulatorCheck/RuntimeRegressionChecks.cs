@@ -50,6 +50,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("设备硬件配置关联和急停输入校验", HardwareConfigurationValidationAsync, failures);
             await RunCheckAsync("通用框架程序集不引用厂商适配器或原生 API", SharedFrameworkAssembliesDoNotReferenceVendorAdaptersAsync, failures);
             await RunCheckAsync("正运动轴号超出控制器范围时在连接前被拒绝", ZMotionAxisNumberOutsideControllerRangeIsRejectedAsync, failures);
+            await RunCheckAsync("示例工位轴动作、传感器、输出、超时报警和复位闭环", DemoStationFlowChecks.RunAsync, failures);
             return failures.AsReadOnly();
         }
 

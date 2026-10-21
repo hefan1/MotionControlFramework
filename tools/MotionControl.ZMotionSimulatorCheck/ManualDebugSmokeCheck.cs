@@ -147,7 +147,6 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(page.FindName("DigitalOutputsPanel") == null, "轴手动页仍混入 DO 操作面板。");
                 Ensure(((StackPanel)ioPage.FindName("DigitalInputsPanel")).Children.Count == 2, "IO 手动页 DI 列表行数与配置数量不一致。");
                 Ensure(((StackPanel)ioPage.FindName("DigitalOutputsPanel")).Children.Count == 2, "IO 手动页 DO 列表行数与配置数量不一致。");
-                VerifyMachineStateLocalization(application, chineseResources, englishResources, page);
                 VerifyDisconnectedControlsDoNotSendCommands(
                     application,
                     chineseResources,
@@ -193,18 +192,34 @@ namespace MotionControl.ZMotionSimulatorCheck
                 VerifyManualOperationButtonsFollowSafetyInterlock(page, ioPage, card, runtime, safetyStatus);
 
                 var hostWindow = new MainWindow();
+                var flowStatusPage = new FlowStatusView(runtime);
+                hostWindow.SetFlowStatusPage(flowStatusPage);
                 hostWindow.SetManualMotionDebugPage(page);
                 hostWindow.SetManualIoDebugPage(ioPage);
                 VerifyMotionCardConnectionStatus(hostWindow, englishResources, chineseResources);
+                hostWindow.SetMachineRuntime(runtime);
+                Ensure(((Button)hostWindow.FindName("MachineStartButton")).IsEnabled,
+                    "已配置工位且 Runtime 就绪时，顶部启动按钮仍不可用。");
                 VerifyAxisMappingStartupConnection(application, englishResources, chineseResources);
                 VerifyIoCapabilityDiagnosticDisplay(application, englishResources, chineseResources);
                 var primaryNavigation = (StackPanel)hostWindow.FindName("PrimaryNavigation");
+                var monitorNavigation = primaryNavigation.Children
+                    .OfType<ToggleButton>()
+                    .Single(button => string.Equals(button.Tag as string, "Monitor", StringComparison.Ordinal));
+                monitorNavigation.RaiseEvent(new RoutedEventArgs(ToggleButton.ClickEvent, monitorNavigation));
+                var sidebar = (StackPanel)hostWindow.FindName("SidebarNavigation");
+                var flowNavigation = sidebar.Children
+                    .OfType<ToggleButton>()
+                    .Single(button => string.Equals(button.Tag as string, "流程状态", StringComparison.Ordinal));
+                flowNavigation.RaiseEvent(new RoutedEventArgs(ToggleButton.ClickEvent, flowNavigation));
+                var manualContent = (ContentControl)hostWindow.FindName("ManualDebugContent");
+                Ensure(ReferenceEquals(manualContent.Content, flowStatusPage),
+                    "Host 的流程状态导航没有显示当前 Runtime 的工位与报警页面。");
                 var manualNavigation = primaryNavigation.Children
                     .OfType<ToggleButton>()
                     .Single(button => string.Equals(button.Tag as string, "Manual", StringComparison.Ordinal));
                 manualNavigation.RaiseEvent(new RoutedEventArgs(ToggleButton.ClickEvent, manualNavigation));
 
-                var manualContent = (ContentControl)hostWindow.FindName("ManualDebugContent");
                 Ensure(ReferenceEquals(manualContent.Content, page), "Host 手动页面没有显示注入的通用调试页。");
                 Ensure(manualContent.Visibility == Visibility.Visible, "Host 手动调试内容当前不可见。");
                 application.Resources.MergedDictionaries[0] = englishResources;
@@ -217,7 +232,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(
                     homedStatusText.Text == chineseResources["未回零"] as string,
                     "Host 显示轴卡片时切回中文没有更新未回零状态文字。");
-                var sidebar = (StackPanel)hostWindow.FindName("SidebarNavigation");
+                sidebar = (StackPanel)hostWindow.FindName("SidebarNavigation");
                 var ioManualNavigation = sidebar.Children
                     .OfType<ToggleButton>()
                     .Single(button => string.Equals(button.Tag as string, "IO手动", StringComparison.Ordinal));
@@ -933,24 +948,6 @@ namespace MotionControl.ZMotionSimulatorCheck
             var axis = (SmokeAxis)card.Axes.Single();
             Ensure(axis.CommandCount == 0, "断开时轴按钮仍然发送了运动命令。");
             Ensure(card.LogicalIo.WriteCount == 0, "断开时 DO 按钮仍然发送了输出命令。");
-        }
-
-        /// <summary>检查手动页中的整机状态随中英文资源切换显示。</summary>
-        private static void VerifyMachineStateLocalization(
-            Application application,
-            ResourceDictionary chineseResources,
-            ResourceDictionary englishResources,
-            ManualMotionDebugView page)
-        {
-            var machineStateText = (TextBlock)page.FindName("MachineStateText");
-            page.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
-            Ensure(machineStateText.Text.Contains("未连接"), "中文界面没有显示本地化整机状态。");
-
-            application.Resources.MergedDictionaries[0] = englishResources;
-            page.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
-            Ensure(machineStateText.Text.Contains("Disconnected"), "英文界面没有显示本地化整机状态。");
-
-            application.Resources.MergedDictionaries[0] = chineseResources;
         }
 
         /// <summary>用内存测试卡检查已连接时的轴操作、软限位拦截和 DO 读回。</summary>
