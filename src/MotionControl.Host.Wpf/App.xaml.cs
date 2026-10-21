@@ -331,15 +331,6 @@ namespace MotionControl.Host.Wpf
                 string emergencyStopInputName = _safetyInterlockPage == null
                     ? string.Empty
                     : _safetyInterlockPage.EmergencyStopInputName;
-                bool emergencyInputIsMapped = _cardConnection.DigitalInputs.Any(point => string.Equals(
-                    point.Name,
-                    emergencyStopInputName,
-                    StringComparison.OrdinalIgnoreCase));
-                if (!emergencyInputIsMapped)
-                {
-                    emergencyStopInputName = string.Empty;
-                }
-
                 if (_machineSafetyStatus != null)
                 {
                     _machineSafetyStatus.UpdateEmergencyStopInputName(emergencyStopInputName);
@@ -388,7 +379,7 @@ namespace MotionControl.Host.Wpf
             }
         }
 
-        /// <summary>从独立安全配置读取急停 DI；未配置或映射失效时按急停触发处理。</summary>
+        /// <summary>从独立安全配置读取急停 DI；未配置或映射失效时保留原名并由运行时报告配置不可用。</summary>
         private LogicalIoEmergencyStopStatus CreateSafetyStatus(ILogicalIo logicalIo)
         {
             const string safetyInterlockFilePath = "HardwareConfig/SafetyInterlock.json";
@@ -422,8 +413,7 @@ namespace MotionControl.Host.Wpf
             {
                 System.Diagnostics.Trace.TraceWarning(
                     "安全联锁配置中的急停输入 '" + emergencyStopInputName
-                    + "' 没有对应的 DI 映射，运行时将继续按急停触发处理。");
-                return new LogicalIoEmergencyStopStatus(logicalIo, string.Empty);
+                    + "' 没有对应的 DI 映射，运行时将禁止手动动作并报告输入不可用。");
             }
 
             return new LogicalIoEmergencyStopStatus(logicalIo, emergencyStopInputName);

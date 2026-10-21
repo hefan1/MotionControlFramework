@@ -549,7 +549,7 @@ namespace MotionControl.Framework.Runtime.Machine
             }
         }
 
-        /// <summary>读取急停输入并更新停机报警条件；读取失败按急停触发处理。</summary>
+        /// <summary>读取急停输入并更新停机报警条件；未配置、映射无效或读取失败时按安全策略闭锁。</summary>
         private async Task<bool> UpdateEmergencyStopAlarmAsync(CancellationToken cancellationToken)
         {
             bool emergencyStopActive;
@@ -569,8 +569,8 @@ namespace MotionControl.Framework.Runtime.Machine
                     EmergencyStopAlarm,
                     "整机急停输入",
                     true,
-                    "读取急停状态失败，按急停触发处理。原因：" + readError.Message);
-                throw new InvalidOperationException("读取急停状态失败，已按急停触发处理。", readError);
+                    "急停 DI 未配置、映射无效或读取失败，按安全策略禁止动作。原因：" + readError.Message);
+                throw new InvalidOperationException("急停输入不可用，已按安全策略禁止动作。", readError);
             }
 
             _alarmService.ReportCondition(
@@ -631,7 +631,7 @@ namespace MotionControl.Framework.Runtime.Machine
                             EmergencyStopAlarm,
                             "整机急停输入",
                             true,
-                            "运行期间读取急停状态失败，按急停触发处理。原因：" + readError.Message);
+                            "运行期间急停 DI 未配置、映射无效或读取失败，按安全策略停机。原因：" + readError.Message);
                         return;
                     }
                 }

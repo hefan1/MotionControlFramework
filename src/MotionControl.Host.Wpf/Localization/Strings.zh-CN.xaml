@@ -182,7 +182,7 @@
     <sys:String x:Key="自动流程期间禁止手动操作">设备自动流程运行期间禁止手动操作。</sys:String>
     <sys:String x:Key="急停报警未复位禁止手动动作">整机急停报警尚未复位，禁止启动轴运动、使能伺服或写入 DO。</sys:String>
     <sys:String x:Key="急停输入有效禁止手动操作">急停输入仍有效，禁止启动轴运动、使能伺服或写入 DO。</sys:String>
-    <sys:String x:Key="急停状态读取失败禁止手动操作">读取急停输入失败，禁止启动轴运动、使能伺服或写入 DO。</sys:String>
+    <sys:String x:Key="急停状态读取失败禁止手动操作">急停 DI 未配置、映射无效或读取失败，禁止启动轴运动、使能伺服或写入 DO。</sys:String>
     <sys:String x:Key="轴状态读取失败禁止手动操作">读取轴状态失败，已禁止运动和伺服操作，请检查控制卡连接与轴状态。</sys:String>
     <sys:String x:Key="轴状态不可读禁止恢复操作">无法读取轴状态，暂不能关闭伺服、示教当前位置或复位轴报警。</sys:String>
     <sys:String x:Key="轴运动中禁止恢复操作">轴仍在运动，请先受控停止后再执行恢复操作。</sys:String>
@@ -323,6 +323,7 @@
     <sys:String x:Key="安全联锁取消修改">取消修改</sys:String>
     <sys:String x:Key="安全联锁未配置">尚未配置急停状态 DI；软件联锁保持触发。</sys:String>
     <sys:String x:Key="安全联锁输入未映射">当前急停 DI“{0}”已不在 IO 映射中，请重新选择。</sys:String>
+    <sys:String x:Key="安全联锁输入映射有效">当前软件急停来源：{0} → {1}。</sys:String>
     <sys:String x:Key="安全联锁读取完成">安全联锁配置已读取。</sys:String>
     <sys:String x:Key="安全联锁DI刷新完成">DI 列表已刷新。</sys:String>
     <sys:String x:Key="安全联锁读取失败">安全联锁配置读取失败：{0}</sys:String>

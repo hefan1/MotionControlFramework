@@ -29,6 +29,10 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>校验安全联锁配置所用的已映射 DI 名称。</summary>
         private readonly HashSet<string> _mappedInputNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>按逻辑名称记录已保存 DI 的控制卡与物理通道，便于核对急停实际来源。</summary>
+        private readonly Dictionary<string, string> _mappedInputAddresses =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>当前页面是否可以保存配置文件。</summary>
         private bool _configurationCanBeSaved = true;
 
@@ -64,6 +68,7 @@ namespace MotionControl.Framework.Wpf.Configuration
 
                 _emergencyStopInputName = newValue;
                 OnPropertyChanged();
+                UpdateLoadedConfigurationStatus("安全联锁读取完成");
             }
         }
 
@@ -126,6 +131,7 @@ namespace MotionControl.Framework.Wpf.Configuration
         {
             DigitalInputNames.Clear();
             _mappedInputNames.Clear();
+            _mappedInputAddresses.Clear();
 
             string filePath = GetConfigurationPath(IoMappingFilePath);
             if (!File.Exists(filePath))
@@ -152,6 +158,9 @@ namespace MotionControl.Framework.Wpf.Configuration
                 if (_mappedInputNames.Add(inputName))
                 {
                     DigitalInputNames.Add(inputName);
+                    _mappedInputAddresses.Add(
+                        inputName,
+                        string.Format("{0} DI{1}", input.ControllerId, input.Channel));
                 }
             }
         }
@@ -190,7 +199,20 @@ namespace MotionControl.Framework.Wpf.Configuration
                 return;
             }
 
-            SetStatus(string.IsNullOrWhiteSpace(inputName) ? "安全联锁未配置" : successResourceKey);
+            if (string.IsNullOrWhiteSpace(inputName))
+            {
+                SetStatus("安全联锁未配置");
+                return;
+            }
+
+            string inputAddress;
+            if (_mappedInputAddresses.TryGetValue(inputName, out inputAddress))
+            {
+                SetStatus("安全联锁输入映射有效", inputName, inputAddress);
+                return;
+            }
+
+            SetStatus(successResourceKey);
         }
 
         /// <summary>校验已选择的急停名称必须来自当前 DI 映射。</summary>

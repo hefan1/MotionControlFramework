@@ -18,7 +18,7 @@ namespace MotionControl.Framework.Runtime.Safety
         /// <summary>保护运行中更新急停 DI 名称时的配置锁。</summary>
         private readonly object _configurationLock = new object();
 
-        /// <summary>创建急停输入读取器；名称为空时按急停已触发处理。</summary>
+        /// <summary>创建急停输入读取器；名称未配置时读取状态会报告配置不可用。</summary>
         public LogicalIoEmergencyStopStatus(ILogicalIo logicalIo, string emergencyStopInputName)
         {
             if (logicalIo == null)
@@ -31,7 +31,7 @@ namespace MotionControl.Framework.Runtime.Safety
             UpdateEmergencyStopInputName(emergencyStopInputName);
         }
 
-        /// <summary>更新运行中的急停 DI；为空时保持联锁并按急停已触发处理。</summary>
+        /// <summary>更新运行中的急停 DI；名称为空表示没有可读取的联锁输入。</summary>
         public void UpdateEmergencyStopInputName(string emergencyStopInputName)
         {
             string inputName = string.IsNullOrWhiteSpace(emergencyStopInputName)
@@ -44,9 +44,11 @@ namespace MotionControl.Framework.Runtime.Safety
             }
         }
 
-        /// <summary>读取配置的逻辑 DI；逻辑 true 表示急停触发，未配置时按触发处理。</summary>
+        /// <summary>读取配置的逻辑 DI；逻辑 true 表示急停触发，未配置时报告输入不可用。</summary>
         public Task<bool> ReadEmergencyStopActiveAsync(CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             string inputName;
             lock (_configurationLock)
             {
@@ -55,7 +57,8 @@ namespace MotionControl.Framework.Runtime.Safety
 
             if (string.IsNullOrWhiteSpace(inputName))
             {
-                return Task.FromResult(true);
+                return Task.FromException<bool>(new InvalidOperationException(
+                    "软件急停联锁未配置逻辑 DI，无法读取急停输入。"));
             }
 
             return _logicalIo.ReadInputAsync(inputName, cancellationToken);

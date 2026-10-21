@@ -174,7 +174,7 @@
     <sys:String x:Key="自动流程期间禁止手动操作">Manual commands are blocked while an automatic flow is running.</sys:String>
     <sys:String x:Key="急停报警未复位禁止手动动作">Axis motion, servo enable, and DO writes are blocked until the machine emergency-stop alarm is reset.</sys:String>
     <sys:String x:Key="急停输入有效禁止手动操作">Axis motion, servo enable, and DO writes are blocked while the emergency-stop input is active.</sys:String>
-    <sys:String x:Key="急停状态读取失败禁止手动操作">Axis motion, servo enable, and DO writes are blocked because the emergency-stop input could not be read.</sys:String>
+    <sys:String x:Key="急停状态读取失败禁止手动操作">Axis motion, servo enable, and DO writes are blocked because the emergency-stop DI is not configured, is unmapped, or could not be read.</sys:String>
     <sys:String x:Key="轴状态读取失败禁止手动操作">Axis status could not be read, so motion and servo operations are blocked. Check the controller connection and axis status.</sys:String>
     <sys:String x:Key="轴状态不可读禁止恢复操作">Axis status cannot be read. Servo disable, position teaching, and axis alarm reset are unavailable.</sys:String>
     <sys:String x:Key="轴运动中禁止恢复操作">The axis is still moving. Use controlled stop before recovery actions.</sys:String>
@@ -313,6 +313,7 @@
     <sys:String x:Key="安全联锁取消修改">Cancel Changes</sys:String>
     <sys:String x:Key="安全联锁未配置">Emergency-stop status DI is not configured; the software interlock remains active.</sys:String>
     <sys:String x:Key="安全联锁输入未映射">The configured emergency-stop DI “{0}” is not in I/O Mapping. Select another input.</sys:String>
+    <sys:String x:Key="安全联锁输入映射有效">Software emergency-stop source: {0} → {1}.</sys:String>
     <sys:String x:Key="安全联锁读取完成">Safety interlock configuration loaded.</sys:String>
     <sys:String x:Key="安全联锁DI刷新完成">DI list refreshed.</sys:String>
     <sys:String x:Key="安全联锁读取失败">Could not read safety interlock configuration: {0}</sys:String>
