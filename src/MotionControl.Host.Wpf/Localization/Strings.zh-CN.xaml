@@ -283,7 +283,8 @@
     <sys:String x:Key="IO监控通道范围未提供">适配器没有报告 {0} 的可读通道范围。</sys:String>
     <sys:String x:Key="IO监控通道范围无效">适配器报告的 {0} 可读通道数无效：{1}。</sys:String>
     <sys:String x:Key="IO监控能力读取失败">读取 IO 通道范围失败：{0}</sys:String>
-    <sys:String x:Key="IO监控通道数量格式">当前可读通道：DI {0} 路，DO {1} 路；滚动列表查看各通道状态。</sys:String>
+    <sys:String x:Key="IO监控通道数量格式">当前可读通道：DI {0} 路，DO {1} 路；左右滚动查看其他通道。</sys:String>
+    <sys:String x:Key="IO监控当前显示范围格式">当前显示：{0}{1}–{0}{2}</sys:String>
     <sys:String x:Key="IO监控没有可读通道">当前没有可读取的物理通道。</sys:String>
     <sys:String x:Key="IO监控DO切换成功">{0} 已切换为{1}，读回确认成功。</sys:String>
     <sys:String x:Key="逻辑ON">逻辑 ON</sys:String>

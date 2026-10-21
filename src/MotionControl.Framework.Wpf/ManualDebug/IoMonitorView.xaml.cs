@@ -17,6 +17,12 @@ namespace MotionControl.Framework.Wpf.ManualDebug
     /// <summary>按物理 DI/DO 通道显示状态，并允许调试人员点击 DO 灯切换输出。</summary>
     public partial class IoMonitorView : UserControl
     {
+        /// <summary>通道行的固定显示高度，用于计算每列可容纳的通道数。</summary>
+        private const double ChannelRowHeight = 30.0;
+
+        /// <summary>每列外框、内边距和上下留白占用的高度。</summary>
+        private const double ChannelColumnChromeHeight = 12.0;
+
         /// <summary>提供连接卡的可读取 DI/DO 通道范围。</summary>
         private readonly IMotionCardIoCapabilityProvider _capabilityProvider;
 
@@ -32,13 +38,21 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>当前设备配置的 DO 映射，用于显示名称并按有效电平切换输出。</summary>
         private readonly IReadOnlyList<DigitalIoHardwareDefinition> _digitalOutputs;
 
-        /// <summary>按物理通道顺序保存可读 DI 列表，ListView 使用虚拟化显示。</summary>
+        /// <summary>按物理通道顺序保存完整 DI 列表，供列布局和状态轮询使用。</summary>
         private readonly ObservableCollection<IoMonitorChannel> _inputChannels =
             new ObservableCollection<IoMonitorChannel>();
 
-        /// <summary>按物理通道顺序保存可读 DO 列表，ListView 使用虚拟化显示。</summary>
+        /// <summary>按物理通道顺序保存完整 DO 列表，供列布局和状态轮询使用。</summary>
         private readonly ObservableCollection<IoMonitorChannel> _outputChannels =
             new ObservableCollection<IoMonitorChannel>();
+
+        /// <summary>按页面高度分组后的 DI 列表；每组显示为一列并可横向浏览。</summary>
+        private readonly ObservableCollection<ObservableCollection<IoMonitorChannel>> _inputColumns =
+            new ObservableCollection<ObservableCollection<IoMonitorChannel>>();
+
+        /// <summary>按页面高度分组后的 DO 列表；每组显示为一列并可横向浏览。</summary>
+        private readonly ObservableCollection<ObservableCollection<IoMonitorChannel>> _outputColumns =
+            new ObservableCollection<ObservableCollection<IoMonitorChannel>>();
 
         /// <summary>每 500 毫秒刷新当前标签页中已经显示的物理通道。</summary>
         private readonly DispatcherTimer _refreshTimer;
@@ -60,6 +74,9 @@ namespace MotionControl.Framework.Wpf.ManualDebug
 
         /// <summary>当前适配器报告的 DO 可读通道数。</summary>
         private int _outputChannelCount;
+
+        /// <summary>每列显示的通道行数；页面高度变化时重新计算。</summary>
+        private int _rowsPerColumn;
 
         /// <summary>创建物理 IO 监控页；此页面只使用现有连接，不创建或重连控制卡。</summary>
         public IoMonitorView(
@@ -114,6 +131,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 GetText("数字输出"),
                 _outputChannelCount);
             UpdateMonitorStatusText();
+            UpdateDisplayedRangeText();
         }
 
         /// <summary>页面首次显示时读取通道范围并启动可见行状态刷新。</summary>
@@ -160,7 +178,37 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 return;
             }
 
+            UpdateDisplayedRangeText();
             await RefreshVisibleChannelsAsync().ConfigureAwait(true);
+        }
+
+        /// <summary>窗口高度变化时重新分组通道，保证每列在可视区域内完整显示。</summary>
+        private void ChannelViewport_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (!_channelsInitialized || e.NewSize.Height <= 0)
+            {
+                return;
+            }
+
+            int rowsPerColumn = GetRowsPerColumn(e.NewSize.Height);
+            if (rowsPerColumn == _rowsPerColumn)
+            {
+                return;
+            }
+
+            _rowsPerColumn = rowsPerColumn;
+            RebuildChannelColumns(_inputChannels, _inputColumns, _rowsPerColumn);
+            RebuildChannelColumns(_outputChannels, _outputColumns, _rowsPerColumn);
+            UpdateDisplayedRangeText();
+        }
+
+        /// <summary>水平滚动后更新顶部显示的物理通道号范围。</summary>
+        private void ChannelColumns_ScrollChanged(object sender, ScrollChangedEventArgs e)
+        {
+            if (e.HorizontalChange != 0)
+            {
+                UpdateDisplayedRangeText();
+            }
         }
 
         /// <summary>读取适配器报告的连续可读通道数，并建立 DI/DO 物理通道列表。</summary>
@@ -201,13 +249,19 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 _outputChannelCount = GetReadableChannelCount(capabilities.DigitalOutputChannelRange, "DO");
                 BuildChannelRows(_inputChannels, _digitalInputs, _inputChannelCount, true);
                 BuildChannelRows(_outputChannels, _digitalOutputs, _outputChannelCount, false);
-                DigitalInputList.ItemsSource = _inputChannels;
-                DigitalOutputList.ItemsSource = _outputChannels;
+                _rowsPerColumn = GetRowsPerColumn(DigitalInputViewport.ActualHeight);
+                RebuildChannelColumns(_inputChannels, _inputColumns, _rowsPerColumn);
+                RebuildChannelColumns(_outputChannels, _outputColumns, _rowsPerColumn);
+                DigitalInputList.ItemsSource = _inputColumns;
+                DigitalOutputList.ItemsSource = _outputColumns;
                 NoDigitalInputsText.Visibility = _inputChannelCount == 0 ? Visibility.Visible : Visibility.Collapsed;
                 NoDigitalOutputsText.Visibility = _outputChannelCount == 0 ? Visibility.Visible : Visibility.Collapsed;
                 _channelsInitialized = true;
                 _capabilityError = null;
                 RefreshLocalizedText();
+                await Dispatcher.InvokeAsync(
+                    UpdateDisplayedRangeText,
+                    DispatcherPriority.Loaded);
             }
             catch (Exception error)
             {
@@ -272,7 +326,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
-        /// <summary>刷新当前标签页中已虚拟化并显示的通道，避免轮询整张 4096 点列表。</summary>
+        /// <summary>刷新当前标签页已显示列中的通道，避免轮询未显示的 IO 点。</summary>
         private async Task RefreshVisibleChannelsAsync()
         {
             UpdateOutputControlAvailability();
@@ -286,7 +340,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             try
             {
                 bool isInput = MonitorTabs.SelectedIndex == 0;
-                ListView channelList = isInput ? DigitalInputList : DigitalOutputList;
+                ListBox channelList = isInput ? DigitalInputList : DigitalOutputList;
                 List<IoMonitorChannel> visibleChannels = GetVisibleChannels(channelList);
                 foreach (IoMonitorChannel channel in visibleChannels)
                 {
@@ -313,26 +367,87 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
-        /// <summary>只返回当前 ListView 实际创建并显示的行，避免向控制卡读取屏外通道。</summary>
-        private static List<IoMonitorChannel> GetVisibleChannels(ListView channelList)
+        /// <summary>只返回当前 ListBox 已创建并显示的列内通道，不读取屏外的通道。</summary>
+        private static List<IoMonitorChannel> GetVisibleChannels(ListBox channelList)
         {
             var visibleChannels = new List<IoMonitorChannel>();
             for (int index = 0; index < channelList.Items.Count; index++)
             {
-                var container = channelList.ItemContainerGenerator.ContainerFromIndex(index) as ListViewItem;
+                var container = channelList.ItemContainerGenerator.ContainerFromIndex(index) as ListBoxItem;
                 if (container == null || !container.IsVisible)
                 {
                     continue;
                 }
 
-                IoMonitorChannel channel = container.DataContext as IoMonitorChannel;
-                if (channel != null)
+                var columnChannels = container.DataContext as ObservableCollection<IoMonitorChannel>;
+                if (columnChannels != null)
                 {
-                    visibleChannels.Add(channel);
+                    visibleChannels.AddRange(columnChannels);
                 }
             }
 
             return visibleChannels;
+        }
+
+        /// <summary>按页面可用高度计算每列行数，并预留水平滚动条和列边框空间。</summary>
+        private static int GetRowsPerColumn(double viewportHeight)
+        {
+            double availableHeight = viewportHeight
+                - SystemParameters.HorizontalScrollBarHeight
+                - ChannelColumnChromeHeight;
+            return Math.Max(1, (int)Math.Floor(availableHeight / ChannelRowHeight));
+        }
+
+        /// <summary>把连续物理通道按每列行数分组，通道号按列从上到下递增。</summary>
+        private static void RebuildChannelColumns(
+            IReadOnlyList<IoMonitorChannel> channels,
+            ObservableCollection<ObservableCollection<IoMonitorChannel>> columns,
+            int rowsPerColumn)
+        {
+            columns.Clear();
+            if (rowsPerColumn <= 0)
+            {
+                return;
+            }
+
+            for (int firstChannel = 0; firstChannel < channels.Count; firstChannel += rowsPerColumn)
+            {
+                var column = new ObservableCollection<IoMonitorChannel>();
+                int lastChannelExclusive = Math.Min(firstChannel + rowsPerColumn, channels.Count);
+                for (int index = firstChannel; index < lastChannelExclusive; index++)
+                {
+                    column.Add(channels[index]);
+                }
+
+                columns.Add(column);
+            }
+        }
+
+        /// <summary>显示当前标签页已呈现的首末通道号，便于操作员横向查找 IO 点。</summary>
+        private void UpdateDisplayedRangeText()
+        {
+            if (MonitorRangeText == null || MonitorTabs == null)
+            {
+                return;
+            }
+
+            bool isInput = MonitorTabs.SelectedIndex == 0;
+            ListBox channelList = isInput ? DigitalInputList : DigitalOutputList;
+            List<IoMonitorChannel> visibleChannels = GetVisibleChannels(channelList);
+            if (visibleChannels.Count == 0)
+            {
+                MonitorRangeText.Text = string.Empty;
+                return;
+            }
+
+            int firstChannel = visibleChannels.Min(channel => channel.Channel);
+            int lastChannel = visibleChannels.Max(channel => channel.Channel);
+            string addressPrefix = GetText(isInput ? "DI通道地址前缀" : "DO通道地址前缀");
+            MonitorRangeText.Text = string.Format(
+                GetText("IO监控当前显示范围格式"),
+                addressPrefix,
+                firstChannel,
+                lastChannel);
         }
 
         /// <summary>把原始物理电平转换为映射有效状态或未映射的高低电平显示。</summary>
