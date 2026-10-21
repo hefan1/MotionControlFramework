@@ -305,6 +305,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 && first.MaximumPosition == second.MaximumPosition
                 && first.SoftLimitEnabled == second.SoftLimitEnabled
                 && first.ManualSpeed == second.ManualSpeed
+                && first.PositionTolerance == second.PositionTolerance
                 && first.HomeMode == second.HomeMode
                 && first.HomeSearchSpeed == second.HomeSearchSpeed
                 && first.HomeCreepSpeed == second.HomeCreepSpeed

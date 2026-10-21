@@ -210,7 +210,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             }, cancellationToken);
         }
 
-        /// <summary>等待定位轴停稳且指令位置到达目标，防止控制卡尚未启动时被误判完成。</summary>
+        /// <summary>等待轴停稳、指令位置到达目标且实际反馈误差进入轴配置容差。</summary>
         internal Task WaitForAxisMoveCompletedAsync(
             ZMotionAxis axis,
             double targetPosition,
@@ -221,7 +221,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             {
                 var startedAt = DateTime.UtcNow;
                 bool observedMotion = false;
-                double positionTolerance = 0.5 / axis.Configuration.UnitsPerEngineeringUnit + 0.000001;
+                double commandPositionTolerance = 0.5 / axis.Configuration.UnitsPerEngineeringUnit + 0.000001;
 
                 while (true)
                 {
@@ -234,9 +234,11 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
 
                     double commandPosition = status.CommandPosition ?? status.Position;
                     bool targetReached = Math.Abs(commandPosition - (double)(float)targetPosition)
-                        <= positionTolerance;
+                        <= commandPositionTolerance;
+                    double feedbackPositionError = Math.Abs(status.Position - targetPosition);
+                    bool feedbackWithinTolerance = feedbackPositionError <= axis.Configuration.PositionTolerance;
 
-                    if (!status.Moving && targetReached)
+                    if (!status.Moving && targetReached && feedbackWithinTolerance)
                     {
                         return;
                     }
@@ -245,15 +247,23 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     if (observedMotion && !status.Moving)
                     {
                         throw new InvalidOperationException(
-                            "正运动逻辑轴 '" + axis.Name + "' 已停止，但指令位置 "
-                            + commandPosition + " 未到达目标位置 " + targetPosition + "。");
+                            "正运动逻辑轴 '" + axis.Name
+                            + "' 已停止，但定位未满足到位条件。目标位置：" + targetPosition
+                            + "，指令位置：" + commandPosition
+                            + "，反馈位置：" + status.Position
+                            + "，反馈误差：" + feedbackPositionError
+                            + "，到位容差：" + axis.Configuration.PositionTolerance
+                            + "，指令位置是否到位：" + targetReached + "。");
                     }
 
                     if (!observedMotion && elapsedMilliseconds >= MoveStartTimeoutMilliseconds)
                     {
                         throw new TimeoutException(
                             "正运动逻辑轴 '" + axis.Name + "' 定位命令下发后未观察到轴启动或到达目标位置。目标位置："
-                            + targetPosition + "，当前指令位置：" + commandPosition + "。");
+                            + targetPosition + "，当前指令位置：" + commandPosition
+                            + "，当前反馈位置：" + status.Position
+                            + "，反馈误差：" + feedbackPositionError
+                            + "，到位容差：" + axis.Configuration.PositionTolerance + "。");
                     }
 
                     if (elapsedMilliseconds >= timeoutMilliseconds)
@@ -261,6 +271,10 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                         throw new TimeoutException(
                             "正运动控制卡 '" + ControllerId + "' 逻辑轴 '" + axis.Name
                             + "' 等待定位完成超时，目标位置：" + targetPosition
+                            + "，当前指令位置：" + commandPosition
+                            + "，当前反馈位置：" + status.Position
+                            + "，反馈误差：" + feedbackPositionError
+                            + "，到位容差：" + axis.Configuration.PositionTolerance
                             + "，超时毫秒数：" + timeoutMilliseconds + "。");
                     }
 

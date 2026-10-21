@@ -512,6 +512,8 @@ namespace MotionControl.Host.Wpf
                         AxisNumber = axis.AxisNumber,
                         EngineeringUnit = axis.EngineeringUnit,
                         UnitsPerEngineeringUnit = axis.UnitsPerEngineeringUnit.Value,
+                        PositionTolerance = axis.PositionTolerance
+                            ?? AxisHardwareDefinition.DefaultPositionTolerance,
                         MinimumPosition = axis.MinimumPosition.Value,
                         MaximumPosition = axis.MaximumPosition.Value,
                         SoftLimitEnabled = axis.SoftLimitEnabled.Value,
@@ -532,6 +534,8 @@ namespace MotionControl.Host.Wpf
                         MaximumPosition = axis.MaximumPosition.Value,
                         SoftLimitEnabled = axis.SoftLimitEnabled.Value,
                         ManualSpeed = axis.ManualSpeed.Value,
+                        PositionTolerance = axis.PositionTolerance
+                            ?? AxisHardwareDefinition.DefaultPositionTolerance,
                         ManualAcceleration = axis.HomeAcceleration.GetValueOrDefault(),
                         ManualDeceleration = axis.HomeDeceleration.GetValueOrDefault()
                     });
@@ -580,6 +584,7 @@ namespace MotionControl.Host.Wpf
                     || left.MaximumPosition != right.MaximumPosition
                     || left.SoftLimitEnabled != right.SoftLimitEnabled
                     || left.ManualSpeed != right.ManualSpeed
+                    || left.PositionTolerance != right.PositionTolerance
                     || left.ManualAcceleration != right.ManualAcceleration
                     || left.ManualDeceleration != right.ManualDeceleration)
                 {

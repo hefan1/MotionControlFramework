@@ -1,4 +1,5 @@
 using System;
+using MotionControl.Framework.Contracts.Configuration;
 
 namespace MotionControl.Adapter.MotionCard.ZMotion
 {
@@ -12,6 +13,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         public ZMotionAxisConfiguration()
         {
             ManualSpeed = 5;
+            PositionTolerance = AxisHardwareDefinition.DefaultPositionTolerance;
             SoftLimitEnabled = true;
         }
 
@@ -42,6 +44,9 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         /// <summary>手动调试页面初始速度，单位为工程单位/秒。</summary>
         public double ManualSpeed { get; set; }
 
+        /// <summary>定位时允许的最大实际反馈误差，单位为该轴工程单位，不写入控制器参数。</summary>
+        public double PositionTolerance { get; set; }
+
         /// <summary>正运动控制卡手册定义的 DATUM 原始模式编号；框架按原编号调用厂商接口，不转换成其他厂商含义。</summary>
         public int HomeMode { get; set; }
 
@@ -57,7 +62,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         /// <summary>回零减速度，单位为工程单位/秒²。</summary>
         public double HomeDeceleration { get; set; }
 
-        /// <summary>检查轴名称、通道、单位换算、软限位和手动调试默认速度。</summary>
+        /// <summary>检查轴名称、通道、单位换算、软限位、到位容差和手动调试默认速度。</summary>
         internal void Validate()
         {
             if (string.IsNullOrWhiteSpace(ControllerId) || ControllerId != ControllerId.Trim())
@@ -97,6 +102,12 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             {
                 throw new InvalidOperationException(
                     "轴 '" + Name + "' 的手动调试速度必须是大于 0 的有限数值。");
+            }
+
+            if (!IsFinite(PositionTolerance) || PositionTolerance <= 0)
+            {
+                throw new InvalidOperationException(
+                    "轴 '" + Name + "' 的到位容差必须是大于 0 的有限数值。");
             }
         }
 

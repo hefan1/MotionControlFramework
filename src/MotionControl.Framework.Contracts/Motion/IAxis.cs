@@ -25,13 +25,13 @@ namespace MotionControl.Framework.Contracts.Motion
         Task HomeAsync(CancellationToken cancellationToken);
 
         /// <summary>
-        /// 移动到绝对位置，轴到位后完成。取消令牌会请求受控停止；轴停下后，
+        /// 移动到绝对位置，实际反馈位置进入轴配置的到位容差且轴停止后完成。取消令牌会请求受控停止；轴停下后，
         /// 此操作以取消状态结束。停止过程发生驱动错误时会抛出异常。
         /// </summary>
         Task MoveAbsoluteAsync(double position, AxisMotionProfile profile, CancellationToken cancellationToken);
 
         /// <summary>
-        /// 从当前位置移动指定距离，轴到位后完成。取消令牌会请求受控停止；轴停下后，
+        /// 从当前位置移动指定距离，实际反馈位置进入轴配置的到位容差且轴停止后完成。取消令牌会请求受控停止；轴停下后，
         /// 此操作以取消状态结束。停止过程发生驱动错误时会抛出异常。
         /// </summary>
         Task MoveRelativeAsync(double distance, AxisMotionProfile profile, CancellationToken cancellationToken);

@@ -1164,17 +1164,26 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                     return;
                 }
 
-                string feedbackPosition = finalStatus.Position.ToString("F3", CultureInfo.CurrentCulture);
-                string displayedTargetPosition = targetPosition.ToString("F3", CultureInfo.CurrentCulture);
-                if (!string.Equals(feedbackPosition, displayedTargetPosition, StringComparison.Ordinal))
-                {
-                    OperationMessageText.Text = string.Format(
-                        GetText("定位反馈与目标不一致"),
-                        feedbackPosition,
-                        displayedTargetPosition,
-                        PositionUnitText.Text);
-                }
+                ShowPositionToleranceResult(targetPosition, finalStatus);
             }).ConfigureAwait(true);
+        }
+
+        /// <summary>按轴映射中的工程单位容差核对定位后的实际反馈位置。</summary>
+        private void ShowPositionToleranceResult(double targetPosition, AxisStatus finalStatus)
+        {
+            double feedbackPositionError = Math.Abs(finalStatus.Position - targetPosition);
+            if (!finalStatus.Moving && feedbackPositionError <= _axisConfiguration.PositionTolerance)
+            {
+                return;
+            }
+
+            OperationMessageText.Text = string.Format(
+                GetText("定位未达到到位容差"),
+                finalStatus.Position.ToString("0.######", CultureInfo.CurrentCulture),
+                targetPosition.ToString("0.######", CultureInfo.CurrentCulture),
+                feedbackPositionError.ToString("0.######", CultureInfo.CurrentCulture),
+                _axisConfiguration.PositionTolerance.ToString("0.######", CultureInfo.CurrentCulture),
+                PositionUnitText.Text);
         }
 
         /// <summary>删除指定位置并保存位置列表，不会复用该位置的稳定编号。</summary>
@@ -1381,16 +1390,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                     return;
                 }
 
-                string feedbackPosition = finalStatus.Position.ToString("F3", CultureInfo.CurrentCulture);
-                string displayedTargetPosition = targetPosition.ToString("F3", CultureInfo.CurrentCulture);
-                if (!string.Equals(feedbackPosition, displayedTargetPosition, StringComparison.Ordinal))
-                {
-                    OperationMessageText.Text = string.Format(
-                        GetText("定位反馈与目标不一致"),
-                        feedbackPosition,
-                        displayedTargetPosition,
-                        PositionUnitText.Text);
-                }
+                ShowPositionToleranceResult(targetPosition, finalStatus);
             }).ConfigureAwait(true);
         }
 

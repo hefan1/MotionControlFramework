@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Windows.Controls;
+using MotionControl.Framework.Contracts.Configuration;
 
 namespace MotionControl.Framework.Wpf.Configuration
 {
@@ -101,6 +102,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             axis.AxisType = null;
             axis.EngineeringUnit = null;
             axis.UnitsPerEngineeringUnit = null;
+            axis.PositionTolerance = null;
             axis.MinimumPosition = null;
             axis.MaximumPosition = null;
             axis.SoftLimitEnabled = null;
@@ -189,6 +191,8 @@ namespace MotionControl.Framework.Wpf.Configuration
                 visibleAxis.AxisType = configuredAxis.AxisType;
                 visibleAxis.EngineeringUnit = configuredAxis.EngineeringUnit;
                 visibleAxis.UnitsPerEngineeringUnit = configuredAxis.UnitsPerEngineeringUnit;
+                visibleAxis.PositionTolerance = configuredAxis.PositionTolerance
+                    ?? AxisHardwareDefinition.DefaultPositionTolerance;
                 visibleAxis.MinimumPosition = configuredAxis.MinimumPosition;
                 visibleAxis.MaximumPosition = configuredAxis.MaximumPosition;
                 visibleAxis.SoftLimitEnabled = configuredAxis.SoftLimitEnabled;

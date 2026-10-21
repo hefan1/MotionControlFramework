@@ -3,6 +3,15 @@ namespace MotionControl.Framework.Contracts.Configuration
     /// <summary>设备配置中的一个逻辑轴到物理轴通道的映射。</summary>
     public sealed class AxisHardwareDefinition
     {
+        /// <summary>新轴映射默认使用的到位误差，单位为该轴的工程单位。</summary>
+        public const double DefaultPositionTolerance = 0.003;
+
+        /// <summary>创建逻辑轴定义，并设置默认到位容差。</summary>
+        public AxisHardwareDefinition()
+        {
+            PositionTolerance = DefaultPositionTolerance;
+        }
+
         /// <summary>设备流程使用的逻辑轴名称。</summary>
         public string Name { get; set; }
 
@@ -26,6 +35,9 @@ namespace MotionControl.Framework.Contracts.Configuration
 
         /// <summary>手动调试时默认使用的速度，直线轴为 mm/s，旋转轴为度/s。</summary>
         public double ManualSpeed { get; set; }
+
+        /// <summary>定位到位允许的最大实际反馈位置误差，单位为该轴工程单位。</summary>
+        public double PositionTolerance { get; set; }
 
         /// <summary>手动调试定位和寸动的初始加速度；由 Host 从轴参数配置提供，0 表示未配置。</summary>
         public double ManualAcceleration { get; set; }

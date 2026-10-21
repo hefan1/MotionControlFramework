@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using MotionControl.Framework.Contracts.Configuration;
 using Newtonsoft.Json;
 
 namespace MotionControl.Framework.Wpf.Configuration
@@ -36,6 +37,9 @@ namespace MotionControl.Framework.Wpf.Configuration
 
         /// <summary>保存每工程单位对应的控制器位置单位数；未配置时为空。</summary>
         private double? _unitsPerEngineeringUnit;
+
+        /// <summary>保存定位到位允许的最大反馈误差；未配置时为空。</summary>
+        private double? _positionTolerance;
 
         /// <summary>保存软件限位下限；未配置时为空。</summary>
         private double? _minimumPosition;
@@ -88,6 +92,11 @@ namespace MotionControl.Framework.Wpf.Configuration
                 string normalizedName = string.IsNullOrWhiteSpace(value) ? null : value;
                 if (SetValue(ref _name, normalizedName, "Name"))
                 {
+                    if (!string.IsNullOrWhiteSpace(normalizedName) && !PositionTolerance.HasValue)
+                    {
+                        PositionTolerance = AxisHardwareDefinition.DefaultPositionTolerance;
+                    }
+
                     RaisePropertyChanged("IsConfigured");
                 }
             }
@@ -112,6 +121,13 @@ namespace MotionControl.Framework.Wpf.Configuration
         {
             get { return _unitsPerEngineeringUnit; }
             set { SetValue(ref _unitsPerEngineeringUnit, value, "UnitsPerEngineeringUnit"); }
+        }
+
+        /// <summary>定位到位允许的最大实际反馈误差，单位为工程单位；新映射默认 0.003。</summary>
+        public double? PositionTolerance
+        {
+            get { return _positionTolerance; }
+            set { SetValue(ref _positionTolerance, value, "PositionTolerance"); }
         }
 
         /// <summary>软件限位下限，单位为工程单位；未配置时为空。</summary>

@@ -181,6 +181,7 @@
     <sys:String x:Key="操作失败">{0} failed: {1}</sys:String>
     <sys:String x:Key="定位完成但反馈读取失败">The move command completed, but feedback position could not be read: {0}</sys:String>
     <sys:String x:Key="定位反馈与目标不一致">Move command completed, but feedback position is {0} {2} and the target is {1} {2}. Please verify the axis position.</sys:String>
+    <sys:String x:Key="定位未达到到位容差">The axis is still moving or feedback error exceeds the position tolerance. Feedback: {0} {4}; target: {1} {4}; error: {2} {4}; tolerance: {3} {4}.</sys:String>
     <sys:String x:Key="运动卡未连接操作被拒绝">Motion card is disconnected.</sys:String>
     <sys:String x:Key="自动流程期间禁止手动操作">Manual commands are blocked while an automatic flow is running.</sys:String>
     <sys:String x:Key="急停报警未复位禁止手动动作">Axis motion, servo enable, and DO writes are blocked until the machine emergency-stop alarm is reset.</sys:String>
@@ -379,6 +380,8 @@
     <sys:String x:Key="工程单位">Unit</sys:String>
     <sys:String x:Key="单位换算">Unit Scale</sys:String>
     <sys:String x:Key="脉冲每工程单位">pulses / unit</sys:String>
+    <sys:String x:Key="到位容差">Position Tolerance</sys:String>
+    <sys:String x:Key="到位容差说明">Maximum allowed error between target and actual feedback after the axis stops. Uses the engineering unit; this software check is not written to the controller.</sys:String>
     <sys:String x:Key="软限位下限">Min Limit</sys:String>
     <sys:String x:Key="软限位上限">Max Limit</sys:String>
     <sys:String x:Key="软限位启用">Soft Limits</sys:String>

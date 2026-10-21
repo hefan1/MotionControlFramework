@@ -169,6 +169,12 @@ namespace MotionControl.Framework.Runtime.Configuration
                         + "' 的手动速度必须是大于 0 的有限数值。");
                 }
 
+                if (!IsFinite(axis.PositionTolerance) || axis.PositionTolerance <= 0)
+                {
+                    errors.Add("逻辑轴 '" + displayName
+                        + "' 的到位容差必须是大于 0 的有限数值。");
+                }
+
                 if (!IsFinite(axis.ManualAcceleration) || axis.ManualAcceleration < 0
                     || !IsFinite(axis.ManualDeceleration) || axis.ManualDeceleration < 0)
                 {

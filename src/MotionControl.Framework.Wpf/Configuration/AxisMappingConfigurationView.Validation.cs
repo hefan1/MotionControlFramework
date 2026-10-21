@@ -70,6 +70,14 @@ namespace MotionControl.Framework.Wpf.Configuration
                     errors.Add(string.Format((string)FindResource("轴参数大于零格式"), axisName, (string)FindResource("单位换算")));
                 }
 
+                if (!IsFinite(axis.PositionTolerance) || axis.PositionTolerance.Value <= 0)
+                {
+                    errors.Add(string.Format(
+                        (string)FindResource("轴参数大于零格式"),
+                        axisName,
+                        (string)FindResource("到位容差")));
+                }
+
                 if (!axis.SoftLimitEnabled.HasValue)
                 {
                     errors.Add(string.Format((string)FindResource("轴软限位启用未选择格式"), axisName));
@@ -119,6 +127,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             return !string.IsNullOrWhiteSpace(axis.AxisType)
                 || !string.IsNullOrWhiteSpace(axis.EngineeringUnit)
                 || axis.UnitsPerEngineeringUnit.HasValue
+                || axis.PositionTolerance.HasValue
                 || axis.MinimumPosition.HasValue
                 || axis.MaximumPosition.HasValue
                 || axis.SoftLimitEnabled.HasValue

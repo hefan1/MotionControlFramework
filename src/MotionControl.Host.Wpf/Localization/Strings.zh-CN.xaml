@@ -189,6 +189,7 @@
     <sys:String x:Key="操作失败">{0}失败：{1}</sys:String>
     <sys:String x:Key="定位完成但反馈读取失败">定位指令已完成，但读取反馈位置失败：{0}</sys:String>
     <sys:String x:Key="定位反馈与目标不一致">定位已完成，但当前反馈位置为 {0} {2}，目标位置为 {1} {2}。请确认轴位置。</sys:String>
+    <sys:String x:Key="定位未达到到位容差">定位后轴仍在运动或反馈误差超出到位容差。反馈位置 {0} {4}，目标位置 {1} {4}，误差 {2} {4}，到位容差 {3} {4}。</sys:String>
     <sys:String x:Key="运动卡未连接操作被拒绝">运动控制卡未连接。</sys:String>
     <sys:String x:Key="自动流程期间禁止手动操作">设备自动流程运行期间禁止手动操作。</sys:String>
     <sys:String x:Key="急停报警未复位禁止手动动作">整机急停报警尚未复位，禁止启动轴运动、使能伺服或写入 DO。</sys:String>
@@ -389,6 +390,8 @@
     <sys:String x:Key="工程单位">工程单位</sys:String>
     <sys:String x:Key="单位换算">单位换算</sys:String>
     <sys:String x:Key="脉冲每工程单位">脉冲 / 单位</sys:String>
+    <sys:String x:Key="到位容差">到位容差</sys:String>
+    <sys:String x:Key="到位容差说明">轴停止后，实际反馈位置与目标位置允许的最大误差。单位跟随工程单位；这是软件判定值，不会写入控制卡。</sys:String>
     <sys:String x:Key="软限位下限">软限位下限</sys:String>
     <sys:String x:Key="软限位上限">软限位上限</sys:String>
     <sys:String x:Key="软限位启用">软限位启用</sys:String>

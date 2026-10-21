@@ -195,7 +195,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 var hostWindow = new MainWindow();
                 hostWindow.SetManualMotionDebugPage(page);
                 hostWindow.SetManualIoDebugPage(ioPage);
-                VerifyMotionCardConnectionStatus(application, hostWindow, englishResources, chineseResources);
+                VerifyMotionCardConnectionStatus(hostWindow, englishResources, chineseResources);
                 VerifyAxisMappingStartupConnection(application, englishResources, chineseResources);
                 VerifyIoCapabilityDiagnosticDisplay(application, englishResources, chineseResources);
                 var primaryNavigation = (StackPanel)hostWindow.FindName("PrimaryNavigation");
@@ -356,9 +356,8 @@ namespace MotionControl.ZMotionSimulatorCheck
             return (List<string>)validationMethod.Invoke(page, null);
         }
 
-        /// <summary>确认 Host 顶部显示设备状态，底栏独立显示中英文控制卡连接状态。</summary>
+        /// <summary>确认未连接 Runtime 时顶部保持未连接状态，底栏独立显示控制卡连接状态。</summary>
         private static void VerifyMotionCardConnectionStatus(
-            Application application,
             MainWindow hostWindow,
             ResourceDictionary englishResources,
             ResourceDictionary chineseResources)
@@ -367,20 +366,32 @@ namespace MotionControl.ZMotionSimulatorCheck
             var footerStatus = (TextBlock)hostWindow.FindName("MotionCardConnectionStatus");
 
             hostWindow.SetMotionCardConnectionStatus(true);
-            Ensure(headerMessage.Text.Contains("待机"), "Host 顶部没有保持设备待机状态。");
+            Ensure(
+                headerMessage.Text.Contains(chineseResources["状态未连接"] as string),
+                "控制卡连接状态变化时，Host 顶部整机状态不应离开未连接状态。");
             Ensure(footerStatus.Text.Contains("控制卡 已连接"), "Host 底栏没有显示控制卡已连接。");
 
-            application.Resources.MergedDictionaries[0] = englishResources;
-            Ensure(headerMessage.Text.Contains("Machine state: standby"), "Host 顶部设备状态没有切换为英文。");
+            MethodInfo applyLanguageMethod = typeof(MainWindow).GetMethod(
+                "ApplyLanguage",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Ensure(applyLanguageMethod != null, "Host 没有找到界面语言切换入口。");
+            applyLanguageMethod.Invoke(hostWindow, new object[] { "en-US" });
+            Ensure(
+                headerMessage.Text.Contains(englishResources["状态未连接"] as string),
+                "Host 顶部未连接状态没有切换为英文。");
             Ensure(footerStatus.Text.Contains("Motion card: connected"), "Host 底栏连接状态没有切换为英文。");
 
             hostWindow.SetMotionCardConnectionStatus(false);
-            Ensure(headerMessage.Text.Contains("Machine state: standby"), "Host 顶部设备状态受卡连接变化影响。");
+            Ensure(
+                headerMessage.Text.Contains(englishResources["状态未连接"] as string),
+                "Host 顶部整机状态受卡连接变化影响。");
             Ensure(footerStatus.Text.Contains("Motion card: not connected"), "Host 底栏没有显示未连接状态。");
 
-            application.Resources.MergedDictionaries[0] = chineseResources;
+            applyLanguageMethod.Invoke(hostWindow, new object[] { "zh-CN" });
             hostWindow.SetMotionCardConnectionStatus(false);
-            Ensure(headerMessage.Text.Contains("设备状态：待机"), "Host 顶部未恢复中文设备状态。");
+            Ensure(
+                headerMessage.Text.Contains(chineseResources["状态未连接"] as string),
+                "Host 顶部未恢复中文未连接状态。");
             Ensure(footerStatus.Text.Contains("控制卡 未连接"), "Host 底栏未恢复中文未连接状态。");
         }
 
