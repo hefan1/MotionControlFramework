@@ -108,6 +108,7 @@
     <sys:String x:Key="寸动模式">Step</sys:String>
     <sys:String x:Key="寸动步长">Step distance</sys:String>
     <sys:String x:Key="定位位置">Target position</sys:String>
+    <sys:String x:Key="手动定位支持小数提示">Decimal positions are supported, for example 12.5. Final positioning precision depends on the card and axis settings.</sys:String>
     <sys:String x:Key="指令位置">Command position</sys:String>
     <sys:String x:Key="当前编码器位置">Encoder position</sys:String>
     <sys:String x:Key="原点输入状态">Current home input state</sys:String>

@@ -116,6 +116,7 @@
     <sys:String x:Key="寸动模式">寸动</sys:String>
     <sys:String x:Key="寸动步长">寸动步长</sys:String>
     <sys:String x:Key="定位位置">定位位置</sys:String>
+    <sys:String x:Key="手动定位支持小数提示">支持小数输入，例如 12.5；最终位置精度由控制卡和轴参数决定。</sys:String>
     <sys:String x:Key="指令位置">当前指令位置</sys:String>
     <sys:String x:Key="当前编码器位置">当前编码器位置</sys:String>
     <sys:String x:Key="原点输入状态">原点输入当前状态</sys:String>

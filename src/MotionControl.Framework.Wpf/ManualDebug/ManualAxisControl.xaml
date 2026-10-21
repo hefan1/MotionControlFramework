@@ -102,7 +102,12 @@
                 <TextBox x:Name="JogStepTextBox" Grid.Row="3" Grid.Column="1" Style="{StaticResource AxisInputStyle}" Text="1" />
                 <TextBlock Grid.Row="3" Grid.Column="2" Text="{Binding ElementName=PositionUnitText, Path=Text}" VerticalAlignment="Center" FontSize="10" Foreground="#687A8C" Margin="5,0,0,0" />
                 <TextBlock Grid.Row="4" Text="{DynamicResource 定位位置}" VerticalAlignment="Center" FontSize="11" Foreground="#43576A" />
-                <TextBox x:Name="TargetPositionTextBox" Grid.Row="4" Grid.Column="1" Style="{StaticResource AxisInputStyle}" Text="0" />
+                <TextBox x:Name="TargetPositionTextBox"
+                         Grid.Row="4"
+                         Grid.Column="1"
+                         Style="{StaticResource AxisInputStyle}"
+                         Text="0.000"
+                         ToolTip="{DynamicResource 手动定位支持小数提示}" />
                 <TextBlock Grid.Row="4" Grid.Column="2" Text="{Binding ElementName=PositionUnitText, Path=Text}" VerticalAlignment="Center" FontSize="10" Foreground="#687A8C" Margin="5,0,0,0" />
             </Grid>
 
