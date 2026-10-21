@@ -1145,10 +1145,35 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                     throw new InvalidOperationException(GetText("目标位置未设置"));
                 }
 
-                EnsurePositionWithinLimits(position.Position.Value);
+                double targetPosition = position.Position.Value;
+                EnsurePositionWithinLimits(targetPosition);
                 AxisMotionProfile profile = ReadMotionProfile();
-                await _axis.MoveAbsoluteAsync(position.Position.Value, profile, CancellationToken.None)
+                await _axis.MoveAbsoluteAsync(targetPosition, profile, CancellationToken.None)
                     .ConfigureAwait(true);
+
+                AxisStatus finalStatus;
+                try
+                {
+                    finalStatus = await ReadAxisStatusForManualActionAsync().ConfigureAwait(true);
+                }
+                catch (Exception error)
+                {
+                    OperationMessageText.Text = string.Format(
+                        GetText("定位完成但反馈读取失败"),
+                        error.Message);
+                    return;
+                }
+
+                string feedbackPosition = finalStatus.Position.ToString("F3", CultureInfo.CurrentCulture);
+                string displayedTargetPosition = targetPosition.ToString("F3", CultureInfo.CurrentCulture);
+                if (!string.Equals(feedbackPosition, displayedTargetPosition, StringComparison.Ordinal))
+                {
+                    OperationMessageText.Text = string.Format(
+                        GetText("定位反馈与目标不一致"),
+                        feedbackPosition,
+                        displayedTargetPosition,
+                        PositionUnitText.Text);
+                }
             }).ConfigureAwait(true);
         }
 
