@@ -19,6 +19,75 @@
             <Setter Property="BorderBrush" Value="#CAD5E0" />
             <Setter Property="Background" Value="#F7F9FB" />
         </Style>
+
+        <!-- 示教位置行内操作保持紧凑，并沿用页面的蓝灰配色和圆角边框。 -->
+        <Style x:Key="PositionRowActionButtonStyle" TargetType="Button">
+            <Setter Property="Height" Value="24" />
+            <Setter Property="MinHeight" Value="24" />
+            <Setter Property="Padding" Value="2,1" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#33485F" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="#CAD5E2" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              Margin="{TemplateBinding Padding}" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#EEF5FC" />
+                    <Setter Property="BorderBrush" Value="#9FC5FA" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="#2475D0" />
+                    <Setter Property="BorderThickness" Value="2" />
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="#DDEBFA" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Background" Value="#F1F3F6" />
+                    <Setter Property="BorderBrush" Value="#E1E6EC" />
+                    <Setter Property="Foreground" Value="#9AA4B1" />
+                    <Setter Property="Cursor" Value="Arrow" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="PositionWriteButtonStyle" TargetType="Button" BasedOn="{StaticResource PositionRowActionButtonStyle}">
+            <Setter Property="Foreground" Value="#175BA6" />
+            <Setter Property="Background" Value="#EEF5FC" />
+            <Setter Property="BorderBrush" Value="#C2D8EF" />
+        </Style>
+        <Style x:Key="PositionDeleteButtonStyle" TargetType="Button" BasedOn="{StaticResource PositionRowActionButtonStyle}">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Foreground" Value="#8793A0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#FCEDEA" />
+                    <Setter Property="BorderBrush" Value="#E8C1BB" />
+                    <Setter Property="Foreground" Value="#9C3429" />
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="#F6D9D5" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
 
     <!-- 卡片保持适中宽度，让多轴控件能并排显示。 -->
@@ -257,13 +326,17 @@
                                                      ToolTip="{DynamicResource 直接编辑目标位置}" />
                                             <Button Grid.Column="2" Content="{DynamicResource 写入短标签}"
                                                     IsEnabled="{Binding CanRunManualRecoveryOperations, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
-                                                    Click="TeachPositionButton_Click" Margin="1" Padding="2,1" MinHeight="24" FontSize="10"
+                                                    Click="TeachPositionButton_Click" Margin="1"
+                                                    Style="{StaticResource PositionWriteButtonStyle}"
                                                     ToolTip="{Binding RecoveryOperationBlockText, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
                                                     ToolTipService.ShowOnDisabled="True" />
                                             <Button Grid.Column="3" Content="{DynamicResource 定位}"
                                                     IsEnabled="{Binding CanRunManualOperations, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
-                                                    Click="MoveToPositionButton_Click" Margin="1" Padding="2,1" MinHeight="24" FontSize="10" />
-                                            <Button Grid.Column="4" Content="×" Click="DeletePositionButton_Click" Margin="1" Padding="1" MinHeight="24" FontSize="10" ToolTip="{DynamicResource 删除位置}" />
+                                                    Click="MoveToPositionButton_Click" Margin="1"
+                                                    Style="{StaticResource PositionRowActionButtonStyle}" />
+                                            <Button Grid.Column="4" Content="×" Click="DeletePositionButton_Click" Margin="1"
+                                                    Style="{StaticResource PositionDeleteButtonStyle}"
+                                                    ToolTip="{DynamicResource 删除位置}" />
                                         </Grid>
                                     </Border>
                                 </DataTemplate>
