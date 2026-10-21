@@ -174,7 +174,7 @@
     <sys:String x:Key="自动流程期间禁止手动操作">Manual commands are blocked while an automatic flow is running.</sys:String>
     <sys:String x:Key="急停报警未复位禁止手动动作">Axis motion, servo enable, and DO writes are blocked until the machine emergency-stop alarm is reset.</sys:String>
     <sys:String x:Key="急停输入有效禁止手动操作">Axis motion, servo enable, and DO writes are blocked while the emergency-stop input is active.</sys:String>
-    <sys:String x:Key="急停状态读取失败禁止手动操作">Axis motion, servo enable, and DO writes are blocked because the emergency-stop DI is not configured, is unmapped, or could not be read.</sys:String>
+    <sys:String x:Key="急停状态读取失败禁止手动操作">Manual motion, servo enable, and DO writes are blocked because the configured emergency-stop DI could not be read. Check the DI mapping and controller connection.</sys:String>
     <sys:String x:Key="轴状态读取失败禁止手动操作">Axis status could not be read, so motion and servo operations are blocked. Check the controller connection and axis status.</sys:String>
     <sys:String x:Key="轴状态不可读禁止恢复操作">Axis status cannot be read. Servo disable, position teaching, and axis alarm reset are unavailable.</sys:String>
     <sys:String x:Key="轴运动中禁止恢复操作">The axis is still moving. Use controlled stop before recovery actions.</sys:String>
@@ -305,13 +305,13 @@
 
     <sys:String x:Key="安全联锁页面说明">Configure the software monitored emergency-stop input separately from DI/DO physical channel mapping.</sys:String>
     <sys:String x:Key="安全联锁标题">Software Emergency Stop Interlock</sys:String>
-    <sys:String x:Key="安全联锁说明">Select a DI already configured in I/O Mapping for runtime emergency-stop monitoring.</sys:String>
+    <sys:String x:Key="安全联锁说明">Select a DI configured in I/O Mapping for software emergency-stop monitoring. Leaving it blank does not block manual debugging.</sys:String>
     <sys:String x:Key="安全联锁输入名称">Emergency Stop Status DI</sys:String>
-    <sys:String x:Key="安全联锁注意事项">If no emergency-stop DI is configured, software treats the input as active and blocks manual operations. This software monitor is for workflow interlocking; the hardware safety circuit must perform the safety stop.</sys:String>
+    <sys:String x:Key="安全联锁注意事项">When blank, software emergency-stop monitoring is disabled and manual axis/I/O debugging remains available; automatic flow start still requires a valid DI. This monitor does not replace the hardware safety circuit.</sys:String>
     <sys:String x:Key="安全联锁刷新DI">Refresh DI List</sys:String>
     <sys:String x:Key="安全联锁保存配置">Save Configuration</sys:String>
     <sys:String x:Key="安全联锁取消修改">Cancel Changes</sys:String>
-    <sys:String x:Key="安全联锁未配置">Emergency-stop status DI is not configured; the software interlock remains active.</sys:String>
+    <sys:String x:Key="安全联锁未配置">Software emergency-stop DI is not configured; manual debugging is available, but automatic flow cannot start.</sys:String>
     <sys:String x:Key="安全联锁输入未映射">The configured emergency-stop DI “{0}” is not in I/O Mapping. Select another input.</sys:String>
     <sys:String x:Key="安全联锁输入映射有效">Software emergency-stop source: {0} → {1}.</sys:String>
     <sys:String x:Key="安全联锁读取完成">Safety interlock configuration loaded.</sys:String>

@@ -182,7 +182,7 @@
     <sys:String x:Key="自动流程期间禁止手动操作">设备自动流程运行期间禁止手动操作。</sys:String>
     <sys:String x:Key="急停报警未复位禁止手动动作">整机急停报警尚未复位，禁止启动轴运动、使能伺服或写入 DO。</sys:String>
     <sys:String x:Key="急停输入有效禁止手动操作">急停输入仍有效，禁止启动轴运动、使能伺服或写入 DO。</sys:String>
-    <sys:String x:Key="急停状态读取失败禁止手动操作">急停 DI 未配置、映射无效或读取失败，禁止启动轴运动、使能伺服或写入 DO。</sys:String>
+    <sys:String x:Key="急停状态读取失败禁止手动操作">已配置的急停 DI 状态读取失败，禁止启动轴运动、使能伺服或写入 DO；请检查 DI 映射和控制卡通信。</sys:String>
     <sys:String x:Key="轴状态读取失败禁止手动操作">读取轴状态失败，已禁止运动和伺服操作，请检查控制卡连接与轴状态。</sys:String>
     <sys:String x:Key="轴状态不可读禁止恢复操作">无法读取轴状态，暂不能关闭伺服、示教当前位置或复位轴报警。</sys:String>
     <sys:String x:Key="轴运动中禁止恢复操作">轴仍在运动，请先受控停止后再执行恢复操作。</sys:String>
@@ -315,13 +315,13 @@
     <!-- 安全联锁配置 -->
     <sys:String x:Key="安全联锁页面说明">在此设置软件监控的急停逻辑输入，与 DI/DO 物理通道映射分开保存。</sys:String>
     <sys:String x:Key="安全联锁标题">软件急停联锁</sys:String>
-    <sys:String x:Key="安全联锁说明">选择一个已在 IO 映射中配置的 DI，供运行时监控急停状态。</sys:String>
+    <sys:String x:Key="安全联锁说明">选择一个已在 IO 映射中配置的 DI，供软件监控急停状态；留空时手动调试不受软件急停配置缺失影响。</sys:String>
     <sys:String x:Key="安全联锁输入名称">急停状态 DI</sys:String>
-    <sys:String x:Key="安全联锁注意事项">未配置急停状态 DI 时，软件会按急停已触发处理并拦截手动操作。该软件监控只用于流程联锁，设备安全停机仍须由硬件安全回路完成。</sys:String>
+    <sys:String x:Key="安全联锁注意事项">未配置时软件急停监控关闭，手动轴和 IO 调试不会因此被锁定；自动流程启动仍要求配置有效 DI。软件监控不代替硬件安全回路。</sys:String>
     <sys:String x:Key="安全联锁刷新DI">刷新 DI 列表</sys:String>
     <sys:String x:Key="安全联锁保存配置">保存配置</sys:String>
     <sys:String x:Key="安全联锁取消修改">取消修改</sys:String>
-    <sys:String x:Key="安全联锁未配置">尚未配置急停状态 DI；软件联锁保持触发。</sys:String>
+    <sys:String x:Key="安全联锁未配置">软件急停状态 DI 未配置；手动调试不受此项拦截，自动流程不能启动。</sys:String>
     <sys:String x:Key="安全联锁输入未映射">当前急停 DI“{0}”已不在 IO 映射中，请重新选择。</sys:String>
     <sys:String x:Key="安全联锁输入映射有效">当前软件急停来源：{0} → {1}。</sys:String>
     <sys:String x:Key="安全联锁读取完成">安全联锁配置已读取。</sys:String>

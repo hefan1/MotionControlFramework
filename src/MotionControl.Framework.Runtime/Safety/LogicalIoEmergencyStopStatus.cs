@@ -7,7 +7,7 @@ using MotionControl.Framework.Contracts.Safety;
 namespace MotionControl.Framework.Runtime.Safety
 {
     /// <summary>通过设备配置的逻辑 DI 读取急停状态。</summary>
-    public sealed class LogicalIoEmergencyStopStatus : IMachineSafetyStatus
+    public sealed class LogicalIoEmergencyStopStatus : IConfigurableMachineSafetyStatus
     {
         /// <summary>负责将逻辑输入名称映射到控制卡 DI 的读取服务。</summary>
         private readonly ILogicalIo _logicalIo;
@@ -18,7 +18,7 @@ namespace MotionControl.Framework.Runtime.Safety
         /// <summary>保护运行中更新急停 DI 名称时的配置锁。</summary>
         private readonly object _configurationLock = new object();
 
-        /// <summary>创建急停输入读取器；名称未配置时读取状态会报告配置不可用。</summary>
+        /// <summary>创建急停输入读取器；名称为空时表示未启用软件急停监控。</summary>
         public LogicalIoEmergencyStopStatus(ILogicalIo logicalIo, string emergencyStopInputName)
         {
             if (logicalIo == null)
@@ -44,7 +44,19 @@ namespace MotionControl.Framework.Runtime.Safety
             }
         }
 
-        /// <summary>读取配置的逻辑 DI；逻辑 true 表示急停触发，未配置时报告输入不可用。</summary>
+        /// <summary>返回当前是否配置了用于软件监控的逻辑 DI 名称。</summary>
+        public bool IsConfigured
+        {
+            get
+            {
+                lock (_configurationLock)
+                {
+                    return !string.IsNullOrWhiteSpace(_emergencyStopInputName);
+                }
+            }
+        }
+
+        /// <summary>读取配置的逻辑 DI；逻辑 true 表示急停触发，未配置时明确报告配置缺失。</summary>
         public Task<bool> ReadEmergencyStopActiveAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();

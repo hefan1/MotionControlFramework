@@ -168,7 +168,7 @@ namespace MotionControl.Framework.Runtime.Machine
             get { return _alarmService; }
         }
 
-        /// <summary>检查手动操作条件并刷新急停状态，返回可供界面本地化显示的阻止原因。</summary>
+        /// <summary>检查手动操作条件并刷新已配置的急停状态；未配置软件 DI 不阻止手动调试。</summary>
         public async Task<ManualOperationBlockReason> GetManualOperationBlockReasonAsync(
             CancellationToken cancellationToken)
         {
@@ -509,6 +509,12 @@ namespace MotionControl.Framework.Runtime.Machine
 
                 EnsureState(MachineRunState.Ready, "启动前必须先成功复位设备。");
                 EnsureNoManualOperationsInProgress("启动自动流程");
+                if (!IsEmergencyStopMonitoringConfigured())
+                {
+                    throw new InvalidOperationException(
+                        "软件急停状态 DI 尚未配置，不能启动自动流程。请先在安全联锁页选择 DI；手动调试仍可使用。设备安全停机仍须由硬件安全回路完成。");
+                }
+
                 try
                 {
                     if (await UpdateEmergencyStopAlarmAsync(cancellationToken).ConfigureAwait(false))
@@ -549,9 +555,19 @@ namespace MotionControl.Framework.Runtime.Machine
             }
         }
 
-        /// <summary>读取急停输入并更新停机报警条件；未配置、映射无效或读取失败时按安全策略闭锁。</summary>
+        /// <summary>读取已配置的急停输入并更新停机报警；未配置时关闭软件监控且不生成急停报警。</summary>
         private async Task<bool> UpdateEmergencyStopAlarmAsync(CancellationToken cancellationToken)
         {
+            if (!IsEmergencyStopMonitoringConfigured())
+            {
+                _alarmService.ReportCondition(
+                    EmergencyStopAlarm,
+                    "整机急停输入",
+                    false,
+                    "软件急停 DI 未配置，软件状态监控未启用；设备安全停机仍由硬件安全回路负责。");
+                return false;
+            }
+
             bool emergencyStopActive;
             try
             {
@@ -569,8 +585,8 @@ namespace MotionControl.Framework.Runtime.Machine
                     EmergencyStopAlarm,
                     "整机急停输入",
                     true,
-                    "急停 DI 未配置、映射无效或读取失败，按安全策略禁止动作。原因：" + readError.Message);
-                throw new InvalidOperationException("急停输入不可用，已按安全策略禁止动作。", readError);
+                    "已配置的急停 DI 映射无效或读取失败，按软件联锁配置禁止动作。原因：" + readError.Message);
+                throw new InvalidOperationException("已配置的急停 DI 状态读取失败，软件联锁已禁止动作。", readError);
             }
 
             _alarmService.ReportCondition(
@@ -584,6 +600,11 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>启动流程期间周期读取急停输入，触发时借助停机报警暂停整机流程。</summary>
         private void StartEmergencyStopMonitor()
         {
+            if (!IsEmergencyStopMonitoringConfigured())
+            {
+                throw new InvalidOperationException("自动流程运行期间必须保持软件急停 DI 配置有效。");
+            }
+
             if (_safetyMonitorTask != null && !_safetyMonitorTask.IsCompleted)
             {
                 throw new InvalidOperationException("上一次急停状态监控尚未结束，不能重复启动设备。");
@@ -631,7 +652,7 @@ namespace MotionControl.Framework.Runtime.Machine
                             EmergencyStopAlarm,
                             "整机急停输入",
                             true,
-                            "运行期间急停 DI 未配置、映射无效或读取失败，按安全策略停机。原因：" + readError.Message);
+                            "运行期间已配置的急停 DI 被移除、映射无效或读取失败，按软件联锁配置停机。原因：" + readError.Message);
                         return;
                     }
                 }
@@ -982,6 +1003,13 @@ namespace MotionControl.Framework.Runtime.Machine
             }
 
             return ManualOperationBlockReason.None;
+        }
+
+        /// <summary>判断安全状态来源是否声明了有效配置；普通安全状态来源默认始终可用。</summary>
+        private bool IsEmergencyStopMonitoringConfigured()
+        {
+            var configurableStatus = _safetyStatus as IConfigurableMachineSafetyStatus;
+            return configurableStatus == null || configurableStatus.IsConfigured;
         }
 
         /// <summary>在整机命令锁内检查手动联锁并登记正在执行的手动操作。</summary>

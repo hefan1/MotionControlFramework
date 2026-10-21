@@ -379,7 +379,7 @@ namespace MotionControl.Host.Wpf
             }
         }
 
-        /// <summary>从独立安全配置读取急停 DI；未配置或映射失效时保留原名并由运行时报告配置不可用。</summary>
+        /// <summary>从独立安全配置读取急停 DI；留空表示仅关闭软件监控，生产配置仍由全量校验把关。</summary>
         private LogicalIoEmergencyStopStatus CreateSafetyStatus(ILogicalIo logicalIo)
         {
             const string safetyInterlockFilePath = "HardwareConfig/SafetyInterlock.json";
@@ -413,7 +413,7 @@ namespace MotionControl.Host.Wpf
             {
                 System.Diagnostics.Trace.TraceWarning(
                     "安全联锁配置中的急停输入 '" + emergencyStopInputName
-                    + "' 没有对应的 DI 映射，运行时将禁止手动动作并报告输入不可用。");
+                    + "' 没有对应的 DI 映射，运行时会将已配置的安全输入标记为不可读取并闭锁动作。");
             }
 
             return new LogicalIoEmergencyStopStatus(logicalIo, emergencyStopInputName);

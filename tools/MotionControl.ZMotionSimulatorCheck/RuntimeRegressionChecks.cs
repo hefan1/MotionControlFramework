@@ -42,6 +42,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("停机报警暂停流程并要求复位", StopAlarmPausesMachineUntilResetAsync, failures);
             await RunCheckAsync("非停机报警在条件恢复后自动清除", NonStopAlarmClearsWhenRecoveredAsync, failures);
             await RunCheckAsync("工位流程异常使整机进入报警", StationFailureAlarmsMachineAsync, failures);
+            await RunCheckAsync("未配置软件急停 DI 不阻止手动调试但禁止自动启动", UnconfiguredEmergencyStopAllowsManualDebugOnlyAsync, failures);
             await RunCheckAsync("手动轴和 DO 操作实时检查急停并等待复位", EmergencyStopBlocksManualOperationsAsync, failures);
             await RunCheckAsync("急停有效时禁止复位和启动，运行期间触发会暂停流程", EmergencyStopBlocksAndStopsMachineAsync, failures);
             await RunCheckAsync("轴仍在运动时拒绝整机复位", ResetIsRejectedWhileAxisIsMovingAsync, failures);
@@ -669,6 +670,41 @@ namespace MotionControl.ZMotionSimulatorCheck
             await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
+        /// <summary>确认空白软件急停配置不会误报或锁住手动调试，但仍不能启动自动流程。</summary>
+        private static async Task UnconfiguredEmergencyStopAllowsManualDebugOnlyAsync()
+        {
+            var flow = new WaitingStationFlow("上料工位", "等待上料完成");
+            var alarms = new MachineAlarmService();
+            var safetyStatus = new FakeSafetyStatus { IsConfigured = false };
+            var runtime = CreateRuntime(flow, alarms, safetyStatus);
+
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            ManualOperationBlockReason blockReason = await runtime
+                .GetManualOperationBlockReasonAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(blockReason == ManualOperationBlockReason.None,
+                "软件急停 DI 未配置时，Runtime 仍然阻止了手动操作。");
+            Ensure(alarms.Alarms.Count == 0,
+                "软件急停 DI 未配置时，Runtime 错误地产生了急停报警。");
+
+            bool manualOperationCalled = false;
+            ManualOperationBlockReason operationReason = await runtime.RunManualOperationAsync(
+                () =>
+                {
+                    manualOperationCalled = true;
+                    return Task.CompletedTask;
+                },
+                CancellationToken.None).ConfigureAwait(false);
+            Ensure(operationReason == ManualOperationBlockReason.None && manualOperationCalled,
+                "软件急停 DI 未配置时，普通手动操作没有执行。");
+
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await ExpectExceptionAsync<InvalidOperationException>(
+                () => runtime.StartAsync(CancellationToken.None)).ConfigureAwait(false);
+            Ensure(runtime.State == MachineRunState.Ready,
+                "软件急停 DI 未配置时，自动启动失败错误地将手动调试 Runtime 置为报警。");
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
         /// <summary>确认手动操作会实时读取急停输入，且释放后仍须复位急停报警。</summary>
         private static async Task EmergencyStopBlocksManualOperationsAsync()
         {
@@ -1193,8 +1229,11 @@ namespace MotionControl.ZMotionSimulatorCheck
         }
 
         /// <summary>提供可由回归用例切换的急停输入状态。</summary>
-        private sealed class FakeSafetyStatus : IMachineSafetyStatus
+        private sealed class FakeSafetyStatus : IConfigurableMachineSafetyStatus
         {
+            /// <summary>控制回归用例模拟急停逻辑 DI 是否已配置；默认模拟有效配置。</summary>
+            public bool IsConfigured { get; set; } = true;
+
             public bool EmergencyStopActive { get; set; }
 
             /// <summary>模拟急停输入读取失败时返回的异常。</summary>
