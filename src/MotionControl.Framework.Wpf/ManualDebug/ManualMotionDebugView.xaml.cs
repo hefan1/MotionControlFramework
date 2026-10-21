@@ -49,7 +49,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>页面当前显示的轴卡片，用于轮询状态和离开页面时停止点动。</summary>
         private readonly List<ManualAxisControl> _axisControls = new List<ManualAxisControl>();
 
-        /// <summary>提供复位、启停和整机状态的运行上下文。</summary>
+        /// <summary>提供整机复位和轴手动操作联锁的运行上下文。</summary>
         private readonly MachineRuntime _machineRuntime;
 
         /// <summary>提供本设备的逻辑轴及运动卡状态。</summary>
@@ -506,7 +506,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
-        /// <summary>读取一次手动联锁并更新整机状态、轴卡按钮可用状态和各轴状态。</summary>
+        /// <summary>读取手动联锁并更新轴卡按钮可用状态和各轴状态。</summary>
         private async Task RefreshAllStatusAsync()
         {
             ManualOperationBlockReason blockReason;
@@ -527,9 +527,6 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 axisControl.SetManualOperationAvailability(blockReason);
             }
 
-            MachineStateText.Text = GetText("整机状态") + GetText("状态分隔符")
-                + GetMachineStateText(_machineRuntime.State);
-
             foreach (ManualAxisControl axisControl in _axisControls)
             {
                 try
@@ -549,30 +546,6 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         {
             object resourceValue = TryFindResource(resourceKey);
             return resourceValue == null ? resourceKey : resourceValue.ToString();
-        }
-
-        /// <summary>把整机运行状态转换成当前界面语言。</summary>
-        private string GetMachineStateText(MachineRunState state)
-        {
-            switch (state)
-            {
-                case MachineRunState.Disconnected:
-                    return GetText("状态未连接");
-                case MachineRunState.ResetRequired:
-                    return GetText("状态等待复位");
-                case MachineRunState.Ready:
-                    return GetText("状态就绪");
-                case MachineRunState.Running:
-                    return GetText("状态运行中");
-                case MachineRunState.Pausing:
-                    return GetText("状态暂停中");
-                case MachineRunState.Paused:
-                    return GetText("状态已暂停");
-                case MachineRunState.Alarmed:
-                    return GetText("状态报警");
-                default:
-                    return state.ToString();
-            }
         }
 
     }
