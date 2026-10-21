@@ -61,7 +61,8 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     alarmMessage,
                     axis.RequiresHomingAfterLimitAlarm,
                     commandPosition,
-                    originInputActive);
+                    originInputActive,
+                    "ZAux_Direct_GetAxisStatus / AXISSTATUS");
             }
         }
 
@@ -117,7 +118,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             return stopReasonCode;
         }
 
-        /// <summary>把正运动实时状态位转换为容易读懂的中文报警原因。</summary>
+        /// <summary>把正运动实时状态位转换为轴或驱动报警原因；限位原因单独显示。</summary>
         private static string BuildAxisAlarmMessage(int statusBits)
         {
             var messages = new List<string>();
@@ -131,29 +132,9 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 messages.Add("总线驱动器报警");
             }
 
-            if ((statusBits & PositiveHardLimitMask) != 0)
-            {
-                messages.Add("正向硬限位有效");
-            }
-
-            if ((statusBits & NegativeHardLimitMask) != 0)
-            {
-                messages.Add("负向硬限位有效");
-            }
-
             if ((statusBits & (1 << FollowingErrorBit)) != 0)
             {
                 messages.Add("随动误差超限");
-            }
-
-            if ((statusBits & PositiveSoftLimitMask) != 0)
-            {
-                messages.Add("超过正向软限位");
-            }
-
-            if ((statusBits & NegativeSoftLimitMask) != 0)
-            {
-                messages.Add("超过负向软限位");
             }
 
             if ((statusBits & (1 << PowerAbnormalBit)) != 0)

@@ -59,14 +59,10 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             | NegativeHardLimitMask
             | PositiveSoftLimitMask
             | NegativeSoftLimitMask;
-        /// <summary>读取轴状态时用于判断报警的 AXISSTATUS 位掩码。</summary>
+        /// <summary>读取轴状态时用于判断轴或驱动报警的位掩码；硬、软限位单独呈现。</summary>
         private const int ActiveAlarmStatusMask = (1 << RemoteAxisCommunicationErrorBit)
             | (1 << RemoteDriveErrorBit)
-            | PositiveHardLimitMask
-            | NegativeHardLimitMask
             | (1 << FollowingErrorBit)
-            | PositiveSoftLimitMask
-            | NegativeSoftLimitMask
             | (1 << PowerAbnormalBit)
             | (1 << AxisSpeedProtectionBit)
             | (1 << SpecialMotionCommandErrorBit)

@@ -120,6 +120,16 @@
     <sys:String x:Key="伺服未使能">Servo is disabled.</sys:String>
     <sys:String x:Key="轴仍在运动">The axis is still moving.</sys:String>
     <sys:String x:Key="硬限位有效">A hard limit is active.</sys:String>
+    <sys:String x:Key="硬限位未触发">Hard limit inactive</sys:String>
+    <sys:String x:Key="硬限位状态未知">Hard limit status unknown</sys:String>
+    <sys:String x:Key="软件限位未触发">Soft limit inactive</sys:String>
+    <sys:String x:Key="软件限位状态未知">Soft limit status unknown</sys:String>
+    <sys:String x:Key="正向硬限位有效">Positive hard limit active</sys:String>
+    <sys:String x:Key="负向硬限位有效">Negative hard limit active</sys:String>
+    <sys:String x:Key="正向软限位有效">Positive soft limit active</sys:String>
+    <sys:String x:Key="负向软限位有效">Negative soft limit active</sys:String>
+    <sys:String x:Key="限位状态无法确认">Limit status cannot be confirmed. Check the controller adapter's status source.</sys:String>
+    <sys:String x:Key="限位状态来源格式">Status source: {0}</sys:String>
     <sys:String x:Key="软件手动条件通过">Software status checks passed; confirm the machine is safe at the equipment.</sys:String>
     <sys:String x:Key="软件手动条件未通过">Software status checks failed: </sys:String>
     <sys:String x:Key="没有配置DI">No DI points are mapped.</sys:String>

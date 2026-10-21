@@ -425,16 +425,20 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 SetManualOperationAvailability(ManualOperationBlockReason.MotionCardDisconnected);
                 CommandPositionText.Text = GetText("控制卡未连接");
                 FeedbackPositionText.Text = "—";
-                UpdateIndicator(AlarmIndicator, false, false);
+                UpdateLimitIndicator(AlarmIndicator, false, false);
                 UpdateIndicator(HomedIndicator, false, false);
-                UpdateIndicator(PositiveLimitIndicator, false, false);
-                UpdateIndicator(NegativeLimitIndicator, false, false);
+                UpdateLimitIndicator(PositiveLimitIndicator, false, false);
+                UpdateLimitIndicator(NegativeLimitIndicator, false, false);
+                PositiveLimitIndicator.ToolTip = GetText("控制卡未连接");
+                NegativeLimitIndicator.ToolTip = GetText("控制卡未连接");
                 UpdateIndicator(OriginIndicator, false, false);
                 HomedStatusText.Text = GetText("状态未连接");
                 OriginStatusText.ToolTip = GetText("控制卡未连接");
                 MotionStateText.Text = GetText("状态未连接");
                 ServoStatusText.Text = GetText("轴伺服状态未连接");
                 ServoToggleButton.Content = GetText("伺服使能");
+                AlarmMessageText.Text = string.Empty;
+                AlarmMessageText.Foreground = Brushes.Firebrick;
                 SetAssociatedIoDisconnected();
                 return;
             }
@@ -447,18 +451,51 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             UpdateIndicator(AlarmIndicator, status.AlarmActive, status.AlarmActive);
             UpdateIndicator(HomedIndicator, status.Homed, false);
             HomedStatusText.Text = GetText(status.Homed ? "已回零" : "未回零");
-            UpdateIndicator(PositiveLimitIndicator, status.PositiveLimitActive, status.PositiveLimitActive);
-            UpdateIndicator(NegativeLimitIndicator, status.NegativeLimitActive, status.NegativeLimitActive);
+            bool positiveLimitActive = status.PositiveLimitActive == true || status.PositiveSoftLimitActive == true;
+            bool negativeLimitActive = status.NegativeLimitActive == true || status.NegativeSoftLimitActive == true;
+            bool positiveLimitKnown = status.PositiveLimitActive.HasValue && status.PositiveSoftLimitActive.HasValue;
+            bool negativeLimitKnown = status.NegativeLimitActive.HasValue && status.NegativeSoftLimitActive.HasValue;
+            UpdateLimitIndicator(PositiveLimitIndicator, positiveLimitActive, positiveLimitKnown);
+            UpdateLimitIndicator(NegativeLimitIndicator, negativeLimitActive, negativeLimitKnown);
+            PositiveLimitIndicator.ToolTip = BuildLimitStatusToolTip(
+                "正限位",
+                status.PositiveLimitActive,
+                status.PositiveSoftLimitActive,
+                status.LimitStatusSource);
+            NegativeLimitIndicator.ToolTip = BuildLimitStatusToolTip(
+                "负限位",
+                status.NegativeLimitActive,
+                status.NegativeSoftLimitActive,
+                status.LimitStatusSource);
             UpdateIndicator(OriginIndicator, status.OriginInputActive == true, false);
             OriginStatusText.ToolTip = GetText(status.OriginInputActive.HasValue ? "原点输入状态" : "原点输入未配置");
             MotionStateText.Text = GetText(status.Moving ? "运动中" : "已停止");
             ServoStatusText.Text = GetText(status.ServoEnabled ? "轴伺服状态已使能" : "轴伺服状态未使能");
             ServoToggleButton.Content = GetText(status.ServoEnabled ? "伺服关闭" : "伺服使能");
-            AlarmMessageText.Text = status.AlarmActive
-                ? (string.IsNullOrWhiteSpace(status.AlarmMessage) ? GetText("轴报警有效") : status.AlarmMessage)
-                : status.PositiveSoftLimitActive || status.NegativeSoftLimitActive
-                    ? GetText("软件限位当前有效")
-                    : string.Empty;
+            var statusMessages = new List<string>();
+            if (status.AlarmActive)
+            {
+                statusMessages.Add(string.IsNullOrWhiteSpace(status.AlarmMessage)
+                    ? GetText("轴报警有效")
+                    : status.AlarmMessage);
+            }
+
+            string limitStatusMessage = BuildLimitStatusMessage(status);
+            if (!string.IsNullOrWhiteSpace(limitStatusMessage))
+            {
+                statusMessages.Add(limitStatusMessage);
+            }
+
+            bool hasUnknownLimitStatus = !positiveLimitKnown || !negativeLimitKnown;
+            if (hasUnknownLimitStatus)
+            {
+                statusMessages.Add(GetText("限位状态无法确认"));
+            }
+
+            AlarmMessageText.Text = string.Join("；", statusMessages);
+            AlarmMessageText.Foreground = status.AlarmActive || positiveLimitActive || negativeLimitActive
+                ? Brushes.Firebrick
+                : hasUnknownLimitStatus ? Brushes.DarkGoldenrod : Brushes.Firebrick;
 
             // 先完成轴反馈显示，再读取关联 IO，避免 IO 查询延迟编码器位置刷新。
             await RefreshAssociatedIoStatusAsync().ConfigureAwait(true);
@@ -477,7 +514,13 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             CommandPositionText.Text = "—";
             FeedbackPositionText.Text = "—";
             HomedStatusText.Text = "—";
+            UpdateLimitIndicator(AlarmIndicator, false, false);
+            UpdateLimitIndicator(PositiveLimitIndicator, false, false);
+            UpdateLimitIndicator(NegativeLimitIndicator, false, false);
+            PositiveLimitIndicator.ToolTip = string.Format(GetText("读取轴状态失败"), error.Message);
+            NegativeLimitIndicator.ToolTip = string.Format(GetText("读取轴状态失败"), error.Message);
             AlarmMessageText.Text = string.Format(GetText("读取轴状态失败"), error.Message);
+            AlarmMessageText.Foreground = Brushes.DarkGoldenrod;
         }
 
         /// <summary>读取轴状态并更新手动操作可用性；读取失败时立即锁住依赖状态的操作。</summary>
@@ -505,6 +548,73 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             indicator.Fill = warning
                 ? Brushes.Firebrick
                 : active ? Brushes.ForestGreen : Brushes.DarkGray;
+        }
+
+        /// <summary>显示方向限位灯；有效为红色，未知为橙色，已确认未触发为灰色。</summary>
+        private static void UpdateLimitIndicator(Ellipse indicator, bool active, bool known)
+        {
+            indicator.Fill = active
+                ? Brushes.Firebrick
+                : known ? Brushes.DarkGray : Brushes.DarkOrange;
+        }
+
+        /// <summary>按当前硬限位、软限位状态和来源生成轴卡片中的具体限位说明。</summary>
+        private string BuildLimitStatusMessage(AxisStatus status)
+        {
+            var messages = new List<string>();
+            if (status.PositiveLimitActive == true)
+            {
+                messages.Add(GetText("正向硬限位有效"));
+            }
+
+            if (status.NegativeLimitActive == true)
+            {
+                messages.Add(GetText("负向硬限位有效"));
+            }
+
+            if (status.PositiveSoftLimitActive == true)
+            {
+                messages.Add(GetText("正向软限位有效"));
+            }
+
+            if (status.NegativeSoftLimitActive == true)
+            {
+                messages.Add(GetText("负向软限位有效"));
+            }
+
+            if (messages.Count > 0 && !string.IsNullOrWhiteSpace(status.LimitStatusSource))
+            {
+                messages.Add(string.Format(GetText("限位状态来源格式"), status.LimitStatusSource));
+            }
+
+            return string.Join("；", messages);
+        }
+
+        /// <summary>为一个方向的限位灯显示硬限位、软限位和适配器状态来源。</summary>
+        private string BuildLimitStatusToolTip(
+            string directionResourceKey,
+            bool? hardLimitActive,
+            bool? softLimitActive,
+            string limitStatusSource)
+        {
+            var messages = new List<string>
+            {
+                hardLimitActive.HasValue
+                    ? GetText(hardLimitActive.Value ? "硬限位有效" : "硬限位未触发")
+                    : GetText("硬限位状态未知"),
+                softLimitActive.HasValue
+                    ? GetText(softLimitActive.Value ? "软件限位当前有效" : "软件限位未触发")
+                    : GetText("软件限位状态未知")
+            };
+
+            if (!string.IsNullOrWhiteSpace(limitStatusSource))
+            {
+                messages.Add(string.Format(GetText("限位状态来源格式"), limitStatusSource));
+            }
+
+            return GetText(directionResourceKey)
+                + GetText("状态分隔符")
+                + string.Join("；", messages);
         }
 
         /// <summary>页面离开时停止此卡片可能仍在运行的按住式点动。</summary>
@@ -1430,9 +1540,18 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                         issues.Add(GetText("轴仍在运动"));
                     }
 
-                    if (status.PositiveLimitActive || status.NegativeLimitActive)
+                    string limitStatusMessage = BuildLimitStatusMessage(status);
+                    if (!string.IsNullOrWhiteSpace(limitStatusMessage))
                     {
-                        issues.Add(GetText("硬限位有效"));
+                        issues.Add(limitStatusMessage);
+                    }
+
+                    if (!status.PositiveLimitActive.HasValue
+                        || !status.NegativeLimitActive.HasValue
+                        || !status.PositiveSoftLimitActive.HasValue
+                        || !status.NegativeSoftLimitActive.HasValue)
+                    {
+                        issues.Add(GetText("限位状态无法确认"));
                     }
                 }
                 catch (Exception error)

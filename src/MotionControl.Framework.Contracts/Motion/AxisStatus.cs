@@ -10,15 +10,16 @@ namespace MotionControl.Framework.Contracts.Motion
             bool servoEnabled,
             bool moving,
             bool homed,
-            bool positiveLimitActive,
-            bool negativeLimitActive,
-            bool positiveSoftLimitActive,
-            bool negativeSoftLimitActive,
+            bool? positiveLimitActive,
+            bool? negativeLimitActive,
+            bool? positiveSoftLimitActive,
+            bool? negativeSoftLimitActive,
             bool alarmActive,
             string alarmMessage,
             bool requiresHomingAfterLimitAlarm,
             double? commandPosition = null,
-            bool? originInputActive = null)
+            bool? originInputActive = null,
+            string limitStatusSource = null)
         {
             Position = position;
             Velocity = velocity;
@@ -34,6 +35,7 @@ namespace MotionControl.Framework.Contracts.Motion
             RequiresHomingAfterLimitAlarm = requiresHomingAfterLimitAlarm;
             CommandPosition = commandPosition;
             OriginInputActive = originInputActive;
+            LimitStatusSource = limitStatusSource;
         }
 
         /// <summary>控制器读取的轴实际位置反馈（通常为编码器位置），使用该轴配置的工程单位。</summary>
@@ -51,19 +53,19 @@ namespace MotionControl.Framework.Contracts.Motion
         /// <summary>轴是否已完成回零并建立当前位置参考点。</summary>
         public bool Homed { get; private set; }
 
-        /// <summary>正向硬限位输入当前是否有效。</summary>
-        public bool PositiveLimitActive { get; private set; }
+        /// <summary>正向硬限位输入当前是否有效；为空表示适配器无法确认状态。</summary>
+        public bool? PositiveLimitActive { get; private set; }
 
-        /// <summary>负向硬限位输入当前是否有效。</summary>
-        public bool NegativeLimitActive { get; private set; }
+        /// <summary>负向硬限位输入当前是否有效；为空表示适配器无法确认状态。</summary>
+        public bool? NegativeLimitActive { get; private set; }
 
-        /// <summary>正向软件限位当前是否触发。</summary>
-        public bool PositiveSoftLimitActive { get; private set; }
+        /// <summary>正向软件限位当前是否触发；为空表示适配器无法确认状态。</summary>
+        public bool? PositiveSoftLimitActive { get; private set; }
 
-        /// <summary>负向软件限位当前是否触发。</summary>
-        public bool NegativeSoftLimitActive { get; private set; }
+        /// <summary>负向软件限位当前是否触发；为空表示适配器无法确认状态。</summary>
+        public bool? NegativeSoftLimitActive { get; private set; }
 
-        /// <summary>适配器是否检测到轴报警或驱动报警。</summary>
+        /// <summary>适配器是否检测到轴报警或驱动报警；限位状态由独立属性表示。</summary>
         public bool AlarmActive { get; private set; }
 
         /// <summary>适配器转换出的通用报警说明；没有报警或无法判断时为空。</summary>
@@ -77,5 +79,8 @@ namespace MotionControl.Framework.Contracts.Motion
 
         /// <summary>控制器配置的原点输入当前是否有效；适配器无法读取或未配置时为空。</summary>
         public bool? OriginInputActive { get; private set; }
+
+        /// <summary>限位状态的读取来源标识，例如控制器轴状态 API 或逻辑 DI；未知时为空。</summary>
+        public string LimitStatusSource { get; private set; }
     }
 }

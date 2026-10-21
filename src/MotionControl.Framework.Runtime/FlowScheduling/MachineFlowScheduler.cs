@@ -118,7 +118,7 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
             await _equipmentInitializationFlow.ResetAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        /// <summary>检查所有逻辑轴是否停稳且无报警、限位；可选初始化可处理未回零标记。</summary>
+        /// <summary>检查所有逻辑轴是否停稳、无报警且限位状态可确认；可选初始化可处理未回零标记。</summary>
         public async Task EnsureAxesReadyForAutomaticStartAsync(
             bool allowHomingRequired,
             CancellationToken cancellationToken)
@@ -132,16 +132,37 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
                         "逻辑轴 '" + axis.Name + "' 仍在运动，禁止启动自动流程；请先停止手动动作并确认轴已停稳。");
                 }
 
-                if (status.AlarmActive
-                    || status.PositiveLimitActive
-                    || status.NegativeLimitActive
-                    || status.PositiveSoftLimitActive
-                    || status.NegativeSoftLimitActive)
+                var limitStatusMessage = BuildLimitStatusMessage(status);
+                var hasUnknownLimitStatus = !status.PositiveLimitActive.HasValue
+                    || !status.NegativeLimitActive.HasValue
+                    || !status.PositiveSoftLimitActive.HasValue
+                    || !status.NegativeSoftLimitActive.HasValue;
+                if (status.AlarmActive || !string.IsNullOrWhiteSpace(limitStatusMessage) || hasUnknownLimitStatus)
                 {
-                    string reason = status.AlarmMessage;
+                    var reasons = new List<string>();
+                    if (status.AlarmActive)
+                    {
+                        reasons.Add(string.IsNullOrWhiteSpace(status.AlarmMessage)
+                            ? "轴或驱动报警有效"
+                            : status.AlarmMessage);
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(limitStatusMessage))
+                    {
+                        reasons.Add(limitStatusMessage);
+                    }
+
+                    if (hasUnknownLimitStatus)
+                    {
+                        if (string.IsNullOrWhiteSpace(limitStatusMessage))
+                        {
+                            reasons.Add("有方向的硬限位或软限位状态无法确认");
+                        }
+                    }
+
                     throw new InvalidOperationException(
                         "逻辑轴 '" + axis.Name + "' 当前存在报警或限位，禁止启动自动流程。"
-                        + (string.IsNullOrWhiteSpace(reason) ? string.Empty : "原因：" + reason + "。"));
+                        + "原因：" + string.Join("；", reasons) + "。");
                 }
 
                 if (!allowHomingRequired && status.RequiresHomingAfterLimitAlarm)
@@ -151,6 +172,54 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
                         + "' 曾触发硬限位，恢复后必须先完成回零，才能启动自动流程。");
                 }
             }
+        }
+
+        /// <summary>组合当前已触发的正负硬限位和软限位原因，并附上适配器提供的来源。</summary>
+        private static string BuildLimitStatusMessage(AxisStatus status)
+        {
+            var messages = new List<string>();
+            if (status.PositiveLimitActive == true)
+            {
+                messages.Add("正向硬限位有效");
+            }
+            else if (!status.PositiveLimitActive.HasValue)
+            {
+                messages.Add("正向硬限位状态未知");
+            }
+
+            if (status.NegativeLimitActive == true)
+            {
+                messages.Add("负向硬限位有效");
+            }
+            else if (!status.NegativeLimitActive.HasValue)
+            {
+                messages.Add("负向硬限位状态未知");
+            }
+
+            if (status.PositiveSoftLimitActive == true)
+            {
+                messages.Add("正向软限位有效");
+            }
+            else if (!status.PositiveSoftLimitActive.HasValue)
+            {
+                messages.Add("正向软限位状态未知");
+            }
+
+            if (status.NegativeSoftLimitActive == true)
+            {
+                messages.Add("负向软限位有效");
+            }
+            else if (!status.NegativeSoftLimitActive.HasValue)
+            {
+                messages.Add("负向软限位状态未知");
+            }
+
+            if (messages.Count > 0 && !string.IsNullOrWhiteSpace(status.LimitStatusSource))
+            {
+                messages.Add("状态来源：" + status.LimitStatusSource);
+            }
+
+            return string.Join("、", messages);
         }
 
         /// <summary>返回按配置顺序排列的工位流程只读列表。</summary>

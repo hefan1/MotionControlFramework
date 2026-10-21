@@ -128,6 +128,16 @@
     <sys:String x:Key="伺服未使能">伺服未使能。</sys:String>
     <sys:String x:Key="轴仍在运动">轴仍在运动。</sys:String>
     <sys:String x:Key="硬限位有效">硬限位有效。</sys:String>
+    <sys:String x:Key="硬限位未触发">硬限位未触发</sys:String>
+    <sys:String x:Key="硬限位状态未知">硬限位状态未知</sys:String>
+    <sys:String x:Key="软件限位未触发">软限位未触发</sys:String>
+    <sys:String x:Key="软件限位状态未知">软限位状态未知</sys:String>
+    <sys:String x:Key="正向硬限位有效">正向硬限位有效</sys:String>
+    <sys:String x:Key="负向硬限位有效">负向硬限位有效</sys:String>
+    <sys:String x:Key="正向软限位有效">正向软限位有效</sys:String>
+    <sys:String x:Key="负向软限位有效">负向软限位有效</sys:String>
+    <sys:String x:Key="限位状态无法确认">限位状态无法确认，检查控制卡适配器的状态读取来源。</sys:String>
+    <sys:String x:Key="限位状态来源格式">状态来源：{0}</sys:String>
     <sys:String x:Key="软件手动条件通过">当前软件状态检查通过；请继续确认设备现场安全条件。</sys:String>
     <sys:String x:Key="软件手动条件未通过">软件状态检查未通过： </sys:String>
     <sys:String x:Key="没有配置DI">尚未配置 DI。</sys:String>
