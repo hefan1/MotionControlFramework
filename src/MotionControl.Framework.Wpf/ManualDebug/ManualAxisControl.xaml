@@ -142,7 +142,7 @@
                         BorderBrush="#E8C1BB"
                         Foreground="#9C3429" />
                 <Button x:Name="ServoToggleButton" Content="{DynamicResource 伺服使能}"
-                        IsEnabled="{Binding CanRunManualOperations, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                        IsEnabled="{Binding CanToggleServo, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
                         ToolTipService.ShowOnDisabled="True"
                         Click="ServoToggleButton_Click" Style="{StaticResource AxisActionButtonStyle}" />
                 <Button x:Name="MoveAbsoluteButton"
@@ -156,7 +156,7 @@
                         Foreground="#175BA6" />
                 <Button x:Name="SafetyCheckButton" Content="{DynamicResource 安全条件}" Click="SafetyCheckButton_Click" Style="{StaticResource AxisActionButtonStyle}" />
                 <Button x:Name="ResetAxisAlarmButton" Content="{DynamicResource 轴报警复位}"
-                        IsEnabled="{Binding CanRunManualOperations, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                        IsEnabled="{Binding CanResetAxisAlarm, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
                         ToolTipService.ShowOnDisabled="True"
                         Click="ResetAxisAlarmButton_Click" Style="{StaticResource AxisActionButtonStyle}" />
             </UniformGrid>
@@ -251,9 +251,10 @@
                                                      FontSize="10"
                                                      ToolTip="{DynamicResource 直接编辑目标位置}" />
                                             <Button Grid.Column="2" Content="{DynamicResource 写入短标签}"
-                                                    IsEnabled="{Binding CanRunManualOperations, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                                    IsEnabled="{Binding CanRunManualRecoveryOperations, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
                                                     Click="TeachPositionButton_Click" Margin="1" Padding="2,1" MinHeight="24" FontSize="10"
-                                                    ToolTip="{DynamicResource 写入当前位置}" />
+                                                    ToolTip="{Binding RecoveryOperationBlockText, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                                    ToolTipService.ShowOnDisabled="True" />
                                             <Button Grid.Column="3" Content="{DynamicResource 定位}"
                                                     IsEnabled="{Binding CanRunManualOperations, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
                                                     Click="MoveToPositionButton_Click" Margin="1" Padding="2,1" MinHeight="24" FontSize="10" />

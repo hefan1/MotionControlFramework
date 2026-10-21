@@ -235,6 +235,65 @@ namespace MotionControl.Framework.Runtime.Machine
             }
         }
 
+        /// <summary>
+        /// 执行不启动运动、不写入 DO 的手动恢复或示教操作。
+        /// 急停状态可以有效、未复位或暂时不可读，但控制卡必须连接且自动流程必须停止。
+        /// </summary>
+        public async Task<ManualOperationBlockReason> RunManualRecoveryOperationAsync(
+            Func<Task> operation,
+            CancellationToken cancellationToken)
+        {
+            if (operation == null)
+            {
+                throw new ArgumentNullException(nameof(operation));
+            }
+
+            ManualOperationBlockReason blockReason = await BeginManualRecoveryOperationAsync(cancellationToken)
+                .ConfigureAwait(true);
+            if (blockReason != ManualOperationBlockReason.None)
+            {
+                return blockReason;
+            }
+
+            try
+            {
+                await operation().ConfigureAwait(false);
+                return ManualOperationBlockReason.None;
+            }
+            finally
+            {
+                EndManualOperation();
+            }
+        }
+
+        /// <summary>急停输入已恢复但整机急停报警仍锁存时，允许单独复位轴驱动报警。</summary>
+        public async Task<ManualOperationBlockReason> RunManualAxisAlarmResetAsync(
+            Func<Task> resetOperation,
+            CancellationToken cancellationToken)
+        {
+            if (resetOperation == null)
+            {
+                throw new ArgumentNullException(nameof(resetOperation));
+            }
+
+            ManualOperationBlockReason blockReason = await BeginManualAxisAlarmResetAsync(cancellationToken)
+                .ConfigureAwait(true);
+            if (blockReason != ManualOperationBlockReason.None)
+            {
+                return blockReason;
+            }
+
+            try
+            {
+                await resetOperation().ConfigureAwait(false);
+                return ManualOperationBlockReason.None;
+            }
+            finally
+            {
+                EndManualOperation();
+            }
+        }
+
         /// <summary>执行手动受控停止；停止不受急停联锁阻挡，但自动流程期间仍需整机暂停。</summary>
         public async Task<ManualOperationBlockReason> RunManualStopAsync(
             Func<Task> stopOperation,
@@ -245,7 +304,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 throw new ArgumentNullException(nameof(stopOperation));
             }
 
-            ManualOperationBlockReason blockReason = await BeginManualStopAsync(cancellationToken)
+            ManualOperationBlockReason blockReason = await BeginManualRecoveryOperationAsync(cancellationToken)
                 .ConfigureAwait(true);
             if (blockReason != ManualOperationBlockReason.None)
             {
@@ -947,13 +1006,42 @@ namespace MotionControl.Framework.Runtime.Machine
             }
         }
 
-        /// <summary>在整机命令锁内登记手动停止；允许急停有效，但拒绝未连接或自动运行状态。</summary>
-        private async Task<ManualOperationBlockReason> BeginManualStopAsync(CancellationToken cancellationToken)
+        /// <summary>在整机命令锁内登记恢复操作；拒绝未连接或自动运行状态，但不检查急停锁存。</summary>
+        private async Task<ManualOperationBlockReason> BeginManualRecoveryOperationAsync(CancellationToken cancellationToken)
         {
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 ManualOperationBlockReason blockReason = GetManualOperationStateBlockReason();
+                if (blockReason == ManualOperationBlockReason.None)
+                {
+                    Interlocked.Increment(ref _activeManualOperationCount);
+                }
+
+                return blockReason;
+            }
+            finally
+            {
+                _commandLock.Release();
+            }
+        }
+
+        /// <summary>急停输入恢复后，允许复位轴报警；急停仍有效或无法读取时继续阻止复位。</summary>
+        private async Task<ManualOperationBlockReason> BeginManualAxisAlarmResetAsync(
+            CancellationToken cancellationToken)
+        {
+            await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                ManualOperationBlockReason blockReason = await GetManualOperationBlockReasonAsync(cancellationToken)
+                    .ConfigureAwait(false);
+
+                // 急停输入已经恢复；仅整机急停报警尚未复位时，允许先处理轴驱动报警。
+                if (blockReason == ManualOperationBlockReason.EmergencyStopAlarmNotReset)
+                {
+                    blockReason = ManualOperationBlockReason.None;
+                }
+
                 if (blockReason == ManualOperationBlockReason.None)
                 {
                     Interlocked.Increment(ref _activeManualOperationCount);

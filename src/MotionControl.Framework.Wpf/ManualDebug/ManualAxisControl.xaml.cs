@@ -22,7 +22,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
     /// <summary>显示一个已映射轴的状态、手动操作和人工示教位置。</summary>
     public partial class ManualAxisControl : UserControl
     {
-        /// <summary>控制轴卡中需要真实轴动作的按钮是否可用；默认禁用，等待 Runtime 完成联锁检查。</summary>
+        /// <summary>控制点动、回零、定位、伺服使能和 DO 写入等普通动作；默认等待 Runtime 完成联锁检查。</summary>
         public static readonly DependencyProperty CanRunManualOperationsProperty =
             DependencyProperty.Register(
                 nameof(CanRunManualOperations),
@@ -34,6 +34,38 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         public static readonly DependencyProperty ManualOperationBlockTextProperty =
             DependencyProperty.Register(
                 nameof(ManualOperationBlockText),
+                typeof(string),
+                typeof(ManualAxisControl),
+                new PropertyMetadata(string.Empty));
+
+        /// <summary>控制关闭伺服或示教当前位置等恢复操作是否可用。</summary>
+        public static readonly DependencyProperty CanRunManualRecoveryOperationsProperty =
+            DependencyProperty.Register(
+                nameof(CanRunManualRecoveryOperations),
+                typeof(bool),
+                typeof(ManualAxisControl),
+                new PropertyMetadata(false));
+
+        /// <summary>按当前伺服状态和联锁条件控制伺服按钮是否可用。</summary>
+        public static readonly DependencyProperty CanToggleServoProperty =
+            DependencyProperty.Register(
+                nameof(CanToggleServo),
+                typeof(bool),
+                typeof(ManualAxisControl),
+                new PropertyMetadata(false));
+
+        /// <summary>控制轴报警复位是否可用；急停输入恢复后可单独复位轴报警。</summary>
+        public static readonly DependencyProperty CanResetAxisAlarmProperty =
+            DependencyProperty.Register(
+                nameof(CanResetAxisAlarm),
+                typeof(bool),
+                typeof(ManualAxisControl),
+                new PropertyMetadata(false));
+
+        /// <summary>说明当前位置示教按钮当前可用的条件或被阻止的原因。</summary>
+        public static readonly DependencyProperty RecoveryOperationBlockTextProperty =
+            DependencyProperty.Register(
+                nameof(RecoveryOperationBlockText),
                 typeof(string),
                 typeof(ManualAxisControl),
                 new PropertyMetadata(string.Empty));
@@ -102,6 +134,18 @@ namespace MotionControl.Framework.Wpf.ManualDebug
 
         /// <summary>最近一次 Runtime 检查是否允许执行普通手动轴和 DO 操作。</summary>
         private bool _manualOperationAllowed;
+
+        /// <summary>最近一次 Runtime 检查返回的手动操作联锁原因。</summary>
+        private ManualOperationBlockReason _manualOperationBlockReason;
+
+        /// <summary>最近一次轴状态读取是否成功。</summary>
+        private bool _axisStatusAvailable;
+
+        /// <summary>最近一次读取到的伺服使能状态。</summary>
+        private bool _axisServoEnabled;
+
+        /// <summary>最近一次读取到的轴运动状态。</summary>
+        private bool _axisMoving;
 
         /// <summary>创建一个逻辑轴卡片，并接入该轴自己的位置列表。</summary>
         public ManualAxisControl(
@@ -242,30 +286,52 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             private set { SetValue(ManualOperationBlockTextProperty, value); }
         }
 
+        /// <summary>指示控制卡已连接、自动流程停止且轴状态可读时可执行恢复或示教操作。</summary>
+        public bool CanRunManualRecoveryOperations
+        {
+            get { return (bool)GetValue(CanRunManualRecoveryOperationsProperty); }
+            private set { SetValue(CanRunManualRecoveryOperationsProperty, value); }
+        }
+
+        /// <summary>伺服已使能时允许安全关闭；伺服未使能时仅在普通手动联锁通过后允许使能。</summary>
+        public bool CanToggleServo
+        {
+            get { return (bool)GetValue(CanToggleServoProperty); }
+            private set { SetValue(CanToggleServoProperty, value); }
+        }
+
+        /// <summary>指示轴停止且急停输入未有效、未发生状态读取故障时可复位轴报警。</summary>
+        public bool CanResetAxisAlarm
+        {
+            get { return (bool)GetValue(CanResetAxisAlarmProperty); }
+            private set { SetValue(CanResetAxisAlarmProperty, value); }
+        }
+
+        /// <summary>为示教位置按钮显示可用提示或当前阻止原因。</summary>
+        public string RecoveryOperationBlockText
+        {
+            get { return (string)GetValue(RecoveryOperationBlockTextProperty); }
+            private set { SetValue(RecoveryOperationBlockTextProperty, value); }
+        }
+
         /// <summary>按整机 Runtime 返回的联锁结果更新轴卡动作按钮；安全检查和允许的停止入口保持可用。</summary>
         public void SetManualOperationAvailability(ManualOperationBlockReason blockReason)
         {
+            _manualOperationBlockReason = blockReason;
             _manualOperationAllowed = blockReason == ManualOperationBlockReason.None;
-            CanRunManualOperations = _manualOperationAllowed;
-            ManualOperationBlockText = _manualOperationAllowed
-                ? string.Empty
-                : GetManualOperationBlockText(blockReason);
+            UpdateAxisActionAvailability();
 
-            PositiveJogButton.IsEnabled = _manualOperationAllowed;
-            NegativeJogButton.IsEnabled = _manualOperationAllowed;
-            HomeButton.IsEnabled = _manualOperationAllowed;
-            ServoToggleButton.IsEnabled = _manualOperationAllowed;
-            MoveAbsoluteButton.IsEnabled = _manualOperationAllowed;
-            ResetAxisAlarmButton.IsEnabled = _manualOperationAllowed;
+            PositiveJogButton.IsEnabled = CanRunManualOperations;
+            NegativeJogButton.IsEnabled = CanRunManualOperations;
+            HomeButton.IsEnabled = CanRunManualOperations;
+            MoveAbsoluteButton.IsEnabled = CanRunManualOperations;
             StopButton.IsEnabled = blockReason != ManualOperationBlockReason.MotionCardDisconnected
                 && blockReason != ManualOperationBlockReason.AutomaticFlowActive;
 
             PositiveJogButton.ToolTip = ManualOperationBlockText;
             NegativeJogButton.ToolTip = ManualOperationBlockText;
             HomeButton.ToolTip = ManualOperationBlockText;
-            ServoToggleButton.ToolTip = ManualOperationBlockText;
             MoveAbsoluteButton.ToolTip = ManualOperationBlockText;
-            ResetAxisAlarmButton.ToolTip = ManualOperationBlockText;
             StopButton.ToolTip = StopButton.IsEnabled ? null : ManualOperationBlockText;
 
             foreach (ManualAxisIoAssociationViewItem viewItem in _ioAssociationItems)
@@ -288,11 +354,75 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
+        /// <summary>按轴状态和整机联锁分别更新普通运动、伺服恢复、位置示教和轴报警复位入口。</summary>
+        private void UpdateAxisActionAvailability()
+        {
+            bool controllerAvailableForRecovery = _manualOperationBlockReason != ManualOperationBlockReason.MotionCardDisconnected
+                && _manualOperationBlockReason != ManualOperationBlockReason.AutomaticFlowActive;
+            bool axisStoppedAndReadable = _axisStatusAvailable && !_axisMoving;
+
+            CanRunManualOperations = _manualOperationAllowed && _axisStatusAvailable;
+            ManualOperationBlockText = !_manualOperationAllowed
+                ? GetManualOperationBlockText(_manualOperationBlockReason)
+                : !_axisStatusAvailable
+                    ? GetText("轴状态读取失败禁止手动操作")
+                    : string.Empty;
+            CanRunManualRecoveryOperations = controllerAvailableForRecovery && axisStoppedAndReadable;
+            CanToggleServo = axisStoppedAndReadable
+                && (_axisServoEnabled
+                    ? controllerAvailableForRecovery
+                    : _manualOperationAllowed);
+            CanResetAxisAlarm = axisStoppedAndReadable
+                && (_manualOperationAllowed
+                    || _manualOperationBlockReason == ManualOperationBlockReason.EmergencyStopAlarmNotReset);
+
+            if (!_axisStatusAvailable)
+            {
+                RecoveryOperationBlockText = GetText("轴状态不可读禁止恢复操作");
+            }
+            else if (_axisMoving)
+            {
+                RecoveryOperationBlockText = GetText("轴运动中禁止恢复操作");
+            }
+            else if (!controllerAvailableForRecovery)
+            {
+                RecoveryOperationBlockText = GetManualOperationBlockText(_manualOperationBlockReason);
+            }
+            else
+            {
+                RecoveryOperationBlockText = GetText("写入当前位置");
+            }
+
+            ServoToggleButton.ToolTip = !CanToggleServo
+                ? (!_axisStatusAvailable
+                    ? GetText("轴状态不可读禁止恢复操作")
+                    : _axisMoving
+                        ? GetText("轴运动中禁止切换伺服")
+                        : ManualOperationBlockText)
+                : _axisServoEnabled
+                    ? GetText("关闭伺服按钮提示")
+                    : GetText("使能伺服按钮提示");
+
+            ResetAxisAlarmButton.ToolTip = !CanResetAxisAlarm
+                ? (!_axisStatusAvailable
+                    ? GetText("轴状态不可读禁止恢复操作")
+                    : _axisMoving
+                        ? GetText("轴运动中禁止恢复操作")
+                        : ManualOperationBlockText)
+                : _manualOperationBlockReason == ManualOperationBlockReason.EmergencyStopAlarmNotReset
+                    ? GetText("急停恢复后可复位轴报警")
+                    : GetText("轴报警复位按钮提示");
+        }
+
         /// <summary>读取并显示指令位置、编码器反馈位置、伺服、回零、限位和报警状态。</summary>
         public async Task RefreshStatusAsync()
         {
             if (_machineRuntime.State == MachineRunState.Disconnected)
             {
+                _axisStatusAvailable = false;
+                _axisServoEnabled = false;
+                _axisMoving = false;
+                SetManualOperationAvailability(ManualOperationBlockReason.MotionCardDisconnected);
                 CommandPositionText.Text = GetText("控制卡未连接");
                 FeedbackPositionText.Text = "—";
                 UpdateIndicator(AlarmIndicator, false, false);
@@ -309,7 +439,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 return;
             }
 
-            AxisStatus status = await _axis.ReadStatusAsync(CancellationToken.None).ConfigureAwait(true);
+            AxisStatus status = await ReadAxisStatusForManualActionAsync().ConfigureAwait(true);
             CommandPositionText.Text = status.CommandPosition.HasValue
                 ? status.CommandPosition.Value.ToString("F3", CultureInfo.CurrentCulture)
                 : "—";
@@ -342,10 +472,31 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 throw new ArgumentNullException(nameof(error));
             }
 
+            _axisStatusAvailable = false;
+            UpdateAxisActionAvailability();
             CommandPositionText.Text = "—";
             FeedbackPositionText.Text = "—";
             HomedStatusText.Text = "—";
             AlarmMessageText.Text = string.Format(GetText("读取轴状态失败"), error.Message);
+        }
+
+        /// <summary>读取轴状态并更新手动操作可用性；读取失败时立即锁住依赖状态的操作。</summary>
+        private async Task<AxisStatus> ReadAxisStatusForManualActionAsync()
+        {
+            try
+            {
+                AxisStatus status = await _axis.ReadStatusAsync(CancellationToken.None).ConfigureAwait(true);
+                _axisStatusAvailable = true;
+                _axisServoEnabled = status.ServoEnabled;
+                _axisMoving = status.Moving;
+                UpdateAxisActionAvailability();
+                return status;
+            }
+            catch (Exception error)
+            {
+                ShowStatusReadError(error);
+                throw;
+            }
         }
 
         /// <summary>按当前状态设置指示灯颜色，并给有效报警或限位使用醒目颜色。</summary>
@@ -838,10 +989,15 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 return;
             }
 
-            await RunAxisActionAsync(GetText("写入当前位置"), async () =>
+            await RunManualRecoveryActionAsync(GetText("写入当前位置"), async () =>
             {
                 EnsurePositionNameIsValid(position);
-                AxisStatus status = await _axis.ReadStatusAsync(CancellationToken.None).ConfigureAwait(true);
+                AxisStatus status = await ReadAxisStatusForManualActionAsync().ConfigureAwait(true);
+                if (status.Moving)
+                {
+                    throw new InvalidOperationException(GetText("轴运动中禁止写入当前位置"));
+                }
+
                 double? previousPosition = position.Position;
                 position.Position = status.Position;
                 try
@@ -915,24 +1071,70 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>按当前伺服状态切换使能或关闭。</summary>
         private async void ServoToggleButton_Click(object sender, RoutedEventArgs e)
         {
-            string operationName = ServoToggleButton.Content as string;
-            if (string.IsNullOrWhiteSpace(operationName))
+            await ToggleServoAsync().ConfigureAwait(true);
+        }
+
+        /// <summary>伺服关闭走恢复入口，伺服使能继续走完整手动联锁入口。</summary>
+        private async Task ToggleServoAsync()
+        {
+            if (_axisActionInProgress)
             {
-                operationName = GetText("伺服状态");
+                OperationMessageText.Text = GetText("当前轴操作正在执行");
+                return;
             }
 
-            await RunAxisActionAsync(operationName, async () =>
+            if (_joggingAxis != null)
             {
-                AxisStatus status = await _axis.ReadStatusAsync(CancellationToken.None).ConfigureAwait(true);
+                OperationMessageText.Text = GetText("请先停止当前连续点动");
+                return;
+            }
+
+            _axisActionInProgress = true;
+            string operationName = GetText("伺服状态");
+            OperationMessageText.Text = string.Empty;
+            try
+            {
+                AxisStatus status = await ReadAxisStatusForManualActionAsync().ConfigureAwait(true);
+                ServoToggleButton.Content = GetText(status.ServoEnabled ? "伺服关闭" : "伺服使能");
+
+                if (status.Moving)
+                {
+                    throw new InvalidOperationException(GetText("轴运动中禁止切换伺服"));
+                }
+
+                ManualOperationBlockReason blockReason;
                 if (status.ServoEnabled)
                 {
-                    await _axis.DisableServoAsync(CancellationToken.None).ConfigureAwait(true);
+                    operationName = GetText("伺服关闭");
+                    blockReason = await _machineRuntime.RunManualRecoveryOperationAsync(
+                        () => _axis.DisableServoAsync(CancellationToken.None),
+                        CancellationToken.None).ConfigureAwait(true);
                 }
                 else
                 {
-                    await _axis.EnableServoAsync(CancellationToken.None).ConfigureAwait(true);
+                    operationName = GetText("伺服使能");
+                    blockReason = await _machineRuntime.RunManualOperationAsync(
+                        () => _axis.EnableServoAsync(CancellationToken.None),
+                        CancellationToken.None).ConfigureAwait(true);
                 }
-            }).ConfigureAwait(true);
+
+                if (blockReason != ManualOperationBlockReason.None)
+                {
+                    SetManualOperationAvailability(blockReason);
+                    throw new InvalidOperationException(GetManualOperationBlockText(blockReason));
+                }
+
+                OperationMessageText.Text = string.Format(GetText("操作完成"), operationName);
+                await RefreshStatusAsync().ConfigureAwait(true);
+            }
+            catch (Exception error)
+            {
+                OperationMessageText.Text = string.Format(GetText("操作失败"), operationName, error.Message);
+            }
+            finally
+            {
+                _axisActionInProgress = false;
+            }
         }
 
         /// <summary>使用当前轴映射中保存的回零参数启动回零。</summary>
@@ -945,8 +1147,59 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>清除当前轴的驱动报警。</summary>
         private async void ResetAxisAlarmButton_Click(object sender, RoutedEventArgs e)
         {
-            await RunAxisActionAsync(GetText("轴报警复位"), () => _axis.ResetAlarmAsync(CancellationToken.None))
-                .ConfigureAwait(true);
+            await ResetAxisAlarmAsync().ConfigureAwait(true);
+        }
+
+        /// <summary>轴停止且急停输入已恢复后复位轴报警；急停仍有效或状态不可读时 Runtime 会拒绝。</summary>
+        private async Task ResetAxisAlarmAsync()
+        {
+            if (_axisActionInProgress)
+            {
+                OperationMessageText.Text = GetText("当前轴操作正在执行");
+                return;
+            }
+
+            if (_joggingAxis != null)
+            {
+                OperationMessageText.Text = GetText("请先停止当前连续点动");
+                return;
+            }
+
+            _axisActionInProgress = true;
+            string operationName = GetText("轴报警复位");
+            OperationMessageText.Text = string.Empty;
+            try
+            {
+                ManualOperationBlockReason blockReason = await _machineRuntime.RunManualAxisAlarmResetAsync(
+                    async () =>
+                    {
+                        AxisStatus status = await ReadAxisStatusForManualActionAsync().ConfigureAwait(true);
+                        if (status.Moving)
+                        {
+                            throw new InvalidOperationException(GetText("轴运动中禁止恢复操作"));
+                        }
+
+                        await _axis.ResetAlarmAsync(CancellationToken.None).ConfigureAwait(false);
+                    },
+                    CancellationToken.None).ConfigureAwait(true);
+
+                if (blockReason != ManualOperationBlockReason.None)
+                {
+                    SetManualOperationAvailability(blockReason);
+                    throw new InvalidOperationException(GetManualOperationBlockText(blockReason));
+                }
+
+                OperationMessageText.Text = string.Format(GetText("操作完成"), operationName);
+                await RefreshStatusAsync().ConfigureAwait(true);
+            }
+            catch (Exception error)
+            {
+                OperationMessageText.Text = string.Format(GetText("操作失败"), operationName, error.Message);
+            }
+            finally
+            {
+                _axisActionInProgress = false;
+            }
         }
 
         /// <summary>按受控停止方式停止当前轴。</summary>
@@ -970,7 +1223,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 () => _axis.StopAsync(AxisStopMode.Controlled, CancellationToken.None)).ConfigureAwait(true);
         }
 
-        /// <summary>校验目标位置和运动曲线后执行绝对定位。</summary>
+        /// <summary>校验目标位置和运动曲线后定位，并核对定位后的反馈位置。</summary>
         private async void MoveAbsoluteButton_Click(object sender, RoutedEventArgs e)
         {
             await RunAxisActionAsync(GetText("定位"), async () =>
@@ -979,6 +1232,30 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 EnsurePositionWithinLimits(targetPosition);
                 AxisMotionProfile profile = ReadMotionProfile();
                 await _axis.MoveAbsoluteAsync(targetPosition, profile, CancellationToken.None).ConfigureAwait(true);
+
+                AxisStatus finalStatus;
+                try
+                {
+                    finalStatus = await ReadAxisStatusForManualActionAsync().ConfigureAwait(true);
+                }
+                catch (Exception error)
+                {
+                    OperationMessageText.Text = string.Format(
+                        GetText("定位完成但反馈读取失败"),
+                        error.Message);
+                    return;
+                }
+
+                string feedbackPosition = finalStatus.Position.ToString("F3", CultureInfo.CurrentCulture);
+                string displayedTargetPosition = targetPosition.ToString("F3", CultureInfo.CurrentCulture);
+                if (!string.Equals(feedbackPosition, displayedTargetPosition, StringComparison.Ordinal))
+                {
+                    OperationMessageText.Text = string.Format(
+                        GetText("定位反馈与目标不一致"),
+                        feedbackPosition,
+                        displayedTargetPosition,
+                        PositionUnitText.Text);
+                }
             }).ConfigureAwait(true);
         }
 
@@ -1078,7 +1355,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                     throw new ArgumentOutOfRangeException(nameof(stepDistance), GetText("寸动步长必须大于零"));
                 }
 
-                AxisStatus status = await _axis.ReadStatusAsync(CancellationToken.None).ConfigureAwait(true);
+                AxisStatus status = await ReadAxisStatusForManualActionAsync().ConfigureAwait(true);
                 double currentPosition = status.CommandPosition ?? status.Position;
                 double distance = direction == MotionDirection.Positive ? stepDistance : -stepDistance;
                 EnsurePositionWithinLimits(currentPosition + distance);
@@ -1137,7 +1414,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
 
                 try
                 {
-                    AxisStatus status = await _axis.ReadStatusAsync(CancellationToken.None).ConfigureAwait(true);
+                    AxisStatus status = await ReadAxisStatusForManualActionAsync().ConfigureAwait(true);
                     if (status.AlarmActive)
                     {
                         issues.Add(GetText("轴报警有效"));
@@ -1216,6 +1493,12 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 return;
             }
 
+            if (!_axisStatusAvailable)
+            {
+                OperationMessageText.Text = GetText("轴状态读取失败禁止手动操作");
+                return;
+            }
+
             if (_joggingAxis != null && !allowExistingJog)
             {
                 OperationMessageText.Text = GetText("请先停止当前连续点动");
@@ -1239,6 +1522,52 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                     OperationMessageText.Text = string.Format(GetText("操作完成"), operationName);
                 }
 
+                await RefreshStatusAsync().ConfigureAwait(true);
+            }
+            catch (Exception error)
+            {
+                OperationMessageText.Text = string.Format(GetText("操作失败"), operationName, error.Message);
+            }
+            finally
+            {
+                _axisActionInProgress = false;
+            }
+        }
+
+        /// <summary>执行允许急停锁存期间使用的恢复或示教操作，仍拒绝断卡和自动流程状态。</summary>
+        private async Task RunManualRecoveryActionAsync(string operationName, Func<Task> operation)
+        {
+            if (_axisActionInProgress)
+            {
+                OperationMessageText.Text = GetText("当前轴操作正在执行");
+                return;
+            }
+
+            if (!_axisStatusAvailable)
+            {
+                OperationMessageText.Text = GetText("轴状态不可读禁止恢复操作");
+                return;
+            }
+
+            if (_joggingAxis != null)
+            {
+                OperationMessageText.Text = GetText("请先停止当前连续点动");
+                return;
+            }
+
+            _axisActionInProgress = true;
+            OperationMessageText.Text = string.Empty;
+            try
+            {
+                ManualOperationBlockReason blockReason = await _machineRuntime
+                    .RunManualRecoveryOperationAsync(operation, CancellationToken.None).ConfigureAwait(true);
+                if (blockReason != ManualOperationBlockReason.None)
+                {
+                    SetManualOperationAvailability(blockReason);
+                    throw new InvalidOperationException(GetManualOperationBlockText(blockReason));
+                }
+
+                OperationMessageText.Text = string.Format(GetText("操作完成"), operationName);
                 await RefreshStatusAsync().ConfigureAwait(true);
             }
             catch (Exception error)
