@@ -100,6 +100,12 @@ namespace MotionControl.Framework.Runtime.Variables
             return ReadValue<DateTime>(name, DeviceVariableType.DateTime);
         }
 
+        /// <summary>读取 32 位无符号整数变量，并检查定义类型是否为 UInt32。</summary>
+        public uint GetUInt32(string name)
+        {
+            return ReadValue<uint>(name, DeviceVariableType.UInt32);
+        }
+
         /// <summary>由设备流程更新布尔变量并记录更新时间。</summary>
         public void SetBoolean(string name, bool value)
         {
@@ -145,6 +151,12 @@ namespace MotionControl.Framework.Runtime.Variables
         public void SetDateTime(string name, DateTime value)
         {
             SetRuntimeValue(name, DeviceVariableType.DateTime, value.ToString("O", CultureInfo.InvariantCulture));
+        }
+
+        /// <summary>由设备流程更新 32 位无符号整数变量并记录更新时间。</summary>
+        public void SetUInt32(string name, uint value)
+        {
+            SetRuntimeValue(name, DeviceVariableType.UInt32, value.ToString(CultureInfo.InvariantCulture));
         }
 
         /// <summary>替换变量定义；相同名称且类型未变时保留现值，新增或改类型时使用初值。</summary>
@@ -402,7 +414,7 @@ namespace MotionControl.Framework.Runtime.Variables
             DeviceVariableType variableType;
             if (!TryParseType(typeName, out variableType))
             {
-                errorMessage = "数据类型只能是 Boolean、Integer、Number、String、Byte、Character 或 DateTime。";
+                errorMessage = "数据类型只能是 Boolean、Integer、Number、String、Byte、Character、DateTime 或 UInt32。";
                 return false;
             }
 
@@ -456,6 +468,21 @@ namespace MotionControl.Framework.Runtime.Variables
                     }
 
                     normalizedValue = byteValue.ToString(CultureInfo.InvariantCulture);
+                    return true;
+
+                case DeviceVariableType.UInt32:
+                    uint unsignedIntegerValue;
+                    if (!uint.TryParse(
+                        valueText,
+                        NumberStyles.Integer,
+                        CultureInfo.InvariantCulture,
+                        out unsignedIntegerValue))
+                    {
+                        errorMessage = "UInt32 值必须是 0 到 4,294,967,295 之间的整数。";
+                        return false;
+                    }
+
+                    normalizedValue = unsignedIntegerValue.ToString(CultureInfo.InvariantCulture);
                     return true;
 
                 case DeviceVariableType.Character:
@@ -521,6 +548,9 @@ namespace MotionControl.Framework.Runtime.Variables
                     break;
                 case DeviceVariableType.Byte:
                     parsedValue = byte.Parse(normalizedValue, CultureInfo.InvariantCulture);
+                    break;
+                case DeviceVariableType.UInt32:
+                    parsedValue = uint.Parse(normalizedValue, CultureInfo.InvariantCulture);
                     break;
                 case DeviceVariableType.Character:
                     parsedValue = char.Parse(normalizedValue);

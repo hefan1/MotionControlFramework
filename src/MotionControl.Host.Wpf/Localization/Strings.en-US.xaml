@@ -524,7 +524,7 @@
     <sys:String x:Key="变量说明">Description</sys:String>
     <sys:String x:Key="变量定义窗口标题">Device Variable Definition</sys:String>
     <sys:String x:Key="变量定义窗口说明">Device flows use this name. The selected type controls initial and runtime value validation.</sys:String>
-    <sys:String x:Key="变量类型说明">Boolean: true or false; Int32: signed 32-bit integer; Double: double-precision floating point; String: text; Byte: unsigned 8-bit integer (0–255); Char: one character; DateTime: yyyy-MM-dd HH:mm:ss.</sys:String>
+    <sys:String x:Key="变量类型说明">Boolean: true or false; Int32: signed 32-bit integer; Double: double-precision floating point; String: text; Byte: unsigned 8-bit integer (0–255); Char: one character; DateTime: yyyy-MM-dd HH:mm:ss; UInt32 (C# alias uint): unsigned 32-bit integer (0–4,294,967,295).</sys:String>
     <sys:String x:Key="变量初始值">Initial Value on Startup (optional)</sys:String>
     <sys:String x:Key="变量允许现场写入">Allow manual writes by operators</sys:String>
     <sys:String x:Key="变量类型布尔">Boolean</sys:String>
@@ -534,6 +534,7 @@
     <sys:String x:Key="变量类型字节">Byte</sys:String>
     <sys:String x:Key="变量类型字符">Char</sys:String>
     <sys:String x:Key="变量类型日期时间">DateTime</sys:String>
+    <sys:String x:Key="变量类型无符号32位整数">UInt32</sys:String>
     <sys:String x:Key="变量无有效数据">No valid data</sys:String>
     <sys:String x:Key="变量状态可编辑">Machine is stopped. Definitions can be edited; select an operator-writable variable to change its current value.</sys:String>
     <sys:String x:Key="变量状态运行时锁定">Definitions and manual writes are locked while the machine is running, paused, or alarmed.</sys:String>

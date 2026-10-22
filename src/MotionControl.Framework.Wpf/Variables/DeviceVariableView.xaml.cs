@@ -494,6 +494,7 @@ namespace MotionControl.Framework.Wpf.Variables
                 case "Byte": return GetLocalizedText("变量类型字节");
                 case "Character": return GetLocalizedText("变量类型字符");
                 case "DateTime": return GetLocalizedText("变量类型日期时间");
+                case "UInt32": return GetLocalizedText("变量类型无符号32位整数");
                 default: return typeName;
             }
         }

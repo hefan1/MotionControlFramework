@@ -147,6 +147,7 @@
                 <ComboBoxItem Tag="Byte" Content="{DynamicResource 变量类型字节}" />
                 <ComboBoxItem Tag="Character" Content="{DynamicResource 变量类型字符}" />
                 <ComboBoxItem Tag="DateTime" Content="{DynamicResource 变量类型日期时间}" />
+                <ComboBoxItem Tag="UInt32" Content="{DynamicResource 变量类型无符号32位整数}" />
             </ComboBox>
 
             <TextBlock Grid.Row="4"

@@ -22,6 +22,9 @@ namespace MotionControl.Framework.Contracts.Variables
         Character,
 
         /// <summary>日期和时间，使用 ISO 8601 文本格式保存。</summary>
-        DateTime
+        DateTime,
+
+        /// <summary>32 位无符号整数，取值范围为 0 到 4,294,967,295；C# 别名为 uint。</summary>
+        UInt32
     }
 }

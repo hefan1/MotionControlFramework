@@ -36,6 +36,9 @@ namespace MotionControl.Framework.Contracts.Variables
         /// <summary>读取日期时间类型变量。</summary>
         DateTime GetDateTime(string name);
 
+        /// <summary>读取 32 位无符号整数类型变量，范围为 0 到 4,294,967,295。</summary>
+        uint GetUInt32(string name);
+
         /// <summary>由设备流程更新布尔类型变量。</summary>
         void SetBoolean(string name, bool value);
 
@@ -56,6 +59,9 @@ namespace MotionControl.Framework.Contracts.Variables
 
         /// <summary>由设备流程更新日期时间类型变量。</summary>
         void SetDateTime(string name, DateTime value);
+
+        /// <summary>由设备流程更新 32 位无符号整数类型变量。</summary>
+        void SetUInt32(string name, uint value);
 
         /// <summary>按名称、类型和值替换设备变量定义；相同名称和类型会保留当前运行值。</summary>
         void ReplaceDefinitions(IEnumerable<DeviceVariableDefinition> definitions);
