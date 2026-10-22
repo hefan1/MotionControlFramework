@@ -28,11 +28,8 @@ namespace MotionControl.Equipment.Demo
         /// <summary>本工位在当前设备连接周期内使用的参数。</summary>
         private readonly DemoStationSettings _settings;
 
-        /// <summary>按工艺顺序排列的动作定义；名称与执行方法在同一处维护。</summary>
-        private readonly FlowStep[] _steps;
-
-        /// <summary>当前动作在流程清单中的索引；取消或动作未完成时保持不变。</summary>
-        private volatile int _currentStepIndex;
+        /// <summary>当前动作及其处理方法；动作方法完成后明确指定下一动作。</summary>
+        private volatile FlowStep _currentStep;
 
         /// <summary>检查依赖与参数，并从定位步骤开始。</summary>
         public DemoStationFlow(
@@ -51,13 +48,7 @@ namespace MotionControl.Equipment.Demo
                 throw new InvalidOperationException("示例工位逻辑轴与配置不一致：" + _settings.AxisName + "。");
             }
 
-            _steps = new[]
-            {
-                new FlowStep("轴定位到 " + _settings.TargetPosition, MoveAxisAsync),
-                new FlowStep("等待传感器 " + _settings.SensorInputName, WaitForSensorAsync),
-                new FlowStep("触发输出 " + _settings.OutputName, PulseOutputAsync),
-                new FlowStep("等待传感器复位 " + _settings.SensorInputName, WaitForSensorReleaseAsync)
-            };
+            _currentStep = new FlowStep("轴定位到 " + _settings.TargetPosition, MoveAxisAsync);
         }
 
         /// <summary>返回该设备中的示例工位名称。</summary>
@@ -66,35 +57,30 @@ namespace MotionControl.Equipment.Demo
         /// <summary>返回操作员能直接理解的当前工位动作。</summary>
         public string CurrentStepName
         {
-            get { return _steps[_currentStepIndex].Name; }
+            get { return _currentStep.Name; }
         }
 
-        /// <summary>执行当前动作；仅动作明确完成后推进，暂停取消后仍从当前动作恢复。</summary>
+        /// <summary>执行当前动作；动作内部决定下一步，暂停取消后保留当前动作。</summary>
         public async Task ExecuteCurrentStepAsync(CancellationToken cancellationToken)
         {
-            FlowStep currentStep = _steps[_currentStepIndex];
-            bool completed = await currentStep.ExecuteAsync(cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-
-            if (completed)
-            {
-                _currentStepIndex = (_currentStepIndex + 1) % _steps.Length;
-            }
+            FlowStep currentStep = _currentStep;
+            await currentStep.ExecuteAsync(cancellationToken).ConfigureAwait(false);
         }
 
         /// <summary>执行绝对定位；同一目标位置可在暂停恢复时安全重发。</summary>
-        private async Task<bool> MoveAxisAsync(CancellationToken cancellationToken)
+        private async Task MoveAxisAsync(CancellationToken cancellationToken)
         {
             await _axis.MoveAbsoluteAsync(
                 _settings.TargetPosition,
                 new AxisMotionProfile(_settings.Speed, _settings.Acceleration, _settings.Deceleration),
                 cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-            return true;
+            SetCurrentStep("等待传感器 " + _settings.SensorInputName, WaitForSensorAsync);
         }
 
         /// <summary>在当前启动周期内等待 DI 有效；超时报警锁存，当前步骤留待复位后重试。</summary>
-        private async Task<bool> WaitForSensorAsync(CancellationToken cancellationToken)
+        private async Task WaitForSensorAsync(CancellationToken cancellationToken)
         {
             var elapsed = Stopwatch.StartNew();
             while (elapsed.ElapsedMilliseconds < _settings.SensorTimeoutMilliseconds)
@@ -102,7 +88,9 @@ namespace MotionControl.Equipment.Demo
                 cancellationToken.ThrowIfCancellationRequested();
                 if (await _io.ReadInputAsync(_settings.SensorInputName, cancellationToken).ConfigureAwait(false))
                 {
-                    return true;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    SetCurrentStep("触发输出 " + _settings.OutputName, PulseOutputAsync);
+                    return;
                 }
 
                 await Task.Delay(_settings.SensorPollMilliseconds, cancellationToken).ConfigureAwait(false);
@@ -121,12 +109,10 @@ namespace MotionControl.Equipment.Demo
                 // 超时是一次性事件；记录继续锁存，条件结束后允许操作员复位重试。
                 _alarms.ReportCondition(SensorTimeoutAlarm, StationName, false, detail);
             }
-
-            return false;
         }
 
         /// <summary>触发一次输出脉冲；无论正常完成还是暂停取消，都会先关闭 DO。</summary>
-        private async Task<bool> PulseOutputAsync(CancellationToken cancellationToken)
+        private async Task PulseOutputAsync(CancellationToken cancellationToken)
         {
             try
             {
@@ -139,19 +125,26 @@ namespace MotionControl.Equipment.Demo
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            return true;
+            SetCurrentStep("等待传感器复位 " + _settings.SensorInputName, WaitForSensorReleaseAsync);
         }
 
         /// <summary>等待传感器恢复无效；传感器仍有效时留在本动作并继续轮询。</summary>
-        private async Task<bool> WaitForSensorReleaseAsync(CancellationToken cancellationToken)
+        private async Task WaitForSensorReleaseAsync(CancellationToken cancellationToken)
         {
             if (!await _io.ReadInputAsync(_settings.SensorInputName, cancellationToken).ConfigureAwait(false))
             {
-                return true;
+                cancellationToken.ThrowIfCancellationRequested();
+                SetCurrentStep("轴定位到 " + _settings.TargetPosition, MoveAxisAsync);
+                return;
             }
 
             await Task.Delay(_settings.SensorPollMilliseconds, cancellationToken).ConfigureAwait(false);
-            return false;
+        }
+
+        /// <summary>切换当前动作；流程分支通过传入不同动作方法明确表达跳转目标。</summary>
+        private void SetCurrentStep(string name, Func<CancellationToken, Task> executeAsync)
+        {
+            _currentStep = new FlowStep(name, executeAsync);
         }
 
         /// <summary>清理本工位的可复位状态；保留当前工艺步骤供暂停或报警后续跑。</summary>
@@ -161,17 +154,17 @@ namespace MotionControl.Equipment.Demo
             return Task.CompletedTask;
         }
 
-        /// <summary>保存一个动作的显示名称和执行入口，供流程清单与状态页共同使用。</summary>
+        /// <summary>保存当前动作的显示名称和执行入口，供流程状态读取与继续执行使用。</summary>
         private sealed class FlowStep
         {
             /// <summary>操作员可见的当前动作名称。</summary>
             public string Name { get; private set; }
 
-            /// <summary>执行动作并返回该动作是否完成。</summary>
-            public Func<CancellationToken, Task<bool>> ExecuteAsync { get; private set; }
+            /// <summary>运行当前动作的具体方法。</summary>
+            public Func<CancellationToken, Task> ExecuteAsync { get; private set; }
 
             /// <summary>创建动作定义，并检查名称和执行入口有效。</summary>
-            public FlowStep(string name, Func<CancellationToken, Task<bool>> executeAsync)
+            public FlowStep(string name, Func<CancellationToken, Task> executeAsync)
             {
                 if (string.IsNullOrWhiteSpace(name))
                 {
