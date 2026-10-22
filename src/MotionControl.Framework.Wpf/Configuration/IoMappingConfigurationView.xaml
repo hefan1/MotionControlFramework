@@ -210,7 +210,7 @@
         </Style>
     </UserControl.Resources>
 
-    <Grid Margin="14,8,14,12" ToolTip="{Binding Text, ElementName=ConfigurationFileText}">
+    <Grid Margin="14,8,14,12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -402,7 +402,8 @@
             </Grid.ColumnDefinitions>
             <StackPanel VerticalAlignment="Center">
                 <TextBlock x:Name="ConfigurationStatusText" Text="{DynamicResource IO映射尚未保存}"
-                           FontSize="11" Foreground="#586B80" TextTrimming="CharacterEllipsis" />
+                           FontSize="11" Foreground="#586B80" TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding Text, ElementName=ConfigurationFileText}" />
                 <TextBlock x:Name="ConfigurationFileText" Visibility="Collapsed" />
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
