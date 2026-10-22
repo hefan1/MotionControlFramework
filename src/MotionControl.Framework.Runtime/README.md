@@ -4,13 +4,17 @@
 
 按职责分区：Machine（单机生命周期）、FlowScheduling（工位流程调度）、Alarms、ManualControl、Configuration、Diagnostics、Traceability。Runtime 统一持有整机状态并协调各工位的启动、暂停、复位和报警响应；工位流程本身由设备项目以 C# 步骤编写，并各自保留当前步骤。流程执行保持直观可读，Runtime 不承载具体工艺动作。
 
-`Variables/DeviceVariableStore` 按变量名称维护布尔、整数、小数和字符串运行值，设备流程通过 `IDeviceVariableStore` 明确读写类型；未初始化变量会报告无有效值，不会伪造零值。变量定义另存于当前设备 `Parameters/DeviceVariables.json`，当前值只保存在本次运行的内存中，供监控页实时显示。
+`Variables/DeviceVariableStore` 按变量名称维护布尔、整数、小数和字符串运行值，设备流程通过 `IDeviceVariableStore` 明确读写类型；未初始化变量会报告无有效值，不会伪造零值。变量定义另存于当前设备 `Parameters/DeviceVariables.json`；当前值由 Host 在受控暂停和软件关闭时写入本机恢复文件，重启后按名称和 .NET 类型恢复。
 
 需要使用变量的工位在构造函数中接收 `IDeviceVariableStore`，由 Host 组合入口传入与监控页面相同的实例；不需要变量的工位无需增加这项依赖。不要在工位里另建变量表，否则页面和流程会看到不同的数据。
 
 `Machine/MotionCardGroup` 管理 Host 创建的多张运动卡：校验卡号和逻辑轴名称、按配置顺序连接、失败时回收本次已连接的卡，并按逻辑轴名称提供轴对象。断开前会先检查所有已连接卡上的轴；状态读取失败或任一轴仍在运动时，会在断开任何卡之前拒绝操作，避免误断连接。设备流程无需知道控制卡厂商、物理卡号或物理轴通道。
 
 `Machine/MachineRuntime` 提供单机连接、复位、启动、暂停和断开入口。连接后必须先复位再启动；自动启动前会检查每根轴仍在运动、报警和限位。设备项目可以传入 `IEquipmentInitializationFlow`，在并行工位启动前按顺序执行本设备需要的回零、移动安全位或输出初始化步骤；没有初始化流程时直接跳过。初始化中暂停会保留当前步骤，完成后同一连接周期内暂停恢复或复位重启不会重复执行；断开后重新连接会从第一步开始。初始化完成后 Runtime 会再次检查轴状态，确保需要重新回零的轴已经恢复。未处理的工位异常会使整机进入 `Alarmed`，并暂停其他工位。Runtime 使用 `IMachineAlarmService` 接收设备项目上报的报警，并把停机报警转换为整机暂停。
+
+跨进程恢复由 Host 在单机配置目录的 `Runtime/RecoverySnapshot.json` 保存。变量值按名称和 .NET 类型恢复；工位流程需要显式实现 `IRecoverableStationFlow`，提供稳定步骤编号，并且恢复方法只设置步骤、不发送运动或 IO 命令。流程在重启后仍须由操作员执行整机复位和启动，运行中旧断点会先作废，只有再次受控暂停才生成新的续跑点。设备配置发生变化或变量定义不匹配时，Host 保留兼容变量值并禁止旧流程续跑。
+
+恢复文件记录的“启动初始化已完成”只是一个候选标记。默认情况下，重连后可选初始化流程仍会重新执行。设备项目只有显式实现 `IRecoverableEquipmentInitializationFlow`，并在 `CanSkipAfterRestartAsync` 中读取当前轴、传感器和设备状态、确认现场仍可安全生产，Runtime 才会跳过初始化；检查失败时照常执行初始化，检查结果未知或抛错时禁止继续启动。Runtime 还会重新读取轴报警、限位和回零要求，不会从 JSON 恢复轴的已回零状态。初始化尚未完成时暂停，变量仍会保存，但不会生成可续跑的工位步骤。
 
 `FlowScheduling/MachineFlowScheduler` 在后台线程先运行可选初始化步骤，再并行执行每个工位的 `ExecuteCurrentStepAsync`。初始化和工位流程都由设备项目编写，步骤完成前保持当前步骤不变；暂停或停机报警会请求当前步骤退出，并等待受控停止完成。流程代码不要直接访问 WPF 控件。
 

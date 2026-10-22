@@ -21,6 +21,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             await SuccessfulCycleUsesMappedResourcesAsync().ConfigureAwait(false);
             await TimeoutRaisesAlarmAndCanRetryAsync().ConfigureAwait(false);
             await PausingOutputTurnsItOffAsync().ConfigureAwait(false);
+            await RestartRestoresCompletedStepWithoutRepeatingMoveAsync().ConfigureAwait(false);
         }
 
         /// <summary>确认轴目标、传感器 DI、输出 DO 和手动联锁都使用同一运行时。</summary>
@@ -96,6 +97,39 @@ namespace MotionControl.ZMotionSimulatorCheck
             Ensure(context.Io.OutputValues.Last() == false, "暂停后示例工位没有关闭 DO。");
             Ensure(context.Flow.CurrentStepName.Contains("触发输出"), "输出期间暂停没有保留当前步骤。");
             await context.Runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        /// <summary>模拟进程重建后恢复等待步骤，确认不会重复执行已完成的轴定位。</summary>
+        private static async Task RestartRestoresCompletedStepWithoutRepeatingMoveAsync()
+        {
+            var beforeRestart = CreateContext(500, 50);
+            await beforeRestart.Runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await beforeRestart.Runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await beforeRestart.Runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await WaitUntilAsync(
+                () => beforeRestart.Axis.MoveCount == 1
+                    && beforeRestart.Flow.CurrentStepName.Contains("等待传感器"),
+                "重启前完成轴定位并等待传感器").ConfigureAwait(false);
+
+            await beforeRestart.Runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+            int savedStep = beforeRestart.Flow.RecoveryStepNumber;
+            Ensure(savedStep == 20, "暂停时没有保存到轴定位之后的等待步骤。");
+            await beforeRestart.Runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+
+            var afterRestart = CreateContext(500, 50);
+            afterRestart.Io.SensorActive = true;
+            afterRestart.Flow.RestoreStep(savedStep);
+            await afterRestart.Runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await afterRestart.Runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await afterRestart.Runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await WaitUntilAsync(
+                () => afterRestart.Io.OutputValues.Count >= 2,
+                "恢复等待步骤后执行输出脉冲").ConfigureAwait(false);
+
+            Ensure(afterRestart.Axis.MoveCount == 0, "恢复后重复执行了重启前已完成的轴定位。");
+            Ensure(afterRestart.Flow.RecoveryStepNumber == 40, "恢复流程没有从传感器等待转到后续步骤。");
+            await afterRestart.Runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+            await afterRestart.Runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
         /// <summary>建立共用逻辑轴、逻辑 IO 与报警服务的最小设备上下文。</summary>

@@ -174,6 +174,25 @@ namespace MotionControl.Framework.Runtime.Machine
             get { return _flowScheduler.StationFlows; }
         }
 
+        /// <summary>返回启动初始化是否完成，可用于暂停恢复文件保存状态。</summary>
+        public bool EquipmentInitializationCompleted
+        {
+            get { return _flowScheduler.EquipmentInitializationCompleted; }
+        }
+
+        /// <summary>返回当前连接周期是否仍有启动初始化待执行。</summary>
+        public bool HasPendingEquipmentInitialization
+        {
+            get { return _flowScheduler.HasPendingInitialization; }
+        }
+
+        /// <summary>连接控制卡前载入上次初始化完成标记，供设备流程重连后检查现场状态。</summary>
+        public void RequestInitializationRecovery(bool initializationCompletedBeforeRestart)
+        {
+            EnsureState(MachineRunState.Disconnected, "只能在连接控制卡前设置初始化恢复状态。");
+            _flowScheduler.RequestInitializationRecovery(initializationCompletedBeforeRestart);
+        }
+
         /// <summary>按设备配置连接所有运动卡，并进入等待复位状态。</summary>
         public async Task ConnectAsync(CancellationToken cancellationToken)
         {

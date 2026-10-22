@@ -4,6 +4,10 @@ Host 是设备上位机的组合入口：它创建当前设备配置、通用页
 
 “监控 → 设备变量”显示本机变量表。首次启动时 Host 从当前设备项目的 `EquipmentTemplates/Parameters/DeviceVariables.json` 复制默认变量；之后只读写本机 `%LOCALAPPDATA%/MotionControlFramework/Configurations/<MachineId>/Parameters/DeviceVariables.json`，不会覆盖已存在的现场配置。变量运行值在内存中供设备流程和监控页共用。
 
+Host 在工位受控暂停后保存设备变量值、可恢复工位步骤和初始化完成标记到本机 `%LOCALAPPDATA%/MotionControlFramework/Configurations/<MachineId>/Runtime/RecoverySnapshot.json`。软件关闭时会再次保存最新变量值；运行中、暂停中或报警处理中会阻止关闭，要求先安全停止。重启后连接卡，确认恢复提示，再按设备复位和启动；不会自动发运动或输出命令。流程断点只在设备配置一致且工位显式实现 `IRecoverableStationFlow` 时续跑。新增、删除或改类型的变量按名称和 .NET 类型逐项校验；不匹配的变量使用当前配置初值，并阻止旧流程自动续跑。
+
+启动初始化默认在新连接后重新执行。设备流程如要在软件重启后避免重复回零，必须显式实现 `IRecoverableEquipmentInitializationFlow`；Runtime 会在启动时调用 `CanSkipAfterRestartAsync`，由设备流程读取当前轴、传感器和工艺状态。只有该实时检查确认安全，且 Runtime 再次确认轴已停稳、无报警/限位并满足回零要求，才跳过初始化；检查返回 false 时完整执行原初始化，检查异常时禁止启动。恢复文件本身不会把轴标记为已回零。配置发生变化、变量定义不匹配或暂停发生在初始化中时，不允许使用旧初始化完成标记。
+
 ## 运动卡连接位置
 
 - `App.xaml.cs` 的 `CreateMotionCardConnection()` 是当前 Host 选择控制卡实现的位置。设备流程和通用页面不在这里选择厂商。
@@ -18,6 +22,7 @@ Host 是设备上位机的组合入口：它创建当前设备配置、通用页
 
 - Host 的启动、暂停、停止按钮现在调用同一个 `MachineRuntime`，与轴手动、IO 手动页面共享控制卡及逻辑映射；示例流程运行时，手动操作由 Runtime 拒绝。当前“停止”和“暂停”都请求受控暂停并保留工位步骤。
 - 当前设备目录中的 `Parameters/DemoStation.json` 显式启用后，Host 根据其中的逻辑轴、逻辑 DI、逻辑 DO 和工程单位参数创建 `MotionControl.Equipment.Demo/DemoStationFlow`。没有该文件或 `enabled=false` 时不创建自动工位，启动按钮不可用，手动调试照常使用；配置错误时会提示原因并关闭示例自动流程，不影响手动页面。配置字段和流程顺序见 [示例工位说明](../MotionControl.Equipment.Demo/README.md)。
+- 当前示例工位明确保存 10、20、30、40 步编号；暂停后重启会从保存步骤起点执行。若暂停发生在有外部副作用的步骤中，设备项目必须确认该步骤可以安全重试，或在流程中补充可恢复的工艺状态判断。
 - 在“监控 → 流程状态”查看整机状态、当前步骤、超时报警和最近故障。操作顺序为连接控制卡 → 整机复位 → 启动 → 观察轴定位与 DI → 观察 DO 脉冲；保持 DI 无效可核对超时报警，再复位重试。
 
 ## 增加另一种控制卡

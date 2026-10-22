@@ -58,6 +58,78 @@ namespace MotionControl.Framework.Runtime.Variables
             }
         }
 
+        /// <summary>按名称和数据类型恢复已保存运行值，保留新变量的配置初值。</summary>
+        public IReadOnlyList<string> RestoreCurrentValues(IEnumerable<DeviceVariableSnapshot> snapshots)
+        {
+            if (snapshots == null)
+            {
+                throw new ArgumentNullException(nameof(snapshots), "设备变量恢复快照不能为空。");
+            }
+
+            var warnings = new List<string>();
+            var restoredNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            lock (_sync)
+            {
+                foreach (DeviceVariableSnapshot snapshot in snapshots)
+                {
+                    if (snapshot == null || string.IsNullOrWhiteSpace(snapshot.Name))
+                    {
+                        warnings.Add("跳过名称为空的设备变量恢复记录。");
+                        continue;
+                    }
+
+                    if (!restoredNames.Add(snapshot.Name))
+                    {
+                        warnings.Add("设备变量恢复记录重复，已跳过后续记录：" + snapshot.Name + "。");
+                        continue;
+                    }
+
+                    RuntimeVariable variable;
+                    if (!_variables.TryGetValue(snapshot.Name, out variable))
+                    {
+                        warnings.Add("当前设备配置已删除变量，未恢复：" + snapshot.Name + "。");
+                        continue;
+                    }
+
+                    if (!string.Equals(
+                        variable.Definition.DataType,
+                        snapshot.DataType,
+                        StringComparison.OrdinalIgnoreCase))
+                    {
+                        warnings.Add("变量数据类型已变化，未恢复旧值：" + snapshot.Name + "。");
+                        continue;
+                    }
+
+                    if (!snapshot.HasValue)
+                    {
+                        variable.CurrentValue = string.Empty;
+                        variable.HasValue = false;
+                        variable.LastUpdated = snapshot.LastUpdated;
+                        continue;
+                    }
+
+                    string normalizedValue;
+                    string errorMessage;
+                    if (!TryNormalizeValue(
+                        variable.Definition.DataType,
+                        snapshot.CurrentValue,
+                        out normalizedValue,
+                        out errorMessage))
+                    {
+                        warnings.Add("变量恢复值格式无效，未恢复 " + snapshot.Name + "：" + errorMessage);
+                        continue;
+                    }
+
+                    variable.CurrentValue = normalizedValue;
+                    variable.HasValue = true;
+                    variable.LastUpdated = snapshot.LastUpdated;
+                }
+            }
+
+            RaiseVariablesChanged();
+            return warnings.AsReadOnly();
+        }
+
         /// <summary>读取布尔变量，并检查定义类型是否为 Boolean。</summary>
         public bool GetBoolean(string name)
         {

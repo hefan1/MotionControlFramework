@@ -10,7 +10,7 @@ using MotionControl.Framework.Contracts.Motion;
 namespace MotionControl.Equipment.Demo
 {
     /// <summary>按逻辑轴、逻辑 DI 和逻辑 DO 执行一次运动、检测及输出，再等待传感器复位。</summary>
-    public sealed class DemoStationFlow : IStationFlow
+    public sealed class DemoStationFlow : IStationFlow, IRecoverableStationFlow
     {
         /// <summary>传感器等待超时使用的停机报警，同次超时只保留一条待复位记录。</summary>
         private static readonly MachineAlarmDefinition SensorTimeoutAlarm = new MachineAlarmDefinition(
@@ -69,6 +69,49 @@ namespace MotionControl.Equipment.Demo
                 {
                     return _step + " - " + _stepInfo;
                 }
+            }
+        }
+
+        /// <summary>返回最近一个完整流程步骤边界的编号。</summary>
+        public int RecoveryStepNumber
+        {
+            get
+            {
+                lock (_stepSync)
+                {
+                    return _step;
+                }
+            }
+        }
+
+        /// <summary>只允许恢复到当前示例工位明确实现的步骤编号。</summary>
+        public bool CanRestoreStep(int stepNumber)
+        {
+            return stepNumber == 10 || stepNumber == 20 || stepNumber == 30 || stepNumber == 40;
+        }
+
+        /// <summary>恢复到步骤起点，不触发运动或 IO，启动后由流程正常执行该步骤。</summary>
+        public void RestoreStep(int stepNumber)
+        {
+            if (!CanRestoreStep(stepNumber))
+            {
+                throw new ArgumentOutOfRangeException(nameof(stepNumber), "示例工位不支持恢复到该步骤。");
+            }
+
+            switch (stepNumber)
+            {
+                case 10:
+                    SetStep(10, "轴定位到 " + _settings.TargetPosition);
+                    break;
+                case 20:
+                    SetStep(20, "等待传感器 " + _settings.SensorInputName);
+                    break;
+                case 30:
+                    SetStep(30, "触发输出 " + _settings.OutputName);
+                    break;
+                case 40:
+                    SetStep(40, "等待传感器复位 " + _settings.SensorInputName);
+                    break;
             }
         }
 

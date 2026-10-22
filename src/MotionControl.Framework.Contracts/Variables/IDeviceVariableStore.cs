@@ -15,6 +15,9 @@ namespace MotionControl.Framework.Contracts.Variables
         /// <summary>返回当前变量值快照，供监控页面显示。</summary>
         IReadOnlyList<DeviceVariableSnapshot> GetSnapshot();
 
+        /// <summary>恢复名称和类型匹配的已保存值；不匹配或格式无效的项会返回说明并跳过。</summary>
+        IReadOnlyList<string> RestoreCurrentValues(IEnumerable<DeviceVariableSnapshot> snapshots);
+
         /// <summary>读取布尔类型变量；变量不存在或类型不匹配时抛出可读异常。</summary>
         bool GetBoolean(string name);
 

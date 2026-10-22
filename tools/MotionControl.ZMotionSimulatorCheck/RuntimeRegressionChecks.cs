@@ -51,6 +51,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("通用框架程序集不引用厂商适配器或原生 API", SharedFrameworkAssembliesDoNotReferenceVendorAdaptersAsync, failures);
             await RunCheckAsync("正运动轴号超出控制器范围时在连接前被拒绝", ZMotionAxisNumberOutsideControllerRangeIsRejectedAsync, failures);
             await RunCheckAsync("示例工位轴动作、传感器、输出、超时报警和复位闭环", DemoStationFlowChecks.RunAsync, failures);
+            await RunCheckAsync("设备变量跨进程恢复及配置变化保护", MachineRecoveryChecks.RunAsync, failures);
             return failures.AsReadOnly();
         }
 
@@ -356,6 +357,33 @@ namespace MotionControl.ZMotionSimulatorCheck
             await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
             await WaitForStartCountAsync(stationFlow, 3).ConfigureAwait(false);
             Ensure(initializationFlow.ExecutionCount == 3, "新的控制卡连接周期没有重新执行设备初始化。");
+
+            await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+
+            axis.RequiresHomingAfterLimitAlarm = true;
+            initializationFlow.CanSkipAfterRestart = true;
+            initializationFlow.OnRecoveryCheck = () => axis.RequiresHomingAfterLimitAlarm = false;
+            runtime.RequestInitializationRecovery(true);
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await WaitForStartCountAsync(stationFlow, 4).ConfigureAwait(false);
+            Ensure(initializationFlow.RecoveryCheckCount == 1, "重启后没有请求设备初始化流程核实现场状态。");
+            Ensure(initializationFlow.ExecutionCount == 3, "现场状态确认有效后仍重复执行了回零初始化步骤。");
+            Ensure(!axis.RequiresHomingAfterLimitAlarm, "跳过初始化后未重新确认轴已满足回零要求。");
+
+            await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+
+            initializationFlow.CanSkipAfterRestart = false;
+            runtime.RequestInitializationRecovery(true);
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await WaitForStartCountAsync(stationFlow, 5).ConfigureAwait(false);
+            Ensure(initializationFlow.RecoveryCheckCount == 2, "恢复候选未重新检查现场状态。");
+            Ensure(initializationFlow.ExecutionCount == 4, "现场状态不满足时没有重新执行初始化流程。");
 
             await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
             await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
@@ -1334,7 +1362,8 @@ namespace MotionControl.ZMotionSimulatorCheck
         }
 
         /// <summary>提供可暂停的设备初始化替身，用于验证步骤保留和连接周期行为。</summary>
-        private sealed class FakeEquipmentInitializationFlow : IEquipmentInitializationFlow
+        private sealed class FakeEquipmentInitializationFlow : IEquipmentInitializationFlow,
+            IRecoverableEquipmentInitializationFlow
         {
             private readonly TaskCompletionSource<bool> _started = new TaskCompletionSource<bool>();
 
@@ -1359,13 +1388,35 @@ namespace MotionControl.ZMotionSimulatorCheck
             /// <summary>记录初始化是否运行在启动调用方的同步上下文中。</summary>
             public bool SawSynchronizationContext { get; private set; }
 
+            /// <summary>控制恢复检查是否确认现场仍满足跳过初始化的条件。</summary>
+            public bool CanSkipAfterRestart { get; set; }
+
+            /// <summary>记录设备流程重新检查现场状态的次数。</summary>
+            public int RecoveryCheckCount { get; private set; }
+
             /// <summary>步骤完成时执行的测试状态更新。</summary>
             public Action OnComplete { get; set; }
+
+            /// <summary>恢复检查通过时执行的测试状态更新。</summary>
+            public Action OnRecoveryCheck { get; set; }
 
             /// <summary>等待测试确认初始化流程已经开始执行。</summary>
             public Task WaitUntilStartedAsync()
             {
                 return _started.Task;
+            }
+
+            /// <summary>模拟重启后读取硬件状态并决定是否可以跳过初始化动作。</summary>
+            public Task<bool> CanSkipAfterRestartAsync(CancellationToken cancellationToken)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                RecoveryCheckCount++;
+                if (CanSkipAfterRestart && OnRecoveryCheck != null)
+                {
+                    OnRecoveryCheck();
+                }
+
+                return Task.FromResult(CanSkipAfterRestart);
             }
 
             /// <summary>等待测试许可时保持当前步骤，收到暂停取消后从同一步继续。</summary>

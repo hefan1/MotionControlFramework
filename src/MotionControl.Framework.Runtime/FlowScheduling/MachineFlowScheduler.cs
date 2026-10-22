@@ -33,6 +33,9 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
         /// <summary>当前控制卡连接周期内，设备初始化是否已经完成。</summary>
         private bool _equipmentInitializationCompleted;
 
+        /// <summary>恢复文件记录初始化曾完成；仍需设备流程重新检查现场状态。</summary>
+        private bool _initializationRecoveryRequested;
+
         /// <summary>检查并保存本机的轴、工位流程和可选启动前初始化流程。</summary>
         public MachineFlowScheduler(
             MotionCardGroup motionCards,
@@ -85,6 +88,32 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
                 {
                     return _equipmentInitializationFlow != null && !_equipmentInitializationCompleted;
                 }
+            }
+        }
+
+        /// <summary>没有初始化流程或本连接周期内初始化已完成时返回 true。</summary>
+        public bool EquipmentInitializationCompleted
+        {
+            get
+            {
+                lock (_runSync)
+                {
+                    return _equipmentInitializationFlow == null || _equipmentInitializationCompleted;
+                }
+            }
+        }
+
+        /// <summary>接收上次正常关闭时的初始化完成标记，后续仍必须重新核实现场状态。</summary>
+        public void RequestInitializationRecovery(bool initializationCompletedBeforeRestart)
+        {
+            lock (_runSync)
+            {
+                if (_runTask != null && !_runTask.IsCompleted)
+                {
+                    throw new InvalidOperationException("设备流程仍在运行，不能设置初始化恢复状态。");
+                }
+
+                _initializationRecoveryRequested = initializationCompletedBeforeRestart;
             }
         }
 
@@ -429,6 +458,17 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
                 return;
             }
 
+            if (await CanSkipInitializationAfterRestartAsync(cancellationToken).ConfigureAwait(false))
+            {
+                await EnsureAxesReadyForAutomaticStartAsync(false, cancellationToken).ConfigureAwait(false);
+                lock (_runSync)
+                {
+                    _equipmentInitializationCompleted = true;
+                }
+
+                return;
+            }
+
             while (!_equipmentInitializationFlow.IsCompleted)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -457,6 +497,32 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
             {
                 _equipmentInitializationCompleted = true;
             }
+        }
+
+        /// <summary>仅在恢复文件有效且设备流程通过实时状态检查时跳过本次初始化。</summary>
+        private async Task<bool> CanSkipInitializationAfterRestartAsync(CancellationToken cancellationToken)
+        {
+            bool recoveryWasRequested;
+            lock (_runSync)
+            {
+                recoveryWasRequested = _initializationRecoveryRequested;
+                _initializationRecoveryRequested = false;
+            }
+
+            if (!recoveryWasRequested)
+            {
+                return false;
+            }
+
+            var recoverableFlow = _equipmentInitializationFlow as IRecoverableEquipmentInitializationFlow;
+            if (recoverableFlow == null)
+            {
+                return false;
+            }
+
+            return await recoverableFlow
+                .CanSkipAfterRestartAsync(cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <summary>重复执行单个工位的当前步骤，并保留步骤执行异常。</summary>

@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using System.IO;
@@ -20,6 +21,7 @@ using MotionControl.Framework.Runtime.Variables;
 using MotionControl.Framework.Wpf.Configuration;
 using MotionControl.Framework.Wpf.ManualDebug;
 using MotionControl.Framework.Wpf.Variables;
+using MotionControl.Host.Wpf.Recovery;
 
 namespace MotionControl.Host.Wpf
 {
@@ -58,6 +60,12 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>当前单机的全局设备变量运行表，供页面和工艺流程共用。</summary>
         private DeviceVariableStore _deviceVariableStore;
+
+        /// <summary>协调单机变量、工位步骤和应用生命周期的恢复处理。</summary>
+        private MachineRecoveryCoordinator _machineRecoveryCoordinator;
+
+        /// <summary>启动时发现的恢复限制或恢复文件问题，供主窗口显示。</summary>
+        private string _recoveryWarningMessage;
 
         /// <summary>由当前连接卡创建的设备运行时，供自动示例流程与手动调试页共同使用。</summary>
         private MachineRuntime _machineRuntime;
@@ -111,6 +119,12 @@ namespace MotionControl.Host.Wpf
                 "Configurations");
             _configurationStore = new MachineConfigurationStore(configurationRoot);
             _deviceVariableStore = CreateDeviceVariableStore();
+            var recoveryStore = new MachineRecoveryStore(_configurationStore, MachineId);
+            _machineRecoveryCoordinator = new MachineRecoveryCoordinator(
+                recoveryStore,
+                _deviceVariableStore,
+                MachineId);
+            _machineRecoveryCoordinator.Load(out _recoveryWarningMessage);
             _cardConnection = CreateMotionCardConnection();
             _axisMappingPage = new AxisMappingConfigurationView(
                 _configurationStore,
@@ -128,6 +142,7 @@ namespace MotionControl.Host.Wpf
                 MachineId);
             _mainWindow = new MainWindow();
             _mainWindow.Loaded += MainWindow_Loaded;
+            _mainWindow.Closing += MainWindow_Closing;
             _mainWindow.LanguageChanged += MainWindow_LanguageChanged;
             _mainWindow.SetAxisMappingConfigurationPage(_axisMappingPage);
             _mainWindow.SetIoMappingConfigurationPage(_ioMappingPage);
@@ -137,6 +152,7 @@ namespace MotionControl.Host.Wpf
 
             MainWindow = _mainWindow;
             _mainWindow.Show();
+            ShowRecoveryWarningIfNeeded();
         }
 
         /// <summary>查找同一会话的 Host 主窗口，将其恢复并切到前台。</summary>
@@ -222,6 +238,22 @@ namespace MotionControl.Host.Wpf
             return new DeviceVariableStore(document.Variables);
         }
 
+        /// <summary>在主窗口显示恢复文件失效或部分变量无法恢复的原因。</summary>
+        private void ShowRecoveryWarningIfNeeded()
+        {
+            if (string.IsNullOrWhiteSpace(_recoveryWarningMessage))
+            {
+                return;
+            }
+
+            MessageBox.Show(
+                _recoveryWarningMessage,
+                "设备恢复状态",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            _recoveryWarningMessage = null;
+        }
+
         /// <summary>主窗口显示后按已保存的控制卡配置自动连接，不阻塞窗口创建。</summary>
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
@@ -278,6 +310,11 @@ namespace MotionControl.Host.Wpf
             _mainWindow.SetMotionCardConnectionStatus(_cardConnection.IsConnected);
             if (!_cardConnection.IsConnected)
             {
+                if (_machineRuntime != null)
+                {
+                    _machineRuntime.StatusChanged -= MachineRuntime_RecoveryStatusChanged;
+                }
+
                 _machineRuntime = null;
                 _machineSafetyStatus = null;
                 _manualMotionDebugPage = null;
@@ -292,6 +329,7 @@ namespace MotionControl.Host.Wpf
                 return;
             }
 
+            string recoveryMessage = string.Empty;
             try
             {
                 IMotionCard connectedCard = _cardConnection.ConnectedMotionCard;
@@ -325,14 +363,20 @@ namespace MotionControl.Host.Wpf
                         MessageBoxButton.OK,
                         MessageBoxImage.Warning);
                 }
+
+                _machineRecoveryCoordinator.TryRestoreStationFlows(stationFlows, out recoveryMessage);
+
                 var machineRuntime = new MachineRuntime(
                     motionCards,
                     stationFlows,
                     alarmService,
                     _machineSafetyStatus);
+                machineRuntime.RequestInitializationRecovery(
+                    _machineRecoveryCoordinator.HasCompletedInitializationCheckpoint);
                 await machineRuntime.ConnectAsync(CancellationToken.None);
 
                 _machineRuntime = machineRuntime;
+                _machineRuntime.StatusChanged += MachineRuntime_RecoveryStatusChanged;
                 _mainWindow.SetMachineRuntime(machineRuntime);
                 _deviceVariablePage.SetMachineRuntime(machineRuntime);
                 _flowStatusPage = new FlowStatusView(machineRuntime);
@@ -357,6 +401,98 @@ namespace MotionControl.Host.Wpf
                     "设备运行时",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(recoveryMessage))
+            {
+                MessageBox.Show(
+                    recoveryMessage,
+                    "设备流程恢复",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }
+
+        /// <summary>暂停后保存工位步骤与变量；自动运行开始时先写入不可续跑标记。</summary>
+        private void MachineRuntime_RecoveryStatusChanged(object sender, EventArgs e)
+        {
+            MachineRuntime runtime = sender as MachineRuntime;
+            if (runtime == null || _machineRecoveryCoordinator == null)
+            {
+                return;
+            }
+
+            if (runtime.State == MachineRunState.Running)
+            {
+                _machineRecoveryCoordinator.InvalidateBeforeAutomaticRun();
+                return;
+            }
+
+            if (runtime.State == MachineRunState.Paused)
+            {
+                try
+                {
+                    _machineRecoveryCoordinator.SavePausedCheckpoint(runtime);
+                }
+                catch (Exception error)
+                {
+                    ShowRecoverySaveWarning(error);
+                }
+            }
+        }
+
+        /// <summary>关闭前阻止设备仍在运行或报警处理中，并保存当前变量与可续跑状态。</summary>
+        private void MainWindow_Closing(object sender, CancelEventArgs e)
+        {
+            MachineRunState? runtimeState = _machineRuntime == null
+                ? (MachineRunState?)null
+                : _machineRuntime.State;
+            if (runtimeState == MachineRunState.Running
+                || runtimeState == MachineRunState.Pausing
+                || runtimeState == MachineRunState.Alarmed)
+            {
+                e.Cancel = true;
+                MessageBox.Show(
+                    "设备流程仍在运行、暂停处理中或报警处理中。请先让流程安全停止并完成复位，再关闭软件。",
+                    "暂不能关闭软件",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            try
+            {
+                bool savePausedFlow = runtimeState == MachineRunState.Paused;
+                _machineRecoveryCoordinator.SaveForShutdown(_machineRuntime, savePausedFlow);
+            }
+            catch (Exception error)
+            {
+                e.Cancel = true;
+                MessageBox.Show(
+                    "设备恢复状态保存失败，软件暂不关闭。请处理存储问题后重试。\n" + error.Message,
+                    "恢复状态保存失败",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>把恢复文件保存错误显示到 WPF 界面线程，不隐藏数据写入失败。</summary>
+        private void ShowRecoverySaveWarning(Exception error)
+        {
+            Action showWarning = () => MessageBox.Show(
+                "设备已暂停，但恢复状态未能保存；关闭软件前会再次尝试。\n" + error.Message,
+                "恢复状态保存失败",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+
+            if (Dispatcher.CheckAccess())
+            {
+                showWarning();
+            }
+            else
+            {
+                Dispatcher.BeginInvoke(showWarning);
             }
         }
 
