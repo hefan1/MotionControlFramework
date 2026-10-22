@@ -1,0 +1,97 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using MotionControl.TaskEngine.Configuration;
+using MotionControl.TaskEngine.Definitions;
+using MotionControl.TaskEngine.Simulation;
+using MotionControl.TaskEngine.Validation;
+
+namespace MotionControl.TaskEngine.Execution
+{
+    /// <summary>阶段 2 的纯软件任务入口；只接受内存设备，没有真实运动卡注入入口。</summary>
+    public sealed class TaskExecutionEngine
+    {
+        /// <summary>先校验并冻结定义，再后台执行；返回值可暂停、恢复、取消和读取诊断。</summary>
+        public TaskRun Start(TaskDefinition definition, SimulatedTaskDevice device,
+            IEnumerable<TaskDefinition> dependencies = null, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            if (device == null) throw new ArgumentNullException(nameof(device));
+            var dependencyList = new List<TaskDefinition>();
+            if (dependencies != null)
+                foreach (TaskDefinition dependency in dependencies)
+                {
+                    if (dependencyList.Count >= 127) throw new ArgumentException("任务库最多 128 份定义。");
+                    dependencyList.Add(dependency);
+                }
+            RequireValid(definition, device, dependencyList);
+            TaskDefinition frozen = Copy(definition);
+            var frozenDependencies = dependencyList.Select(Copy).ToList();
+            RequireValid(frozen, device, frozenDependencies);
+            var library = new Dictionary<string, TaskDefinition>(StringComparer.OrdinalIgnoreCase) { { frozen.TaskId, frozen } };
+            foreach (TaskDefinition task in frozenDependencies) library.Add(task.TaskId, task);
+            foreach (TaskDefinition task in library.Values) RequireSupported(task.TaskId, task.Root);
+
+            var run = new TaskRun(frozen.TaskId, frozen.Revision);
+            // 不把取消令牌传给 Task.Run：即使立即取消，也必须进入后台的统一收尾路径。
+            Task.Run(() => ExecuteAsync(run, frozen, device, library, cancellationToken));
+            return run;
+        }
+
+        /// <summary>等待执行器和全部分支退出，最后只发布一次终态。</summary>
+        private static async Task ExecuteAsync(TaskRun run, TaskDefinition definition, SimulatedTaskDevice device,
+            Dictionary<string, TaskDefinition> library, CancellationToken externalCancellation)
+        {
+            TaskExecutionException failure = null;
+            try
+            {
+                using (externalCancellation.Register(() => run.Cancel()))
+                {
+                    var executor = new TaskNodeExecutor(run, device, library);
+                    await executor.ExecuteAsync(definition.TaskId, definition.Root, null, run.Cancellation).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) when (run.Cancellation.IsCancellationRequested)
+            {
+                // 外部取消作为独立终态记录；节点执行器已完成各分支和轴的清理。
+            }
+            catch (TaskExecutionException error) { failure = error; }
+            catch (Exception error)
+            {
+                failure = new TaskExecutionException(definition.TaskId, definition.Root.Id, null, error.Message, error);
+            }
+            finally { run.Finish(failure); }
+        }
+
+        /// <summary>复用阶段 1 的完整定义校验，任何错误都在动作开始前拒绝。</summary>
+        private static void RequireValid(TaskDefinition definition, SimulatedTaskDevice device, List<TaskDefinition> dependencies)
+        {
+            var errors = new TaskDefinitionValidator().Validate(definition, device.Catalog, dependencies)
+                .Where(issue => issue.Severity == TaskIssueSeverity.Error).ToList();
+            if (errors.Count != 0) throw new ArgumentException(string.Join(Environment.NewLine, errors.Select(issue => issue.ToString())));
+        }
+
+        /// <summary>使用严格 JSON 创建独立定义，界面后续修改不会改变运行中的步骤。</summary>
+        private static TaskDefinition Copy(TaskDefinition definition)
+        {
+            return TaskDefinitionJson.Deserialize(TaskDefinitionJson.Serialize(definition));
+        }
+
+        /// <summary>检查所有分支而非只检查本次选中路径；未实现能力不能静默跳过。</summary>
+        private static void RequireSupported(string taskId, TaskNode node)
+        {
+            if (node is CoordinatedMoveNode || node is ResourceScopeNode)
+                throw new NotSupportedException("任务 " + taskId + " / 节点 " + node.Id + "：阶段 2 尚不执行 " + node.Kind + "，请等待后续能力接入。");
+            if (node is SequenceNode sequence)
+                foreach (TaskNode child in sequence.Children) RequireSupported(taskId, child);
+            else if (node is ParallelGroupNode parallel)
+                foreach (TaskNode branch in parallel.Branches) RequireSupported(taskId, branch);
+            else if (node is ConditionBranchNode condition)
+            {
+                RequireSupported(taskId, condition.WhenTrue);
+                if (condition.WhenFalse != null) RequireSupported(taskId, condition.WhenFalse);
+            }
+        }
+    }
+}

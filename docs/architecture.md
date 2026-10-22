@@ -20,11 +20,13 @@ Adapters.*                     ──> Contracts
 
 ## 模块职责
 
-### 可选任务模块：阶段 1
+### 可选任务模块：阶段 1 和阶段 2
 
-`MotionControl.TaskEngine` 作为可选项目依赖 Contracts 和 Runtime，提供任务定义、现有配置只读目录、定义校验和 JSON 保存读取。Runtime、现有 C# 工位及 Host 当前均不引用它，所以本次增加不会改变设备运行链路。它没有 UI、执行线程、厂商 SDK 或原生 DLL 依赖。
+`MotionControl.TaskEngine` 作为可选项目依赖 Contracts 和 Runtime，提供任务定义、现有配置只读目录、定义校验和 JSON 保存读取。阶段 2 增加后台执行器，但只接收具体的 `SimulatedTaskDevice` 内存设备。Runtime、现有 C# 工位及 Host 当前均不引用它，现有设备运行链路不变；没有 UI、厂商 SDK 或原生 DLL 依赖。
 
-任务的顺序、独立并行、条件、协调运动和资源范围目前只是可校验的数据定义；协调运动能力和资源实际仲裁没有实现。后续 TaskEditor.Wpf 与执行器将共同使用这些定义，执行器不从 WPF 控件取值。阶段 1 的使用和边界见 `src/MotionControl.TaskEngine/README.md`。
+顺序、独立并行汇合、条件、子任务及内存动作已可执行。定义启动前深复制；运行实例、节点调用快照与定义分离。暂停冻结内存进度并保留相对终点，取消和失败均等待分支清理后发布终态。这些控制语义尚未接入 Host 的复位/启动入口或实际卡。
+
+协调运动和区域资源范围仍仅是可校验定义，执行入口在任何动作之前拒绝它们。同轴并发只做最小冲突拦截；完整仲裁、区域退出确认和死锁诊断在阶段 3 实现。后续编辑器将复用任务定义和目录，执行器不从 WPF 控件取值。使用和边界见 `src/MotionControl.TaskEngine/README.md`。
 
 ### 原有模块
 

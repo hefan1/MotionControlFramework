@@ -7,7 +7,7 @@
 - 目标运行时：.NET Framework 4.8。
 - 桌面界面：WPF。
 - 流程方式：设备项目使用 C# 编写工位流程步。
-- 可选任务模块：已完成任务定义、配置引用、JSON 保存读取和离线校验；执行器及编辑器 UI 留在后续阶段。
+- 可选任务模块：已完成任务定义、配置引用、JSON 保存读取、离线校验和纯软件仿真执行；支持顺序、分支、并行汇合、暂停、取消和超时。资源仲裁、协调插补与编辑器 UI 分阶段实现。
 - 设备模块：由 Host 显式引用并组合；本骨架中的 Equipment.Template 仅作新设备项目的结构参考，Host 不引用它。
 - 扩展模块：运动卡、通讯、存储和 MES 适配器按独立模块接入；雷赛、正运动和 ADLINK 原生 API 已拆成独立项目，正运动另有仅供 ZDevelop 仿真器使用的首版适配器。
 - 通用手动调试：已提供逻辑轴、DI/DO 手动页；设备专属动作留在设备项目。
@@ -34,7 +34,7 @@
 | `MotionControl.Framework.Contracts` | 框架与设备、驱动模块之间的稳定契约所在位置 |
 | `MotionControl.Framework.Runtime` | 单机运行状态、工位流程调度、报警、配置和追溯等通用运行时 |
 | `MotionControl.Framework.Wpf` | 通用 WPF 页面与控件，包括手动调试页面 |
-| `MotionControl.TaskEngine` | 独立任务定义、共享配置只读目录及校验；当前不执行动作 |
+| `MotionControl.TaskEngine` | 独立任务定义、共享配置只读目录及校验；阶段 2 执行器仅操作内存仿真设备 |
 | `MotionControl.TaskEngine.Checks` | 任务模块离线检查，不引用 Host、WPF 或厂商适配器 |
 | `MotionControl.Host.Wpf` | WPF 应用入口、主窗口和模块组合根 |
 | `MotionControl.Equipment.Template` | 新设备项目的目录模板；不自动接入 Host |

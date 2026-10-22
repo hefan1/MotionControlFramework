@@ -9,7 +9,7 @@ namespace MotionControl.TaskEngine.Definitions
         public string Id { get; set; }
         /// <summary>便于中文开发者和现场人员识别的步骤名称。</summary>
         public string Name { get; set; }
-        /// <summary>节点等待及执行的总时限，单位毫秒；后续执行器必须落实此限制。</summary>
+        /// <summary>节点及其子动作的总时限，单位毫秒；内存执行器使用扣除暂停的活动时间。</summary>
         public int TimeoutMs { get; set; } = 30000;
     }
 }

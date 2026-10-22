@@ -1,0 +1,118 @@
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+using MotionControl.TaskEngine.Definitions;
+
+namespace MotionControl.TaskEngine.Execution
+{
+    /// <summary>顺序以外的分支、汇合和可观察等待。</summary>
+    internal sealed partial class TaskNodeExecutor
+    {
+        /// <summary>所有分支成功才继续；任一故障取消其他分支，并等待它们清理退出。</summary>
+        private async Task ParallelAsync(TaskExecutionScope scope, ParallelGroupNode parallel)
+        {
+            using (var groupCancellation = CancellationTokenSource.CreateLinkedTokenSource(scope.Token))
+            {
+                TaskExecutionException firstFailure = null;
+                var branches = new List<Task>();
+
+                // 一个分支负责自己的节点清理；首次故障立即通知同组其他分支。
+                async Task RunBranchAsync(TaskNode branch)
+                {
+                    try
+                    {
+                        await ExecuteAsync(scope.TaskId, branch, scope, groupCancellation.Token).ConfigureAwait(false);
+                    }
+                    catch (TaskExecutionException error)
+                    {
+                        Interlocked.CompareExchange(ref firstFailure, error, null);
+                        groupCancellation.Cancel();
+                        throw;
+                    }
+                }
+
+                await scope.StepAsync(() =>
+                {
+                    _run.Report(scope, TaskNodeState.Waiting, "等待 " + parallel.Branches.Count + " 个并行分支全部完成。");
+                    foreach (TaskNode branch in parallel.Branches)
+                        branches.Add(Task.Run(() => RunBranchAsync(branch)));
+                }).ConfigureAwait(false);
+                try { await Task.WhenAll(branches).ConfigureAwait(false); }
+                catch
+                {
+                    // WhenAll 已观察全部任务；首个实际失败优先于它触发的连带取消。
+                    if (firstFailure != null) throw firstFailure;
+                    throw;
+                }
+            }
+        }
+
+        /// <summary>用一次完整变量快照选择分支；没有有效结果时不进入任一分支。</summary>
+        private async Task BranchAsync(TaskExecutionScope scope, ConditionBranchNode branch)
+        {
+            TaskNode selected = null;
+            await scope.StepAsync(() =>
+            {
+                bool result;
+                string reason;
+                if (!TaskConditionEvaluator.TryEvaluate(branch.Condition, _device.Catalog, _device.ReadVariables(), out result, out reason))
+                    throw new InvalidOperationException(reason);
+                selected = result ? branch.WhenTrue : branch.WhenFalse;
+                _run.Report(scope, TaskNodeState.Running, "条件结果=" + result + "；" + reason);
+            }).ConfigureAwait(false);
+            if (selected != null) await ExecuteAsync(scope.TaskId, selected, scope, scope.Token).ConfigureAwait(false);
+        }
+
+        /// <summary>延时使用活动时间，暂停期间不消耗等待时间。</summary>
+        private async Task DelayAsync(TaskExecutionScope scope, int milliseconds)
+        {
+            double end = _run.ActiveMilliseconds + milliseconds;
+            bool complete = false;
+            while (!complete)
+            {
+                await scope.StepAsync(() =>
+                {
+                    complete = _run.ActiveMilliseconds >= end;
+                    _run.Report(scope, TaskNodeState.Waiting, "等待工艺延时 " + milliseconds + " ms。");
+                }).ConfigureAwait(false);
+                if (!complete) await scope.NextPollAsync().ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>等待明确的输入值；未知与 OFF 不相同。</summary>
+        private async Task WaitInputAsync(TaskExecutionScope scope, WaitInputNode node)
+        {
+            bool complete = false;
+            while (!complete)
+            {
+                await scope.StepAsync(() =>
+                {
+                    bool? actual = _device.ReadInput(node.InputName);
+                    complete = actual.HasValue && actual.Value == node.Expected;
+                    _run.Report(scope, TaskNodeState.Waiting, "等待 DI " + node.InputName + "=" + node.Expected
+                        + "；当前=" + (actual.HasValue ? actual.Value.ToString() : "未知"));
+                }).ConfigureAwait(false);
+                if (!complete) await scope.NextPollAsync().ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>条件不满足或变量尚未有效时持续显示原因；节点时限负责终止等待。</summary>
+        private async Task WaitConditionAsync(TaskExecutionScope scope, WaitConditionNode node)
+        {
+            bool complete = false;
+            while (!complete)
+            {
+                await scope.StepAsync(() =>
+                {
+                    bool result;
+                    string reason;
+                    bool known = TaskConditionEvaluator.TryEvaluate(node.Condition, _device.Catalog, _device.ReadVariables(), out result, out reason);
+                    complete = known && result;
+                    _run.Report(scope, TaskNodeState.Waiting, "等待条件：" + reason);
+                }).ConfigureAwait(false);
+                if (!complete) await scope.NextPollAsync().ConfigureAwait(false);
+            }
+        }
+    }
+}

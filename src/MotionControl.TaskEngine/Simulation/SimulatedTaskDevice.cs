@@ -1,0 +1,99 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using MotionControl.Framework.Contracts.Variables;
+using MotionControl.Framework.Runtime.Variables;
+using MotionControl.TaskEngine.Catalog;
+using MotionControl.TaskEngine.Execution;
+
+namespace MotionControl.TaskEngine.Simulation
+{
+    /// <summary>任务引擎专用的独立内存设备；没有控制卡、网络或原生 DLL 入口。</summary>
+    public sealed partial class SimulatedTaskDevice
+    {
+        /// <summary>保护内存设备状态；只在短小的读写期间持有。</summary>
+        private readonly object _sync = new object();
+        /// <summary>每根轴的独立运行状态。</summary>
+        private readonly Dictionary<string, SimulatedAxis> _axes = new Dictionary<string, SimulatedAxis>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>输入默认未知；测试场景必须明确注入信号。</summary>
+        private readonly Dictionary<string, bool?> _inputs = new Dictionary<string, bool?>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>仿真输出默认未知，只有执行写入后才有值。</summary>
+        private readonly Dictionary<string, bool?> _outputs = new Dictionary<string, bool?>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>复用已有变量实现，但本实例不连接现场变量或恢复文件。</summary>
+        private readonly DeviceVariableStore _variables;
+        /// <summary>与本内存设备对应的只读配置目录。</summary>
+        public TaskResourceCatalog Catalog { get; }
+
+        /// <summary>从目录建立隔离状态；轴默认未使能、未回零，变量默认无效。</summary>
+        public SimulatedTaskDevice(TaskResourceCatalog catalog)
+        {
+            Catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+            foreach (TaskAxisInfo axis in catalog.Axes.Values) _axes.Add(axis.Name, new SimulatedAxis());
+            foreach (string input in catalog.Inputs) _inputs.Add(input, null);
+            foreach (string output in catalog.Outputs) _outputs.Add(output, null);
+            _variables = new DeviceVariableStore(catalog.Variables.Select(variable => new DeviceVariableDefinition
+            {
+                Name = variable.Key, DataType = variable.Value.ToString(), AllowOperatorWrite = false
+            }));
+        }
+
+        /// <summary>注入逻辑 DI；null 表示当前没有有效输入数据。</summary>
+        public void SetInput(string name, bool? value)
+        {
+            lock (_sync) { RequireIo(_inputs, name, "DI"); _inputs[name] = value; }
+        }
+
+        /// <summary>读取逻辑 DI，未知状态不会被当作 OFF。</summary>
+        public bool? ReadInput(string name)
+        {
+            lock (_sync) { RequireIo(_inputs, name, "DI"); return _inputs[name]; }
+        }
+
+        /// <summary>读取内存 DO；不会访问真实输出。</summary>
+        public bool? ReadOutput(string name)
+        {
+            lock (_sync) { RequireIo(_outputs, name, "DO"); return _outputs[name]; }
+        }
+
+        /// <summary>注入带类型的变量文本；null 将该变量标记为无效。</summary>
+        public void SetVariable(string name, string value)
+        {
+            lock (_sync)
+            {
+                DeviceVariableType type;
+                if (!Catalog.Variables.TryGetValue(name, out type)) throw new ArgumentException("仿真变量不存在：" + name);
+                if (value == null)
+                {
+                    _variables.RestoreCurrentValues(new[] { new DeviceVariableSnapshot(name, type.ToString(),
+                        string.Empty, false, DateTime.Now, string.Empty, false) });
+                    return;
+                }
+                TaskRuntimeValues.Write(_variables, name, type, TaskRuntimeValues.Parse(type, value));
+            }
+        }
+
+        /// <summary>复制全部当前变量值，供一次条件判断使用一致的数据。</summary>
+        public IReadOnlyList<DeviceVariableSnapshot> ReadVariables()
+        {
+            lock (_sync) return _variables.GetSnapshot();
+        }
+
+        /// <summary>只写本内存设备的输出；由执行器在运行许可内调用。</summary>
+        internal void WriteOutput(string name, bool value)
+        {
+            lock (_sync) { RequireIo(_outputs, name, "DO"); _outputs[name] = value; }
+        }
+
+        /// <summary>按现有类型规则写入流程值；现场手动权限不等于流程赋值权限。</summary>
+        internal void WriteVariable(string name, object value)
+        {
+            lock (_sync) TaskRuntimeValues.Write(_variables, name, Catalog.Variables[name], value);
+        }
+
+        /// <summary>拒绝错误的 IO 名称，不自动创建或猜测通道。</summary>
+        private static void RequireIo(Dictionary<string, bool?> values, string name, string direction)
+        {
+            if (name == null || !values.ContainsKey(name)) throw new ArgumentException("仿真 " + direction + " 不存在：" + name);
+        }
+    }
+}

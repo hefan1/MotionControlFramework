@@ -4,10 +4,10 @@ using MotionControl.TaskEngine.Catalog;
 
 namespace MotionControl.TaskEngine.Checks
 {
-    /// <summary>阶段 1 离线检查入口；不连接运动卡，不调用任何设备指令。</summary>
+    /// <summary>定义及纯软件执行检查入口；不连接运动卡，不调用任何设备指令。</summary>
     internal static class Program
     {
-        /// <summary>执行定义检查，或只读查看指定设备配置能提供的目录数量。</summary>
+        /// <summary>执行定义与内存运行检查，或只读查看指定设备配置能提供的目录数量。</summary>
         private static int Main(string[] args)
         {
             if (args.Length > 0)
@@ -51,6 +51,8 @@ namespace MotionControl.TaskEngine.Checks
             Run("目录重复和范围检查", CatalogChecks.InvalidCatalog, ref failures);
             Run("无 WPF、Host 或厂商依赖", JsonChecks.AssemblyBoundaries, ref failures);
             Console.WriteLine("阶段 1 离线检查完成：共 22 组，失败 " + failures + " 组。未连接设备。");
+            failures += ExecutionChecks.RunAll();
+            Run("执行后仍无 WPF、Host 或厂商依赖", JsonChecks.AssemblyBoundaries, ref failures);
             return failures == 0 ? 0 : 1;
         }
 

@@ -1,7 +1,7 @@
 using MotionControl.Framework.Contracts.Variables;
 namespace MotionControl.TaskEngine.Definitions
 {
-    /// <summary>动作参数的数据来源；本阶段只校验引用，不读取当前运行值。</summary>
+    /// <summary>动作参数的数据来源定义；目录负责校验引用，执行器在动作接受时读取当前值。</summary>
     public sealed class TaskValueBinding
     {
         /// <summary>常量、设备变量或某根逻辑轴上的示教点。</summary>
