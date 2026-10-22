@@ -6,7 +6,7 @@ namespace MotionControl.Framework.Contracts.Variables
         /// <summary>设备流程引用变量时使用的稳定名称，例如 Vision.OffsetX。</summary>
         public string Name { get; set; }
 
-        /// <summary>数据类型名称，取值为 Boolean、Integer、Number 或 String。</summary>
+        /// <summary>数据类型名称，取值为 Boolean、Integer、Number、String、Byte、Character 或 DateTime。</summary>
         public string DataType { get; set; }
 
         /// <summary>每次程序启动时装入当前值的初始值文本；留空表示启动时尚无有效值。</summary>

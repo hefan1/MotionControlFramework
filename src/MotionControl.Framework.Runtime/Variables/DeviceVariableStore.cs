@@ -82,6 +82,24 @@ namespace MotionControl.Framework.Runtime.Variables
             return ReadValue<string>(name, DeviceVariableType.String);
         }
 
+        /// <summary>读取字节变量，并检查定义类型是否为 Byte。</summary>
+        public byte GetByte(string name)
+        {
+            return ReadValue<byte>(name, DeviceVariableType.Byte);
+        }
+
+        /// <summary>读取单字符变量，并检查定义类型是否为 Character。</summary>
+        public char GetCharacter(string name)
+        {
+            return ReadValue<char>(name, DeviceVariableType.Character);
+        }
+
+        /// <summary>读取日期时间变量，并检查定义类型是否为 DateTime。</summary>
+        public DateTime GetDateTime(string name)
+        {
+            return ReadValue<DateTime>(name, DeviceVariableType.DateTime);
+        }
+
         /// <summary>由设备流程更新布尔变量并记录更新时间。</summary>
         public void SetBoolean(string name, bool value)
         {
@@ -109,6 +127,24 @@ namespace MotionControl.Framework.Runtime.Variables
         public void SetString(string name, string value)
         {
             SetRuntimeValue(name, DeviceVariableType.String, value ?? string.Empty);
+        }
+
+        /// <summary>由设备流程更新字节变量并记录更新时间。</summary>
+        public void SetByte(string name, byte value)
+        {
+            SetRuntimeValue(name, DeviceVariableType.Byte, value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        /// <summary>由设备流程更新单字符变量并记录更新时间。</summary>
+        public void SetCharacter(string name, char value)
+        {
+            SetRuntimeValue(name, DeviceVariableType.Character, value.ToString());
+        }
+
+        /// <summary>由设备流程更新日期时间变量并记录更新时间。</summary>
+        public void SetDateTime(string name, DateTime value)
+        {
+            SetRuntimeValue(name, DeviceVariableType.DateTime, value.ToString("O", CultureInfo.InvariantCulture));
         }
 
         /// <summary>替换变量定义；相同名称且类型未变时保留现值，新增或改类型时使用初值。</summary>
@@ -366,7 +402,7 @@ namespace MotionControl.Framework.Runtime.Variables
             DeviceVariableType variableType;
             if (!TryParseType(typeName, out variableType))
             {
-                errorMessage = "数据类型只能是 Boolean、Integer、Number 或 String。";
+                errorMessage = "数据类型只能是 Boolean、Integer、Number、String、Byte、Character 或 DateTime。";
                 return false;
             }
 
@@ -411,6 +447,43 @@ namespace MotionControl.Framework.Runtime.Variables
                     normalizedValue = valueText ?? string.Empty;
                     return true;
 
+                case DeviceVariableType.Byte:
+                    byte byteValue;
+                    if (!byte.TryParse(valueText, NumberStyles.Integer, CultureInfo.InvariantCulture, out byteValue))
+                    {
+                        errorMessage = "字节值必须是 0 到 255 之间的整数。";
+                        return false;
+                    }
+
+                    normalizedValue = byteValue.ToString(CultureInfo.InvariantCulture);
+                    return true;
+
+                case DeviceVariableType.Character:
+                    char characterValue;
+                    if (!char.TryParse(valueText, out characterValue))
+                    {
+                        errorMessage = "字符类型只能填写一个字符。";
+                        return false;
+                    }
+
+                    normalizedValue = characterValue.ToString();
+                    return true;
+
+                case DeviceVariableType.DateTime:
+                    DateTime dateTimeValue;
+                    if (!DateTime.TryParse(
+                        valueText,
+                        CultureInfo.InvariantCulture,
+                        DateTimeStyles.RoundtripKind,
+                        out dateTimeValue))
+                    {
+                        errorMessage = "日期时间格式无效，请使用 yyyy-MM-dd HH:mm:ss 或 ISO 8601 格式。";
+                        return false;
+                    }
+
+                    normalizedValue = dateTimeValue.ToString("O", CultureInfo.InvariantCulture);
+                    return true;
+
                 default:
                     errorMessage = "数据类型不受支持。";
                     return false;
@@ -445,6 +518,18 @@ namespace MotionControl.Framework.Runtime.Variables
                     break;
                 case DeviceVariableType.String:
                     parsedValue = normalizedValue;
+                    break;
+                case DeviceVariableType.Byte:
+                    parsedValue = byte.Parse(normalizedValue, CultureInfo.InvariantCulture);
+                    break;
+                case DeviceVariableType.Character:
+                    parsedValue = char.Parse(normalizedValue);
+                    break;
+                case DeviceVariableType.DateTime:
+                    parsedValue = DateTime.Parse(
+                        normalizedValue,
+                        CultureInfo.InvariantCulture,
+                        DateTimeStyles.RoundtripKind);
                     break;
                 default:
                     errorMessage = "数据类型不受支持。";

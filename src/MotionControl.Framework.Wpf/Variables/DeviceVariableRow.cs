@@ -56,9 +56,11 @@ namespace MotionControl.Framework.Wpf.Variables
             DataType = snapshot.DataType;
             CurrentValue = snapshot.CurrentValue;
             HasValue = snapshot.HasValue;
-            CurrentValueDisplay = snapshot.HasValue ? snapshot.CurrentValue : "无有效数据";
+            CurrentValueDisplay = snapshot.HasValue
+                ? FormatCurrentValue(snapshot.DataType, snapshot.CurrentValue)
+                : "无有效数据";
             LastUpdatedDisplay = snapshot.HasValue
-                ? snapshot.LastUpdated.ToString("HH:mm:ss", CultureInfo.CurrentCulture)
+                ? snapshot.LastUpdated.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
                 : string.Empty;
             Description = snapshot.Description;
             AllowOperatorWrite = snapshot.AllowOperatorWrite;
@@ -77,6 +79,25 @@ namespace MotionControl.Framework.Wpf.Variables
         {
             DataTypeDisplay = displayName;
             NotifyPropertyChanged(nameof(DataTypeDisplay));
+        }
+
+        /// <summary>把日期时间变量显示为现场人员熟悉的年月日和时分秒。</summary>
+        private static string FormatCurrentValue(string dataType, string valueText)
+        {
+            if (string.Equals(dataType, "DateTime", StringComparison.OrdinalIgnoreCase))
+            {
+                DateTime dateTimeValue;
+                if (DateTime.TryParse(
+                    valueText,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind,
+                    out dateTimeValue))
+                {
+                    return dateTimeValue.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+                }
+            }
+
+            return valueText;
         }
 
         /// <summary>通知表格所有绑定列重新读取当前行属性。</summary>

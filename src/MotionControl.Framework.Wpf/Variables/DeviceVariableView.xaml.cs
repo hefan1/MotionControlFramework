@@ -222,7 +222,31 @@ namespace MotionControl.Framework.Wpf.Variables
             DeleteVariableButton.IsEnabled = canEdit && SelectedVariable != null;
             ManualValueTextBox.IsEnabled = canWrite;
             WriteValueButton.IsEnabled = canWrite;
+            UpdateSelectedVariableContext();
             SetStatusResource(canEdit ? "变量状态可编辑" : "变量状态运行时锁定");
+        }
+
+        /// <summary>显示当前选中变量的名称、类型、值和人工写入权限。</summary>
+        private void UpdateSelectedVariableContext()
+        {
+            if (SelectedVariable == null)
+            {
+                SelectedVariableContextText.Text = GetLocalizedText("变量写入上下文未选择");
+                return;
+            }
+
+            string currentValue = SelectedVariable.HasValue
+                ? GetConfirmationValue(SelectedVariable.DataType, SelectedVariable.CurrentValue)
+                : GetLocalizedText("变量无有效数据");
+            string resourceKey = SelectedVariable.AllowOperatorWrite
+                ? "变量写入上下文可写"
+                : "变量写入上下文只读";
+            SelectedVariableContextText.Text = string.Format(
+                System.Globalization.CultureInfo.CurrentCulture,
+                GetLocalizedText(resourceKey),
+                SelectedVariable.Name,
+                SelectedVariable.DataTypeDisplay,
+                currentValue);
         }
 
         /// <summary>运行时只在停机、待复位或就绪状态允许现场调整变量。</summary>
@@ -321,7 +345,7 @@ namespace MotionControl.Framework.Wpf.Variables
             SaveDefinitions(definitions, "变量删除成功");
         }
 
-        /// <summary>把输入框中的值按所选变量类型校验后写入运行时变量表。</summary>
+        /// <summary>校验待写入值，向现场人员展示新旧值并在确认后更新运行时变量。</summary>
         private void WriteValueButton_Click(object sender, RoutedEventArgs e)
         {
             if (!CanEditDefinitions())
@@ -342,10 +366,51 @@ namespace MotionControl.Framework.Wpf.Variables
                 return;
             }
 
+            DeviceVariableDefinition inputDefinition = new DeviceVariableDefinition
+            {
+                Name = SelectedVariable.Name,
+                DataType = SelectedVariable.DataType,
+                InitialValue = ManualValueTextBox.Text
+            };
+            string normalizedValue;
+            try
+            {
+                normalizedValue = DeviceVariableStore.ValidateDefinitions(new[] { inputDefinition })[0].InitialValue;
+            }
+            catch (Exception error)
+            {
+                StatusText.Text = error.Message;
+                ShowOperationMessage(error.Message, MessageBoxImage.Warning);
+                return;
+            }
+
+            string previousValue = SelectedVariable.HasValue
+                ? GetConfirmationValue(SelectedVariable.DataType, SelectedVariable.CurrentValue)
+                : GetLocalizedText("变量无有效数据");
+            string nextValue = GetConfirmationValue(SelectedVariable.DataType, normalizedValue);
+            string confirmationText = string.Format(
+                System.Globalization.CultureInfo.CurrentCulture,
+                GetLocalizedText("变量写入确认格式"),
+                SelectedVariable.Name,
+                SelectedVariable.DataTypeDisplay,
+                previousValue,
+                nextValue);
+            MessageBoxResult confirmation = MessageBox.Show(
+                Window.GetWindow(this),
+                confirmationText,
+                GetLocalizedText("变量写入确认"),
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+            if (confirmation != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
             string errorMessage;
             if (!_variableStore.TrySetOperatorValue(
                 SelectedVariable.Name,
-                ManualValueTextBox.Text,
+                normalizedValue,
                 out errorMessage))
             {
                 StatusText.Text = errorMessage;
@@ -354,6 +419,18 @@ namespace MotionControl.Framework.Wpf.Variables
 
             ManualValueTextBox.Clear();
             SetStatusResource("变量写入成功");
+        }
+
+        /// <summary>在确认内容中明确显示空字符串，并保留其他类型的原始格式。</summary>
+        private string GetConfirmationValue(string dataType, string valueText)
+        {
+            if (string.Equals(dataType, "String", StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrEmpty(valueText))
+            {
+                return GetLocalizedText("变量空字符串");
+            }
+
+            return valueText ?? string.Empty;
         }
 
         /// <summary>切换选择后刷新当前变量对应的编辑和写值按钮状态。</summary>
@@ -414,6 +491,9 @@ namespace MotionControl.Framework.Wpf.Variables
                 case "Integer": return GetLocalizedText("变量类型整数");
                 case "Number": return GetLocalizedText("变量类型小数");
                 case "String": return GetLocalizedText("变量类型字符串");
+                case "Byte": return GetLocalizedText("变量类型字节");
+                case "Character": return GetLocalizedText("变量类型字符");
+                case "DateTime": return GetLocalizedText("变量类型日期时间");
                 default: return typeName;
             }
         }

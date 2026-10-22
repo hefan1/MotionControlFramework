@@ -13,6 +13,15 @@ namespace MotionControl.Framework.Contracts.Variables
         Number,
 
         /// <summary>字符串。</summary>
-        String
+        String,
+
+        /// <summary>无符号 8 位整数，取值范围为 0 到 255。</summary>
+        Byte,
+
+        /// <summary>单个字符。</summary>
+        Character,
+
+        /// <summary>日期和时间，使用 ISO 8601 文本格式保存。</summary>
+        DateTime
     }
 }

@@ -27,6 +27,15 @@ namespace MotionControl.Framework.Contracts.Variables
         /// <summary>读取字符串类型变量；变量不存在或类型不匹配时抛出可读异常。</summary>
         string GetString(string name);
 
+        /// <summary>读取字节类型变量，范围为 0 到 255。</summary>
+        byte GetByte(string name);
+
+        /// <summary>读取单字符类型变量。</summary>
+        char GetCharacter(string name);
+
+        /// <summary>读取日期时间类型变量。</summary>
+        DateTime GetDateTime(string name);
+
         /// <summary>由设备流程更新布尔类型变量。</summary>
         void SetBoolean(string name, bool value);
 
@@ -38,6 +47,15 @@ namespace MotionControl.Framework.Contracts.Variables
 
         /// <summary>由设备流程更新字符串类型变量。</summary>
         void SetString(string name, string value);
+
+        /// <summary>由设备流程更新字节类型变量，范围为 0 到 255。</summary>
+        void SetByte(string name, byte value);
+
+        /// <summary>由设备流程更新单字符类型变量。</summary>
+        void SetCharacter(string name, char value);
+
+        /// <summary>由设备流程更新日期时间类型变量。</summary>
+        void SetDateTime(string name, DateTime value);
 
         /// <summary>按名称、类型和值替换设备变量定义；相同名称和类型会保留当前运行值。</summary>
         void ReplaceDefinitions(IEnumerable<DeviceVariableDefinition> definitions);

@@ -4,22 +4,49 @@
              Background="#F3F6FA">
     <UserControl.Resources>
         <Style x:Key="VariablePageButton" TargetType="Button">
-            <Setter Property="Height" Value="32" />
-            <Setter Property="Padding" Value="12,4" />
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Padding" Value="13,5" />
             <Setter Property="Margin" Value="0,0,8,0" />
-            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontSize" Value="13" />
             <Setter Property="Foreground" Value="#33485F" />
             <Setter Property="Background" Value="White" />
             <Setter Property="BorderBrush" Value="#C9D5E3" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              Margin="{TemplateBinding Padding}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#82B5F5" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#2475D0" />
+                                <Setter TargetName="Chrome" Property="BorderThickness" Value="2" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.82" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Background" Value="#F1F3F6" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#E1E6EC" />
+                                <Setter Property="Foreground" Value="#9AA4B1" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
             <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="BorderBrush" Value="#82B5F5" />
-                </Trigger>
-                <Trigger Property="IsKeyboardFocused" Value="True">
-                    <Setter Property="BorderBrush" Value="#2475D0" />
-                </Trigger>
                 <Trigger Property="IsEnabled" Value="False">
                     <Setter Property="Background" Value="#F1F3F6" />
                     <Setter Property="BorderBrush" Value="#E1E6EC" />
@@ -33,25 +60,89 @@
             <Setter Property="Background" Value="#2375D1" />
             <Setter Property="BorderBrush" Value="#2375D1" />
         </Style>
-        <Style TargetType="DataGridColumnHeader">
+        <Style x:Key="VariablePageWarningButton" TargetType="Button" BasedOn="{StaticResource VariablePageButton}">
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Foreground" Value="#805500" />
+            <Setter Property="Background" Value="#FFF7E8" />
+            <Setter Property="BorderBrush" Value="#E8C77E" />
+        </Style>
+        <Style x:Key="VariablePageInput" TargetType="TextBox">
             <Setter Property="Height" Value="34" />
-            <Setter Property="Padding" Value="9,0" />
+            <Setter Property="Padding" Value="9,4" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="#26384D" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="#CAD5E2" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type TextBox}">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4">
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#2475D0" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Background" Value="#F2F5F9" />
+                                <Setter Property="Foreground" Value="#8A96A5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Height" Value="38" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="Background" Value="#F7F9FC" />
             <Setter Property="Foreground" Value="#40536A" />
             <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="13" />
             <Setter Property="BorderBrush" Value="#D9E0E8" />
-            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="BorderThickness" Value="0,0,1,1" />
         </Style>
-        <Style TargetType="DataGridCell">
-            <Setter Property="Padding" Value="9,5" />
+        <Style TargetType="DataGridRow">
+            <Setter Property="Height" Value="34" />
             <Setter Property="Foreground" Value="#26384D" />
             <Setter Property="BorderThickness" Value="0" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#F0F6FD" />
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#E7F1FE" />
+                    <Setter Property="Foreground" Value="#1F3C5C" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style TargetType="DataGridCell">
+            <Setter Property="Padding" Value="12,5" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="#26384D" />
+            <Setter Property="BorderBrush" Value="#E1E7EF" />
+            <Setter Property="BorderThickness" Value="0,0,1,1" />
             <Style.Triggers>
                 <Trigger Property="IsSelected" Value="True">
                     <Setter Property="Background" Value="#E7F1FE" />
                     <Setter Property="Foreground" Value="#1F3C5C" />
                 </Trigger>
             </Style.Triggers>
+        </Style>
+        <Style x:Key="VariableCellText" TargetType="TextBlock">
+            <Setter Property="TextAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
     </UserControl.Resources>
 
@@ -62,13 +153,18 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Border Padding="10"
+        <Border Padding="12"
                 Background="#F7F9FC"
                 BorderBrush="#D8E2EE"
                 BorderThickness="1"
                 CornerRadius="6">
-            <DockPanel LastChildFill="False">
-                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button x:Name="AddVariableButton"
                             Content="{DynamicResource 变量新增}"
                             Style="{StaticResource VariablePagePrimaryButton}"
@@ -83,26 +179,29 @@
                             Click="DeleteVariableButton_Click" />
                 </StackPanel>
 
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Margin="8,0,6,0"
-                               VerticalAlignment="Center"
-                               Foreground="#40536A"
-                               Text="{DynamicResource 变量写入值}" />
-                    <TextBox x:Name="ManualValueTextBox"
-                             Width="180"
-                             Height="30"
-                             Padding="7,4"
-                             VerticalContentAlignment="Center"
-                             BorderBrush="#CAD5E2"
-                             BorderThickness="1"
-                             ToolTip="{DynamicResource 变量写入值提示}" />
-                    <Button x:Name="WriteValueButton"
-                            Margin="8,0,0,0"
-                            Content="{DynamicResource 变量写入当前值}"
-                            Style="{StaticResource VariablePageButton}"
-                            Click="WriteValueButton_Click" />
-                </StackPanel>
-            </DockPanel>
+                <Border Grid.Column="2"
+                        Padding="10,6"
+                        Background="#FFF9EF"
+                        BorderBrush="#F0DEB7"
+                        BorderThickness="1"
+                        CornerRadius="5">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Margin="0,0,8,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="#40536A"
+                                   Text="{DynamicResource 变量写入值}" />
+                        <TextBox x:Name="ManualValueTextBox"
+                                 Width="190"
+                                 Style="{StaticResource VariablePageInput}"
+                                 ToolTip="{DynamicResource 变量写入值提示}" />
+                        <Button x:Name="WriteValueButton"
+                                Margin="8,0,0,0"
+                                Content="{DynamicResource 变量写入当前值}"
+                                Style="{StaticResource VariablePageWarningButton}"
+                                Click="WriteValueButton_Click" />
+                    </StackPanel>
+                </Border>
+            </Grid>
         </Border>
 
         <Border Grid.Row="1"
@@ -112,17 +211,37 @@
                 BorderBrush="#D5E4F5"
                 BorderThickness="1"
                 CornerRadius="4">
-            <DockPanel>
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
                 <TextBlock x:Name="StatusText"
+                           Grid.Row="0"
+                           Grid.Column="0"
                            VerticalAlignment="Center"
                            Foreground="#40536A"
+                           FontWeight="SemiBold"
                            Text="{DynamicResource 变量页面就绪}" />
-                <TextBlock DockPanel.Dock="Right"
-                           Margin="14,0,0,0"
+                <TextBlock x:Name="SelectedVariableContextText"
+                           Grid.Row="0"
+                           Grid.Column="1"
+                           Margin="12,0,0,0"
+                           HorizontalAlignment="Right"
                            VerticalAlignment="Center"
+                           Foreground="#40536A"
+                           TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
+                <TextBlock Grid.Row="1"
+                           Grid.ColumnSpan="2"
+                           Margin="0,5,0,0"
                            Foreground="#596B7D"
                            Text="{DynamicResource 变量运行值说明}" />
-            </DockPanel>
+            </Grid>
         </Border>
 
         <Border Grid.Row="2"
@@ -141,30 +260,38 @@
                       SelectedItem="{Binding SelectedVariable, Mode=TwoWay}"
                       SelectionMode="Single"
                       SelectionUnit="FullRow"
-                      GridLinesVisibility="Horizontal"
-                      HorizontalGridLinesBrush="#E5EAF0"
+                      FontSize="13"
+                      GridLinesVisibility="All"
+                      HorizontalGridLinesBrush="#E1E7EF"
+                      VerticalGridLinesBrush="#E1E7EF"
                       Background="White"
                       RowBackground="White"
                       AlternatingRowBackground="#F9FBFD"
+                      CanUserResizeColumns="True"
                       BorderThickness="0"
                       HeadersVisibility="Column"
                       SelectionChanged="VariablesGrid_SelectionChanged">
                 <DataGrid.Columns>
                     <DataGridTextColumn Width="2*"
                                         Header="{DynamicResource 变量名称}"
-                                        Binding="{Binding Name}" />
+                                        Binding="{Binding Name}"
+                                        ElementStyle="{StaticResource VariableCellText}" />
                     <DataGridTextColumn Width="*"
                                         Header="{DynamicResource 变量类型}"
-                                        Binding="{Binding DataTypeDisplay}" />
+                                        Binding="{Binding DataTypeDisplay}"
+                                        ElementStyle="{StaticResource VariableCellText}" />
                     <DataGridTextColumn Width="2*"
                                         Header="{DynamicResource 当前值}"
-                                        Binding="{Binding CurrentValueDisplay}" />
+                                        Binding="{Binding CurrentValueDisplay}"
+                                        ElementStyle="{StaticResource VariableCellText}" />
                     <DataGridTextColumn Width="1.4*"
                                         Header="{DynamicResource 最后更新时间}"
-                                        Binding="{Binding LastUpdatedDisplay}" />
+                                        Binding="{Binding LastUpdatedDisplay}"
+                                        ElementStyle="{StaticResource VariableCellText}" />
                     <DataGridTextColumn Width="2*"
                                         Header="{DynamicResource 变量说明}"
-                                        Binding="{Binding Description}" />
+                                        Binding="{Binding Description}"
+                                        ElementStyle="{StaticResource VariableCellText}" />
                 </DataGrid.Columns>
             </DataGrid>
         </Border>
