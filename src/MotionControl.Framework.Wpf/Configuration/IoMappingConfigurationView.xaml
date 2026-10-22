@@ -1,6 +1,7 @@
 <UserControl x:Class="MotionControl.Framework.Wpf.Configuration.IoMappingConfigurationView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sys="clr-namespace:System;assembly=mscorlib"
              Background="#F3F6FA">
     <UserControl.Resources>
         <Style x:Key="IoMappingTextBox" TargetType="TextBox">
@@ -288,6 +289,8 @@
                               CellEditEnding="DigitalInputsGrid_CellEditEnding"
                               SelectionChanged="MappingGrid_SelectionChanged">
                         <DataGrid.Resources>
+                            <!-- WPF Track 会用此系统资源的一半作为滑块最小长度；4096 路通道时仍保留易拖动的滑块。 -->
+                            <sys:Double x:Key="{x:Static SystemParameters.VerticalScrollBarButtonHeightKey}">192</sys:Double>
                             <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource IoMappingGridHeader}" />
                             <Style TargetType="DataGridRow" BasedOn="{StaticResource IoMappingGridRow}" />
                             <Style TargetType="DataGridCell" BasedOn="{StaticResource IoMappingGridCell}" />
@@ -354,6 +357,8 @@
                               CellEditEnding="DigitalOutputsGrid_CellEditEnding"
                               SelectionChanged="MappingGrid_SelectionChanged">
                         <DataGrid.Resources>
+                            <!-- WPF Track 会用此系统资源的一半作为滑块最小长度；4096 路通道时仍保留易拖动的滑块。 -->
+                            <sys:Double x:Key="{x:Static SystemParameters.VerticalScrollBarButtonHeightKey}">192</sys:Double>
                             <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource IoMappingGridHeader}" />
                             <Style TargetType="DataGridRow" BasedOn="{StaticResource IoMappingGridRow}" />
                             <Style TargetType="DataGridCell" BasedOn="{StaticResource IoMappingGridCell}" />
