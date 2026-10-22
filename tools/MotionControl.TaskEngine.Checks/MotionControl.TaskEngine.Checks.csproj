@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>MotionControl.TaskEngine.Checks</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\MotionControl.TaskEngine\MotionControl.TaskEngine.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\src\MotionControl.TaskEngine\Samples\TransferCycle.json" Link="Samples\TransferCycle.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

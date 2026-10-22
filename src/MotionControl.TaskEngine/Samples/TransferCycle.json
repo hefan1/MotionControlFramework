@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "taskId": "TransferCycle",
+  "name": "两个独立机构的搬运周期（定义样例）",
+  "revision": 1,
+  "root": {
+    "kind": "Sequence",
+    "id": "cycle",
+    "name": "生产周期",
+    "timeoutMs": 30000,
+    "children": [
+      {
+        "kind": "ParallelGroup",
+        "id": "parallel-transfer",
+        "name": "两个机构独立并行",
+        "timeoutMs": 20000,
+        "branches": [
+          {
+            "kind": "Sequence",
+            "id": "branch-x",
+            "name": "取料机构",
+            "timeoutMs": 15000,
+            "children": [
+              {
+                "kind": "MoveAxis",
+                "id": "move-x",
+                "name": "X 移动到取料示教位",
+                "timeoutMs": 10000,
+                "axisName": "X",
+                "mode": "Absolute",
+                "target": {
+                  "source": "TeachPoint",
+                  "axisName": "X",
+                  "pointId": "P001"
+                },
+                "profile": { "speed": 5, "acceleration": 10, "deceleration": 10 }
+              }
+            ]
+          },
+          {
+            "kind": "Sequence",
+            "id": "branch-y",
+            "name": "放料机构",
+            "timeoutMs": 15000,
+            "children": [
+              {
+                "kind": "MoveAxis",
+                "id": "move-y",
+                "name": "Y 移动到绝对位置",
+                "timeoutMs": 10000,
+                "axisName": "Y",
+                "mode": "Absolute",
+                "target": { "source": "Constant", "dataType": "Number", "constant": "20" },
+                "profile": { "speed": 5, "acceleration": 10, "deceleration": 10 }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

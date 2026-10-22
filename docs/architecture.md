@@ -20,6 +20,14 @@ Adapters.*                     ──> Contracts
 
 ## 模块职责
 
+### 可选任务模块：阶段 1
+
+`MotionControl.TaskEngine` 作为可选项目依赖 Contracts 和 Runtime，提供任务定义、现有配置只读目录、定义校验和 JSON 保存读取。Runtime、现有 C# 工位及 Host 当前均不引用它，所以本次增加不会改变设备运行链路。它没有 UI、执行线程、厂商 SDK 或原生 DLL 依赖。
+
+任务的顺序、独立并行、条件、协调运动和资源范围目前只是可校验的数据定义；协调运动能力和资源实际仲裁没有实现。后续 TaskEditor.Wpf 与执行器将共同使用这些定义，执行器不从 WPF 控件取值。阶段 1 的使用和边界见 `src/MotionControl.TaskEngine/README.md`。
+
+### 原有模块
+
 - `Framework.Contracts`：运动控制、逻辑 IO、流程生命周期、报警、配置、设备变量、诊断和追溯等稳定边界；具体接口在确认使用场景后逐项定义，避免预先做成一个大型总接口。
 - `Framework.Runtime`：默认单机运行上下文；管理工位流程调度、启停暂停、报警处理、配置服务、设备变量运行值和本地追溯队列等通用能力。
 - `Framework.Wpf`：通用轴与逻辑 IO 手动调试 UI、设备变量监控与维护页面。框架不预设客户主窗口样式。
