@@ -1,0 +1,515 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using MotionControl.Framework.Contracts.Variables;
+
+namespace MotionControl.Framework.Runtime.Variables
+{
+    /// <summary>在本机内存中保存一台设备的变量定义、当前值和更新时间。</summary>
+    public sealed class DeviceVariableStore : IDeviceVariableStore
+    {
+        /// <summary>保护变量定义和运行值，供流程线程与 WPF 监控线程共同访问。</summary>
+        private readonly object _sync = new object();
+
+        /// <summary>按变量名称保存本机当前使用的变量。</summary>
+        private readonly Dictionary<string, RuntimeVariable> _variables =
+            new Dictionary<string, RuntimeVariable>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>使用已校验的变量定义创建运行时变量表，并把初值装入内存。</summary>
+        public DeviceVariableStore(IEnumerable<DeviceVariableDefinition> definitions)
+        {
+            ReplaceDefinitions(definitions);
+        }
+
+        /// <summary>变量值或定义变化后通知订阅者。</summary>
+        public event EventHandler VariablesChanged;
+
+        /// <summary>返回变量定义副本，避免调用方直接改动运行时定义。</summary>
+        public IReadOnlyList<DeviceVariableDefinition> GetDefinitions()
+        {
+            lock (_sync)
+            {
+                return _variables.Values
+                    .Select(variable => variable.Definition.Copy())
+                    .OrderBy(definition => definition.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToList()
+                    .AsReadOnly();
+            }
+        }
+
+        /// <summary>返回变量当前值快照，不向调用方暴露内部字典。</summary>
+        public IReadOnlyList<DeviceVariableSnapshot> GetSnapshot()
+        {
+            lock (_sync)
+            {
+                return _variables.Values
+                    .Select(variable => new DeviceVariableSnapshot(
+                        variable.Definition.Name,
+                        variable.Definition.DataType,
+                        variable.CurrentValue,
+                        variable.HasValue,
+                        variable.LastUpdated,
+                        variable.Definition.Description,
+                        variable.Definition.AllowOperatorWrite))
+                    .OrderBy(snapshot => snapshot.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToList()
+                    .AsReadOnly();
+            }
+        }
+
+        /// <summary>读取布尔变量，并检查定义类型是否为 Boolean。</summary>
+        public bool GetBoolean(string name)
+        {
+            return ReadValue<bool>(name, DeviceVariableType.Boolean);
+        }
+
+        /// <summary>读取整数变量，并检查定义类型是否为 Integer。</summary>
+        public int GetInteger(string name)
+        {
+            return ReadValue<int>(name, DeviceVariableType.Integer);
+        }
+
+        /// <summary>读取小数变量，并检查定义类型是否为 Number。</summary>
+        public double GetNumber(string name)
+        {
+            return ReadValue<double>(name, DeviceVariableType.Number);
+        }
+
+        /// <summary>读取字符串变量，并检查定义类型是否为 String。</summary>
+        public string GetString(string name)
+        {
+            return ReadValue<string>(name, DeviceVariableType.String);
+        }
+
+        /// <summary>由设备流程更新布尔变量并记录更新时间。</summary>
+        public void SetBoolean(string name, bool value)
+        {
+            SetRuntimeValue(name, DeviceVariableType.Boolean, value.ToString());
+        }
+
+        /// <summary>由设备流程更新整数变量并记录更新时间。</summary>
+        public void SetInteger(string name, int value)
+        {
+            SetRuntimeValue(name, DeviceVariableType.Integer, value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        /// <summary>由设备流程更新小数变量并记录更新时间。</summary>
+        public void SetNumber(string name, double value)
+        {
+            if (double.IsNaN(value) || double.IsInfinity(value))
+            {
+                throw new ArgumentOutOfRangeException(nameof(value), "设备变量小数值必须是有限数字。");
+            }
+
+            SetRuntimeValue(name, DeviceVariableType.Number, value.ToString("R", CultureInfo.InvariantCulture));
+        }
+
+        /// <summary>由设备流程更新字符串变量并记录更新时间。</summary>
+        public void SetString(string name, string value)
+        {
+            SetRuntimeValue(name, DeviceVariableType.String, value ?? string.Empty);
+        }
+
+        /// <summary>替换变量定义；相同名称且类型未变时保留现值，新增或改类型时使用初值。</summary>
+        public void ReplaceDefinitions(IEnumerable<DeviceVariableDefinition> definitions)
+        {
+            List<DeviceVariableDefinition> checkedDefinitions = ValidateDefinitions(definitions);
+            lock (_sync)
+            {
+                Dictionary<string, RuntimeVariable> previousVariables =
+                    new Dictionary<string, RuntimeVariable>(_variables, StringComparer.OrdinalIgnoreCase);
+
+                _variables.Clear();
+                foreach (DeviceVariableDefinition definition in checkedDefinitions)
+                {
+                    RuntimeVariable previousVariable;
+                    if (previousVariables.TryGetValue(definition.Name, out previousVariable)
+                        && string.Equals(
+                            previousVariable.Definition.DataType,
+                            definition.DataType,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        _variables.Add(definition.Name, new RuntimeVariable(
+                            definition,
+                            previousVariable.CurrentValue,
+                            previousVariable.HasValue,
+                            previousVariable.LastUpdated));
+                    }
+                    else
+                    {
+                        _variables.Add(definition.Name, new RuntimeVariable(
+                            definition,
+                            NormalizeInitialValue(definition),
+                            definition.InitialValue != null,
+                            definition.InitialValue == null ? DateTime.MinValue : DateTime.Now));
+                    }
+                }
+            }
+
+            RaiseVariablesChanged();
+        }
+
+        /// <summary>按变量定义检查类型和写入权限，再更新现场人员指定的当前值。</summary>
+        public bool TrySetOperatorValue(string name, string valueText, out string errorMessage)
+        {
+            errorMessage = string.Empty;
+            RuntimeVariable variable;
+            string normalizedValue;
+            lock (_sync)
+            {
+                if (!_variables.TryGetValue(name ?? string.Empty, out variable))
+                {
+                    errorMessage = "找不到设备变量：" + name + "。";
+                    return false;
+                }
+
+                if (!variable.Definition.AllowOperatorWrite)
+                {
+                    errorMessage = "变量“" + name + "”由设备流程维护，不允许现场手动写入。";
+                    return false;
+                }
+
+                if (!TryNormalizeValue(variable.Definition.DataType, valueText, out normalizedValue, out errorMessage))
+                {
+                    errorMessage = "变量“" + name + "”的输入值无效：" + errorMessage;
+                    return false;
+                }
+
+                variable.CurrentValue = normalizedValue;
+                variable.HasValue = true;
+                variable.LastUpdated = DateTime.Now;
+            }
+
+            RaiseVariablesChanged();
+            return true;
+        }
+
+        /// <summary>检查全部定义并返回副本，供配置文件校验和运行时加载共用。</summary>
+        public static List<DeviceVariableDefinition> ValidateDefinitions(
+            IEnumerable<DeviceVariableDefinition> definitions)
+        {
+            if (definitions == null)
+            {
+                throw new ArgumentNullException(nameof(definitions), "设备变量定义列表不能为空。");
+            }
+
+            List<DeviceVariableDefinition> sourceDefinitions = definitions.ToList();
+            List<DeviceVariableDefinition> checkedDefinitions = sourceDefinitions
+                .Where(definition => definition != null)
+                .Select(definition => definition.Copy())
+                .ToList();
+
+            if (checkedDefinitions.Count != sourceDefinitions.Count)
+            {
+                throw new InvalidOperationException("设备变量定义列表中不能包含空行。");
+            }
+
+            HashSet<string> names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (DeviceVariableDefinition definition in checkedDefinitions)
+            {
+                ValidateName(definition.Name);
+                DeviceVariableType definedType;
+                if (!TryParseType(definition.DataType, out definedType))
+                {
+                    throw new InvalidOperationException(
+                        "设备变量“" + definition.Name + "”的数据类型无效：" + definition.DataType + "。");
+                }
+
+                if (!names.Add(definition.Name))
+                {
+                    throw new InvalidOperationException("设备变量名称重复：" + definition.Name + "。");
+                }
+
+                string normalizedInitialValue;
+                string valueError;
+                if (definition.InitialValue != null)
+                {
+                    if (!TryNormalizeValue(
+                        definition.DataType,
+                        definition.InitialValue,
+                        out normalizedInitialValue,
+                        out valueError))
+                    {
+                        throw new InvalidOperationException(
+                            "设备变量“" + definition.Name + "”的初始值无效：" + valueError);
+                    }
+
+                    definition.InitialValue = normalizedInitialValue;
+                }
+                definition.Description = definition.Description ?? string.Empty;
+            }
+
+            return checkedDefinitions;
+        }
+
+        /// <summary>按变量键和预期类型读取当前值，缺失或类型不匹配时提供明确异常。</summary>
+        private T ReadValue<T>(string name, DeviceVariableType expectedType)
+        {
+            string valueText;
+            lock (_sync)
+            {
+                RuntimeVariable variable = GetVariable(name);
+                EnsureTypeMatches(variable.Definition, expectedType);
+                if (!variable.HasValue)
+                {
+                    throw new InvalidOperationException("设备变量“" + name + "”当前没有有效值，流程写入后才能读取。");
+                }
+
+                valueText = variable.CurrentValue;
+            }
+
+            T value;
+            string errorMessage;
+            if (!TryParseValue(valueText, expectedType, out value, out errorMessage))
+            {
+                throw new InvalidOperationException("设备变量“" + name + "”的当前值无法读取：" + errorMessage);
+            }
+
+            return value;
+        }
+
+        /// <summary>检查变量定义类型后更新设备流程写入的运行值。</summary>
+        private void SetRuntimeValue(string name, DeviceVariableType expectedType, string valueText)
+        {
+            string normalizedValue;
+            string errorMessage;
+            if (!TryNormalizeValue(expectedType.ToString(), valueText, out normalizedValue, out errorMessage))
+            {
+                throw new ArgumentException("设备变量“" + name + "”的运行值无效：" + errorMessage, nameof(valueText));
+            }
+
+            lock (_sync)
+            {
+                RuntimeVariable variable = GetVariable(name);
+                EnsureTypeMatches(variable.Definition, expectedType);
+                variable.CurrentValue = normalizedValue;
+                variable.HasValue = true;
+                variable.LastUpdated = DateTime.Now;
+            }
+
+            RaiseVariablesChanged();
+        }
+
+        /// <summary>根据名称查找变量；调用方必须持有变量表锁。</summary>
+        private RuntimeVariable GetVariable(string name)
+        {
+            RuntimeVariable variable;
+            if (!_variables.TryGetValue(name ?? string.Empty, out variable))
+            {
+                throw new KeyNotFoundException("设备变量不存在：" + name + "。");
+            }
+
+            return variable;
+        }
+
+        /// <summary>确认变量定义类型与流程调用的读写方法一致。</summary>
+        private static void EnsureTypeMatches(
+            DeviceVariableDefinition definition,
+            DeviceVariableType expectedType)
+        {
+            DeviceVariableType actualType;
+            if (!TryParseType(definition.DataType, out actualType) || actualType != expectedType)
+            {
+                throw new InvalidOperationException(
+                    "设备变量“" + definition.Name + "”定义为 " + definition.DataType
+                    + "，当前流程要求 " + expectedType + "。");
+            }
+        }
+
+        /// <summary>检查变量键不能为空、不能带空白字符，并且仅包含易搜索的常用符号。</summary>
+        private static void ValidateName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                throw new InvalidOperationException("设备变量名称不能为空。");
+            }
+
+            foreach (char character in name)
+            {
+                if (!(char.IsLetterOrDigit(character) || character == '_' || character == '.' || character == '-'))
+                {
+                    throw new InvalidOperationException(
+                        "设备变量名称只能包含字母、数字、下划线、点和连字符：" + name + "。");
+                }
+            }
+        }
+
+        /// <summary>把初始值校验后转成运行时使用的文本。</summary>
+        private static string NormalizeInitialValue(DeviceVariableDefinition definition)
+        {
+            if (definition.InitialValue == null)
+            {
+                return string.Empty;
+            }
+
+            string normalizedValue;
+            string errorMessage;
+            if (!TryNormalizeValue(definition.DataType, definition.InitialValue, out normalizedValue, out errorMessage))
+            {
+                throw new InvalidOperationException(
+                    "设备变量“" + definition.Name + "”的初始值无效：" + errorMessage);
+            }
+
+            return normalizedValue;
+        }
+
+        /// <summary>解析类型名称并统一规范值文本；数值使用不受系统区域影响的小数点格式。</summary>
+        private static bool TryNormalizeValue(
+            string typeName,
+            string valueText,
+            out string normalizedValue,
+            out string errorMessage)
+        {
+            normalizedValue = string.Empty;
+            errorMessage = string.Empty;
+            DeviceVariableType variableType;
+            if (!TryParseType(typeName, out variableType))
+            {
+                errorMessage = "数据类型只能是 Boolean、Integer、Number 或 String。";
+                return false;
+            }
+
+            switch (variableType)
+            {
+                case DeviceVariableType.Boolean:
+                    bool booleanValue;
+                    if (!bool.TryParse(valueText, out booleanValue))
+                    {
+                        errorMessage = "布尔值只能填写 true 或 false。";
+                        return false;
+                    }
+
+                    normalizedValue = booleanValue.ToString();
+                    return true;
+
+                case DeviceVariableType.Integer:
+                    int integerValue;
+                    if (!int.TryParse(valueText, NumberStyles.Integer, CultureInfo.InvariantCulture, out integerValue))
+                    {
+                        errorMessage = "整数值格式无效。";
+                        return false;
+                    }
+
+                    normalizedValue = integerValue.ToString(CultureInfo.InvariantCulture);
+                    return true;
+
+                case DeviceVariableType.Number:
+                    double numberValue;
+                    if (!double.TryParse(valueText, NumberStyles.Float, CultureInfo.InvariantCulture, out numberValue)
+                        || double.IsNaN(numberValue)
+                        || double.IsInfinity(numberValue))
+                    {
+                        errorMessage = "小数值格式无效，且不能是无穷大或非数字。";
+                        return false;
+                    }
+
+                    normalizedValue = valueText.Trim();
+                    return true;
+
+                case DeviceVariableType.String:
+                    normalizedValue = valueText ?? string.Empty;
+                    return true;
+
+                default:
+                    errorMessage = "数据类型不受支持。";
+                    return false;
+            }
+        }
+
+        /// <summary>把当前值文本解析为流程指定的基础数据类型。</summary>
+        private static bool TryParseValue<T>(
+            string valueText,
+            DeviceVariableType variableType,
+            out T value,
+            out string errorMessage)
+        {
+            value = default(T);
+            string normalizedValue;
+            if (!TryNormalizeValue(variableType.ToString(), valueText, out normalizedValue, out errorMessage))
+            {
+                return false;
+            }
+
+            object parsedValue;
+            switch (variableType)
+            {
+                case DeviceVariableType.Boolean:
+                    parsedValue = bool.Parse(normalizedValue);
+                    break;
+                case DeviceVariableType.Integer:
+                    parsedValue = int.Parse(normalizedValue, CultureInfo.InvariantCulture);
+                    break;
+                case DeviceVariableType.Number:
+                    parsedValue = double.Parse(normalizedValue, CultureInfo.InvariantCulture);
+                    break;
+                case DeviceVariableType.String:
+                    parsedValue = normalizedValue;
+                    break;
+                default:
+                    errorMessage = "数据类型不受支持。";
+                    return false;
+            }
+
+            if (!(parsedValue is T))
+            {
+                errorMessage = "流程读取类型与变量数据类型不一致。";
+                return false;
+            }
+
+            value = (T)parsedValue;
+            errorMessage = string.Empty;
+            return true;
+        }
+
+        /// <summary>把可配置的类型名称转换为明确的数据类型枚举。</summary>
+        private static bool TryParseType(string typeName, out DeviceVariableType variableType)
+        {
+            if (Enum.TryParse(typeName, true, out variableType))
+            {
+                return Enum.IsDefined(typeof(DeviceVariableType), variableType);
+            }
+
+            return false;
+        }
+
+        /// <summary>在锁外触发变量变化事件，避免页面回调期间占用变量表锁。</summary>
+        private void RaiseVariablesChanged()
+        {
+            EventHandler handler = VariablesChanged;
+            if (handler != null)
+            {
+                handler(this, EventArgs.Empty);
+            }
+        }
+
+        /// <summary>保存一条变量定义和它在当前进程中的值。</summary>
+        private sealed class RuntimeVariable
+        {
+            /// <summary>当前变量的配置定义。</summary>
+            public DeviceVariableDefinition Definition { get; private set; }
+
+            /// <summary>当前运行值文本。</summary>
+            public string CurrentValue { get; set; }
+
+            /// <summary>当前文本值是否有效，未初始化时不伪造默认数据。</summary>
+            public bool HasValue { get; set; }
+
+            /// <summary>当前运行值最后更新的时间。</summary>
+            public DateTime LastUpdated { get; set; }
+
+            /// <summary>创建本机内存中的变量状态。</summary>
+            public RuntimeVariable(
+                DeviceVariableDefinition definition,
+                string currentValue,
+                bool hasValue,
+                DateTime lastUpdated)
+            {
+                Definition = definition.Copy();
+                CurrentValue = currentValue;
+                HasValue = hasValue;
+                LastUpdated = lastUpdated;
+            }
+        }
+    }
+}

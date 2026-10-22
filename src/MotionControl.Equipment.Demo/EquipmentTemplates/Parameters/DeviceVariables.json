@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "variables": [
+    {
+      "name": "Vision.Result",
+      "dataType": "String",
+      "initialValue": "OK",
+      "description": "视觉检测结果",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Vision.OffsetX",
+      "dataType": "Number",
+      "initialValue": "1.250",
+      "description": "视觉计算的 X 方向偏移量",
+      "allowOperatorWrite": true
+    },
+    {
+      "name": "Laser.Distance",
+      "dataType": "Number",
+      "initialValue": null,
+      "description": "激光测距结果，等待采集",
+      "allowOperatorWrite": false
+    }
+  ]
+}

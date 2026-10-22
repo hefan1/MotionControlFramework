@@ -16,8 +16,10 @@ using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Runtime.Machine;
 using MotionControl.Framework.Runtime.Safety;
+using MotionControl.Framework.Runtime.Variables;
 using MotionControl.Framework.Wpf.Configuration;
 using MotionControl.Framework.Wpf.ManualDebug;
+using MotionControl.Framework.Wpf.Variables;
 
 namespace MotionControl.Host.Wpf
 {
@@ -54,6 +56,9 @@ namespace MotionControl.Host.Wpf
         /// <summary>当前设备配置读写服务，也为示教位置提供持久化。</summary>
         private MachineConfigurationStore _configurationStore;
 
+        /// <summary>当前单机的全局设备变量运行表，供页面和工艺流程共用。</summary>
+        private DeviceVariableStore _deviceVariableStore;
+
         /// <summary>由当前连接卡创建的设备运行时，供自动示例流程与手动调试页共同使用。</summary>
         private MachineRuntime _machineRuntime;
 
@@ -71,6 +76,9 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>与轴手动、IO 手动共用当前 Runtime 的工位状态页面。</summary>
         private FlowStatusView _flowStatusPage;
+
+        /// <summary>显示和维护当前单机变量定义及运行值的监控页面。</summary>
+        private DeviceVariableView _deviceVariablePage;
 
         /// <summary>当前 Host 主窗口，用于显示控制卡的统一连接状态。</summary>
         private MainWindow _mainWindow;
@@ -102,6 +110,7 @@ namespace MotionControl.Host.Wpf
                 "MotionControlFramework",
                 "Configurations");
             _configurationStore = new MachineConfigurationStore(configurationRoot);
+            _deviceVariableStore = CreateDeviceVariableStore();
             _cardConnection = CreateMotionCardConnection();
             _axisMappingPage = new AxisMappingConfigurationView(
                 _configurationStore,
@@ -113,12 +122,17 @@ namespace MotionControl.Host.Wpf
             _ioMappingPage.IoMappingApplied += IoMappingPage_IoMappingApplied;
             _safetyInterlockPage = new SafetyInterlockConfigurationView(_configurationStore, MachineId);
             _safetyInterlockPage.ConfigurationSaved += SafetyInterlockPage_ConfigurationSaved;
+            _deviceVariablePage = new DeviceVariableView(
+                _deviceVariableStore,
+                _configurationStore,
+                MachineId);
             _mainWindow = new MainWindow();
             _mainWindow.Loaded += MainWindow_Loaded;
             _mainWindow.LanguageChanged += MainWindow_LanguageChanged;
             _mainWindow.SetAxisMappingConfigurationPage(_axisMappingPage);
             _mainWindow.SetIoMappingConfigurationPage(_ioMappingPage);
             _mainWindow.SetSafetyInterlockConfigurationPage(_safetyInterlockPage);
+            _mainWindow.SetDeviceVariablePage(_deviceVariablePage);
             RefreshIoMonitorPage();
 
             MainWindow = _mainWindow;
@@ -193,6 +207,21 @@ namespace MotionControl.Host.Wpf
             return new ZMotionAxisMappingCardConnection(_configurationStore, MachineId);
         }
 
+        /// <summary>复制首次部署的变量模板，并加载校验后的单机变量定义。</summary>
+        private DeviceVariableStore CreateDeviceVariableStore()
+        {
+            string templateDirectory = Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory,
+                "EquipmentTemplates");
+            _configurationStore.CopyMissingJsonFilesFromTemplate(MachineId, templateDirectory);
+
+            DeviceVariableConfigurationDocument document = _configurationStore.LoadJson<DeviceVariableConfigurationDocument>(
+                MachineId,
+                "Parameters/DeviceVariables.json");
+            document.Validate();
+            return new DeviceVariableStore(document.Variables);
+        }
+
         /// <summary>主窗口显示后按已保存的控制卡配置自动连接，不阻塞窗口创建。</summary>
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
@@ -226,6 +255,11 @@ namespace MotionControl.Host.Wpf
             {
                 _flowStatusPage.RefreshLocalizedText();
             }
+
+            if (_deviceVariablePage != null)
+            {
+                _deviceVariablePage.RefreshLocalizedText();
+            }
         }
 
         /// <summary>连接状态变化后同步整机运行时、连接状态和映射对应的手动调试页。</summary>
@@ -250,6 +284,7 @@ namespace MotionControl.Host.Wpf
                 _manualIoDebugPage = null;
                 _flowStatusPage = null;
                 _mainWindow.SetMachineRuntime(null);
+                _deviceVariablePage.SetMachineRuntime(null);
                 _mainWindow.SetFlowStatusPage(null);
                 _mainWindow.SetManualMotionDebugPage(null);
                 _mainWindow.SetManualIoDebugPage(null);
@@ -299,6 +334,7 @@ namespace MotionControl.Host.Wpf
 
                 _machineRuntime = machineRuntime;
                 _mainWindow.SetMachineRuntime(machineRuntime);
+                _deviceVariablePage.SetMachineRuntime(machineRuntime);
                 _flowStatusPage = new FlowStatusView(machineRuntime);
                 _mainWindow.SetFlowStatusPage(_flowStatusPage);
                 RefreshManualDebugPages(machineRuntime, motionCards, connectedLogicalIo);
@@ -311,6 +347,7 @@ namespace MotionControl.Host.Wpf
                 _manualIoDebugPage = null;
                 _flowStatusPage = null;
                 _mainWindow.SetMachineRuntime(null);
+                _deviceVariablePage.SetMachineRuntime(null);
                 _mainWindow.SetFlowStatusPage(null);
                 _mainWindow.SetManualMotionDebugPage(null);
                 _mainWindow.SetManualIoDebugPage(null);

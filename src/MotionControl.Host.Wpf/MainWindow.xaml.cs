@@ -30,7 +30,7 @@ namespace MotionControl.Host.Wpf
         {
             { "Home", new[] { "设备总览", "轴状态", "IO状态", "运行日志" } },
             { "Statistics", new[] { "产量统计", "节拍统计", "运行统计" } },
-            { "Monitor", new[] { "设备状态", "轴监控", "IO监控", "流程状态" } },
+            { "Monitor", new[] { "设备状态", "轴监控", "IO监控", "流程状态", "设备变量" } },
             { "Manual", new[] { "轴手动", "IO手动", "气缸手动", "通讯调试" } },
             { "Settings", new[] { "轴映射配置", "IO映射", "安全联锁", "通讯设置", "数据采集" } },
             { "Alarms", new[] { "当前报警", "历史报警", "报警统计", "操作日志" } },
@@ -58,6 +58,9 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>由 Host 注入的自动工位步骤与报警状态页面。</summary>
         private UserControl _flowStatusPage;
+
+        /// <summary>由 Host 注入当前单机的变量定义、运行值和监控页面。</summary>
+        private UserControl _deviceVariablePage;
 
         /// <summary>由 Host 组合根注入的通用轴映射配置页面。</summary>
         private UserControl _axisMappingConfigurationPage;
@@ -237,6 +240,13 @@ namespace MotionControl.Host.Wpf
             UpdatePageContent();
         }
 
+        /// <summary>由 Host 组合根注入按当前 MachineId 创建的设备变量页面。</summary>
+        public void SetDeviceVariablePage(UserControl deviceVariablePage)
+        {
+            _deviceVariablePage = deviceVariablePage;
+            UpdatePageContent();
+        }
+
         /// <summary>由 Host 组合根注入按设备配置存储创建的轴映射页面。</summary>
         public void SetAxisMappingConfigurationPage(UserControl axisMappingConfigurationPage)
         {
@@ -341,6 +351,19 @@ namespace MotionControl.Host.Wpf
                 ManualDebugContent.Visibility = Visibility.Visible;
                 PagePlaceholder.Visibility = Visibility.Collapsed;
                 PageDescription.SetResourceReference(TextBlock.TextProperty, "工位流程状态说明");
+                return;
+            }
+
+            var isDeviceVariablePage = _deviceVariablePage != null
+                && string.Equals(_currentSectionKey, "Monitor", StringComparison.Ordinal)
+                && string.Equals(_currentPageResourceKey, "设备变量", StringComparison.Ordinal);
+
+            if (isDeviceVariablePage)
+            {
+                ManualDebugContent.Content = _deviceVariablePage;
+                ManualDebugContent.Visibility = Visibility.Visible;
+                PagePlaceholder.Visibility = Visibility.Collapsed;
+                PageDescription.SetResourceReference(TextBlock.TextProperty, "设备变量页面说明");
                 return;
             }
 

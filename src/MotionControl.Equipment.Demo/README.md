@@ -1,5 +1,7 @@
 # 单工位闭环示例
 
+`EquipmentTemplates/Parameters/DeviceVariables.json` 展示设备项目如何提供变量表默认模板。Host 首次为 MachineId 建立生效配置时复制此文件，后续现场变量定义由“监控 → 设备变量”页面维护。
+
 `DemoStationFlow` 是可选的设备工艺示例。Host 只有在当前设备目录存在 `Parameters/DemoStation.json` 且 `enabled` 为 `true` 时才创建它。默认样例在 [Samples/DemoStation.json](Samples/DemoStation.json)，默认关闭，不会因连接控制卡而自动发运动或输出命令。
 
 流程使用明确的整数步骤编号和 `switch` 分派：10 轴定位 → 20 等待逻辑 DI → 30 逻辑 DO 脉冲 → 40 等待 DI 复位 → 回到 10。每次转步通过 `SetStep(步骤号, 说明)` 同时更新执行入口和现场可读说明，因此 OK/NG 分支可以直接跳到不同编号。步骤编号是显式跳转目标，不是数组位置。等待 DI 超时会产生 `DEMO_SENSOR_TIMEOUT` 停机报警，流程保留在步骤 20，Runtime 受控暂停，输出不动作；报警复位后从步骤 20 重试。若暂停发生在步骤 30 的输出保持期间，会先请求关闭 DO，保留步骤 30 供复位后重试。

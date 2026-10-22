@@ -4,6 +4,10 @@
 
 按职责分区：Machine（单机生命周期）、FlowScheduling（工位流程调度）、Alarms、ManualControl、Configuration、Diagnostics、Traceability。Runtime 统一持有整机状态并协调各工位的启动、暂停、复位和报警响应；工位流程本身由设备项目以 C# 步骤编写，并各自保留当前步骤。流程执行保持直观可读，Runtime 不承载具体工艺动作。
 
+`Variables/DeviceVariableStore` 按变量名称维护布尔、整数、小数和字符串运行值，设备流程通过 `IDeviceVariableStore` 明确读写类型；未初始化变量会报告无有效值，不会伪造零值。变量定义另存于当前设备 `Parameters/DeviceVariables.json`，当前值只保存在本次运行的内存中，供监控页实时显示。
+
+需要使用变量的工位在构造函数中接收 `IDeviceVariableStore`，由 Host 组合入口传入与监控页面相同的实例；不需要变量的工位无需增加这项依赖。不要在工位里另建变量表，否则页面和流程会看到不同的数据。
+
 `Machine/MotionCardGroup` 管理 Host 创建的多张运动卡：校验卡号和逻辑轴名称、按配置顺序连接、失败时回收本次已连接的卡，并按逻辑轴名称提供轴对象。断开前会先检查所有已连接卡上的轴；状态读取失败或任一轴仍在运动时，会在断开任何卡之前拒绝操作，避免误断连接。设备流程无需知道控制卡厂商、物理卡号或物理轴通道。
 
 `Machine/MachineRuntime` 提供单机连接、复位、启动、暂停和断开入口。连接后必须先复位再启动；自动启动前会检查每根轴仍在运动、报警和限位。设备项目可以传入 `IEquipmentInitializationFlow`，在并行工位启动前按顺序执行本设备需要的回零、移动安全位或输出初始化步骤；没有初始化流程时直接跳过。初始化中暂停会保留当前步骤，完成后同一连接周期内暂停恢复或复位重启不会重复执行；断开后重新连接会从第一步开始。初始化完成后 Runtime 会再次检查轴状态，确保需要重新回零的轴已经恢复。未处理的工位异常会使整机进入 `Alarmed`，并暂停其他工位。Runtime 使用 `IMachineAlarmService` 接收设备项目上报的报警，并把停机报警转换为整机暂停。

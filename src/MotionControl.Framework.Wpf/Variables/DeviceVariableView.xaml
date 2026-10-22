@@ -1,0 +1,172 @@
+<UserControl x:Class="MotionControl.Framework.Wpf.Variables.DeviceVariableView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#F3F6FA">
+    <UserControl.Resources>
+        <Style x:Key="VariablePageButton" TargetType="Button">
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Padding" Value="12,4" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#33485F" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="#C9D5E3" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="BorderBrush" Value="#82B5F5" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="#2475D0" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Background" Value="#F1F3F6" />
+                    <Setter Property="BorderBrush" Value="#E1E6EC" />
+                    <Setter Property="Foreground" Value="#9AA4B1" />
+                    <Setter Property="Cursor" Value="Arrow" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="VariablePagePrimaryButton" TargetType="Button" BasedOn="{StaticResource VariablePageButton}">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Background" Value="#2375D1" />
+            <Setter Property="BorderBrush" Value="#2375D1" />
+        </Style>
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Padding" Value="9,0" />
+            <Setter Property="Background" Value="#F7F9FC" />
+            <Setter Property="Foreground" Value="#40536A" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="BorderBrush" Value="#D9E0E8" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+        <Style TargetType="DataGridCell">
+            <Setter Property="Padding" Value="9,5" />
+            <Setter Property="Foreground" Value="#26384D" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#E7F1FE" />
+                    <Setter Property="Foreground" Value="#1F3C5C" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="14,8,14,12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Border Padding="10"
+                Background="#F7F9FC"
+                BorderBrush="#D8E2EE"
+                BorderThickness="1"
+                CornerRadius="6">
+            <DockPanel LastChildFill="False">
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                    <Button x:Name="AddVariableButton"
+                            Content="{DynamicResource 变量新增}"
+                            Style="{StaticResource VariablePagePrimaryButton}"
+                            Click="AddVariableButton_Click" />
+                    <Button x:Name="EditVariableButton"
+                            Content="{DynamicResource 变量编辑定义}"
+                            Style="{StaticResource VariablePageButton}"
+                            Click="EditVariableButton_Click" />
+                    <Button x:Name="DeleteVariableButton"
+                            Content="{DynamicResource 变量删除}"
+                            Style="{StaticResource VariablePageButton}"
+                            Click="DeleteVariableButton_Click" />
+                </StackPanel>
+
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Margin="8,0,6,0"
+                               VerticalAlignment="Center"
+                               Foreground="#40536A"
+                               Text="{DynamicResource 变量写入值}" />
+                    <TextBox x:Name="ManualValueTextBox"
+                             Width="180"
+                             Height="30"
+                             Padding="7,4"
+                             VerticalContentAlignment="Center"
+                             BorderBrush="#CAD5E2"
+                             BorderThickness="1"
+                             ToolTip="{DynamicResource 变量写入值提示}" />
+                    <Button x:Name="WriteValueButton"
+                            Margin="8,0,0,0"
+                            Content="{DynamicResource 变量写入当前值}"
+                            Style="{StaticResource VariablePageButton}"
+                            Click="WriteValueButton_Click" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Row="1"
+                Margin="0,8,0,8"
+                Padding="8,6"
+                Background="#EAF2FB"
+                BorderBrush="#D5E4F5"
+                BorderThickness="1"
+                CornerRadius="4">
+            <DockPanel>
+                <TextBlock x:Name="StatusText"
+                           VerticalAlignment="Center"
+                           Foreground="#40536A"
+                           Text="{DynamicResource 变量页面就绪}" />
+                <TextBlock DockPanel.Dock="Right"
+                           Margin="14,0,0,0"
+                           VerticalAlignment="Center"
+                           Foreground="#596B7D"
+                           Text="{DynamicResource 变量运行值说明}" />
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Row="2"
+                Background="White"
+                BorderBrush="#D9E0E8"
+                BorderThickness="1"
+                CornerRadius="6">
+            <DataGrid x:Name="VariablesGrid"
+                      AutoGenerateColumns="False"
+                      CanUserAddRows="False"
+                      CanUserDeleteRows="False"
+                      CanUserReorderColumns="True"
+                      CanUserResizeRows="False"
+                      IsReadOnly="True"
+                      ItemsSource="{Binding Variables}"
+                      SelectedItem="{Binding SelectedVariable, Mode=TwoWay}"
+                      SelectionMode="Single"
+                      SelectionUnit="FullRow"
+                      GridLinesVisibility="Horizontal"
+                      HorizontalGridLinesBrush="#E5EAF0"
+                      Background="White"
+                      RowBackground="White"
+                      AlternatingRowBackground="#F9FBFD"
+                      BorderThickness="0"
+                      HeadersVisibility="Column"
+                      SelectionChanged="VariablesGrid_SelectionChanged">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Width="2*"
+                                        Header="{DynamicResource 变量名称}"
+                                        Binding="{Binding Name}" />
+                    <DataGridTextColumn Width="*"
+                                        Header="{DynamicResource 变量类型}"
+                                        Binding="{Binding DataTypeDisplay}" />
+                    <DataGridTextColumn Width="2*"
+                                        Header="{DynamicResource 当前值}"
+                                        Binding="{Binding CurrentValueDisplay}" />
+                    <DataGridTextColumn Width="1.4*"
+                                        Header="{DynamicResource 最后更新时间}"
+                                        Binding="{Binding LastUpdatedDisplay}" />
+                    <DataGridTextColumn Width="2*"
+                                        Header="{DynamicResource 变量说明}"
+                                        Binding="{Binding Description}" />
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+    </Grid>
+</UserControl>

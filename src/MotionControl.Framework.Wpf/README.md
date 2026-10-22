@@ -2,6 +2,8 @@
 
 通用 WPF 页面与控件，不依赖具体厂商的原生 API。
 
+`Variables/DeviceVariableView` 提供单机变量的新增、编辑、删除、当前值监控和现场手动写入。定义保存到当前 MachineId 的 `Parameters/DeviceVariables.json`；运行、暂停或报警期间锁定修改。数据类型列和“无有效数据”提示随 Host 语言切换。
+
 `ManualDebug/ManualMotionDebugView` 只处理已映射逻辑轴，并按物理轴号自动生成紧凑的 `ManualAxisControl` 卡片。每张卡片查看指令位置、编码器反馈位置、伺服、回零、原点输入、硬限位和报警状态，手动页显示期间约每 200 毫秒刷新一次；支持连续点动、按步长寸动、绝对定位、回零、轴报警复位和受控停止。绝对定位和相对定位均按轴映射中的“到位容差”核对实际反馈位置；容差使用轴工程单位，属于软件完成判定，不会写入控制卡。加速度、减速度放在收起的运动曲线设置中；指令位置和原点输入状态由适配器通过 `AxisStatus` 可选数据提供，不支持读取的厂商会显示横线或灰色指示灯。位置列表初始为空，调试人员可以添加并命名位置、直接编辑目标坐标、把轴当前位置示教到该位置，再用定位按钮返回；位置坐标保存在当前设备的 `Parameters/ManualAxisPositions.json`，内部编号如 `Position1` 不随名称编辑或删除而复用。
 
 `ManualDebug/ManualIoDebugView` 单独处理逻辑 DI/DO 状态和手动输出。Host 将它注入“IO 手动”导航，避免在轴手动卡片下方重复放置 IO 面板。

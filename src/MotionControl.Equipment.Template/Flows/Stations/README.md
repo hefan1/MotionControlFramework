@@ -83,6 +83,8 @@ private void SetStep(int step, string info)
 
 轴对象由 Host 通过 `MotionCardGroup.GetAxis("逻辑轴名")` 显式交给工位；IO 使用逻辑点位名；动作位置和速度从设备工艺参数读取。不要在流程里写物理轴号、脉冲换算或厂商 API 调用。
 
+需要读写全局设备变量的工位，在构造函数中接收 `IDeviceVariableStore`，并由 Host 组合入口传入同一台设备正在使用的变量表。流程用 `GetBoolean`、`GetInteger`、`GetNumber`、`GetString` 读取，用对应的 `Set...` 方法更新；变量名称和类型由设备配置中的“设备变量”页面维护。
+
 ## 多工位共用轴
 
 如果两个工位可能同时使用同一根轴，Host 应把同一个 `MotionCardGroup.AxisResources` 交给相关工位。工位在共享动作前申请逻辑轴；多轴动作一次申请整组轴。持有占用凭证时不要嵌套申请其他轴资源，避免并行流程各持有一部分资源后互相等待。用 `using` 覆盖完整动作过程，取消时等轴受控停稳后再释放：
