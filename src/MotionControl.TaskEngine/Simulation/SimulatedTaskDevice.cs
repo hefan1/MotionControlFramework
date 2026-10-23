@@ -5,6 +5,7 @@ using MotionControl.Framework.Contracts.Variables;
 using MotionControl.Framework.Runtime.Variables;
 using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Execution;
+using MotionControl.TaskEngine.Resources;
 
 namespace MotionControl.TaskEngine.Simulation
 {
@@ -23,11 +24,14 @@ namespace MotionControl.TaskEngine.Simulation
         private readonly DeviceVariableStore _variables;
         /// <summary>与本内存设备对应的只读配置目录。</summary>
         public TaskResourceCatalog Catalog { get; }
+        /// <summary>本内存设备共用的协调器；不影响其他设备实例或旧工位运行器。</summary>
+        internal TaskResourceCoordinator Resources { get; }
 
         /// <summary>从目录建立隔离状态；轴默认未使能、未回零，变量默认无效。</summary>
         public SimulatedTaskDevice(TaskResourceCatalog catalog)
         {
             Catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+            Resources = new TaskResourceCoordinator(catalog.Resources);
             foreach (TaskAxisInfo axis in catalog.Axes.Values) _axes.Add(axis.Name, new SimulatedAxis());
             foreach (string input in catalog.Inputs) _inputs.Add(input, null);
             foreach (string output in catalog.Outputs) _outputs.Add(output, null);

@@ -11,7 +11,7 @@ using MotionControl.TaskEngine.Simulation;
 
 namespace MotionControl.TaskEngine.Checks
 {
-    /// <summary>阶段 2 检查组织与小型夹具；仅创建隔离内存设备。</summary>
+    /// <summary>执行及资源检查组织与小型夹具；仅创建隔离内存设备。</summary>
     internal static partial class ExecutionChecks
     {
         /// <summary>当前检查创建的运行，失败时也统一取消收尾。</summary>
@@ -35,14 +35,30 @@ namespace MotionControl.TaskEngine.Checks
                 { "暂停排除超时和延时计时", PauseTimeBudget },
                 { "暂停期间取消并停止写值", CancelWhilePaused },
                 { "立即取消和外部令牌", ImmediateCancellation },
-                { "同轴冲突和隔离运行", AxisConflicts },
+                { "同轴排队和隔离运行", AxisConflicts },
                 { "未使能、未回零和报警拦截", AxisPreconditions },
                 { "运行报警和动态行程", DynamicMotionErrors },
                 { "内存回零和停止语义", HomeAndStop },
                 { "子任务重复调用与定义冻结", CallsAndFrozenDefinitions },
                 { "不支持能力在动作前拒绝", UnsupportedBeforeStart },
                 { "运行状态隔离和不可变快照", IsolatedSnapshots },
-                { "子任务展开数量保护", ExpansionLimit }
+                { "子任务展开数量保护", ExpansionLimit },
+                { "资源整组申请和独立组并行", ResourceAtomicGroups },
+                { "冲突顺位与暂停等待者", ResourceQueueOrder },
+                { "取消和超时清理等待队列", ResourceWaitingCleanup },
+                { "排队后读取目标及回零排队", ResourceWaitingTarget },
+                { "输入位置变量进入与退出条件", ResourceInterlocks },
+                { "进入失败不隔离和轴状态拦截", ResourceEntryFailure },
+                { "异常隔离与显式恢复", ResourceFailureRecovery },
+                { "退出超时保留占用", ResourceExitTimeout },
+                { "取消运动范围停止后仍待确认", ResourceMotionCancellation },
+                { "并行范围失败连带隔离", ResourceParallelFailure },
+                { "子任务继承和连续范围", ResourceSubtasks },
+                { "设备隔离和资源快照", ResourceDeviceIsolation },
+                { "动作资源遗漏和隐藏嵌套校验", ResourceUsageValidation },
+                { "互锁字段和位置边界校验", ResourceInterlockValidation },
+                { "互锁 JSON 保存兼容与备份", ResourcePersistence },
+                { "资源样例完整执行", ResourceSample }
             };
             int failures = 0;
             foreach (var check in checks)
@@ -61,7 +77,7 @@ namespace MotionControl.TaskEngine.Checks
                     Runs.Clear();
                 }
             }
-            Console.WriteLine("阶段 2 纯软件仿真检查完成：共 " + checks.Count + " 组，失败 " + failures + " 组。未连接控制器。");
+            Console.WriteLine("阶段 2/3 纯软件仿真检查完成：共 " + checks.Count + " 组，失败 " + failures + " 组。未连接控制器。");
             return failures;
         }
 

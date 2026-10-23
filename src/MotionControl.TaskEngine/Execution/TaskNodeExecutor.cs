@@ -64,13 +64,14 @@ namespace MotionControl.TaskEngine.Execution
             }
             else if (node is ParallelGroupNode parallel) await ParallelAsync(scope, parallel).ConfigureAwait(false);
             else if (node is ConditionBranchNode branch) await BranchAsync(scope, branch).ConfigureAwait(false);
+            else if (node is ResourceScopeNode resources) await ResourceScopeAsync(scope, resources).ConfigureAwait(false);
             else if (node is CallTaskNode call)
                 await ExecuteAsync(call.TaskId, _library[call.TaskId].Root, scope, scope.Token).ConfigureAwait(false);
             else if (node is DelayNode delay) await DelayAsync(scope, delay.Milliseconds).ConfigureAwait(false);
             else if (node is WaitInputNode input) await WaitInputAsync(scope, input).ConfigureAwait(false);
             else if (node is WaitConditionNode condition) await WaitConditionAsync(scope, condition).ConfigureAwait(false);
             else if (node is SetOutputNode output)
-                await scope.StepAsync(() => _device.WriteOutput(output.OutputName, output.Value)).ConfigureAwait(false);
+                await SetOutputAsync(scope, output).ConfigureAwait(false);
             else if (node is SetVariableNode assignment)
                 await scope.StepAsync(() => _device.WriteVariable(assignment.VariableName, ReadRequired(assignment.Value))).ConfigureAwait(false);
             else if (node is MoveAxisNode move) await MoveAsync(scope, move).ConfigureAwait(false);

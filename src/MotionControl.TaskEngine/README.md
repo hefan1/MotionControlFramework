@@ -1,6 +1,6 @@
 # 任务模块：先从这些文件读起
 
-当前完成阶段 1 的定义/存储/校验，以及阶段 2 的纯软件仿真执行器。
+当前完成阶段 1 的定义/存储/校验、阶段 2 的纯软件仿真执行器，以及阶段 3 的资源仲裁和显式互锁。
 执行器只接收独立的 `SimulatedTaskDevice`，不连接控制器或 Host。编辑器页面尚未开发；定义校验通过不等于允许实际设备运行。
 
 ## 文件如何定位
@@ -13,6 +13,7 @@
 | `Configuration` | JSON 如何读取，版本如何检查，旧文件如何保留 |
 | `Execution` | 顺序、并行、分支如何运行，怎样暂停/取消，错误在哪个节点 |
 | `Simulation` | 纯内存的轴、DI/DO、变量；没有真实设备服务 |
+| `Resources` | 整组申请、冲突顺位、持有/等待/待确认诊断 |
 | `Samples` | 可直接阅读的示例任务；不会自动写入现场目录 |
 
 建议阅读顺序：`TaskDefinition` → `SequenceNode` → `MoveAxisNode` → `TaskResourceCatalogLoader.Load` → `TaskDefinitionValidator.Validate` → `TaskDefinitionStore.Save`。
@@ -79,7 +80,7 @@ tasks.Save("Machine01", "TransferCycle.json", definition, catalog);
 - 数值常量使用不受界面语言影响的小数点格式。DateTime 常量使用 ISO 8601 往返格式，例如 `2026-10-22T10:30:00.0000000+08:00`。
 - 变量类型沿用已有配置名称：Boolean、Integer、Number、String、Byte、Character、DateTime、UInt32；后续 UI 可显示 bool、int、double、string、byte、char、DateTime、uint。
 - 赋值仅允许同类型或当前整数类型到 double；不把浮点数隐式截断为整数。
-- 轴资源名称为 `Axis:逻辑轴名`；区域等命名资源由 Host 明确传给目录。完整资源占用调度和自动避让留在后续阶段；当前内存设备只拒绝同轴同时动作。
+- 轴资源名称为 `Axis:逻辑轴名`，输出为 `Output:逻辑输出名`，均由目录自动登记。区域等命名资源由调用方明确传入；自定义名称不能使用这两个保留前缀。
 - JSON 拒绝未知节点、未知字段、数字枚举、重复字段和 `$type` 等类型元数据。
 
 ## 阶段 2：先这样阅读执行器
@@ -131,7 +132,7 @@ if (result.State == TaskRunState.Failed)
 
 ### 当前能执行什么
 
-| 节点 | 阶段 2 的行为 |
+| 节点 | 当前内存执行行为 |
 |---|---|
 | Sequence、ParallelGroup | 顺序执行；独立分支全部成功后汇合 |
 | ConditionBranch、CallTask | 单次快照判断分支；子任务正常返回，调用状态独立 |
@@ -140,18 +141,80 @@ if (result.State == TaskRunState.Failed)
 | MoveAxis | 匀速单轴模型，检查使能、回零参考、报警和动态终点范围 |
 | AxisCommand.Home | 100ms 内存回零占位，成功建立仿真参考；不模拟任何厂商回零模式 |
 | AxisCommand.Stop | 只确认闲置轴；不夺取其他动作控制权，停止自己的动作应取消所属运行 |
-| ResourceScope、CoordinatedMove | 启动前明确拒绝，包括未选中的分支和加载的子任务 |
+| ResourceScope | 整组申请 → 进入检查 → 顺序正文 → 退出确认 → 释放；异常正文转为待确认 |
+| CoordinatedMove | 启动前明确拒绝，包括未选中的分支和加载的子任务 |
 
-同轴同时使用会明确失败，独立轴可以并行；这只是最小冲突拦截，还没有等待队列、区域占用、退出确认或死锁处理。并行单轴不是协调插补。
+Move/Home 自动申请单根轴，SetOutput 自动申请该输出；冲突会排队，独立资源可以并行。排队取得轴后才读取目标；接受运动后继续固定终点。并行单轴不是协调插补。
 
 变量默认无效，等待条件可以等到其有效；分支选择、变量赋值来源或运动目标无效则失败。All/Any/Not 中遇到未知子项也保持未知。一次条件求值使用同一份变量快照。有时区的 DateTime 按 UTC 时刻比较；不能混用有时区和没有时区的日期。
 
 运行快照保留 `RunId`、`TaskId`、`NodeId`、独立 `ExecutionId` 和 `ParentExecutionId`，同一子任务被重复调用也不会覆盖状态。`Nodes` 只包含已进入的调用，不包含尚未进入或未选择的定义分支。全局暂停看 `TaskRunSnapshot.State`；节点保留其暂停前的等待说明。每次最多展开 10000 个节点调用。
 
+## 阶段 3：资源范围怎样使用
+
+阅读顺序：`ResourceScopeNode` → `TaskNodeExecutor.Resources.cs` → `TaskResourceCoordinator` → `SimulatedTaskDevice.Interlocks.cs` / `SimulatedTaskDevice.Resources.cs`。
+
+```text
+登记完整资源组 → 等待冲突者退出 → 一次取得整组
+    → 等待进入条件 → 执行顺序正文（含子任务）
+    → 等待退出确认 → 释放整组
+
+正文开始前失败/取消 → 删除申请
+正文开始后失败/取消 → 停下自己的内存动作 → 整组 Blocked（待确认）
+```
+
+### 声明范围
+
+`Samples/ResourceTransfer.json` 是可运行的内存例子：申请 `Zone:Camera`、`Axis:X`、`Output:Vacuum`，等待 PartReady 且 X 在 0，往返 10 → 0，确认 X 停在 0 后释放。例子假定目录行程包含这些位置，区域名称由场景明确登记；0 并不天然代表真实设备安全位。
+
+- `Resources` 一次列齐正文、所有被调用子任务以及互锁使用的轴/输出。漏填会在启动前定位到范围和实际使用节点。
+- 同一区域可能涉及不同的轴：把相同的区域名写入各自范围，才能互相排队。只申请不同轴不会产生区域互斥。
+- 范围内禁止再嵌套 `ResourceScope` 或 `ParallelGroup`，包括子任务内部。并行组织方式是 `ParallelGroup → 各分支自己的 ResourceScope → 顺序正文`。
+- 范围内的子任务继承凭证，不重复申请；范围外的 Move/Home/SetOutput 自动申请单项资源。
+- `AxisCommand.Stop` 只确认停止，不申请或抢占其他动作；需要停止某运行时取消它并等待 Completion。
+
+### 进入和退出条件
+
+`EntryInterlock` / `ExitInterlock` 均为可选对象，可同时配置以下条件，全部满足才通过：
+
+| 字段 | 要求 |
+|---|---|
+| `Axes` | 每项明确 AxisName、MinimumPosition、MaximumPosition；包含端点。必须停止、使能、无报警；RequireHomed 默认 true |
+| `Inputs` | 每项明确 InputName 和 Expected；只接受逻辑 DI，未知不等于 false |
+| `Condition` | 复用已有变量 Compare/All/Any/Not；无效值继续等待 |
+
+互锁中的轴同样纳入本范围资源，避免核对位置时被其他任务移动。进入条件是在正文前检查一次；不会在整个动作期间连续检查。变量和 DI 可能随后变化，本功能不代替持续安全监控。
+
+旧 `ExitCondition` 可继续读取和执行，但不能同时填写 `ExitInterlock`。省略退出条件代表作者允许正文正常完成即让出；框架不会自行推断区域清空。定义包含互锁对象时不能为空。
+
+### 等待、暂停与诊断
+
+每个 `SimulatedTaskDevice` 有独立协调器；操作同一个实例的运行共用队列。完整组要么一起取得、要么全部等待；相冲突的较早等待者优先，互不冲突的申请可并行。暂停的等待者保留顺位，相冲突的后来者不能插队；取消或超时会移除等待记录。
+
+`device.ReadResources()` 返回只读副本：RequestId、RunId、TaskId、NodeId、ExecutionId、资源组、Waiting/Held/Blocked 和原因。任务节点的等待详情及超时错误同样保留互锁条件或阻塞者身份。
+
+这些规则避免“占有一组再申请另一组”的资源锁死锁。等待外部 DI/变量造成的工艺互等仍可能发生，应使用有界超时定位，不能宣称已经自动检测所有业务死锁。
+
+### 异常后恢复
+
+正文异常退出时，资源会保留 Blocked；已写输出和变量保留当时值，不自动回滚。`Completion` 表示动作已经收尾，**不表示区域已让出**。
+
+```csharp
+// requestId 来自 ReadResources() 中需要核实的 Blocked 记录。
+// 调用方已检查场景后才传入确认说明；返回 false 时显示 reason，不能当作恢复成功。
+string reason;
+bool recovered = device.TryRecoverResources(requestId, "已检查工件和区域状态", out reason);
+Console.WriteLine(reason);
+```
+
+恢复会再次核对整组轴已停止、无报警及原退出条件，不允许空确认或旧申请编号。原本没有配置退出条件时，确认说明代表调用方已人工核实；它不是权限认证。恢复只释放该记录，不复位报警、不改轴位置、不改输出，也不重启旧任务。
+
+若实际位置不满足退出条件，本阶段会继续保留 Blocked；尚未提供占用状态下的人工点动撤离入口。`ConfigureAxis` 也不能覆盖已占用或待确认轴来绕过检查。后续实际设备接入需要单独实现权限、撤离操作、停止确认和恢复审计。
+
 ## 后续阶段仍要做什么
 
 实际控制器的回零/位置参考、伺服、报警、限位、运动到位、停止确认，仍需设备适配层接入；内存模型通过不代表这些硬件行为已验证。
-变量质量目前只覆盖已有 HasValue，采集周期/请求关联和数据新鲜度尚未接入。区域清空、资源仲裁、死锁诊断、相对定位重启恢复和并行分支检查点属于后续阶段。
+变量质量目前只覆盖已有 HasValue，采集周期/请求关联和数据新鲜度尚未接入。机械几何避让、实际区域清空验证、业务信号依赖图、相对定位重启恢复和并行分支检查点属于后续阶段。资源状态仅保留在当前内存设备内，重新创建设备或重启程序不会恢复 Blocked；禁止将此行为直接用于生产恢复。
 通讯、计算动作、子任务参数绑定暂不接受对应 kind，避免保存一个会被默默跳过的动作。
 
 ## 离线检查

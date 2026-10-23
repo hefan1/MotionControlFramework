@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using System.Linq;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Execution;
@@ -8,19 +9,27 @@ namespace MotionControl.TaskEngine.Checks
     /// <summary>验证单轴内存模型的前置条件、冲突和清理行为。</summary>
     internal static partial class ExecutionChecks
     {
-        /// <summary>同轴同时动作失败；取消失败运行不能释放另一独立运行持有的轴。</summary>
+        /// <summary>同轴动作排队完成；取消等待运行不能释放另一运行持有的轴。</summary>
         private static async Task AxisConflicts()
         {
             var device = Device();
-            var result = await Complete(Start(TaskFixtures.Task(Parallel(TaskFixtures.Move("a"), TaskFixtures.Move("b")), Output()), device));
-            Failure(result, "占用");
-            CheckAssert.True(!device.ReadAxis("X").IsBusy && device.ReadOutput("Vacuum") == null, "冲突后未清理或仍继续执行。");
+            var first = TaskFixtures.Move("a");
+            var second = TaskFixtures.Move("b");
+            first.Profile.Speed = second.Profile.Speed = 50;
+            second.Target = TaskFixtures.Number("20");
+            var result = await Complete(Start(TaskFixtures.Task(Parallel(first, second), Output()), device));
+            Success(result);
+            CheckAssert.True(!device.ReadAxis("X").IsBusy && device.ReadAxis("X").AcceptedCommands == 2
+                && device.ReadResources().Count == 0, "同轴没有依次完成或留下占用。");
 
+            device.ConfigureAxis("X", 0, true, true);
             TaskRun owner = Start(TaskFixtures.Task(TaskFixtures.Move("owner")), device);
             await Until(() => device.ReadAxis("X").IsBusy, "首个运行没有取得轴。");
-            var rejected = await Complete(Start(TaskFixtures.Task(TaskFixtures.Move("other")), device));
-            Failure(rejected, "占用");
-            CheckAssert.True(device.ReadAxis("X").IsBusy && !owner.Completion.IsCompleted, "失败运行释放了别人的轴。");
+            TaskRun waiting = Start(TaskFixtures.Task(TaskFixtures.Move("other")), device);
+            await Until(() => device.ReadResources().Any(item => item.RunId == waiting.RunId), "另一个运行没有登记等待。");
+            waiting.Cancel();
+            CheckAssert.True((await Complete(waiting)).State == TaskRunState.Cancelled, "等待者未取消。");
+            CheckAssert.True(device.ReadAxis("X").IsBusy && !owner.Completion.IsCompleted, "等待者释放了别人的轴。");
             owner.Cancel();
             await Complete(owner);
             CheckAssert.True(!device.ReadAxis("X").IsBusy, "所属运行取消后没有释放轴。");

@@ -82,7 +82,10 @@ namespace MotionControl.TaskEngine.Validation
                 CheckSequence(scope.Body, node, path + ".body", depth);
                 if (scope.ExitCondition != null)
                     CheckCondition(scope.ExitCondition, node, path + ".exitCondition", new HashSet<TaskCondition>(), 0);
-                Warning(node, path, "本阶段只检查资源名称；实际占用、退出确认和死锁检查在资源仲裁阶段实现。");
+                CheckInterlock(scope.EntryInterlock, scope, path + ".entryInterlock");
+                CheckInterlock(scope.ExitInterlock, scope, path + ".exitInterlock");
+                if (scope.ExitCondition != null && scope.ExitInterlock != null)
+                    Error(node, path + ".exitInterlock", "ExitCondition 与 ExitInterlock 只能选择一种退出确认方式。");
             }
             else if (node is CallTaskNode call)
             {

@@ -5,13 +5,14 @@ namespace MotionControl.TaskEngine.Simulation
     /// <summary>单轴匀速进度模型；不模拟伺服动力学、限位电路或厂商回零模式。</summary>
     public sealed partial class SimulatedTaskDevice
     {
-        /// <summary>设置停止轴的测试起始条件；禁止覆盖正在运行的轴。</summary>
+        /// <summary>设置测试起始条件；禁止覆盖正在运行、已占用或待确认的轴。</summary>
         public void ConfigureAxis(string name, double position, bool enabled, bool homed)
         {
             lock (_sync)
             {
                 SimulatedAxis axis = FindAxis(name);
-                if (axis.Operation != null) throw new InvalidOperationException("仿真轴仍被占用：" + name);
+                if (axis.Operation != null || Resources.IsReserved("Axis:" + name))
+                    throw new InvalidOperationException("仿真轴仍被占用或待确认：" + name);
                 CheckPosition(name, position);
                 axis.Position = position;
                 axis.Enabled = enabled;
@@ -36,7 +37,7 @@ namespace MotionControl.TaskEngine.Simulation
             }
         }
 
-        /// <summary>接受一次单轴操作并锁定终点；同轴争用立即失败，不伪装资源仲裁。</summary>
+        /// <summary>接受单轴操作并锁定终点；执行器先排队取得资源，这里再防止重复占用。</summary>
         internal SimulatedMove BeginMove(string name, double target, bool relative, bool home)
         {
             lock (_sync)

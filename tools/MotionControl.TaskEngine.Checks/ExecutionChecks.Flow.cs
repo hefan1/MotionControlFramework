@@ -104,15 +104,16 @@ namespace MotionControl.TaskEngine.Checks
         private static Task UnsupportedBeforeStart()
         {
             var device = Device();
-            var resource = new ResourceScopeNode { Id = "zone", Name = "占区域", Resources = new List<string> { "Zone:Camera" }, Body = Sequence("body") };
-            var branch = new ConditionBranchNode { Id = "choose", Name = "条件", Condition = TaskFixtures.Condition(),
-                WhenTrue = Sequence("yes"), WhenFalse = Sequence("no", resource) };
-            ExpectStartFailure(TaskFixtures.Task(Output(), branch), device, "ResourceScope");
             var coordinated = new CoordinatedMoveNode { Id = "xy", Name = "插补", Profile = TaskFixtures.Profile(),
                 Targets = new List<AxisTarget> {
                     new AxisTarget { AxisName = "X", Target = TaskFixtures.Number("10") },
                     new AxisTarget { AxisName = "Y", Target = TaskFixtures.Number("20") } } };
             ExpectStartFailure(TaskFixtures.Task(Output(), coordinated), device, "CoordinatedMove");
+            var branch = new ConditionBranchNode { Id = "choose", Name = "条件", Condition = TaskFixtures.Condition(),
+                WhenTrue = Sequence("yes"), WhenFalse = Sequence("no", coordinated) };
+            ExpectStartFailure(TaskFixtures.Task(Output(), branch), device, "CoordinatedMove");
+            ExpectStartFailure(TaskFixtures.Task(Output(), ResourceScope("zone", new[] { "Axis:X", "Axis:Y" }, coordinated)),
+                device, "CoordinatedMove");
             CheckAssert.True(device.ReadOutput("Vacuum") == null, "能力拒绝前执行了输出。");
             return Task.CompletedTask;
         }

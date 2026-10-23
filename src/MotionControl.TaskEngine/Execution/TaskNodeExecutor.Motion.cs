@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Simulation;
+using MotionControl.TaskEngine.Resources;
 
 namespace MotionControl.TaskEngine.Execution
 {
@@ -26,10 +27,12 @@ namespace MotionControl.TaskEngine.Execution
         private async Task RunMotionAsync(TaskExecutionScope scope, string axisName, MoveAxisNode node, bool home)
         {
             SimulatedMove operation = null;
+            TaskResourceRequest acquired = null;
             double started = 0;
             double duration = 0;
             try
             {
+                acquired = await AcquireActionAsync(scope, "Axis:" + axisName).ConfigureAwait(false);
                 await scope.StepAsync(() =>
                 {
                     double target = home ? 0 : TaskRuntimeValues.Number(ReadRequired(node.Target));
@@ -59,6 +62,7 @@ namespace MotionControl.TaskEngine.Execution
             {
                 // 清理不等待恢复许可：暂停期间收到取消也必须立即释放自己的内存动作。
                 if (operation != null) _device.EndMove(operation, false);
+                if (acquired != null) _device.Resources.Release(acquired);
             }
         }
     }

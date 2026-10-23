@@ -52,6 +52,8 @@ namespace MotionControl.TaskEngine.Validation
             var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var active = new List<string>();
             foreach (string taskId in tasks.Keys) CheckCalls(taskId, calls, visited, active, issues);
+            if (!issues.Exists(issue => issue.Severity == TaskIssueSeverity.Error))
+                TaskResourceUsageValidator.Check(tasks, issues);
             return issues.AsReadOnly();
         }
 

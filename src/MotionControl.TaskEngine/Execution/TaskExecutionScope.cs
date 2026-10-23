@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.TaskEngine.Definitions;
+using MotionControl.TaskEngine.Resources;
 
 namespace MotionControl.TaskEngine.Execution
 {
@@ -20,6 +21,10 @@ namespace MotionControl.TaskEngine.Execution
         internal string ParentId { get; }
         /// <summary>运行取消或所在并行组取消令牌。</summary>
         internal CancellationToken Token { get; }
+        /// <summary>从外层资源范围继承的占用；普通动作不会把自己的临时占用传给其他节点。</summary>
+        internal TaskResourceRequest ResourceLease { get; set; }
+        /// <summary>当前资源或互锁等待原因，超时时保留在错误中。</summary>
+        internal string WaitDetail { get; set; }
         /// <summary>当前约束中最早到期的节点。</summary>
         private readonly TaskExecutionScope _deadlineOwner;
         /// <summary>本节点的绝对活动时间截止值，单位毫秒。</summary>
@@ -30,6 +35,7 @@ namespace MotionControl.TaskEngine.Execution
             TaskExecutionScope parent, CancellationToken token)
         {
             Run = run; TaskId = taskId; Node = node; ParentId = parent?.ExecutionId; Token = token;
+            ResourceLease = parent?.ResourceLease;
             _deadline = run.ActiveMilliseconds + node.TimeoutMs;
             _deadlineOwner = this;
             if (parent != null && parent._deadlineOwner._deadline <= _deadline)
@@ -42,7 +48,7 @@ namespace MotionControl.TaskEngine.Execution
             return Run.StepAsync(() =>
             {
                 if (Run.ActiveMilliseconds >= _deadlineOwner._deadline)
-                    throw _deadlineOwner.Error("执行超时，活动时限 " + _deadlineOwner.Node.TimeoutMs + " ms。",
+                    throw _deadlineOwner.Error("执行超时，活动时限 " + _deadlineOwner.Node.TimeoutMs + " ms。" + WaitDetail,
                         new TimeoutException("节点及其子动作未在活动时限内完成。"));
                 action();
             }, Token);

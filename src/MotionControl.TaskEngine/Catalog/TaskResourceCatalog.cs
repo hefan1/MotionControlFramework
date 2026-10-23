@@ -18,7 +18,7 @@ namespace MotionControl.TaskEngine.Catalog
         public IReadOnlyDictionary<string, DeviceVariableType> Variables { get; private set; }
         /// <summary>现有示教点；用逻辑轴和点位 ID 联合定位。</summary>
         public IReadOnlyList<TaskTeachPoint> TeachPoints { get; private set; }
-        /// <summary>轴资源及 Host 明确提供的区域、夹具等资源名称。</summary>
+        /// <summary>轴、输出资源及 Host 明确提供的区域、夹具等资源名称。</summary>
         public IReadOnlyCollection<string> Resources { get; private set; }
         /// <summary>读取时发现的可选配置缺失或旧点位无法映射等信息。</summary>
         public IReadOnlyList<string> Notices { get; private set; }
@@ -50,6 +50,7 @@ namespace MotionControl.TaskEngine.Catalog
             Axes = new ReadOnlyDictionary<string, TaskAxisInfo>(axisMap);
             Inputs = CopyNames(inputs);
             Outputs = CopyNames(outputs);
+            foreach (string output in Outputs) resourceNames.Add("Output:" + output);
 
             var variableMap = new Dictionary<string, DeviceVariableType>(StringComparer.OrdinalIgnoreCase);
             foreach (var variable in variables)
@@ -78,7 +79,17 @@ namespace MotionControl.TaskEngine.Catalog
                 points.Add(point);
             }
             TeachPoints = points.AsReadOnly();
-            if (namedResources != null) resourceNames.AddRange(namedResources);
+            if (namedResources != null)
+            {
+                foreach (string name in namedResources)
+                {
+                    CheckName(name);
+                    if (name.StartsWith("Axis:", StringComparison.OrdinalIgnoreCase)
+                        || name.StartsWith("Output:", StringComparison.OrdinalIgnoreCase))
+                        throw new ArgumentException("自定义资源不能使用保留前缀 Axis: 或 Output:：" + name);
+                    resourceNames.Add(name);
+                }
+            }
             Resources = CopyNames(resourceNames);
             Notices = new List<string>(notices ?? new string[0]).AsReadOnly();
         }

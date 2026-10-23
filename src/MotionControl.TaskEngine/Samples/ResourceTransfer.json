@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "taskId": "ResourceTransfer",
+  "name": "占用拍照区域并返回安全位置（内存样例）",
+  "revision": 1,
+  "root": {
+    "kind": "Sequence", "id": "cycle", "name": "一个周期", "timeoutMs": 10000,
+    "children": [
+      {
+        "kind": "ResourceScope", "id": "cameraArea", "name": "申请拍照区域", "timeoutMs": 5000,
+        "resources": ["Zone:Camera", "Axis:X", "Output:Vacuum"],
+        "entryInterlock": {
+          "axes": [{ "axisName": "X", "minimumPosition": 0, "maximumPosition": 0, "requireHomed": true }],
+          "inputs": [{ "inputName": "PartReady", "expected": true }]
+        },
+        "body": {
+          "kind": "Sequence", "id": "transfer", "name": "区域内动作", "timeoutMs": 4000,
+          "children": [
+            {
+              "kind": "SetOutput", "id": "vacuumOn", "name": "设置内存吸附输出",
+              "timeoutMs": 1000, "outputName": "Vacuum", "value": true
+            },
+            {
+              "kind": "MoveAxis", "id": "moveToCamera", "name": "X 到拍照位置", "timeoutMs": 1000,
+              "axisName": "X", "mode": "Absolute",
+              "target": { "source": "Constant", "dataType": "Number", "constant": "10" },
+              "profile": { "speed": 50, "acceleration": 100, "deceleration": 100 }
+            },
+            {
+              "kind": "SetOutput", "id": "vacuumOff", "name": "解除内存吸附输出",
+              "timeoutMs": 1000, "outputName": "Vacuum", "value": false
+            },
+            {
+              "kind": "MoveAxis", "id": "returnSafe", "name": "X 返回区域外位置", "timeoutMs": 1000,
+              "axisName": "X", "mode": "Absolute",
+              "target": { "source": "Constant", "dataType": "Number", "constant": "0" },
+              "profile": { "speed": 50, "acceleration": 100, "deceleration": 100 }
+            }
+          ]
+        },
+        "exitInterlock": {
+          "axes": [{ "axisName": "X", "minimumPosition": 0, "maximumPosition": 0, "requireHomed": true }]
+        }
+      }
+    ]
+  }
+}

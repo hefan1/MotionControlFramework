@@ -10,7 +10,7 @@ using MotionControl.TaskEngine.Validation;
 
 namespace MotionControl.TaskEngine.Execution
 {
-    /// <summary>阶段 2 的纯软件任务入口；只接受内存设备，没有真实运动卡注入入口。</summary>
+    /// <summary>纯软件任务入口；只接受内存设备，没有真实运动卡注入入口。</summary>
     public sealed class TaskExecutionEngine
     {
         /// <summary>先校验并冻结定义，再后台执行；返回值可暂停、恢复、取消和读取诊断。</summary>
@@ -81,8 +81,8 @@ namespace MotionControl.TaskEngine.Execution
         /// <summary>检查所有分支而非只检查本次选中路径；未实现能力不能静默跳过。</summary>
         private static void RequireSupported(string taskId, TaskNode node)
         {
-            if (node is CoordinatedMoveNode || node is ResourceScopeNode)
-                throw new NotSupportedException("任务 " + taskId + " / 节点 " + node.Id + "：阶段 2 尚不执行 " + node.Kind + "，请等待后续能力接入。");
+            if (node is CoordinatedMoveNode)
+                throw new NotSupportedException("任务 " + taskId + " / 节点 " + node.Id + "：当前尚不执行 " + node.Kind + "，请等待后续能力接入。");
             if (node is SequenceNode sequence)
                 foreach (TaskNode child in sequence.Children) RequireSupported(taskId, child);
             else if (node is ParallelGroupNode parallel)
@@ -92,6 +92,7 @@ namespace MotionControl.TaskEngine.Execution
                 RequireSupported(taskId, condition.WhenTrue);
                 if (condition.WhenFalse != null) RequireSupported(taskId, condition.WhenFalse);
             }
+            else if (node is ResourceScopeNode scope) RequireSupported(taskId, scope.Body);
         }
     }
 }
