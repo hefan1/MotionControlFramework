@@ -9,5 +9,6 @@
   <ItemGroup>
     <None Include="..\..\src\MotionControl.TaskEngine\Samples\TransferCycle.json" Link="Samples\TransferCycle.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\MotionControl.TaskEngine\Samples\ResourceTransfer.json" Link="Samples\ResourceTransfer.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\MotionControl.TaskEngine\Samples\AxisGroupPositioning.json" Link="Samples\AxisGroupPositioning.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

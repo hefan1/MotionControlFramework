@@ -37,6 +37,18 @@ namespace MotionControl.TaskEngine.Configuration
                     Require(data, "mode", JTokenType.String);
                     break;
                 case "CoordinatedMove": node = new CoordinatedMoveNode(); break;
+                case "MoveAxisGroup":
+                    node = new MoveAxisGroupNode();
+                    Require(data, "targets", JTokenType.Array);
+                    foreach (JToken target in (JArray)data["targets"])
+                    {
+                        if (!(target is JObject item)) throw new JsonSerializationException("轴组目标必须是对象：" + target.Path);
+                        Require(item, "axisName", JTokenType.String, (string)data["id"]);
+                        Require(item, "mode", JTokenType.String, (string)data["id"]);
+                        Require(item, "target", JTokenType.Object, (string)data["id"]);
+                        Require(item, "profile", JTokenType.Object, (string)data["id"]);
+                    }
+                    break;
                 case "AxisCommand":
                     node = new AxisCommandNode();
                     Require(data, "command", JTokenType.String);
@@ -67,11 +79,14 @@ namespace MotionControl.TaskEngine.Configuration
             throw new NotSupportedException("节点写入使用标准 JSON 属性序列化。");
         }
 
-        /// <summary>必填字段必须存在且具有指定 JSON 类型，不用默认值掩盖遗漏。</summary>
-        private static void Require(JObject data, string name, JTokenType type)
+        /// <summary>必填字段必须有指定 JSON 类型；组内目标沿用所属节点编号并保留具体字段路径。</summary>
+        private static void Require(JObject data, string name, JTokenType type, string ownerId = null)
         {
             if (data[name] == null || data[name].Type != type)
-                throw new JsonSerializationException("节点 " + data["id"] + " 的字段 " + name + " 缺失或类型错误。");
+            {
+                string path = string.IsNullOrEmpty(data.Path) ? name : data.Path + "." + name;
+                throw new JsonSerializationException("节点 " + (ownerId ?? data["id"]?.ToString()) + " 的字段 " + path + " 缺失或类型错误。");
+            }
         }
     }
 }

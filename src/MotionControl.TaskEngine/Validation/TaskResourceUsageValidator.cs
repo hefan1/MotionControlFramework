@@ -38,6 +38,11 @@ namespace MotionControl.TaskEngine.Validation
             else if (node is MoveAxisNode move) required = "Axis:" + move.AxisName;
             else if (node is AxisCommandNode command) required = "Axis:" + command.AxisName;
             else if (node is SetOutputNode output) required = "Output:" + output.OutputName;
+            else if (node is MoveAxisGroupNode group)
+            {
+                foreach (AxisPositionTarget axis in group.Targets)
+                    if (!resources.Contains("Axis:" + axis.AxisName)) error = "范围未声明动作资源：Axis:" + axis.AxisName;
+            }
             else if (node is CoordinatedMoveNode coordinated)
             {
                 foreach (AxisTarget axis in coordinated.Targets)

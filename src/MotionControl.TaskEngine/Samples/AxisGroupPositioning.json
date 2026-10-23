@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "taskId": "AxisGroupPositioning",
+  "name": "XY 定位到拍照位再返回（内存样例）",
+  "revision": 1,
+  "root": {
+    "kind": "Sequence", "id": "cycle", "name": "定位周期", "timeoutMs": 10000,
+    "children": [
+      {
+        "kind": "ResourceScope", "id": "camera", "name": "申请拍照区域和 XY 轴", "timeoutMs": 8000,
+        "resources": ["Zone:Camera", "Axis:X", "Axis:Y", "Output:Vacuum"],
+        "entryInterlock": {
+          "inputs": [{ "inputName": "PartReady", "expected": true }]
+        },
+        "body": {
+          "kind": "Sequence", "id": "body", "name": "区域内定位步骤", "timeoutMs": 6000,
+          "children": [
+            {
+              "kind": "MoveAxisGroup", "id": "toCamera", "name": "XY 各自定位，全部到位再继续", "timeoutMs": 2000,
+              "targets": [
+                {
+                  "axisName": "X", "mode": "Absolute",
+                  "target": { "source": "Constant", "dataType": "Number", "constant": "10" },
+                  "profile": { "speed": 50, "acceleration": 100, "deceleration": 100 }
+                },
+                {
+                  "axisName": "Y", "mode": "Absolute",
+                  "target": { "source": "TeachPoint", "axisName": "Y", "pointId": "P001" },
+                  "profile": { "speed": 25, "acceleration": 50, "deceleration": 50 }
+                }
+              ]
+            },
+            {
+              "kind": "SetOutput", "id": "arrived", "name": "全部到位后设置内存输出",
+              "timeoutMs": 1000, "outputName": "Vacuum", "value": true
+            },
+            {
+              "kind": "MoveAxisGroup", "id": "return", "name": "XY 返回明确的退出位置", "timeoutMs": 2000,
+              "targets": [
+                {
+                  "axisName": "X", "mode": "Absolute",
+                  "target": { "source": "Constant", "dataType": "Number", "constant": "0" },
+                  "profile": { "speed": 50, "acceleration": 100, "deceleration": 100 }
+                },
+                {
+                  "axisName": "Y", "mode": "Absolute",
+                  "target": { "source": "Constant", "dataType": "Number", "constant": "0" },
+                  "profile": { "speed": 50, "acceleration": 100, "deceleration": 100 }
+                }
+              ]
+            },
+            {
+              "kind": "SetOutput", "id": "off", "name": "关闭内存输出",
+              "timeoutMs": 1000, "outputName": "Vacuum", "value": false
+            }
+          ]
+        },
+        "exitInterlock": {
+          "axes": [
+            { "axisName": "X", "minimumPosition": 0, "maximumPosition": 0, "requireHomed": true },
+            { "axisName": "Y", "minimumPosition": 0, "maximumPosition": 0, "requireHomed": true }
+          ]
+        }
+      }
+    ]
+  }
+}

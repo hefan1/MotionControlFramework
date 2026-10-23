@@ -21,6 +21,10 @@ namespace MotionControl.TaskEngine.Validation
                 CheckAxisTarget(move.AxisName, move.Target, move.Mode == TaskMoveMode.Relative, node, path);
                 CheckProfile(move.Profile, node, path + ".profile");
             }
+            else if (node is MoveAxisGroupNode group)
+            {
+                CheckAxisGroup(group, path);
+            }
             else if (node is CoordinatedMoveNode coordinated)
             {
                 CheckCoordinatedMove(coordinated, path);

@@ -1,6 +1,7 @@
 # 任务模块：先从这些文件读起
 
 当前完成阶段 1 的定义/存储/校验、阶段 2 的纯软件仿真执行器，以及阶段 3 的资源仲裁和显式互锁。
+在此基础上已加入同卡轴组定位，各轴独立目标与速度，全部到位后继续。
 执行器只接收独立的 `SimulatedTaskDevice`，不连接控制器或 Host。编辑器页面尚未开发；定义校验通过不等于允许实际设备运行。
 
 ## 文件如何定位
@@ -139,12 +140,13 @@ if (result.State == TaskRunState.Failed)
 | Delay、WaitInput、WaitCondition | 可暂停/取消、有时限、有等待对象说明 |
 | SetVariable、SetOutput | 写独立内存变量或 DO；变量类型复用现有实现 |
 | MoveAxis | 匀速单轴模型，检查使能、回零参考、报警和动态终点范围 |
+| MoveAxisGroup | 同卡轴组各自定位，统一等待、暂停与异常收尾，全部到位后完成 |
 | AxisCommand.Home | 100ms 内存回零占位，成功建立仿真参考；不模拟任何厂商回零模式 |
 | AxisCommand.Stop | 只确认闲置轴；不夺取其他动作控制权，停止自己的动作应取消所属运行 |
 | ResourceScope | 整组申请 → 进入检查 → 顺序正文 → 退出确认 → 释放；异常正文转为待确认 |
 | CoordinatedMove | 启动前明确拒绝，包括未选中的分支和加载的子任务 |
 
-Move/Home 自动申请单根轴，SetOutput 自动申请该输出；冲突会排队，独立资源可以并行。排队取得轴后才读取目标；接受运动后继续固定终点。并行单轴不是协调插补。
+Move/Home 自动申请单根轴，MoveAxisGroup 一次申请整组轴，SetOutput 自动申请该输出；冲突会排队，独立资源可以并行。排队取得轴后才读取目标；接受运动后继续固定终点。并行单轴和轴组定位均不代表协调插补。
 
 变量默认无效，等待条件可以等到其有效；分支选择、变量赋值来源或运动目标无效则失败。All/Any/Not 中遇到未知子项也保持未知。一次条件求值使用同一份变量快照。有时区的 DateTime 按 UTC 时刻比较；不能混用有时区和没有时区的日期。
 
@@ -210,6 +212,47 @@ Console.WriteLine(reason);
 恢复会再次核对整组轴已停止、无报警及原退出条件，不允许空确认或旧申请编号。原本没有配置退出条件时，确认说明代表调用方已人工核实；它不是权限认证。恢复只释放该记录，不复位报警、不改轴位置、不改输出，也不重启旧任务。
 
 若实际位置不满足退出条件，本阶段会继续保留 Blocked；尚未提供占用状态下的人工点动撤离入口。`ConfigureAxis` 也不能覆盖已占用或待确认轴来绕过检查。后续实际设备接入需要单独实现权限、撤离操作、停止确认和恢复审计。
+
+## 轴组定位怎样使用
+
+阅读顺序：`Definitions/MoveAxisGroupNode.cs` → `TaskNodeExecutor.AxisGroups.cs` → `SimulatedTaskDevice.AxisGroups.cs`。相关方法分别负责定义、资源申请/目标解析，以及整组检查/逐轴推进/收尾。
+
+```csharp
+// 每根轴明确指定自己的目标和工艺参数；此定义交给现有 TaskExecutionEngine。
+var move = new MoveAxisGroupNode
+{
+    Id = "toCamera", Name = "XY 定位到拍照位置", TimeoutMs = 5000,
+    Targets = new List<AxisPositionTarget>
+    {
+        new AxisPositionTarget
+        {
+            AxisName = "X", Mode = TaskMoveMode.Absolute,
+            Target = new TaskValueBinding { Source = TaskValueSource.Constant,
+                DataType = DeviceVariableType.Number, Constant = "10" },
+            Profile = new TaskMotionProfile { Speed = 50, Acceleration = 100, Deceleration = 100 }
+        },
+        new AxisPositionTarget
+        {
+            AxisName = "Y", Mode = TaskMoveMode.Absolute,
+            Target = new TaskValueBinding { Source = TaskValueSource.TeachPoint,
+                AxisName = "Y", PointId = "P001" },
+            Profile = new TaskMotionProfile { Speed = 25, Acceleration = 50, Deceleration = 50 }
+        }
+    }
+};
+```
+
+例子需要 `System.Collections.Generic`、`MotionControl.TaskEngine.Definitions` 和 `MotionControl.Framework.Contracts.Variables` 命名空间。X/Y、Y 的 P001 示教点及行程必须在当前目录中存在。完整 JSON 往返样例是 `Samples/AxisGroupPositioning.json`，检查程序会实际读取并执行它。
+
+- 首版支持同一 ControllerId 的 2–64 根不重复逻辑轴；上限仅限制文件规模，实际卡轴数还须核实。直线轴和旋转轴可组合，每轴使用自己的工程单位和速度，没有混合单位的路径速度。
+- 每项的 Mode、Target、Profile 必须明确。常量、变量和示教点沿用单轴规则；相对距离不能引用绝对示教点。
+- 整组取得资源后，使用同一份变量快照读取目标，并在同一设备锁内检查所有起点、状态、终点和有限运动时长；任一项不合法，组内任一轴都不接受动作。单卡 SDK 的真实逐轴发指令是否能这样安排，仍须后续接入核实。
+- 各轴独立速度和进度；快轴先到位时也仍保留该轴资源，等待慢轴结束。暂停冻结剩余内存进度，恢复保留原终点，不重新读取目标或叠加相对距离。
+- 任一轴报警，包括先到位的轴报警，都让本组失败；取消和超时也会先停下本组未完成动作。诊断保留轴名、当前/目标位置、到位状态及原始原因，后续节点不继续执行。
+- 组外动作自动申请整组；放入 ResourceScope 时，范围必须列齐组内全部 Axis 资源，子任务中的组动作也继承同一凭证。异常范围仍遵循 Blocked/显式恢复规则。
+- `先抬 Z → XY 轴组定位 → 再降 Z` 应写成清楚的顺序节点；框架不通过轴名猜测安全顺序。需要控制中间轨迹时使用独立的 CoordinatedMove 能力，当前执行入口仍拒绝该未实现能力。
+
+内存模型继续按匀速模拟，Profile 中的加减速度经过校验但尚不模拟伺服加减速；本功能不保证真实卡同时启动或同时到达，不提供组内任一成员单独回零/停止指令。
 
 ## 后续阶段仍要做什么
 

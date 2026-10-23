@@ -75,6 +75,7 @@ namespace MotionControl.TaskEngine.Execution
             else if (node is SetVariableNode assignment)
                 await scope.StepAsync(() => _device.WriteVariable(assignment.VariableName, ReadRequired(assignment.Value))).ConfigureAwait(false);
             else if (node is MoveAxisNode move) await MoveAsync(scope, move).ConfigureAwait(false);
+            else if (node is MoveAxisGroupNode group) await MoveAxisGroupAsync(scope, group).ConfigureAwait(false);
             else if (node is AxisCommandNode command) await AxisCommandAsync(scope, command).ConfigureAwait(false);
             else throw new NotSupportedException("没有执行实现：" + node.Kind);
         }

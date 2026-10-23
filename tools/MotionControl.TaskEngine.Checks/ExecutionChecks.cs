@@ -58,7 +58,19 @@ namespace MotionControl.TaskEngine.Checks
                 { "动作资源遗漏和隐藏嵌套校验", ResourceUsageValidation },
                 { "互锁字段和位置边界校验", ResourceInterlockValidation },
                 { "互锁 JSON 保存兼容与备份", ResourcePersistence },
-                { "资源样例完整执行", ResourceSample }
+                { "资源样例完整执行", ResourceSample },
+                { "轴组定义及范围声明", GroupDefinitionValidation },
+                { "轴组 JSON 与修订备份", GroupJsonPersistence },
+                { "轴组独立到位与汇合", GroupIndependentArrival },
+                { "轴组排队后读取目标", GroupWaitingTargets },
+                { "重叠定位组完整排队", GroupOverlappingResources },
+                { "轴组零距离与独立工程单位", GroupMixedUnitsAndZeroMove },
+                { "轴组整组前置检查", GroupPreflight },
+                { "轴组暂停保留相对终点", GroupPauseRelative },
+                { "轴组取消与父子时限", GroupCancellationAndTimeout },
+                { "轴组运行与先到位轴报警", GroupRuntimeAlarm },
+                { "轴组子任务继承和区域恢复", GroupSubtaskAndScope },
+                { "轴组样例完整往返", GroupSample }
             };
             int failures = 0;
             foreach (var check in checks)
@@ -77,7 +89,7 @@ namespace MotionControl.TaskEngine.Checks
                     Runs.Clear();
                 }
             }
-            Console.WriteLine("阶段 2/3 纯软件仿真检查完成：共 " + checks.Count + " 组，失败 " + failures + " 组。未连接控制器。");
+            Console.WriteLine("任务执行纯软件仿真检查完成：共 " + checks.Count + " 组，失败 " + failures + " 组。未连接控制器。");
             return failures;
         }
 
