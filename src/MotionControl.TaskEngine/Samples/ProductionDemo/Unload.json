@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1, "taskId": "Unload", "name": "下料周期", "revision": 1,
+  "root": { "kind": "Sequence", "id": "unloadCycle", "name": "记录产品并下料", "timeoutMs": 2000, "children": [
+    { "kind": "SetVariable", "id": "product", "name": "记录实际下料编号", "timeoutMs": 1000, "variableName": "Unload.Id", "value": { "source": "Variable", "variableName": "Inspect.Id" } },
+    { "kind": "MoveAxis", "id": "unload", "name": "R 下料一个分度", "timeoutMs": 1000, "axisName": "R", "mode": "Relative", "target": { "source": "Constant", "dataType": "Number", "constant": "1" }, "profile": { "speed": 1000, "acceleration": 2000, "deceleration": 2000 } }
+  ] }
+}

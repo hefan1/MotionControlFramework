@@ -26,6 +26,10 @@ namespace MotionControl.TaskEngine.Execution
         private readonly Dictionary<string, TaskNodeSnapshot> _nodes = new Dictionary<string, TaskNodeSnapshot>();
         /// <summary>节点进入顺序，保证快照顺序可读。</summary>
         private readonly List<string> _nodeOrder = new List<string>();
+        /// <summary>展开数量超限后整次运行不能恢复，防止上层节点被重放。</summary>
+        private bool _expansionLimitHit;
+        /// <summary>供受控执行器区分可重试的步骤故障与整次运行规模错误。</summary>
+        internal bool ExpansionLimitHit { get { lock (_sync) return _expansionLimitHit; } }
         /// <summary>当前整体状态。</summary>
         private TaskRunState _state = TaskRunState.Running;
         /// <summary>本次终态错误。</summary>
@@ -126,7 +130,11 @@ namespace MotionControl.TaskEngine.Execution
             {
                 if (!_nodes.ContainsKey(scope.ExecutionId))
                 {
-                    if (_nodes.Count >= 10000) throw scope.Error("本次运行已达到 10000 个节点调用上限。");
+                    if (_nodes.Count >= 10000)
+                    {
+                        _expansionLimitHit = true;
+                        throw scope.Error("本次运行已达到 10000 个节点调用上限。");
+                    }
                     _nodeOrder.Add(scope.ExecutionId);
                 }
                 if (state == TaskNodeState.Failed && _nodes.ContainsKey(scope.ExecutionId))

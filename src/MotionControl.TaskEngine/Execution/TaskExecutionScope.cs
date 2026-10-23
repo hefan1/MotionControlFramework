@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.TaskEngine.Definitions;
@@ -25,10 +26,12 @@ namespace MotionControl.TaskEngine.Execution
         internal TaskResourceRequest ResourceLease { get; set; }
         /// <summary>当前资源或互锁等待原因，超时时保留在错误中。</summary>
         internal string WaitDetail { get; set; }
-        /// <summary>当前约束中最早到期的节点。</summary>
-        private readonly TaskExecutionScope _deadlineOwner;
+        /// <summary>父调用，故障复位后可为仍然活动的步骤重新建立时限。</summary>
+        private readonly TaskExecutionScope _parent;
         /// <summary>本节点的绝对活动时间截止值，单位毫秒。</summary>
-        private readonly double _deadline;
+        private double _deadline;
+        /// <summary>已接受的运动绝对终点；故障重进当前节点时不重复叠加相对位移。</summary>
+        internal Dictionary<string, double> AcceptedAxisTargets { get; } = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>从父调用继承取消和时间边界，并生成独立调用编号。</summary>
         internal TaskExecutionScope(TaskRun run, string taskId, TaskNode node,
@@ -36,10 +39,8 @@ namespace MotionControl.TaskEngine.Execution
         {
             Run = run; TaskId = taskId; Node = node; ParentId = parent?.ExecutionId; Token = token;
             ResourceLease = parent?.ResourceLease;
+            _parent = parent;
             _deadline = run.ActiveMilliseconds + node.TimeoutMs;
-            _deadlineOwner = this;
-            if (parent != null && parent._deadlineOwner._deadline <= _deadline)
-                _deadlineOwner = parent._deadlineOwner;
         }
 
         /// <summary>每次内存动作前检查取消和父子时限；暂停时异步等待恢复。</summary>
@@ -47,10 +48,24 @@ namespace MotionControl.TaskEngine.Execution
         {
             return Run.StepAsync(() =>
             {
-                if (Run.ActiveMilliseconds >= _deadlineOwner._deadline)
-                    throw _deadlineOwner.Error("执行超时，活动时限 " + _deadlineOwner.Node.TimeoutMs + " ms。" + WaitDetail,
+                TaskExecutionScope owner = this;
+                for (TaskExecutionScope parent = _parent; parent != null; parent = parent._parent)
+                    if (parent._deadline <= owner._deadline) owner = parent;
+                if (Run.ActiveMilliseconds >= owner._deadline)
+                    throw owner.Error("执行超时，活动时限 " + owner.Node.TimeoutMs + " ms。" + WaitDetail,
                         new TimeoutException("节点及其子动作未在活动时限内完成。"));
                 action();
+            }, Token);
+        }
+
+        /// <summary>只在整机复位启动恢复后给当前活动调用链新时限，不改变已完成节点和固定终点。</summary>
+        internal Task ResetTimeBudgetAsync()
+        {
+            return Run.StepAsync(() =>
+            {
+                double now = Run.ActiveMilliseconds;
+                for (TaskExecutionScope scope = this; scope != null; scope = scope._parent)
+                    scope._deadline = now + scope.Node.TimeoutMs;
             }, Token);
         }
 

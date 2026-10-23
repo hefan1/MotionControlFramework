@@ -99,15 +99,28 @@ namespace MotionControl.TaskEngine.Execution
             bool matched = false;
             while (!matched)
             {
-                await scope.StepAsync(() =>
+                try
                 {
-                    string reason;
-                    matched = _device.CheckInterlock(interlock, legacyCondition, out reason);
-                    scope.WaitDetail = matched ? null : phase + "：" + reason;
-                    _run.Report(scope, matched ? TaskNodeState.Running : TaskNodeState.Waiting, phase + "：" + reason);
-                    if (matched && releaseAfterMatch != null) _device.Resources.Release(releaseAfterMatch);
-                }).ConfigureAwait(false);
-                if (!matched) await scope.NextPollAsync().ConfigureAwait(false);
+                    await scope.StepAsync(() =>
+                    {
+                        string reason;
+                        matched = _device.CheckInterlock(interlock, legacyCondition, out reason);
+                        scope.WaitDetail = matched ? null : phase + "：" + reason;
+                        _run.Report(scope, matched ? TaskNodeState.Running : TaskNodeState.Waiting, phase + "：" + reason);
+                        if (matched && releaseAfterMatch != null) _device.Resources.Release(releaseAfterMatch);
+                    }).ConfigureAwait(false);
+                    if (!matched) await scope.NextPollAsync().ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (scope.Token.IsCancellationRequested) { throw; }
+                catch (Exception error)
+                {
+                    if (_station == null) throw;
+                    var failure = error as TaskExecutionException ?? scope.Error(error.Message, error);
+                    _run.Report(scope, TaskNodeState.Failed, failure.Message);
+                    // 正文已经完成时只恢复退出检查，不能从范围开头重放动作。
+                    await _station.RecoverAsync(scope, failure).ConfigureAwait(false);
+                    _station.Machine.MarkNodeRecovered(_station);
+                }
             }
         }
     }

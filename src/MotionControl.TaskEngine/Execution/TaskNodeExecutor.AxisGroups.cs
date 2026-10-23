@@ -30,7 +30,9 @@ namespace MotionControl.TaskEngine.Execution
 
                 await scope.StepAsync(() =>
                 {
-                    moves = _device.BeginGroupMove(ReadGroupTargets(node));
+                    moves = _device.BeginGroupMove(ReadGroupTargets(scope, node));
+                    foreach (SimulatedGroupAxisMove move in moves)
+                        scope.AcceptedAxisTargets[move.Operation.AxisName] = move.Operation.Target;
                     started = _run.ActiveMilliseconds;
                 }).ConfigureAwait(false);
                 bool completed = false;
@@ -55,12 +57,18 @@ namespace MotionControl.TaskEngine.Execution
         }
 
         /// <summary>全部目标使用同一份变量快照；任何目标无效时不发出组内任一动作。</summary>
-        private List<SimulatedAxisGroupTarget> ReadGroupTargets(MoveAxisGroupNode node)
+        private List<SimulatedAxisGroupTarget> ReadGroupTargets(TaskExecutionScope scope, MoveAxisGroupNode node)
         {
             var variables = _device.ReadVariables();
             var targets = new List<SimulatedAxisGroupTarget>();
             foreach (AxisPositionTarget target in node.Targets)
             {
+                double accepted;
+                if (scope.AcceptedAxisTargets.TryGetValue(target.AxisName, out accepted))
+                {
+                    targets.Add(new SimulatedAxisGroupTarget(target.AxisName, accepted, false, target.Profile.Speed));
+                    continue;
+                }
                 object value;
                 string reason;
                 if (!TaskRuntimeValues.TryRead(target.Target, _device.Catalog, variables, out value, out reason))

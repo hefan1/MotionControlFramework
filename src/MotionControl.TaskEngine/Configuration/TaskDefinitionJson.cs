@@ -40,7 +40,7 @@ namespace MotionControl.TaskEngine.Configuration
         }
 
         /// <summary>统一固定 JSON 规则，不启用任意类型还原。</summary>
-        private static JsonSerializer CreateSerializer()
+        internal static JsonSerializer CreateSerializer()
         {
             var serializer = new JsonSerializer
             {
@@ -57,7 +57,7 @@ namespace MotionControl.TaskEngine.Configuration
         }
 
         /// <summary>拒绝大小写重复字段和类型元数据，避免同一个字段存在两种解释。</summary>
-        private static void CheckPropertyNames(JToken token)
+        internal static void CheckPropertyNames(JToken token)
         {
             if (token is JObject item)
             {

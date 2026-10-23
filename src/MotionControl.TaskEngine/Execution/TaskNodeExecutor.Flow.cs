@@ -9,7 +9,7 @@ namespace MotionControl.TaskEngine.Execution
     /// <summary>顺序以外的分支、汇合和可观察等待。</summary>
     internal sealed partial class TaskNodeExecutor
     {
-        /// <summary>所有分支成功才继续；任一故障取消其他分支，并等待它们清理退出。</summary>
+        /// <summary>所有分支成功才继续；受控工位的可恢复故障先暂停等待，真正退出的分支才取消同组并等待清理。</summary>
         private async Task ParallelAsync(TaskExecutionScope scope, ParallelGroupNode parallel)
         {
             using (var groupCancellation = CancellationTokenSource.CreateLinkedTokenSource(scope.Token))

@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Simulation;
+using MotionControl.TaskEngine.Machine;
 
 namespace MotionControl.TaskEngine.Execution
 {
@@ -16,11 +17,14 @@ namespace MotionControl.TaskEngine.Execution
         private readonly SimulatedTaskDevice _device;
         /// <summary>启动时冻结的任务库。</summary>
         private readonly Dictionary<string, TaskDefinition> _library;
+        /// <summary>可选受控工位；独立单次执行时为空，保留原来的失败终态行为。</summary>
+        private readonly StationExecutionControl _station;
 
         /// <summary>保存本次运行依赖，不读取全局服务。</summary>
-        internal TaskNodeExecutor(TaskRun run, SimulatedTaskDevice device, Dictionary<string, TaskDefinition> library)
+        internal TaskNodeExecutor(TaskRun run, SimulatedTaskDevice device, Dictionary<string, TaskDefinition> library,
+            StationExecutionControl station = null)
         {
-            _run = run; _device = device; _library = library;
+            _run = run; _device = device; _library = library; _station = station;
         }
 
         /// <summary>执行一个节点并统一记录结果；只在动作收尾后标记取消或失败。</summary>
@@ -30,26 +34,42 @@ namespace MotionControl.TaskEngine.Execution
             await Task.Yield();
             var scope = new TaskExecutionScope(_run, taskId, node, parent, token);
             bool registered = false;
-            try
+            bool bodyCompleted = false;
+            while (true)
             {
-                await scope.StepAsync(() =>
+                try
                 {
-                    _run.Report(scope, TaskNodeState.Running, "正在执行：" + node.Name);
-                    registered = true;
-                }).ConfigureAwait(false);
-                await ExecuteBodyAsync(scope).ConfigureAwait(false);
-                await scope.StepAsync(() => _run.Report(scope, TaskNodeState.Completed, "执行完成。")).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
-            {
-                if (registered) _run.Report(scope, TaskNodeState.Cancelled, "已取消，节点清理完成。");
-                throw;
-            }
-            catch (Exception error)
-            {
-                TaskExecutionException failure = error as TaskExecutionException ?? scope.Error(error.Message, error);
-                if (registered) _run.Report(scope, TaskNodeState.Failed, failure.Message);
-                throw failure;
+                    await scope.StepAsync(() =>
+                    {
+                        _run.Report(scope, TaskNodeState.Running, "正在执行：" + node.Name);
+                        registered = true;
+                    }).ConfigureAwait(false);
+                    if (!bodyCompleted)
+                    {
+                        await ExecuteBodyAsync(scope).ConfigureAwait(false);
+                        bodyCompleted = true;
+                    }
+                    await scope.StepAsync(() => _run.Report(scope, TaskNodeState.Completed, "执行完成。")).ConfigureAwait(false);
+                    return;
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    if (registered) _run.Report(scope, TaskNodeState.Cancelled, "已取消，节点清理完成。");
+                    throw;
+                }
+                catch (Exception error)
+                {
+                    TaskExecutionException failure = error as TaskExecutionException ?? scope.Error(error.Message, error);
+                    // 父级时限可能在新子节点首次登记前到期；保留这个子节点，不回到父级重做前面的动作。
+                    if (!registered && _station != null && !_run.ExpansionLimitHit)
+                    {
+                        registered = true;
+                    }
+                    if (registered) _run.Report(scope, TaskNodeState.Failed, failure.Message);
+                    if (_station == null || !registered || _run.ExpansionLimitHit) throw failure;
+                    await _station.RecoverAsync(scope, failure).ConfigureAwait(false);
+                    _station.Machine.MarkNodeRecovered(_station);
+                }
             }
         }
 

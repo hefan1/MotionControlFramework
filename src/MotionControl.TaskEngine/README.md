@@ -2,6 +2,7 @@
 
 当前完成阶段 1 的定义/存储/校验、阶段 2 的纯软件仿真执行器，以及阶段 3 的资源仲裁和显式互锁。
 在此基础上已加入同卡轴组定位，各轴独立目标与速度，全部到位后继续。
+设备级入口也已加入：任务清单、独立循环/触发工位、可选初始化、统一复位启停、故障当前步骤恢复和连续生产监控。
 执行器只接收独立的 `SimulatedTaskDevice`，不连接控制器或 Host。编辑器页面尚未开发；定义校验通过不等于允许实际设备运行。
 
 ## 文件如何定位
@@ -15,6 +16,7 @@
 | `Execution` | 顺序、并行、分支如何运行，怎样暂停/取消，错误在哪个节点 |
 | `Simulation` | 纯内存的轴、DI/DO、变量；没有真实设备服务 |
 | `Resources` | 整组申请、冲突顺位、持有/等待/待确认诊断 |
+| `Machine` | 设备任务清单、独立工位循环、请求交接、整机复位启停和监控快照 |
 | `Samples` | 可直接阅读的示例任务；不会自动写入现场目录 |
 
 建议阅读顺序：`TaskDefinition` → `SequenceNode` → `MoveAxisNode` → `TaskResourceCatalogLoader.Load` → `TaskDefinitionValidator.Validate` → `TaskDefinitionStore.Save`。
@@ -253,6 +255,101 @@ var move = new MoveAxisGroupNode
 - `先抬 Z → XY 轴组定位 → 再降 Z` 应写成清楚的顺序节点；框架不通过轴名猜测安全顺序。需要控制中间轨迹时使用独立的 CoordinatedMove 能力，当前执行入口仍拒绝该未实现能力。
 
 内存模型继续按匀速模拟，Profile 中的加减速度经过校验但尚不模拟伺服加减速；本功能不保证真实卡同时启动或同时到达，不提供组内任一成员单独回零/停止指令。
+
+## 设备级运行：多个工位各自生产
+
+`ParallelGroup` 是一个任务内部的并行汇合。整机生产用 `TaskMachineController`：每个工位独立执行自己的任务周期，不用等待所有工位一起完成才开始下一周期。
+
+### 清单与正文分开
+
+- 任务正文仍是 `Tasks/*.json`，保存步骤与参数。
+- 设备清单固定是 `Parameters/TaskMachine.json`，由 `TaskMachineConfigurationStore` 保存。它记录设备标识、修订号、可选 `initializationTaskId` 和 `stations`。
+- 一个工位明确填写 `stationId`、`name`、`taskId`、`enabled` 和 `mode`。`mode` 为 `Once`（会话内一次）、`Cyclic`（独立循环）或 `OnRequest`（请求触发）。不同工位可以引用同一份任务，各有自己的运行实例。
+- `cycleIntervalMs` 默认 20，允许 1–60000 毫秒；是周期之间的轮询间隔，不是轴动作周期，也不提供实时调度保证。
+- OnRequest 还需 `requestVariable` / `completedVariable`，引用两个不同的已有 bool 变量。各触发工位的交接变量不能重复分配；其他模式不填写这两项。
+- 初始化任务不能同时作为自动工位任务。工位、任务定义在创建控制器时冻结，修改配置不会偷偷改变运行中的步骤。
+- 保存继续检查设备目录、版本、引用和修订备份；缺少 enabled/mode、未知字段或枚举、损坏文件会被拒绝。最多 128 份任务、128 个工位属于文件规模限制，不代表实体设备能力。
+
+传入控制器的是本次执行库。库中全部定义都要合法且已实现，包含未调用分支中的未支持动作也会在启动前拒绝；编辑器可保留草稿，但不能把草稿直接加入执行库。
+
+### UI 将来调用哪个入口
+
+```csharp
+// configurationRoot、machineId、definitions、catalog 由调用方明确提供。
+// definitions 包含本次各工位及它们调用的子任务，不重复任务标识。
+var store = new TaskMachineConfigurationStore(new MachineConfigurationStore(configurationRoot));
+var configuration = store.Load(machineId, definitions, catalog);
+var device = new SimulatedTaskDevice(catalog);
+
+// 本例假定 X 在目录中；其他轴和信号也必须按测试场景明确配置。
+device.ConfigureAxis("X", position: 0, enabled: true, homed: true);
+var machine = new TaskMachineController(configuration, definitions, device);
+try
+{
+    machine.Reset();  // 检查条件，通过后是 Ready，未开始动作。
+    machine.Start();  // 首次先执行可选初始化，然后各工位独立运行。
+    TaskMachineSnapshot snapshot = machine.GetSnapshot();
+    Console.WriteLine(snapshot.State);
+    machine.Pause();  // 普通停止按钮映射到这里，保留当前步骤。
+    machine.Reset();
+    machine.Start();  // 从当前中断处继续。
+}
+finally
+{
+    await machine.CloseAsync(); // 先等待所有运行收尾，再归还内存设备。
+}
+```
+
+新增命名空间 `MotionControl.TaskEngine.Machine`。上例仅说明组合和控制顺序，立刻暂停不代表产品已完成；实际测试可按快照等待指定周期数。目录内信号默认未知，OnRequest 场景需给出明确初值。
+
+| 操作 | 实际行为 |
+|---|---|
+| Reset | 首次/暂停/故障后检查有效停机条件、目录内轴报警、Blocked 区域和不可恢复执行器；通过后清锁存到 Ready，不清轴报警、不使能、不回零、不推进工位 |
+| Start | 只接受 Ready；首次创建后台工位，后续放行原运行，不重复启动线程或重复初始化 |
+| Pause | 冻结各运行的内存动作、活动计时及周期/交接提交；之后必须 Reset 再 Start |
+| SetStopAlarm | active=true 锁存并暂停整机；active=false 只解除条件，仍须复位启动 |
+| AbortAsync | 明确终止，取消并等待全部工位/动作收尾；旧会话不能复位续跑；不擅自复位输出和区域 |
+| CloseAsync | 等待终止收尾后释放设备所有权；重复调用等待同一关闭任务 |
+
+Reset 不统一要求轴已经使能或回零，免回零场景可不配置初始化；具体动作仍按其前置条件检查。初始化内存 Home 也只是生命周期模拟。实际设备回零方式应由后续运动适配层明确实现。
+
+### 请求与完成如何交接
+
+```text
+请求方：Request=true ──等待 Complete=true──> Request=false ──等待 Complete=false──> 下一件
+完成方：等 Request=true 且 Complete=false ──执行一次任务──> Complete=true
+        └──────────────────等 Request=false 后清 Complete=false──────────────────┘
+```
+
+只有请求方写 Request，完成方的控制器写 Complete；任务正文可以请求下游工位，但不要自行写本工位 Complete。完成信号未知时不猜 false；旧 Complete=true 时先等请求复归；请求保持 true 不会重复执行。任务成功前请求被撤销会锁存交接故障，恢复请求、复位启动后只发布完成，不重做产品动作。
+
+等待上游请求、初始化和周期间隔在单次 TaskRun 外面进行，不消耗动作节点时限。当前交接不含产品缓存或信号依赖图；业务互等靠明确步骤时限和等待详情定位。
+
+### 故障后究竟重做哪一步
+
+设备控制器管理的节点故障会先局部收尾，再暂停整机并保留当前异步调用进度。修复条件后 Reset、Start，只重进失败节点；已成功的顺序动作、已完成并行分支、已选中的分支不会从任务根重放。当前调用链重新获得节点时限。
+
+- MoveAxis/MoveAxisGroup 在接受动作时保存绝对终点，中途故障恢复不重新叠加相对位移，变量目标后续改变也不覆盖已接受终点。
+- 故障前尚未接受动作时，修复后重新读取当时目标与轴状态。
+- ResourceScope 中可恢复步骤仍留在原范围；退出条件超时只重查退出，正文不再执行；明确终止才展开清理，正文已进入的范围保留 Blocked。
+- 展开超过每周期 10000 个节点调用、执行器异常退出等情况禁止复位续跑，必须终止并核实状态，避免整段重放。
+- 原独立 `TaskExecutionEngine.Start` 仍然失败即终态；上述等待复位行为只属于设备控制器入口。
+
+整机控制器持有内存设备期间，禁止另一个控制器或独立 Start 绕过整机许可。场景的变量/输入故障注入仍可用，这些入口用于测试，不是现场手动控制权限。
+
+### 监控和连续生产样例
+
+`GetSnapshot()` 返回整机状态、初始化状态、工位阶段/成功周期数/当前或最近运行、锁存故障，以及共享资源 Waiting/Held/Blocked。节点含任务与调用编号、中文步骤和等待原因。旧快照不随运行改写，UI 无须保存可变 TaskRun。
+
+`Samples/ProductionDemo` 有上料、检测、下料三份任务正文和设备清单。检查命令实际读取这些 JSON，逐件传递编号、核对 30 件产品及最终动作次数，不是用 C# 循环替代任务正文：
+
+```powershell
+& tools/MotionControl.TaskEngine.Checks/bin/Debug/net48/MotionControl.TaskEngine.Checks.exe --production-demo
+```
+
+预期每工位成功 30 周期，X/Y 回到 0，旋转 R=30；X/Y 各 60 次、R 共 30 次动作，无遗留资源。它只操作独立内存设备，没有使用 ZDevelop、原生 SDK、Host 或实体 IO。
+
+本会话暂停恢复不等于软件重启恢复。清单持久化不保存异步调用栈、产品在制信息或资源占用；已有 Host 设备变量恢复不能自动恢复这些任务执行进度。
 
 ## 后续阶段仍要做什么
 

@@ -10,11 +10,12 @@ namespace MotionControl.TaskEngine.Checks
         /// <summary>执行定义与内存运行检查，或只读查看指定设备配置能提供的目录数量。</summary>
         private static int Main(string[] args)
         {
+            if (args.Length == 1 && args[0] == "--production-demo") return MachineChecks.RunProductionDemo();
             if (args.Length > 0)
             {
                 if (args.Length != 3 || args[0] != "--catalog")
                 {
-                    Console.Error.WriteLine("用法：不带参数运行离线检查；--catalog 配置根目录 MachineId 只读检查现场配置。");
+                    Console.Error.WriteLine("用法：不带参数运行离线检查；--production-demo 运行三工位内存演示；--catalog 配置根目录 MachineId 只读检查现场配置。");
                     return 2;
                 }
                 try
@@ -52,6 +53,7 @@ namespace MotionControl.TaskEngine.Checks
             Run("无 WPF、Host 或厂商依赖", JsonChecks.AssemblyBoundaries, ref failures);
             Console.WriteLine("阶段 1 离线检查完成：共 22 组，失败 " + failures + " 组。未连接设备。");
             failures += ExecutionChecks.RunAll();
+            failures += MachineChecks.RunAll();
             Run("执行后仍无 WPF、Host 或厂商依赖", JsonChecks.AssemblyBoundaries, ref failures);
             return failures == 0 ? 0 : 1;
         }

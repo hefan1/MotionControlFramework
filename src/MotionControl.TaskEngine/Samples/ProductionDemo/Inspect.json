@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1, "taskId": "Inspect", "name": "检测周期", "revision": 1,
+  "root": { "kind": "Sequence", "id": "inspectCycle", "name": "检测并交接下料", "timeoutMs": 4000, "children": [
+    { "kind": "MoveAxis", "id": "measure", "name": "Y 到检测位置", "timeoutMs": 1000, "axisName": "Y", "mode": "Absolute", "target": { "source": "Constant", "dataType": "Number", "constant": "5" }, "profile": { "speed": 1000, "acceleration": 2000, "deceleration": 2000 } },
+    { "kind": "SetVariable", "id": "product", "name": "记录本次检测编号", "timeoutMs": 1000, "variableName": "Inspect.Id", "value": { "source": "Variable", "variableName": "Load.Id" } },
+    { "kind": "SetVariable", "id": "request", "name": "请求下料工位", "timeoutMs": 1000, "variableName": "Unload.Request", "value": { "source": "Constant", "dataType": "Boolean", "constant": "true" } },
+    { "kind": "WaitCondition", "id": "waitComplete", "name": "等待下料完成", "timeoutMs": 3000, "condition": { "kind": "Compare", "comparison": "Equal", "left": { "source": "Variable", "variableName": "Unload.Complete" }, "right": { "source": "Constant", "dataType": "Boolean", "constant": "true" } } },
+    { "kind": "SetVariable", "id": "clearRequest", "name": "清下料请求", "timeoutMs": 1000, "variableName": "Unload.Request", "value": { "source": "Constant", "dataType": "Boolean", "constant": "false" } },
+    { "kind": "WaitCondition", "id": "waitCleared", "name": "等待下料完成信号复归", "timeoutMs": 1000, "condition": { "kind": "Compare", "comparison": "Equal", "left": { "source": "Variable", "variableName": "Unload.Complete" }, "right": { "source": "Constant", "dataType": "Boolean", "constant": "false" } } },
+    { "kind": "MoveAxis", "id": "return", "name": "Y 返回等待位置", "timeoutMs": 1000, "axisName": "Y", "mode": "Absolute", "target": { "source": "Constant", "dataType": "Number", "constant": "0" }, "profile": { "speed": 1000, "acceleration": 2000, "deceleration": 2000 } }
+  ] }
+}

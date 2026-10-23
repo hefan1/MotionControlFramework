@@ -7,6 +7,7 @@ using MotionControl.TaskEngine.Configuration;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Simulation;
 using MotionControl.TaskEngine.Validation;
+using MotionControl.TaskEngine.Machine;
 
 namespace MotionControl.TaskEngine.Execution
 {
@@ -16,6 +17,20 @@ namespace MotionControl.TaskEngine.Execution
         /// <summary>先校验并冻结定义，再后台执行；返回值可暂停、恢复、取消和读取诊断。</summary>
         public TaskRun Start(TaskDefinition definition, SimulatedTaskDevice device,
             IEnumerable<TaskDefinition> dependencies = null, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            return StartCore(definition, device, dependencies, null, cancellationToken);
+        }
+
+        /// <summary>整机控制器专用入口，先暂停再发布，确保全机启动许可生效前不接受动作。</summary>
+        internal TaskRun StartManaged(TaskDefinition definition, SimulatedTaskDevice device,
+            IEnumerable<TaskDefinition> dependencies, StationExecutionControl station, CancellationToken token)
+        {
+            return StartCore(definition, device, dependencies, station, token);
+        }
+
+        /// <summary>统一校验和冻结；设备所有权登记成功后才安排后台执行。</summary>
+        private TaskRun StartCore(TaskDefinition definition, SimulatedTaskDevice device,
+            IEnumerable<TaskDefinition> dependencies, StationExecutionControl station, CancellationToken cancellationToken)
         {
             if (device == null) throw new ArgumentNullException(nameof(device));
             var dependencyList = new List<TaskDefinition>();
@@ -34,21 +49,24 @@ namespace MotionControl.TaskEngine.Execution
             foreach (TaskDefinition task in library.Values) RequireSupported(task.TaskId, task.Root);
 
             var run = new TaskRun(frozen.TaskId, frozen.Revision);
+            try { device.RegisterRun(run.RunId, station?.Machine); }
+            catch { run.Cancel(); run.Finish(null); throw; }
+            if (station != null) run.Pause();
             // 不把取消令牌传给 Task.Run：即使立即取消，也必须进入后台的统一收尾路径。
-            Task.Run(() => ExecuteAsync(run, frozen, device, library, cancellationToken));
+            Task.Run(() => ExecuteAsync(run, frozen, device, library, station, cancellationToken));
             return run;
         }
 
         /// <summary>等待执行器和全部分支退出，最后只发布一次终态。</summary>
         private static async Task ExecuteAsync(TaskRun run, TaskDefinition definition, SimulatedTaskDevice device,
-            Dictionary<string, TaskDefinition> library, CancellationToken externalCancellation)
+            Dictionary<string, TaskDefinition> library, StationExecutionControl station, CancellationToken externalCancellation)
         {
             TaskExecutionException failure = null;
             try
             {
                 using (externalCancellation.Register(() => run.Cancel()))
                 {
-                    var executor = new TaskNodeExecutor(run, device, library);
+                    var executor = new TaskNodeExecutor(run, device, library, station);
                     await executor.ExecuteAsync(definition.TaskId, definition.Root, null, run.Cancellation).ConfigureAwait(false);
                 }
             }
@@ -61,7 +79,7 @@ namespace MotionControl.TaskEngine.Execution
             {
                 failure = new TaskExecutionException(definition.TaskId, definition.Root.Id, null, error.Message, error);
             }
-            finally { run.Finish(failure); }
+            finally { device.UnregisterRun(run.RunId); run.Finish(failure); }
         }
 
         /// <summary>复用阶段 1 的完整定义校验，任何错误都在动作开始前拒绝。</summary>
@@ -79,7 +97,7 @@ namespace MotionControl.TaskEngine.Execution
         }
 
         /// <summary>检查所有分支而非只检查本次选中路径；未实现能力不能静默跳过。</summary>
-        private static void RequireSupported(string taskId, TaskNode node)
+        internal static void RequireSupported(string taskId, TaskNode node)
         {
             if (node is CoordinatedMoveNode)
                 throw new NotSupportedException("任务 " + taskId + " / 节点 " + node.Id + "：当前尚不执行 " + node.Kind + "，请等待后续能力接入。");

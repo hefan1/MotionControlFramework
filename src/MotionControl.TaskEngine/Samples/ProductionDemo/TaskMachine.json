@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1, "machineId": "ProductionDemo", "name": "上料检测下料连续生产（内存场景）", "revision": 1,
+  "stations": [
+    { "stationId": "load", "name": "上料工位", "taskId": "Load", "enabled": true, "mode": "OnRequest", "cycleIntervalMs": 1, "requestVariable": "Feed.Request", "completedVariable": "Feed.Complete" },
+    { "stationId": "inspect", "name": "检测工位", "taskId": "Inspect", "enabled": true, "mode": "OnRequest", "cycleIntervalMs": 1, "requestVariable": "Inspect.Request", "completedVariable": "Inspect.Complete" },
+    { "stationId": "unload", "name": "下料工位", "taskId": "Unload", "enabled": true, "mode": "OnRequest", "cycleIntervalMs": 1, "requestVariable": "Unload.Request", "completedVariable": "Unload.Complete" }
+  ]
+}

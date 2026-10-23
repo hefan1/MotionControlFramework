@@ -35,8 +35,11 @@ namespace MotionControl.TaskEngine.Execution
                 acquired = await AcquireActionAsync(scope, "Axis:" + axisName).ConfigureAwait(false);
                 await scope.StepAsync(() =>
                 {
-                    double target = home ? 0 : TaskRuntimeValues.Number(ReadRequired(node.Target));
-                    operation = _device.BeginMove(axisName, target, !home && node.Mode == TaskMoveMode.Relative, home);
+                    double target = 0;
+                    bool acceptedBefore = !home && scope.AcceptedAxisTargets.TryGetValue(axisName, out target);
+                    if (!home && !acceptedBefore) target = TaskRuntimeValues.Number(ReadRequired(node.Target));
+                    operation = _device.BeginMove(axisName, target, !home && !acceptedBefore && node.Mode == TaskMoveMode.Relative, home);
+                    if (!home) scope.AcceptedAxisTargets[axisName] = operation.Target;
                     started = _run.ActiveMilliseconds;
                     // 回零只验证流程生命周期；100ms 是内存模型时间，不是硬件回零参数。
                     duration = home ? 100 : Math.Abs(operation.Target - operation.Start) / node.Profile.Speed * 1000;
