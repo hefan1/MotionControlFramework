@@ -26,6 +26,8 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         private ComboBox _comparison;
         /// <summary>明确的子条件表单集合。</summary>
         private readonly List<TaskConditionEditor> _children = new List<TaskConditionEditor>();
+        /// <summary>取反条件只允许一个子条件，删除后重新启用添加按钮。</summary>
+        private Button _add;
 
         /// <summary>从现有条件创建表单，读取时才写回新模型。</summary>
         internal TaskConditionEditor(TaskResourceCatalog catalog, TaskCondition condition, string language, int depth = 0)
@@ -37,13 +39,19 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             Children.Add(_kind); Children.Add(_body); Build(condition);
             _kind.SelectionChanged += KindChanged;
         }
-        /// <summary>组合类型变化时建立明确的新条件，不保留失效的隐藏字段。</summary>
+        /// <summary>人员切换组合类型时建立明确的新条件；已有空条件仅打开时保持原样。</summary>
         private void KindChanged(object sender, SelectionChangedEventArgs e)
-        { if (_kind.SelectedValue != null) Build((TaskConditionKind)_kind.SelectedValue == TaskConditionKind.Compare ? TaskEditorNodes.Condition() : new TaskCondition { Kind = (TaskConditionKind)_kind.SelectedValue }); }
+        {
+            if (_kind.SelectedValue == null) return;
+            var kind = (TaskConditionKind)_kind.SelectedValue;
+            var condition = kind == TaskConditionKind.Compare ? TaskEditorNodes.Condition() : new TaskCondition { Kind = kind };
+            if (kind != TaskConditionKind.Compare) condition.Conditions.Add(TaskEditorNodes.Condition());
+            Build(condition);
+        }
         /// <summary>按有限的四种类型直接创建控件。</summary>
         private void Build(TaskCondition condition)
         {
-            _body.Children.Clear(); _children.Clear();
+            _body.Children.Clear(); _children.Clear(); _add = null;
             if (condition.Kind == TaskConditionKind.Compare)
             {
                 _left = new TaskValueEditor(_catalog, condition.Left, _language);
@@ -57,15 +65,18 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             else
             {
                 foreach (var child in condition.Conditions) AddChild(child);
-                if (_children.Count == 0) AddChild(null);
-                if (condition.Kind != TaskConditionKind.Not) _body.Children.Add(TaskEditingUi.Button(this, "添加条件", AddCondition));
+                _add = TaskEditingUi.Button(this, "添加条件", AddCondition);
+                _body.Children.Add(_add);
+                UpdateAddPermission();
             }
         }
         /// <summary>明确新增一个子条件，限制编辑器深度。</summary>
         private void AddCondition(object sender, RoutedEventArgs e)
         {
             if (_depth >= 8) { MessageBox.Show(TaskEditingUi.T(this, "条件最多编辑九层")); return; }
+            if ((TaskConditionKind)_kind.SelectedValue == TaskConditionKind.Not && _children.Count > 0) return;
             AddChild(null);
+            UpdateAddPermission();
         }
         /// <summary>子条件带自己的移除入口，避免删除父条件。</summary>
         private void AddChild(TaskCondition value)
@@ -75,13 +86,21 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             var panel = new StackPanel { Margin = new Thickness(10, 6, 0, 6) };
             var remove = TaskEditingUi.Button(this, "移除此条件", RemoveCondition); remove.Tag = child;
             panel.Children.Add(child); panel.Children.Add(remove); child.Tag = panel;
-            _children.Add(child); _body.Children.Add(panel);
+            _children.Add(child);
+            if (_add == null) _body.Children.Add(panel);
+            else _body.Children.Insert(_body.Children.IndexOf(_add), panel);
         }
         /// <summary>移除明确选中的子条件，最终数量交由校验器检查。</summary>
         private void RemoveCondition(object sender, RoutedEventArgs e)
         {
             var child = (TaskConditionEditor)((Button)sender).Tag;
             _children.Remove(child); _body.Children.Remove((UIElement)child.Tag);
+            UpdateAddPermission();
+        }
+        /// <summary>取反恰好容纳一个子条件，空的取反仍可补回；过多的旧条件保留给校验器提示。</summary>
+        private void UpdateAddPermission()
+        {
+            if (_add != null) _add.IsEnabled = (TaskConditionKind)_kind.SelectedValue != TaskConditionKind.Not || _children.Count == 0;
         }
         /// <summary>读取当前表单，组合条件只保存子条件，不混入比较字段。</summary>
         internal TaskCondition Read()

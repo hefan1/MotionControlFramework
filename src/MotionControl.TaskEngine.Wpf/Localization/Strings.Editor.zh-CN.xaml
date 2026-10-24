@@ -192,4 +192,8 @@
  <sys:String x:Key="任务编辑.当前步骤暂时只读，原定义保留">当前步骤暂时只读，原定义保留</sys:String>
  <sys:String x:Key="任务编辑.错误">错误</sys:String>
  <sys:String x:Key="任务编辑.提醒">提醒</sys:String>
+ <sys:String x:Key="任务编辑.保留草稿副本">保留草稿副本</sys:String>
+ <sys:String x:Key="任务编辑.载入最新草稿">载入最新草稿</sys:String>
+ <sys:String x:Key="任务编辑.草稿副本已保留，原草稿尚未保存">草稿副本已保留，原草稿尚未保存</sys:String>
+ <sys:String x:Key="任务编辑.载入最新草稿会放弃本窗口未保存修改，建议先保留草稿副本">载入最新草稿会放弃本窗口未保存修改，建议先保留草稿副本。</sys:String>
 </ResourceDictionary>

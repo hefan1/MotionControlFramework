@@ -20,6 +20,7 @@ namespace MotionControl.TaskEngine.Editing
             using (AcquireEditLock(draft.MachineId))
             {
                 RequireNoPendingApply(draft.MachineId);
+                RequireCurrentDraft(draft);
                 if (ComputeSignature(draft.MachineId) != draft.BaseSignature)
                     throw new InvalidOperationException("运行任务或关联配置已经变化，请重新载入后检查；当前草稿仍保留。");
                 var errors = Check(draft).Where(issue => issue.Severity == TaskIssueSeverity.Error).ToList();
@@ -54,6 +55,7 @@ namespace MotionControl.TaskEngine.Editing
                 candidate.BaseSignature = ComputeSignature(candidate.MachineId);
                 try { File.Delete(Path.Combine(_store.GetMachineDirectory(candidate.MachineId), DraftPath)); }
                 catch (Exception error) { warning = "运行文件已应用，但旧草稿未能清理：" + error.Message; }
+                candidate.DraftSignature = CurrentDraftSignature(candidate.MachineId);
                 return candidate;
             }
         }

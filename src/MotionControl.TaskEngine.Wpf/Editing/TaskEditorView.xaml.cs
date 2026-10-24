@@ -22,6 +22,8 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         public bool IsDirty { get; private set; }
         /// <summary>保存草稿时通知所属任务配置页持久化完整草稿包。</summary>
         public event EventHandler DraftSaved;
+        /// <summary>请求所属页面保留本窗口的完整草稿副本，不覆盖共享草稿。</summary>
+        public event EventHandler LocalCopyRequested;
         /// <summary>返回所属任务配置页。</summary>
         public event EventHandler BackRequested;
         /// <summary>请求 Host 只读定位已有页面。</summary>
@@ -154,8 +156,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         /// <summary>读取选中节点的具体字段，不自动执行或校验运动状态。</summary>
         private void ReadDetails()
         {
-            Definition.Name = TaskNameBox.Text;
-            if (_selected == null || _readOnlyDetails) return;
+            if (_selected == null || _readOnlyDetails) { Definition.Name = TaskNameBox.Text; return; }
             string name = ((TextBox)_fields["Name"]).Text;
             int timeout = TaskEditingUi.Integer((TextBox)_fields["Timeout"], "步骤超时(ms)");
             if (_selected is MoveAxisNode || _selected is MoveAxisGroupNode || _selected is AxisCommandNode) ReadMotion();
@@ -227,6 +228,20 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 _savedDefinitionJson = TaskDefinitionJson.Serialize(Definition); StatusText.Text = T("草稿已保存，未改变运行版本"); RebuildTree(_selected.Id); return true; }
             catch (Exception error) { StatusText.Text = error.ToString(); return false; }
         }
+        /// <summary>保留本窗口副本也不等于已保存公共草稿，未保存标记继续保留。</summary>
+        private void LocalCopy_Click(object sender, RoutedEventArgs e)
+        {
+            if (!TryRead()) return;
+            try
+            {
+                if (LocalCopyRequested == null) throw new InvalidOperationException("未配置草稿副本保存入口。");
+                LocalCopyRequested.Invoke(this, EventArgs.Empty);
+            }
+            catch (Exception error) { StatusText.Text = error.ToString(); }
+        }
+        /// <summary>显示独立副本的实际路径，便于现场人员找回；不清除未保存状态。</summary>
+        public void ShowLocalCopySaved(string path)
+        { StatusText.Text = T("草稿副本已保留，原草稿尚未保存") + "\n" + path; }
         /// <summary>显示当前任务与依赖定义的问题，不持久化定义。</summary>
         private void Check_Click(object sender, RoutedEventArgs e)
         {

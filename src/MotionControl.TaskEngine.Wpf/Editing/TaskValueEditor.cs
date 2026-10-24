@@ -61,7 +61,10 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         /// <summary>运动目标的点位轴由明确的逻辑轴选择决定。</summary>
         internal void FixAxis() { _axis.IsEnabled = false; }
         /// <summary>用户切换逻辑轴后更新点位目录并清除旧点位。</summary>
-        internal void SelectAxis(string name) { _axis.SelectedItem = name ?? string.Empty; }
+        internal void SelectAxis(string name)
+        {
+            _axis.SelectedItem = _axis.Items.Cast<string>().FirstOrDefault(value => string.Equals(value, name ?? string.Empty, StringComparison.OrdinalIgnoreCase));
+        }
         /// <summary>相对移动禁用新选示教点；已有错误引用保留给检查定位。</summary>
         internal void AllowTeachPoint(bool allowed)
         { foreach (ComboBoxItem item in _source.Items) if ((TaskValueSource)item.Tag == TaskValueSource.TeachPoint) item.IsEnabled = allowed; }
@@ -77,10 +80,12 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         {
             _point.Items.Clear(); _point.Items.Add(new ComboBoxItem { Tag = string.Empty, Content = string.Empty });
             foreach (var point in _catalog.TeachPoints.Where(item => string.Equals(item.AxisName, _axis.SelectedItem as string, StringComparison.OrdinalIgnoreCase)))
-                _point.Items.Add(new ComboBoxItem { Tag = point.PointId, Content = point.Name + " [" + point.PointId + "] = " + point.Position });
-            if (!string.IsNullOrEmpty(selected) && !_point.Items.Cast<ComboBoxItem>().Any(item => (string)item.Tag == selected))
+                _point.Items.Add(new ComboBoxItem { Tag = string.Equals(point.PointId, selected, StringComparison.OrdinalIgnoreCase) ? selected : point.PointId,
+                    Content = point.Name + " [" + point.PointId + "] = " + point.Position });
+            ComboBoxItem existing = _point.Items.Cast<ComboBoxItem>().FirstOrDefault(item => string.Equals((string)item.Tag, selected ?? string.Empty, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrEmpty(selected) && existing == null)
                 _point.Items.Add(new ComboBoxItem { Tag = selected, Content = selected + " (?)" });
-            _point.SelectedValue = selected ?? string.Empty;
+            _point.SelectedValue = existing == null ? selected ?? string.Empty : (string)existing.Tag;
         }
         /// <summary>只有当前来源的字段可见，避免现场误填无关参数。</summary>
         private void ShowSource()

@@ -37,7 +37,11 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             var values = new List<string> { string.Empty };
             values.AddRange(names.Where(name => !string.IsNullOrWhiteSpace(name)).Distinct(StringComparer.OrdinalIgnoreCase));
             if (!string.IsNullOrEmpty(value) && !values.Contains(value, StringComparer.OrdinalIgnoreCase)) values.Add(value);
-            return new ComboBox { ItemsSource = values, SelectedItem = value ?? string.Empty, MinHeight = 30, Padding = new Thickness(5) };
+            // 目录不区分大小写，SelectedItem 却区分；保留原引用拼写，避免只查看就改动定义。
+            string selected = value ?? string.Empty;
+            int index = values.FindIndex(name => string.Equals(name, selected, StringComparison.OrdinalIgnoreCase));
+            if (index >= 0) values[index] = selected;
+            return new ComboBox { ItemsSource = values, SelectedItem = selected, MinHeight = 30, Padding = new Thickness(5) };
         }
 
         /// <summary>创建少量固定选项，内部值与显示语言分开。</summary>

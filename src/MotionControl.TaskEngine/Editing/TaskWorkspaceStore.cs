@@ -37,9 +37,15 @@ namespace MotionControl.TaskEngine.Editing
             string path = Path.Combine(root, DraftPath);
             if (useDraft && File.Exists(path))
             {
-                var draft = ReadDraft(File.ReadAllText(path));
-                RequireDraftShape(machineId, draft);
-                return draft;
+                byte[] bytes = File.ReadAllBytes(path);
+                using (var stream = new MemoryStream(bytes))
+                using (var reader = new StreamReader(stream, Encoding.UTF8, true))
+                {
+                    var draft = ReadDraft(reader.ReadToEnd());
+                    RequireDraftShape(machineId, draft);
+                    draft.DraftSignature = HashBytes(bytes);
+                    return draft;
+                }
             }
             var result = new TaskWorkspaceDocument { MachineId = machineId, BaseSignature = ComputeSignature(machineId) };
             var taskStore = new TaskDefinitionStore(_store);
@@ -53,18 +59,60 @@ namespace MotionControl.TaskEngine.Editing
             return result;
         }
 
-        /// <summary>允许语义未完成的草稿，但必须能严格往返读取，且文件名与设备边界有效。</summary>
+        /// <summary>允许业务未完成的草稿；锁内核对原草稿签名，拒绝覆盖别的窗口或外部更新。</summary>
         public void SaveDraft(TaskWorkspaceDocument draft)
         {
             RequireDraftShape(draft?.MachineId, draft);
             using (AcquireEditLock(draft.MachineId))
             {
                 RequireNoPendingApply(draft.MachineId);
-                draft.SavedAt = DateTime.Now;
+                RequireCurrentDraft(draft);
+                DateTime savedAt = DateTime.Now;
                 JObject document = JObject.FromObject(draft, TaskDefinitionJson.CreateSerializer());
+                document["savedAt"] = JToken.FromObject(savedAt, TaskDefinitionJson.CreateSerializer());
                 RequireDraftShape(draft.MachineId, ReadDraft(document.ToString()));
                 _store.SaveJson(draft.MachineId, DraftPath, document);
+                draft.SavedAt = savedAt;
+                draft.DraftSignature = CurrentDraftSignature(draft.MachineId);
             }
+        }
+
+        /// <summary>把本窗口完整内容保留到唯一备份文件；可带入尚未保存的单个任务，不修改原工作区。</summary>
+        public string SaveLocalCopy(TaskWorkspaceDocument draft, TaskWorkspaceTask editedTask = null)
+        {
+            RequireDraftShape(draft?.MachineId, draft);
+            var copy = ReadDraft(JObject.FromObject(draft, TaskDefinitionJson.CreateSerializer()).ToString());
+            if (editedTask != null)
+            {
+                var target = copy.Tasks.Single(item => string.Equals(item.FileName, editedTask.FileName, StringComparison.OrdinalIgnoreCase));
+                target.Definition = TaskDefinitionJson.Deserialize(TaskDefinitionJson.Serialize(editedTask.Definition));
+            }
+            RequireDraftShape(draft.MachineId, copy);
+            JObject document = JObject.FromObject(copy, TaskDefinitionJson.CreateSerializer());
+            string relativePath = "Backups/TaskLocal-" + Guid.NewGuid().ToString("N") + ".json";
+            _store.SaveJson(draft.MachineId, relativePath, document);
+            return Path.GetFullPath(Path.Combine(_store.GetMachineDirectory(draft.MachineId), relativePath));
+        }
+
+        /// <summary>同一份草稿从读取到写入期间发生变化时，保留两边内容并要求重新核对。</summary>
+        private void RequireCurrentDraft(TaskWorkspaceDocument draft)
+        {
+            if (!string.Equals(draft.DraftSignature, CurrentDraftSignature(draft.MachineId), StringComparison.Ordinal))
+                throw new InvalidOperationException("任务草稿已被其他窗口或外部程序保存、删除或替换，本次未覆盖任何文件。请先保留当前编辑内容，再重新打开任务配置核对最新草稿。");
+        }
+
+        /// <summary>只读取草稿文件的实际字节签名；不存在与空文件明确区分。</summary>
+        private string CurrentDraftSignature(string machineId)
+        {
+            string path = Path.Combine(_store.GetMachineDirectory(machineId), DraftPath);
+            return File.Exists(path) ? HashBytes(File.ReadAllBytes(path)) : null;
+        }
+
+        /// <summary>使用固定 SHA256 表示内容，不受保存时间或文件时间精度影响。</summary>
+        private static string HashBytes(byte[] bytes)
+        {
+            using (var hash = SHA256.Create())
+                return BitConverter.ToString(hash.ComputeHash(bytes)).Replace("-", string.Empty);
         }
 
         /// <summary>人员确认放弃后删除当前草稿，先保留一份可找回的副本。</summary>

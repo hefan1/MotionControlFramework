@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Machine;
+using Newtonsoft.Json;
 
 namespace MotionControl.TaskEngine.Editing
 {
@@ -14,6 +15,9 @@ namespace MotionControl.TaskEngine.Editing
         public string MachineId { get; set; }
         /// <summary>开始编辑时运行定义及关联配置的签名，应用前用于发现外部修改。</summary>
         public string BaseSignature { get; set; }
+        /// <summary>本窗口最近载入或保存的草稿文件签名；空值表示当时没有草稿，只存内存，不改变 JSON 格式。</summary>
+        [JsonIgnore]
+        public string DraftSignature { get; set; }
         /// <summary>最近一次完整保存草稿的本机时间。</summary>
         public DateTime SavedAt { get; set; }
         /// <summary>设备工位安排、初始化与共享资源定义。</summary>

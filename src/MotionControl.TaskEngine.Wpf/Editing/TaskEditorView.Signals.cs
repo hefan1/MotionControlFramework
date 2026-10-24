@@ -44,12 +44,17 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             ((TextBlock)_fields["TypeNote"]).Text = known ? TaskValueEditor.TypeName(type) : T("未选择或引用失效");
             if (known && updateConstant) ((TaskValueEditor)_fields["Binding"]).SelectConstantType(type);
         }
-        /// <summary>从当前表单读回明确模型，不调用 IO 或变量运行服务。</summary>
+        /// <summary>先完成字段解析再替换模型；失败时保留原值，不调用 IO 或变量运行服务。</summary>
         private void ReadSignals()
         {
             if (_selected is WaitInputNode wait) { wait.InputName = ((ComboBox)_fields["Input"]).SelectedItem as string ?? ""; wait.Expected = (bool)((ComboBox)_fields["Expected"]).SelectedValue; }
             else if (_selected is SetOutputNode output) { output.OutputName = ((ComboBox)_fields["Output"]).SelectedItem as string ?? ""; output.Value = (bool)((ComboBox)_fields["Value"]).SelectedValue; }
-            else if (_selected is SetVariableNode variable) { variable.VariableName = ((ComboBox)_fields["Variable"]).SelectedItem as string ?? ""; variable.Value = ((TaskValueEditor)_fields["Binding"]).Read(); }
+            else if (_selected is SetVariableNode variable)
+            {
+                TaskValueBinding value = ((TaskValueEditor)_fields["Binding"]).Read();
+                variable.VariableName = ((ComboBox)_fields["Variable"]).SelectedItem as string ?? "";
+                variable.Value = value;
+            }
             else if (_selected is DelayNode delay) delay.Milliseconds = TaskEditingUi.Integer((TextBox)_fields["Milliseconds"], "延时(ms)");
         }
     }

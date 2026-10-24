@@ -18,7 +18,7 @@ using Newtonsoft.Json.Linq;
 namespace MotionControl.TaskEditing.Checks
 {
     /// <summary>有实际文件与 WPF 控件的内部回归，不连接控制器，不代替桌面屏幕验收。</summary>
-    internal static class Program
+    internal static partial class Program
     {
         /// <summary>保留明确失败信息和退出状态。</summary>
         [STAThread]
@@ -33,7 +33,12 @@ namespace MotionControl.TaskEditing.Checks
             Check("路径、未知字段和缺失版本拒绝", InvalidDraft, ref failed);
             Check("分类表单、复制ID和保存交互", EditingControls, ref failed);
             Check("中英文及两种尺寸离屏布局", Layouts, ref failed);
-            Console.WriteLine("任务编辑内部检查：7 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
+            Check("多窗口草稿冲突与本地副本", DraftWindowConflicts, ref failed);
+            Check("大小写无关引用完整保留", CaseInsensitiveReferences, ref failed);
+            Check("空组合条件往返与取反条件重建", ConditionRoundTrip, ref failed);
+            Check("工位任务选择与草稿副本交互", ConfigurationContext, ref failed);
+            Check("无效参数不部分修改任务模型", InvalidFieldsKeepDefinition, ref failed);
+            Console.WriteLine("任务编辑内部检查：12 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
             return failed == 0 ? 0 : 1;
         }
         /// <summary>逐项执行并保留异常堆栈。</summary>

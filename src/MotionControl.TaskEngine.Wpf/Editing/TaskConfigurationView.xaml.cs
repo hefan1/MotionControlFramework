@@ -96,12 +96,28 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         }
         /// <summary>读取本页语言文字。</summary>
         private string T(string value) { return TaskEditingUi.T(this, value); }
-        /// <summary>加载完整草稿和目录，失败显示原始文件错误。</summary>
+        /// <summary>完整读取草稿、目录与来源状态后再替换页面；读取失败保留本窗口的编辑内容。</summary>
         public void LoadWorkspace()
         {
-            try { _workspace = _store.Load(_machineId); _catalog = _store.LoadCatalog(_workspace); _sourceChanged = _store.ComputeSignature(_machineId) != _workspace.BaseSignature;
-                _dirty = false; Rebuild(); StatusText.Text = _workspace.SavedAt == default(DateTime) ? T("已从运行文件载入，尚无草稿") : T("草稿与现有目录已载入") + " · " + _workspace.SavedAt.ToString("yyyy-MM-dd HH:mm:ss"); }
-            catch (Exception error) { _workspace = null; StatusText.Text = error.ToString(); }
+            try
+            {
+                var loaded = _store.Load(_machineId);
+                var catalog = _store.LoadCatalog(loaded);
+                bool sourceChanged = _store.ComputeSignature(_machineId) != loaded.BaseSignature;
+
+                _workspace = loaded;
+                _catalog = catalog;
+                _sourceChanged = sourceChanged;
+                _editor = null;
+                ContentHost.Content = MainTabs;
+                ShowEditor(false);
+                _dirty = false;
+                Rebuild();
+                StatusText.Text = _workspace.SavedAt == default(DateTime)
+                    ? T("已从运行文件载入，尚无草稿")
+                    : T("草稿与现有目录已载入") + " · " + _workspace.SavedAt.ToString("yyyy-MM-dd HH:mm:ss");
+            }
+            catch (Exception error) { StatusText.Text = error.ToString(); }
             RefreshPermission(null, EventArgs.Empty);
         }
         /// <summary>页面可见时更新按钮边界。</summary>
@@ -145,14 +161,21 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             IssuesGrid.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
             ConfigIssueRow.Height = new GridLength(show ? 110 : 0);
         }
-        /// <summary>更新两个列表与具体表单，不复制硬件定义。</summary>
+        /// <summary>更新列表并按稳定标识恢复工位和任务选择；保存或换语言不跳回第一行。</summary>
         private void Rebuild()
         {
-            if (_workspace == null) return; _loading = true; _station = null;
+            if (_workspace == null) return;
+            string stationId = _station?.StationId;
+            string taskId = (TasksGrid.SelectedItem as TaskWorkspaceTask)?.Definition.TaskId;
+            _loading = true; _station = null;
             TasksGrid.ItemsSource = _workspace.Tasks; TasksGrid.Items.Refresh();
+            TasksGrid.SelectedItem = _workspace.Tasks.FirstOrDefault(item => string.Equals(item.Definition.TaskId, taskId, StringComparison.OrdinalIgnoreCase));
             StationsGrid.ItemsSource = _workspace.Machine.Stations.Select(item => new TaskStationEditRow(item,
-                _workspace.Tasks.FirstOrDefault(task => task.Definition.TaskId == item.TaskId)?.Definition.Name ?? item.TaskId, T(ModeName(item.Mode)))).ToList();
-            BuildMachine(); if (StationsGrid.Items.Count > 0) StationsGrid.SelectedIndex = 0;
+                _workspace.Tasks.FirstOrDefault(task => string.Equals(task.Definition.TaskId, item.TaskId, StringComparison.OrdinalIgnoreCase))?.Definition.Name ?? item.TaskId, T(ModeName(item.Mode)))).ToList();
+            BuildMachine();
+            var selected = StationsGrid.Items.Cast<TaskStationEditRow>().FirstOrDefault(item => string.Equals(item.Source.StationId, stationId, StringComparison.OrdinalIgnoreCase));
+            if (selected != null) StationsGrid.SelectedItem = selected;
+            else if (StationsGrid.Items.Count > 0) StationsGrid.SelectedIndex = 0;
             _loading = false; BuildStation((StationsGrid.SelectedItem as TaskStationEditRow)?.Source);
         }
         /// <summary>设备设置使用现有任务标识和明确的一行一资源。</summary>
@@ -198,8 +221,10 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         private ComboBox TaskChoices(string id)
         {
             var box = new ComboBox { MinHeight = 30, SelectedValuePath = "Tag" }; box.Items.Add(new ComboBoxItem { Content = "", Tag = "" });
-            foreach (var task in _workspace.Tasks) box.Items.Add(new ComboBoxItem { Content = task.Definition.Name + " [" + task.Definition.TaskId + "]", Tag = task.Definition.TaskId });
-            if (!string.IsNullOrEmpty(id) && !_workspace.Tasks.Any(task => task.Definition.TaskId == id)) box.Items.Add(new ComboBoxItem { Content = id + " (?)", Tag = id });
+            foreach (var task in _workspace.Tasks)
+                box.Items.Add(new ComboBoxItem { Content = task.Definition.Name + " [" + task.Definition.TaskId + "]",
+                    Tag = string.Equals(task.Definition.TaskId, id, StringComparison.OrdinalIgnoreCase) ? id : task.Definition.TaskId });
+            if (!string.IsNullOrEmpty(id) && !_workspace.Tasks.Any(task => string.Equals(task.Definition.TaskId, id, StringComparison.OrdinalIgnoreCase))) box.Items.Add(new ComboBoxItem { Content = id + " (?)", Tag = id });
             box.SelectedValue = id ?? ""; return box;
         }
         /// <summary>读取设备和工位字段，整数失败时不继续切换或保存。</summary>
@@ -273,6 +298,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 _catalog = _store.LoadCatalog(_workspace); _editingEntry = entry;
                 _editor = new TaskEditorView(entry.Definition, _catalog, _workspace.Tasks.Where(item => !ReferenceEquals(item, entry)).Select(item => item.Definition));
                 _editor.SetLanguage(_language); _editor.DraftSaved += EditorSaved; _editor.BackRequested += EditorBack; _editor.ReferenceRequested += EditorReference;
+                _editor.LocalCopyRequested += EditorLocalCopy;
                 ContentHost.Content = _editor; ShowEditor(true); RefreshPermission(null, EventArgs.Empty);
             }
             catch (Exception error) { StatusText.Text = error.ToString(); }
@@ -283,6 +309,12 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             var previous = _editingEntry.Definition;
             try { _editingEntry.Definition = TaskEditorNodes.CopyTask(_editor.Definition); _store.SaveDraft(_workspace); _dirty = false; StatusText.Text = T("草稿已保存，未改变运行版本"); }
             catch { _editingEntry.Definition = previous; throw; }
+        }
+        /// <summary>复制完整工作区并带入当前编辑器字段，保留副本时不替换公共草稿和原任务对象。</summary>
+        private void EditorLocalCopy(object sender, EventArgs e)
+        {
+            var editedTask = new TaskWorkspaceTask { FileName = _editingEntry.FileName, Definition = _editor.Definition };
+            _editor.ShowLocalCopySaved(_store.SaveLocalCopy(_workspace, editedTask));
         }
         /// <summary>返回任务库，不重新载入而丢弃当前设备草稿。</summary>
         private void EditorBack(object sender, EventArgs e) { ContentHost.Content = MainTabs; _editor = null; ShowEditor(false); Rebuild(); MainTabs.SelectedIndex = 1;
@@ -320,6 +352,19 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         }
         /// <summary>顶栏保存调用同一草稿入口。</summary>
         private void Save_Click(object sender, RoutedEventArgs e) { SaveDraft(); }
+        /// <summary>发生共享草稿冲突时仍能保留本窗口内容，不要求先覆盖或放弃他人的草稿。</summary>
+        private void LocalCopy_Click(object sender, RoutedEventArgs e)
+        {
+            if (_workspace == null || !ReadSettings()) return;
+            try { StatusText.Text = T("草稿副本已保留，原草稿尚未保存") + "\n" + _store.SaveLocalCopy(_workspace); }
+            catch (Exception error) { StatusText.Text = error.ToString(); }
+        }
+        /// <summary>明确放弃本窗口未保存内容后读取最新共享草稿；不会删除他人的草稿。</summary>
+        private void LoadLatest_Click(object sender, RoutedEventArgs e)
+        {
+            if (MessageBox.Show(T("载入最新草稿会放弃本窗口未保存修改，建议先保留草稿副本"), T("载入最新草稿"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+            LoadWorkspace();
+        }
         /// <summary>编辑器打开时由编辑器提交字段；否则保存完整工位清单。</summary>
         private bool SaveDraft()
         {
@@ -367,6 +412,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             {
                 string blocked = _getBlockedReason(); if (!string.IsNullOrEmpty(blocked)) throw new InvalidOperationException(blocked);
                 if (MessageBox.Show(T("确认恢复上次应用前的任务文件"), T("恢复上次应用"), MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+                blocked = _getBlockedReason(); if (!string.IsNullOrEmpty(blocked)) throw new InvalidOperationException(blocked);
                 _store.RecoverPendingApply(_machineId); LoadWorkspace();
             }
             catch (Exception error) { StatusText.Text = error.ToString(); }
