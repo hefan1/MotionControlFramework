@@ -9,9 +9,10 @@
    <WrapPanel>
     <Button Content="{DynamicResource 任务编辑.返回任务配置}" Click="Back_Click"/>
     <TextBox x:Name="TaskNameBox" Width="190" Margin="7,0" ToolTip="{DynamicResource 任务编辑.任务名称}"/>
+    <TextBlock x:Name="TaskVersionText" VerticalAlignment="Center" Margin="2,0,6,0" Foreground="#596B7D"/><TextBlock x:Name="DirtyIndicator" Text="{DynamicResource 任务编辑.未保存修改}" Visibility="Collapsed" Foreground="#AD6500" VerticalAlignment="Center" Margin="0,0,7,0"/>
     <Button Content="{DynamicResource 任务编辑.新增步骤}" Click="Add_Click"/>
-    <Button Content="{DynamicResource 任务编辑.上移}" Click="Up_Click"/><Button Content="{DynamicResource 任务编辑.下移}" Click="Down_Click"/>
-    <Button Content="{DynamicResource 任务编辑.复制}" Click="Copy_Click"/><Button Content="{DynamicResource 任务编辑.删除}" Click="Delete_Click"/>
+    <Button x:Name="UpButton" Content="{DynamicResource 任务编辑.上移}" Click="Up_Click"/><Button x:Name="DownButton" Content="{DynamicResource 任务编辑.下移}" Click="Down_Click"/>
+    <Button x:Name="CopyButton" Content="{DynamicResource 任务编辑.复制}" Click="Copy_Click"/><Button x:Name="DeleteButton" Content="{DynamicResource 任务编辑.删除}" Click="Delete_Click"/>
     <Button Content="{DynamicResource 任务编辑.保存草稿}" Click="Save_Click" Style="{StaticResource 编辑主要按钮}"/>
     <Button Content="{DynamicResource 任务编辑.检查任务}" Click="Check_Click"/>
     <Button Content="{DynamicResource 任务编辑.保留草稿副本}" Click="LocalCopy_Click"/>
@@ -21,7 +22,10 @@
   <Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition Width="*" MinWidth="260"/><ColumnDefinition Width="8"/><ColumnDefinition Width="1.05*" MinWidth="340"/></Grid.ColumnDefinitions>
    <Border Style="{StaticResource 内容边框}"><DockPanel Margin="9">
     <TextBlock DockPanel.Dock="Top" Text="{DynamicResource 任务编辑.选中步骤只编辑参数，不执行动作}" Foreground="#596B7D" Margin="4,2,4,8" TextWrapping="Wrap"/>
-    <TreeView x:Name="StepsTree" SelectedItemChanged="SelectionChanged" ScrollViewer.HorizontalScrollBarVisibility="Auto" BorderThickness="0"/>
+    <Border DockPanel.Dock="Top" Background="#F0F5FB" BorderBrush="#D9E0E8" BorderThickness="1" Padding="18,10,5,10"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="45"/><ColumnDefinition Width="*"/><ColumnDefinition Width="110"/></Grid.ColumnDefinitions>
+     <TextBlock Text="{DynamicResource 任务编辑.步号}"/><TextBlock Grid.Column="1" Text="{DynamicResource 任务编辑.动作说明}"/><TextBlock Grid.Column="2" Text="{DynamicResource 任务编辑.类型}"/>
+    </Grid></Border>
+    <TreeView x:Name="StepsTree" SelectedItemChanged="SelectionChanged" ScrollViewer.HorizontalScrollBarVisibility="Disabled" BorderThickness="0"/>
    </DockPanel></Border>
    <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" Background="#D8E2EE"/>
    <Border Grid.Column="2" Style="{StaticResource 内容边框}"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel x:Name="Details" Margin="13"/></ScrollViewer></Border>

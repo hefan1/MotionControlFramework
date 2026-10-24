@@ -2,6 +2,8 @@
 
 Host 是设备上位机的组合入口：它创建当前设备配置、通用页面、运行时和本次运行选择的运动卡连接实现。
 
+“首页 → 设备总览”和“报警 → 当前报警”已接入当前传统 Runtime。任务配置与列表编辑沿用“设置 → 任务配置”。独立四页预览参数 `--ui-workspace-preview` 在创建控制卡和现场恢复服务之前返回，使用独立配置目录。页面职责、数据边界和代码位置见 [Operation/README.md](Operation/README.md)。
+
 “监控 → 设备变量”显示本机变量表。首次启动时 Host 从当前设备项目的 `EquipmentTemplates/Parameters/DeviceVariables.json` 复制默认变量；之后只读写本机 `%LOCALAPPDATA%/MotionControlFramework/Configurations/<MachineId>/Parameters/DeviceVariables.json`，不会覆盖已存在的现场配置。变量运行值在内存中供设备流程和监控页共用。
 
 Host 在工位受控暂停后保存设备变量值、可恢复工位步骤和初始化完成标记到本机 `%LOCALAPPDATA%/MotionControlFramework/Configurations/<MachineId>/Runtime/RecoverySnapshot.json`。软件关闭时会再次保存最新变量值；运行中、暂停中或报警处理中会阻止关闭，要求先安全停止。重启后连接卡，确认恢复提示，再按设备复位和启动；不会自动发运动或输出命令。流程断点只在设备配置一致且工位显式实现 `IRecoverableStationFlow` 时续跑。新增、删除或改类型的变量按名称和 .NET 类型逐项校验；不匹配的变量使用当前配置初值，并阻止旧流程自动续跑。

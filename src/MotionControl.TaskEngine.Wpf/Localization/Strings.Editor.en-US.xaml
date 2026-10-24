@@ -196,4 +196,19 @@
  <sys:String x:Key="任务编辑.载入最新草稿">Load latest draft</sys:String>
  <sys:String x:Key="任务编辑.草稿副本已保留，原草稿尚未保存">Local copy kept. The shared draft has not been saved.</sys:String>
  <sys:String x:Key="任务编辑.载入最新草稿会放弃本窗口未保存修改，建议先保留草稿副本">Loading the latest draft discards unsaved edits in this window. Keep a local copy first if needed.</sys:String>
+ <sys:String x:Key="任务编辑.设备文件版本">Applied file version</sys:String>
+ <sys:String x:Key="任务编辑.草稿状态">Draft state</sys:String>
+ <sys:String x:Key="任务编辑.操作">Action</sys:String>
+ <sys:String x:Key="任务编辑.未应用">Not applied</sys:String>
+ <sys:String x:Key="任务编辑.任务检查有错误">Task has errors</sys:String>
+ <sys:String x:Key="任务编辑.任务检查通过">Task check passed</sys:String>
+ <sys:String x:Key="任务编辑.无修改">Unchanged</sys:String>
+ <sys:String x:Key="任务编辑.草稿待检查">Draft; validate next</sys:String>
+ <sys:String x:Key="任务编辑.草稿基准版本">Draft baseline</sys:String>
+ <sys:String x:Key="任务编辑.步号">Step</sys:String>
+ <sys:String x:Key="任务编辑.类型">Type</sys:String>
+ <sys:String x:Key="任务编辑.目标来源">Source</sys:String>
+ <sys:String x:Key="任务编辑.目标">Target</sys:String>
+ <sys:String x:Key="任务编辑.单位">Unit</sys:String>
+ <sys:String x:Key="任务编辑.选中一根轴，在下方填写该轴目标和独立参数">Select an axis, then edit its target and individual profile below.</sys:String>
 </ResourceDictionary>

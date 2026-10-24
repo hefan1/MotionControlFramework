@@ -94,6 +94,7 @@ namespace MotionControl.Host.Wpf
             InitializeComponent();
 
             CurrentLanguage = "zh-CN";
+            CreateOperationPages();
             NavigateToSection("Home");
             UpdateMachineStateDisplay();
 
@@ -283,6 +284,8 @@ namespace MotionControl.Host.Wpf
             }
 
             _machineRuntime = machineRuntime;
+            _equipmentOverviewPage.SetRuntime(machineRuntime);
+            _currentAlarmsPage.SetRuntime(machineRuntime);
             if (_machineRuntime != null)
             {
                 _machineRuntime.StatusChanged += MachineRuntime_StatusChanged;
@@ -299,9 +302,10 @@ namespace MotionControl.Host.Wpf
             MotionCardConnectionStatus.SetResourceReference(TextBlock.TextProperty, footerResourceKey);
         }
 
-        /// <summary>根据当前导航在映射页、手动调试页或占位内容之间切换。</summary>
+        /// <summary>将导航目标放入原内容区，已接入页优先显示，其余页面保留占位。</summary>
         private void UpdatePageContent()
         {
+            if (TryShowOperationPage()) return;
             if (_taskConfigurationPage != null && _currentSectionKey == "Settings" && _currentPageResourceKey == "任务配置")
             {
                 ManualDebugContent.Content = _taskConfigurationPage; ManualDebugContent.Visibility = Visibility.Visible;
@@ -461,6 +465,8 @@ namespace MotionControl.Host.Wpf
             };
 
             ReplaceLanguageResources(languageResources);
+            _equipmentOverviewPage.SetLanguage(languageCode);
+            _currentAlarmsPage.SetLanguage(languageCode);
             Title = GetLocalizedText("运动控制上位机");
             UpdateMachineStateDisplay();
 

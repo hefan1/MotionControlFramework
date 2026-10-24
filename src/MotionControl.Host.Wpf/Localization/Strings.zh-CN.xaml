@@ -573,4 +573,8 @@
     <sys:String x:Key="任务配置页面说明">工位安排、任务库与步骤草稿；检查后应用运行文件，不会启动设备。</sys:String>
     <sys:String x:Key="任务配置先关闭仿真">请先关闭任务仿真会话，再应用任务配置。草稿可以继续编辑和保存。</sys:String>
     <sys:String x:Key="任务配置先断开会话">当前控制卡会话仍连接。本阶段请先在轴映射页断开会话再应用任务文件；不会自动断开，草稿可随时保存。</sys:String>
+    <sys:String x:Key="设备总览页面说明">查看当前 Runtime、工位动作和报警；启停使用顶部按钮。</sys:String>
+    <sys:String x:Key="当前报警页面说明">查看故障位置、条件与处理指导；刷新和导航不会复位报警。</sys:String>
+    <sys:String x:Key="关联页面尚未就绪">当前运行时尚未提供此页面，请先检查连接。此次跳转未执行任何设备操作。</sys:String>
+    <sys:String x:Key="返回操作页">返回操作页</sys:String>
 </ResourceDictionary>

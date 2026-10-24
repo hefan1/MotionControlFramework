@@ -139,11 +139,11 @@ namespace MotionControl.TaskEditing.Checks
                 var tabs = (TabControl)page.FindName("MainTabs");
                 stations.SelectedIndex = 1;
                 tasks.SelectedIndex = 2;
-                string taskId = ((TaskWorkspaceTask)tasks.SelectedItem).Definition.TaskId;
+                string taskId = ((TaskLibraryRow)tasks.SelectedItem).Definition.TaskId;
                 FindButton(page, "保存草稿").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                Assert(stations.SelectedIndex == 1 && ((TaskWorkspaceTask)tasks.SelectedItem).Definition.TaskId == taskId, "保存后跳回第一工位或丢失任务选择。");
+                Assert(stations.SelectedIndex == 1 && ((TaskLibraryRow)tasks.SelectedItem).Definition.TaskId == taskId, "保存后跳回第一工位或丢失任务选择。");
                 page.SetLanguage("en-US");
-                Assert(stations.SelectedIndex == 1 && ((TaskWorkspaceTask)tasks.SelectedItem).Definition.TaskId == taskId, "语言切换丢失当前选择。");
+                Assert(stations.SelectedIndex == 1 && ((TaskLibraryRow)tasks.SelectedItem).Definition.TaskId == taskId, "语言切换丢失当前选择。");
                 page.SetLanguage("zh-CN");
                 tabs.SelectedIndex = 1;
                 FindButton(page, "编辑任务").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

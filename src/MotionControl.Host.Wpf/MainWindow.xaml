@@ -178,6 +178,8 @@
                             Background="#FAFAFA"
                             BorderBrush="#E1E4E6"
                             BorderThickness="0,0,0,1">
+                        <DockPanel>
+                        <Button x:Name="OperationReturnButton" DockPanel.Dock="Right" Content="{DynamicResource 返回操作页}" Visibility="Collapsed" Click="OperationReturn_Click" Padding="12,5" VerticalAlignment="Center"/>
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock x:Name="PageTitle"
                                        Text="{DynamicResource 设备总览}"
@@ -190,6 +192,7 @@
                                        FontSize="11"
                                        Foreground="#70777C" />
                         </StackPanel>
+                        </DockPanel>
                     </Border>
 
                     <Grid Grid.Row="1" Background="White">

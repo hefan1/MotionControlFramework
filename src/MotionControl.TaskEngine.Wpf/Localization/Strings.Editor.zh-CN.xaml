@@ -196,4 +196,19 @@
  <sys:String x:Key="任务编辑.载入最新草稿">载入最新草稿</sys:String>
  <sys:String x:Key="任务编辑.草稿副本已保留，原草稿尚未保存">草稿副本已保留，原草稿尚未保存</sys:String>
  <sys:String x:Key="任务编辑.载入最新草稿会放弃本窗口未保存修改，建议先保留草稿副本">载入最新草稿会放弃本窗口未保存修改，建议先保留草稿副本。</sys:String>
+ <sys:String x:Key="任务编辑.设备文件版本">设备文件版本</sys:String>
+ <sys:String x:Key="任务编辑.草稿状态">草稿状态</sys:String>
+ <sys:String x:Key="任务编辑.操作">操作</sys:String>
+ <sys:String x:Key="任务编辑.未应用">未应用</sys:String>
+ <sys:String x:Key="任务编辑.任务检查有错误">任务检查有错误</sys:String>
+ <sys:String x:Key="任务编辑.任务检查通过">任务检查通过</sys:String>
+ <sys:String x:Key="任务编辑.无修改">无修改</sys:String>
+ <sys:String x:Key="任务编辑.草稿待检查">草稿待检查</sys:String>
+ <sys:String x:Key="任务编辑.草稿基准版本">草稿基准版本</sys:String>
+ <sys:String x:Key="任务编辑.步号">步号</sys:String>
+ <sys:String x:Key="任务编辑.类型">类型</sys:String>
+ <sys:String x:Key="任务编辑.目标来源">目标来源</sys:String>
+ <sys:String x:Key="任务编辑.目标">目标</sys:String>
+ <sys:String x:Key="任务编辑.单位">单位</sys:String>
+ <sys:String x:Key="任务编辑.选中一根轴，在下方填写该轴目标和独立参数">选中一根轴，在下方填写该轴目标和独立参数</sys:String>
 </ResourceDictionary>

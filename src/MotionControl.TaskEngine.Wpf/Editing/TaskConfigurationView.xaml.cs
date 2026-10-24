@@ -33,6 +33,12 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         private readonly Func<string> _getBlockedReason;
         /// <summary>完整设备草稿。</summary>
         private TaskWorkspaceDocument _workspace;
+        /// <summary>已应用文件的快照，仅供显示版本与草稿差异。</summary>
+        private TaskWorkspaceDocument _activeWorkspace;
+        /// <summary>最近一次明确检查的结果；任何编辑后失效。</summary>
+        private IReadOnlyList<TaskValidationIssue> _lastCheckIssues;
+        /// <summary>任务库所选草稿，显示行不成为第二份数据来源。</summary>
+        private TaskWorkspaceTask SelectedLibraryTask { get { return (TasksGrid.SelectedItem as TaskLibraryRow)?.Source; } }
         /// <summary>已有逻辑对象目录。</summary>
         private TaskResourceCatalog _catalog;
         /// <summary>正在编辑的任务视图。</summary>
@@ -103,10 +109,13 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             {
                 var loaded = _store.Load(_machineId);
                 var catalog = _store.LoadCatalog(loaded);
+                var active = _store.Load(_machineId, false);
                 bool sourceChanged = _store.ComputeSignature(_machineId) != loaded.BaseSignature;
 
                 _workspace = loaded;
                 _catalog = catalog;
+                _activeWorkspace = active;
+                _lastCheckIssues = null;
                 _sourceChanged = sourceChanged;
                 _editor = null;
                 ContentHost.Content = MainTabs;
@@ -144,12 +153,19 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         private void ToggleChanged(object sender, RoutedEventArgs e)
         { if (e.OriginalSource is CheckBox source && (StationDetails.IsAncestorOf(source) || MachineDetails.IsAncestorOf(source))) MarkDirty(); }
         /// <summary>直接显示未保存状态，避免旧成功提示误导。</summary>
-        private void MarkDirty() { if (!_loading && _editor == null) { _dirty = true; StatusText.Text = T("有未保存修改，运行版本未改变"); ShowIssues(new TaskValidationIssue[0]); } }
+        private void MarkDirty()
+        {
+            if (_loading || _editor != null) return;
+            bool refreshRows = !_dirty || _lastCheckIssues != null;
+            _dirty = true; _lastCheckIssues = null;
+            StatusText.Text = T("有未保存修改，运行版本未改变"); ShowIssues(new TaskValidationIssue[0]);
+            if (refreshRows) RefreshLibraryRows();
+        }
 
         /// <summary>列本身不在可视树中，明确赋值表头以可靠切换局部语言资源。</summary>
         private void UpdateHeaders()
         {
-            string[][] texts = { new[] { "参与运行", "工位名称", "执行任务", "运行方式" }, new[] { "任务名称", "任务标识", "基准版本", "文件" }, new[] { "等级", "任务标识", "说明" } };
+            string[][] texts = { new[] { "参与运行", "工位名称", "执行任务", "运行方式", "设备文件版本", "操作" }, new[] { "任务名称", "任务标识", "设备文件版本", "草稿状态", "文件" }, new[] { "等级", "任务标识", "说明" } };
             DataGrid[] grids = { StationsGrid, TasksGrid, IssuesGrid };
             for (int g = 0; g < grids.Length; g++) for (int i = 0; i < texts[g].Length; i++) grids[g].Columns[i].Header = T(texts[g][i]);
         }
@@ -165,18 +181,41 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         private void Rebuild()
         {
             if (_workspace == null) return;
+            _lastCheckIssues = null;
             string stationId = _station?.StationId;
-            string taskId = (TasksGrid.SelectedItem as TaskWorkspaceTask)?.Definition.TaskId;
             _loading = true; _station = null;
-            TasksGrid.ItemsSource = _workspace.Tasks; TasksGrid.Items.Refresh();
-            TasksGrid.SelectedItem = _workspace.Tasks.FirstOrDefault(item => string.Equals(item.Definition.TaskId, taskId, StringComparison.OrdinalIgnoreCase));
+            RefreshLibraryRows();
             StationsGrid.ItemsSource = _workspace.Machine.Stations.Select(item => new TaskStationEditRow(item,
-                _workspace.Tasks.FirstOrDefault(task => string.Equals(task.Definition.TaskId, item.TaskId, StringComparison.OrdinalIgnoreCase))?.Definition.Name ?? item.TaskId, T(ModeName(item.Mode)))).ToList();
+                _workspace.Tasks.FirstOrDefault(task => string.Equals(task.Definition.TaskId, item.TaskId, StringComparison.OrdinalIgnoreCase))?.Definition.Name ?? item.TaskId, T(ModeName(item.Mode)), AppliedVersion(item.TaskId))).ToList();
             BuildMachine();
             var selected = StationsGrid.Items.Cast<TaskStationEditRow>().FirstOrDefault(item => string.Equals(item.Source.StationId, stationId, StringComparison.OrdinalIgnoreCase));
             if (selected != null) StationsGrid.SelectedItem = selected;
             else if (StationsGrid.Items.Count > 0) StationsGrid.SelectedIndex = 0;
             _loading = false; BuildStation((StationsGrid.SelectedItem as TaskStationEditRow)?.Source);
+        }
+        /// <summary>按稳定任务标识刷新只读版本行，保留选择；不重新读取文件或改变草稿。</summary>
+        private void RefreshLibraryRows()
+        {
+            if (_workspace == null) return;
+            string id = SelectedLibraryTask?.Definition.TaskId;
+            var rows = _workspace.Tasks.Select(task => new TaskLibraryRow(task, AppliedVersion(task.Definition.TaskId), DraftState(task))).ToList();
+            TasksGrid.ItemsSource = rows;
+            TasksGrid.SelectedItem = rows.FirstOrDefault(row => string.Equals(row.Definition.TaskId, id, StringComparison.OrdinalIgnoreCase));
+        }
+        /// <summary>显示已应用文件修订号，新任务没有已应用版本。</summary>
+        private string AppliedVersion(string taskId)
+        {
+            var active = _activeWorkspace?.Tasks.FirstOrDefault(task => string.Equals(task.Definition.TaskId, taskId, StringComparison.OrdinalIgnoreCase));
+            return active == null ? T("未应用") : "R" + active.Definition.Revision;
+        }
+        /// <summary>明确区分草稿差异与最近检查结果，不把保存当成应用。</summary>
+        private string DraftState(TaskWorkspaceTask task)
+        {
+            if (_lastCheckIssues != null)
+                return T(_lastCheckIssues.Any(issue => string.Equals(issue.TaskId, task.Definition.TaskId, StringComparison.OrdinalIgnoreCase) && issue.Severity == TaskIssueSeverity.Error) ? "任务检查有错误" : "任务检查通过");
+            var active = _activeWorkspace?.Tasks.FirstOrDefault(item => string.Equals(item.FileName, task.FileName, StringComparison.OrdinalIgnoreCase));
+            bool changed = active == null || TaskDefinitionJson.Serialize(active.Definition) != TaskDefinitionJson.Serialize(task.Definition);
+            return T(!changed ? "无修改" : _dirty ? "未保存修改" : "草稿待检查");
         }
         /// <summary>设备设置使用现有任务标识和明确的一行一资源。</summary>
         private void BuildMachine()
@@ -265,7 +304,8 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         /// <summary>复制完整任务但更新任务与内部节点 ID，子任务目标仍为原引用。</summary>
         private void CopyTask_Click(object sender, RoutedEventArgs e)
         {
-            if (!(TasksGrid.SelectedItem is TaskWorkspaceTask source) || !ReadSettings()) return;
+            var source = SelectedLibraryTask;
+            if (source == null || !ReadSettings()) return;
             var copy = TaskEditorNodes.CopyTask(source.Definition); copy.TaskId = "Task_" + Guid.NewGuid().ToString("N").Substring(0, 8); copy.Name += " " + T("副本"); copy.Revision = 1; TaskEditorNodes.RenewIds(copy.Root);
             var entry = new TaskWorkspaceTask { FileName = copy.TaskId + ".json", Definition = copy }; _workspace.Tasks.Add(entry); _dirty = true; OpenEditor(entry);
         }
@@ -289,7 +329,33 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             catch (Exception error) { StatusText.Text = error.ToString(); }
         }
         /// <summary>选中任务后打开独立定义副本，重复双击空白行无作用。</summary>
-        private void EditTask_Click(object sender, RoutedEventArgs e) { if (TasksGrid.SelectedItem is TaskWorkspaceTask entry && ReadSettings()) OpenEditor(entry); }
+        private void EditTask_Click(object sender, RoutedEventArgs e) { if (SelectedLibraryTask != null && ReadSettings()) OpenEditor(SelectedLibraryTask); }
+        /// <summary>工位行内直接进入其任务，仍先提交当前有效配置字段。</summary>
+        private void EditStationTask_Click(object sender, RoutedEventArgs e)
+        {
+            if (!ReadSettings() || !(((Button)sender).Tag is StationTaskConfiguration station)) return;
+            OpenTaskById(station.TaskId);
+        }
+        /// <summary>按稳定标识进入已有任务，供工位行和独立四页预览共用。</summary>
+        public bool OpenTaskById(string taskId)
+        {
+            if (_workspace == null || !ReadSettings()) return false;
+            if (_editor != null)
+            {
+                if (string.Equals(_editingEntry.Definition.TaskId, taskId, StringComparison.OrdinalIgnoreCase)) return true;
+                if (!_editor.ConfirmLeave()) return false;
+            }
+            var task = _workspace.Tasks.FirstOrDefault(item => string.Equals(item.Definition.TaskId, taskId, StringComparison.OrdinalIgnoreCase));
+            if (task == null) { StatusText.Text = T("未选择或引用失效"); return false; }
+            OpenEditor(task); return _editor != null;
+        }
+        /// <summary>外部预览导航返回配置页时，仍先让人员决定如何处理未保存任务。</summary>
+        public bool ReturnToConfiguration()
+        {
+            if (_editor == null) return true;
+            if (!_editor.ConfirmLeave()) return false;
+            EditorBack(this, EventArgs.Empty); return true;
+        }
         /// <summary>编辑器占用同一工作区，已有页面跳转后可以返回原草稿。</summary>
         private void OpenEditor(TaskWorkspaceTask entry)
         {
@@ -307,7 +373,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         private void EditorSaved(object sender, EventArgs e)
         {
             var previous = _editingEntry.Definition;
-            try { _editingEntry.Definition = TaskEditorNodes.CopyTask(_editor.Definition); _store.SaveDraft(_workspace); _dirty = false; StatusText.Text = T("草稿已保存，未改变运行版本"); }
+            try { _editingEntry.Definition = TaskEditorNodes.CopyTask(_editor.Definition); _store.SaveDraft(_workspace); _dirty = false; _lastCheckIssues = null; StatusText.Text = T("草稿已保存，未改变运行版本"); }
             catch { _editingEntry.Definition = previous; throw; }
         }
         /// <summary>复制完整工作区并带入当前编辑器字段，保留副本时不替换公共草稿和原任务对象。</summary>
@@ -318,6 +384,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         }
         /// <summary>返回任务库，不重新载入而丢弃当前设备草稿。</summary>
         private void EditorBack(object sender, EventArgs e) { ContentHost.Content = MainTabs; _editor = null; ShowEditor(false); Rebuild(); MainTabs.SelectedIndex = 1;
+            TasksGrid.SelectedItem = TasksGrid.Items.Cast<TaskLibraryRow>().FirstOrDefault(row => ReferenceEquals(row.Source, _editingEntry));
             StatusText.Text = _dirty ? T("有未保存修改，运行版本未改变") : T("草稿与现有目录已载入"); RefreshPermission(null, EventArgs.Empty); }
         /// <summary>编辑器显示自己的工具栏和问题表，避免同屏重复两套保存检查。</summary>
         private void ShowEditor(bool visible)
@@ -341,11 +408,12 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         { yield return node; foreach (var child in TaskEditorNodes.Children(node)) foreach (var item in AllNodes(child)) yield return item; }
         /// <summary>引用窗口只显示关系，不改变任务。</summary>
         private void References_Click(object sender, RoutedEventArgs e)
-        { if (TasksGrid.SelectedItem is TaskWorkspaceTask task && ReadSettings()) MessageBox.Show(string.Join(Environment.NewLine, References(task.Definition.TaskId)), T("查看引用")); }
+        { if (SelectedLibraryTask != null && ReadSettings()) MessageBox.Show(string.Join(Environment.NewLine, References(SelectedLibraryTask.Definition.TaskId)), T("查看引用")); }
         /// <summary>被引用任务不能删除；确认后只从草稿移除。</summary>
         private void RemoveTask_Click(object sender, RoutedEventArgs e)
         {
-            if (!(TasksGrid.SelectedItem is TaskWorkspaceTask task) || !ReadSettings()) return;
+            var task = SelectedLibraryTask;
+            if (task == null || !ReadSettings()) return;
             var references = References(task.Definition.TaskId); if (references.Count > 0) { StatusText.Text = T("任务仍被引用，不能删除") + "\n" + string.Join("\n", references); return; }
             if (MessageBox.Show(T("确认删除任务") + "：" + task.Definition.Name, T("删除任务"), MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
             _workspace.Tasks.Remove(task); _dirty = true; Rebuild();
@@ -378,7 +446,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         {
             if (_editor != null) { StatusText.Text = T("请先保存并返回任务配置"); return; }
             if (_workspace == null || !ReadSettings()) return;
-            try { ShowIssues(_store.Check(_workspace)); _sourceChanged = _store.ComputeSignature(_machineId) != _workspace.BaseSignature;
+            try { _lastCheckIssues = _store.Check(_workspace); ShowIssues(_lastCheckIssues); RefreshLibraryRows(); _sourceChanged = _store.ComputeSignature(_machineId) != _workspace.BaseSignature;
                 StatusText.Text = T("检查完成，双击问题定位") + (_sourceChanged ? " · " + T("来源文件已经变化，请重新载入") : ""); RefreshPermission(null, EventArgs.Empty); }
             catch (Exception error) { StatusText.Text = error.ToString(); }
         }
@@ -393,7 +461,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 if (issues.Any(item => item.Severity == TaskIssueSeverity.Error)) { StatusText.Text = T("存在错误，不能应用"); return; }
                 if (MessageBox.Show(T("确认应用以下任务文件，不会启动设备") + "\n" + string.Join("\n", _workspace.Tasks.Select(item => item.Definition.Name)), T("应用到设备"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
                 blocked = _getBlockedReason(); if (!string.IsNullOrEmpty(blocked)) throw new InvalidOperationException(blocked);
-                string warning; _workspace = _store.Apply(_workspace, out warning); _catalog = _store.LoadCatalog(_workspace); _dirty = false; _sourceChanged = false; Rebuild();
+                string warning; _workspace = _store.Apply(_workspace, out warning); _activeWorkspace = _store.Load(_machineId, false); _catalog = _store.LoadCatalog(_workspace); _dirty = false; _sourceChanged = false; _lastCheckIssues = null; Rebuild();
                 StatusText.Text = T("运行文件已应用，下次新会话使用") + (warning == null ? "" : "\n" + warning);
             }
             catch (Exception error) { StatusText.Text = error.ToString(); }
@@ -446,7 +514,9 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         public string TaskName { get; private set; }
         /// <summary>翻译后的运行方式。</summary>
         public string Mode { get; private set; }
+        /// <summary>已应用任务文件版本，不冒充正在执行的会话版本。</summary>
+        public string AppliedVersion { get; private set; }
         /// <summary>构造只读显示，不复制另一份可写配置。</summary>
-        internal TaskStationEditRow(StationTaskConfiguration source, string task, string mode) { Source = source; TaskName = task; Mode = mode; }
+        internal TaskStationEditRow(StationTaskConfiguration source, string task, string mode, string version) { Source = source; TaskName = task; Mode = mode; AppliedVersion = version; }
     }
 }

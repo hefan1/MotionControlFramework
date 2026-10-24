@@ -18,8 +18,14 @@ namespace MotionControl.TaskEngine.Wpf.Editing
     {
         /// <summary>本次编辑独占的任务副本。</summary>
         public TaskDefinition Definition { get; private set; }
-        /// <summary>尚未保存到设备草稿包的修改。</summary>
-        public bool IsDirty { get; private set; }
+        /// <summary>尚未保存到设备草稿包的修改，同时更新可见的未保存标记。</summary>
+        public bool IsDirty
+        {
+            get { return _isDirty; }
+            private set { _isDirty = value; if (DirtyIndicator != null) DirtyIndicator.Visibility = value ? Visibility.Visible : Visibility.Collapsed; }
+        }
+        /// <summary>编辑副本的未保存状态。</summary>
+        private bool _isDirty;
         /// <summary>保存草稿时通知所属任务配置页持久化完整草稿包。</summary>
         public event EventHandler DraftSaved;
         /// <summary>请求所属页面保留本窗口的完整草稿副本，不覆盖共享草稿。</summary>
@@ -54,6 +60,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         {
             Definition = TaskEditorNodes.CopyTask(definition); _catalog = catalog; _others = others.ToList();
             InitializeComponent(); UpdateHeaders(); IssuesGrid.Visibility = Visibility.Collapsed; _building = true; TaskNameBox.Text = Definition.Name; _building = false;
+            TaskVersionText.Text = T("草稿基准版本") + " R" + Definition.Revision;
             AddHandler(TextBox.TextChangedEvent, new TextChangedEventHandler(ContentChanged));
             AddHandler(Selector.SelectionChangedEvent, new SelectionChangedEventHandler(ChoiceChanged));
             AddHandler(ToggleButton.CheckedEvent, new RoutedEventHandler(ToggleChanged));
@@ -67,6 +74,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         {
             _language = language; TaskEditingUi.SetLanguage(this, language);
             UpdateHeaders();
+            TaskVersionText.Text = T("草稿基准版本") + " R" + Definition.Revision;
             if (TryRead()) { RebuildTree(_selected?.Id); }
         }
         /// <summary>按中文界面原文查资源。</summary>
@@ -114,7 +122,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         /// <summary>每个树行直接关联原节点，层次序号只是阅读标记。</summary>
         private void AddTree(TaskNode node, ItemCollection owner, string number, string selectedId)
         {
-            var item = new TreeViewItem { Header = number + " " + node.Name + "  [" + T(TaskEditorNodes.KindName(node.Kind)) + "]", Tag = node, ToolTip = node.Id, IsExpanded = true };
+            var item = new TreeViewItem { Header = CreateStepHeader(node, number), Tag = node, ToolTip = node.Id, IsExpanded = true, HorizontalContentAlignment = HorizontalAlignment.Stretch };
             owner.Add(item); if (node.Id == selectedId) _selectedItem = item;
             _rowPrefixes[node.Id] = number;
             int count = 0;
@@ -125,10 +133,29 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 AddTree(child, item.Items, prefix, selectedId);
             }
         }
+        /// <summary>以步号、动作和类型三栏显示树行；稳定 ID 放悬停提示，不挤占操作员视线。</summary>
+        private FrameworkElement CreateStepHeader(TaskNode node, string number)
+        {
+            var grid = new Grid { Margin = new Thickness(2, 0, 0, 0) };
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(45) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
+            string[] texts = { number, node.Name, T(TaskEditorNodes.KindName(node.Kind)) };
+            for (int i = 0; i < texts.Length; i++)
+            {
+                var text = new TextBlock { Text = texts[i], ToolTip = texts[i], Margin = new Thickness(4, 9, 4, 9), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+                Grid.SetColumn(text, i); grid.Children.Add(text);
+            }
+            return new Border { BorderBrush = System.Windows.Media.Brushes.LightGray, BorderThickness = new Thickness(0, 0, 0, 0.5), Child = grid };
+        }
         /// <summary>公用字段后按明确节点类型创建专属表单。</summary>
         private void BuildDetails()
         {
-            _building = true; _readOnlyDetails = false; Details.Children.Clear(); _fields.Clear(); _motionRows.Clear();
+            _building = true; _readOnlyDetails = false; Details.Children.Clear(); _fields.Clear(); _motionRows.Clear(); _motionTargetsGrid = null;
+            var siblings = TaskEditorNodes.ParentList(Definition.Root, _selected);
+            int selectedIndex = siblings == null ? -1 : siblings.IndexOf(_selected);
+            CopyButton.IsEnabled = DeleteButton.IsEnabled = siblings != null;
+            UpButton.IsEnabled = selectedIndex > 0; DownButton.IsEnabled = siblings != null && selectedIndex >= 0 && selectedIndex + 1 < siblings.Count;
             try
             {
             Details.Children.Add(new TextBlock { Text = T(TaskEditorNodes.KindName(_selected.Kind)), FontSize = 17, FontWeight = FontWeights.SemiBold });
@@ -164,7 +191,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             else ReadFlow();
             _selected.Name = name; _selected.TimeoutMs = timeout; Definition.Name = TaskNameBox.Text;
             if (_selectedItem != null && _rowPrefixes.ContainsKey(_selected.Id))
-                _selectedItem.Header = _rowPrefixes[_selected.Id] + " " + name + "  [" + T(TaskEditorNodes.KindName(_selected.Kind)) + "]";
+                _selectedItem.Header = CreateStepHeader(_selected, _rowPrefixes[_selected.Id]);
         }
         /// <summary>解析失败时在原页保留输入，不用旧值悄悄保存。</summary>
         private bool TryRead()

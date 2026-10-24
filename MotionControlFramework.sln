@@ -53,6 +53,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MotionControl.TaskMonitor.C
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MotionControl.TaskEditing.Checks", "tools\MotionControl.TaskEditing.Checks\MotionControl.TaskEditing.Checks.csproj", "{1F5D5088-9222-4616-8E9A-B541AC652FC5}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MotionControl.OperatorPages.Checks", "tools\MotionControl.OperatorPages.Checks\MotionControl.OperatorPages.Checks.csproj", "{0B6460CA-47B9-4538-A7AA-47C3AAE3585B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -255,6 +257,18 @@ Global
 		{1F5D5088-9222-4616-8E9A-B541AC652FC5}.Release|x64.Build.0 = Release|Any CPU
 		{1F5D5088-9222-4616-8E9A-B541AC652FC5}.Release|x86.ActiveCfg = Release|Any CPU
 		{1F5D5088-9222-4616-8E9A-B541AC652FC5}.Release|x86.Build.0 = Release|Any CPU
+		{0B6460CA-47B9-4538-A7AA-47C3AAE3585B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0B6460CA-47B9-4538-A7AA-47C3AAE3585B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0B6460CA-47B9-4538-A7AA-47C3AAE3585B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{0B6460CA-47B9-4538-A7AA-47C3AAE3585B}.Debug|x64.Build.0 = Debug|Any CPU
+		{0B6460CA-47B9-4538-A7AA-47C3AAE3585B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{0B6460CA-47B9-4538-A7AA-47C3AAE3585B}.Debug|x86.Build.0 = Debug|Any CPU
+		{0B6460CA-47B9-4538-A7AA-47C3AAE3585B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0B6460CA-47B9-4538-A7AA-47C3AAE3585B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0B6460CA-47B9-4538-A7AA-47C3AAE3585B}.Release|x64.ActiveCfg = Release|Any CPU
+		{0B6460CA-47B9-4538-A7AA-47C3AAE3585B}.Release|x64.Build.0 = Release|Any CPU
+		{0B6460CA-47B9-4538-A7AA-47C3AAE3585B}.Release|x86.ActiveCfg = Release|Any CPU
+		{0B6460CA-47B9-4538-A7AA-47C3AAE3585B}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -278,5 +292,6 @@ Global
 		{E013E8CA-FB73-4E89-B822-CFBCD0DE8AA4} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{12FC1421-4E6F-475B-B93A-AADDC84B77ED} = {D332C5B3-46FA-4CE6-8F85-E0CD793C007B}
 		{1F5D5088-9222-4616-8E9A-B541AC652FC5} = {D332C5B3-46FA-4CE6-8F85-E0CD793C007B}
+		{0B6460CA-47B9-4538-A7AA-47C3AAE3585B} = {D332C5B3-46FA-4CE6-8F85-E0CD793C007B}
 	EndGlobalSection
 EndGlobal

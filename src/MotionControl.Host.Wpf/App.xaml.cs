@@ -104,6 +104,13 @@ namespace MotionControl.Host.Wpf
         {
             base.OnStartup(e);
 
+            // 四页离线预览先于控制卡、现场配置和恢复服务创建。
+            if (e.Args.Contains("--ui-workspace-preview"))
+            {
+                MainWindow = new Operation.FourWorkspacesPreviewWindow();
+                MainWindow.Show(); return;
+            }
+
             // 独立编辑预览使用单独数据目录，不创建正常 Host 的控制卡服务。
             if (e.Args.Contains("--task-editing-preview"))
             {

@@ -103,6 +103,18 @@ namespace MotionControl.Host.Wpf
         {
             RefreshDisplay();
         }
+        /// <summary>从总览或报警按工位名称只读定位，保留原页面布局和设备状态。</summary>
+        public bool FocusStationByName(string stationName)
+        {
+            bool found = false;
+            foreach (var row in _stepTextByFlow)
+            {
+                bool selected = string.Equals(row.Key.StationName, stationName, StringComparison.OrdinalIgnoreCase);
+                row.Value.Background = selected ? new SolidColorBrush(Color.FromRgb(230, 241, 255)) : Brushes.Transparent;
+                if (selected) { row.Value.BringIntoView(); found = true; }
+            }
+            return found;
+        }
 
         /// <summary>刷新当前状态、步骤、报警及最近故障文字。</summary>
         private void RefreshDisplay()

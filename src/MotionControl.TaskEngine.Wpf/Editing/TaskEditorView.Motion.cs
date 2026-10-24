@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Wpf.Monitoring;
@@ -16,6 +17,8 @@ namespace MotionControl.TaskEngine.Wpf.Editing
     {
         /// <summary>每根轴的具体表单，折叠只改变可见性，不丢参数。</summary>
         private readonly List<TaskMotionEditRow> _motionRows = new List<TaskMotionEditRow>();
+        /// <summary>多轴目标摘要表，选择一行后在下方编辑该轴参数。</summary>
+        private DataGrid _motionTargetsGrid;
 
         /// <summary>单轴、轴组和回零/停轴分别创建明确字段。</summary>
         private void BuildMotion()
@@ -25,7 +28,16 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             {
                 Details.Children.Add(TaskEditingUi.Label(this, "全部轴到位后继续，不保证直线路径或同时到达"));
                 Details.Children.Add(TaskEditingUi.Button(this, "添加轴目标", AddTarget));
+                _motionTargetsGrid = new DataGrid { IsReadOnly = true, AutoGenerateColumns = false, MaxHeight = 180, MinHeight = 80, Margin = new Thickness(0, 8, 0, 6), ColumnHeaderStyle = (Style)FindResource("编辑表头") };
+                string[] headers = { "逻辑轴", "目标来源", "目标", "单位" };
+                string[] paths = { "AxisDisplay", "SourceDisplay", "TargetDisplay", "UnitSymbol" };
+                for (int i = 0; i < headers.Length; i++)
+                    _motionTargetsGrid.Columns.Add(new DataGridTextColumn { Header = T(headers[i]), Binding = new Binding(paths[i]), Width = i == 2 ? new DataGridLength(1, DataGridLengthUnitType.Star) : new DataGridLength(i == 3 ? 48 : 92) });
+                _motionTargetsGrid.SelectionChanged += MotionTargetSelected;
+                Details.Children.Add(_motionTargetsGrid);
+                Details.Children.Add(TaskEditingUi.Label(this, "选中一根轴，在下方填写该轴目标和独立参数"));
                 foreach (var target in group.Targets) AddMotionRow(target, true);
+                RefreshMotionTargets(_motionRows.FirstOrDefault());
             }
             else if (_selected is AxisCommandNode command)
             {
@@ -45,7 +57,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             _fields["Stop"].Visibility = _fields["StopLabel"].Visibility = stopping ? Visibility.Visible : Visibility.Collapsed;
         }
 
-        /// <summary>每轴独立目标与速度；轴组按行折叠，常用参数不堆成大表。</summary>
+        /// <summary>每轴保留独立目标与参数；轴组从目标表选择当前轴，其他轴输入仍保存在各自控件中。</summary>
         private void AddMotionRow(AxisPositionTarget target, bool group)
         {
             var row = new TaskMotionEditRow();
@@ -56,21 +68,55 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             row.Acceleration = TaskEditingUi.Text(target.Profile?.Acceleration.ToString(CultureInfo.InvariantCulture));
             row.Deceleration = TaskEditingUi.Text(target.Profile?.Deceleration.ToString(CultureInfo.InvariantCulture));
             var panel = new StackPanel { Margin = new Thickness(7) };
-            panel.Children.Add(TaskEditingUi.Label(this, "逻辑轴")); panel.Children.Add(row.Axis);
-            panel.Children.Add(TaskEditingUi.Label(this, "定位方式")); panel.Children.Add(row.Mode);
-            panel.Children.Add(TaskEditingUi.Label(this, "目标来源和值")); panel.Children.Add(row.Value);
             row.Unit = TaskEditingUi.Label(this, "工程单位"); panel.Children.Add(row.Unit); UpdateMotionUnit(row);
-            panel.Children.Add(TaskEditingUi.Label(this, "速度")); panel.Children.Add(row.Speed);
-            panel.Children.Add(TaskEditingUi.Label(this, "加速度")); panel.Children.Add(row.Acceleration);
-            panel.Children.Add(TaskEditingUi.Label(this, "减速度")); panel.Children.Add(row.Deceleration);
-            var map = TaskEditingUi.Button(this, "查看轴映射", OpenAxisMapping); map.Tag = row; panel.Children.Add(map);
-            var manual = TaskEditingUi.Button(this, "查看轴手动", OpenAxisManual); manual.Tag = row; panel.Children.Add(manual);
+            panel.Children.Add(MotionFields(new[] { "速度", "加速度", "减速度" }, new FrameworkElement[] { row.Speed, row.Acceleration, row.Deceleration }));
+            panel.Children.Add(MotionFields(new[] { "逻辑轴", "定位方式" }, new FrameworkElement[] { row.Axis, row.Mode }));
+            panel.Children.Add(TaskEditingUi.Label(this, "目标来源和值")); panel.Children.Add(row.Value);
+            var links = new WrapPanel();
+            var map = TaskEditingUi.Button(this, "查看轴映射", OpenAxisMapping); map.Tag = row; links.Children.Add(map);
+            var manual = TaskEditingUi.Button(this, "查看轴手动", OpenAxisManual); manual.Tag = row; links.Children.Add(manual); panel.Children.Add(links);
             if (group) { var remove = TaskEditingUi.Button(this, "移除此轴目标", RemoveTarget); remove.Tag = row; panel.Children.Add(remove); }
             row.Container = new Expander { Header = string.IsNullOrEmpty(target.AxisName) ? T("未选择逻辑轴") : target.AxisName, Content = panel,
-                IsExpanded = !group || _motionRows.Count == 0, Margin = new Thickness(0, 7, 0, 0) };
+                IsExpanded = true, Margin = new Thickness(0, 7, 0, 0) };
             row.Axis.Tag = row; row.Mode.Tag = row; row.Axis.SelectionChanged += MotionAxisChanged; row.Mode.SelectionChanged += MotionModeChanged;
             _motionRows.Add(row); Details.Children.Add(row.Container);
+            if (group)
+            {
+                row.Container.Visibility = Visibility.Collapsed;
+                panel.AddHandler(TextBox.TextChangedEvent, new TextChangedEventHandler(MotionValueChanged));
+                panel.AddHandler(System.Windows.Controls.Primitives.Selector.SelectionChangedEvent, new SelectionChangedEventHandler(MotionChoiceChanged));
+            }
         }
+        /// <summary>常用运动字段并排显示，先看到速度，再设置目标；字段仍对应原有具体控件。</summary>
+        private Grid MotionFields(string[] labels, FrameworkElement[] controls)
+        {
+            var grid = new Grid();
+            for (int i = 0; i < controls.Length; i++)
+            {
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                var cell = new StackPanel { Margin = new Thickness(i == 0 ? 0 : 4, 0, i + 1 == controls.Length ? 0 : 4, 0) };
+                cell.Children.Add(TaskEditingUi.Label(this, labels[i])); cell.Children.Add(controls[i]);
+                Grid.SetColumn(cell, i); grid.Children.Add(cell);
+            }
+            return grid;
+        }
+        /// <summary>只让选中轴的参数面板可见，其他轴的控件和输入仍完整保留。</summary>
+        private void MotionTargetSelected(object sender, SelectionChangedEventArgs e)
+        {
+            if (!(_motionTargetsGrid.SelectedItem is TaskMotionEditRow selected)) return;
+            foreach (var row in _motionRows) row.Container.Visibility = ReferenceEquals(row, selected) ? Visibility.Visible : Visibility.Collapsed;
+        }
+        /// <summary>添加或删除轴后按原对象保留选择，不按行号误选其他轴。</summary>
+        private void RefreshMotionTargets(TaskMotionEditRow selected)
+        {
+            if (_motionTargetsGrid == null) return;
+            _motionTargetsGrid.ItemsSource = _motionRows.ToList();
+            _motionTargetsGrid.SelectedItem = selected != null && _motionRows.Contains(selected) ? selected : _motionRows.FirstOrDefault();
+        }
+        /// <summary>参数文本变化仅刷新摘要表，不读回模型或触发动作。</summary>
+        private void MotionValueChanged(object sender, TextChangedEventArgs e) { _motionTargetsGrid?.Items.Refresh(); }
+        /// <summary>来源与点位变化同步摘要，选择表格行本身不算编辑。</summary>
+        private void MotionChoiceChanged(object sender, SelectionChangedEventArgs e) { _motionTargetsGrid?.Items.Refresh(); }
         /// <summary>用户选轴时同步更新单位和该轴点位，不取手动速度代替工艺速度。</summary>
         private void MotionAxisChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -87,12 +133,13 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             string unit = _catalog.Axes.TryGetValue(row.Axis.SelectedItem as string ?? "", out axis) ? axis.EngineeringUnit : "?";
             if (string.IsNullOrWhiteSpace(unit)) unit = "?";
             row.Unit.Text = T("工程单位") + "：" + unit + " / " + unit + "/s / " + unit + "/s²";
+            row.UnitSymbol = unit;
         }
         /// <summary>新轴目标必须由人员明确选轴。</summary>
-        private void AddTarget(object sender, RoutedEventArgs e) { AddMotionRow(TaskEditorNodes.Target(), true); IsDirty = true; }
+        private void AddTarget(object sender, RoutedEventArgs e) { AddMotionRow(TaskEditorNodes.Target(), true); RefreshMotionTargets(_motionRows.Last()); IsDirty = true; }
         /// <summary>删除选中轴目标不删除步骤，剩余轴数由检查器验证。</summary>
         private void RemoveTarget(object sender, RoutedEventArgs e)
-        { var row = (TaskMotionEditRow)((Button)sender).Tag; _motionRows.Remove(row); Details.Children.Remove(row.Container); IsDirty = true; }
+        { var row = (TaskMotionEditRow)((Button)sender).Tag; _motionRows.Remove(row); Details.Children.Remove(row.Container); RefreshMotionTargets(null); IsDirty = true; }
         /// <summary>使用当前选择轴导航，避免修改下拉后跳到旧轴。</summary>
         private void OpenAxisMapping(object sender, RoutedEventArgs e) { OpenMotionReference(sender, "轴映射配置"); }
         /// <summary>手动页只定位，不发动作。</summary>
@@ -122,6 +169,14 @@ namespace MotionControl.TaskEngine.Wpf.Editing
     /// <summary>一根轴的具体控件集合。</summary>
     internal sealed class TaskMotionEditRow
     {
+        /// <summary>目标表中的逻辑轴名称。</summary>
+        public string AxisDisplay { get { return Axis.SelectedItem as string ?? ""; } }
+        /// <summary>目标来源的当前显示文字。</summary>
+        public string SourceDisplay { get { return Value.SourceText; } }
+        /// <summary>目标引用或数值的只读摘要。</summary>
+        public string TargetDisplay { get { return Value.ValueText; } }
+        /// <summary>当前逻辑轴的工程单位。</summary>
+        public string UnitSymbol { get; internal set; }
         /// <summary>逻辑轴选择。</summary>
         internal ComboBox Axis;
         /// <summary>绝对位置或相对距离。</summary>

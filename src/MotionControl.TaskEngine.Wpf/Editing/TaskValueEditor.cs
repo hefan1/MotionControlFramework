@@ -25,6 +25,21 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         private readonly ComboBox _axis;
         /// <summary>稳定示教点编号选择。</summary>
         private readonly ComboBox _point;
+        /// <summary>运动目标的所属轴已由外层行选择，不重复显示第二个轴下拉。</summary>
+        private bool _fixedAxis;
+        /// <summary>目标表只读显示当前来源名称，不触发解析或写入。</summary>
+        internal string SourceText { get { return (_source.SelectedItem as ComboBoxItem)?.Content as string ?? "—"; } }
+        /// <summary>目标表显示当前输入；是否有效仍由检查器判定。</summary>
+        internal string ValueText
+        {
+            get
+            {
+                var source = _source.SelectedValue as TaskValueSource?;
+                if (source == TaskValueSource.Variable) return _variable.SelectedItem as string ?? "";
+                if (source == TaskValueSource.TeachPoint) return (_point.SelectedItem as ComboBoxItem)?.Content as string ?? "";
+                return source == TaskValueSource.Constant ? _constant.Text : "";
+            }
+        }
 
         /// <summary>按字段用途过滤目录，保留旧引用供校验。</summary>
         internal TaskValueEditor(TaskResourceCatalog catalog, TaskValueBinding binding, string language, bool numeric = false, bool teachPoint = true, string axisName = null)
@@ -59,7 +74,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         }
 
         /// <summary>运动目标的点位轴由明确的逻辑轴选择决定。</summary>
-        internal void FixAxis() { _axis.IsEnabled = false; }
+        internal void FixAxis() { _fixedAxis = true; _axis.IsEnabled = false; ShowSource(); }
         /// <summary>用户切换逻辑轴后更新点位目录并清除旧点位。</summary>
         internal void SelectAxis(string name)
         {
@@ -93,7 +108,8 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             var source = _source.SelectedValue as TaskValueSource?;
             _type.Visibility = _constant.Visibility = source == TaskValueSource.Constant ? Visibility.Visible : Visibility.Collapsed;
             _variable.Visibility = source == TaskValueSource.Variable ? Visibility.Visible : Visibility.Collapsed;
-            _axis.Visibility = _point.Visibility = source == TaskValueSource.TeachPoint ? Visibility.Visible : Visibility.Collapsed;
+            _point.Visibility = source == TaskValueSource.TeachPoint ? Visibility.Visible : Visibility.Collapsed;
+            _axis.Visibility = source == TaskValueSource.TeachPoint && !_fixedAxis ? Visibility.Visible : Visibility.Collapsed;
         }
         /// <summary>显示熟悉的 C# 类型名，存储仍使用兼容枚举。</summary>
         internal static string TypeName(DeviceVariableType type)
