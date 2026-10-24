@@ -21,6 +21,16 @@ namespace MotionControl.TaskEngine.Machine
             if (configuration.SchemaVersion != 1 || configuration.Revision < 1)
                 errors.Add("设备清单只支持 schemaVersion=1，revision 必须大于零。");
             if (!ValidName(configuration.MachineId) || !ValidName(configuration.Name)) errors.Add("设备标识和名称不能为空或带首尾空格。");
+            var namedResources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string resourceName in configuration.NamedResources ?? new List<string>())
+            {
+                if (!ValidName(resourceName) || resourceName.StartsWith("Axis:", StringComparison.OrdinalIgnoreCase)
+                    || resourceName.StartsWith("Output:", StringComparison.OrdinalIgnoreCase)
+                    || !namedResources.Add(resourceName))
+                    errors.Add("共享资源名称无效、重复或使用了 Axis:/Output: 保留前缀：" + resourceName);
+                else if (!catalog.Resources.Contains(resourceName, StringComparer.OrdinalIgnoreCase))
+                    errors.Add("共享资源没有加入设备资源目录：" + resourceName);
+            }
             var library = new Dictionary<string, TaskDefinition>(StringComparer.OrdinalIgnoreCase);
             int count = 0;
             foreach (TaskDefinition task in definitions ?? new TaskDefinition[0])

@@ -11,7 +11,8 @@ namespace MotionControl.TaskEngine.Execution
     {
         /// <summary>返回是否能够得出结论；未知子项不会被当作不满足分支。</summary>
         internal static bool TryEvaluate(TaskCondition condition, TaskResourceCatalog catalog,
-            IReadOnlyList<DeviceVariableSnapshot> variables, out bool result, out string reason)
+            IReadOnlyList<DeviceVariableSnapshot> variables, out bool result, out string reason,
+            List<TaskObservedValue> observations = null)
         {
             result = false;
             reason = null;
@@ -19,8 +20,16 @@ namespace MotionControl.TaskEngine.Execution
             {
                 object left, right;
                 if (!TaskRuntimeValues.TryRead(condition.Left, catalog, variables, out left, out reason)
-                    || !TaskRuntimeValues.TryRead(condition.Right, catalog, variables, out right, out reason)) return false;
+                    || !TaskRuntimeValues.TryRead(condition.Right, catalog, variables, out right, out reason))
+                {
+                    observations?.Add(new TaskObservedValue(TaskRuntimeValues.Describe(condition.Left),
+                        condition.Comparison + " " + TaskRuntimeValues.Describe(condition.Right), null, null));
+                    return false;
+                }
                 result = Compare(left, right, condition.Comparison.Value);
+                observations?.Add(new TaskObservedValue(TaskRuntimeValues.Describe(condition.Left),
+                    condition.Comparison + " " + Convert.ToString(right, System.Globalization.CultureInfo.InvariantCulture),
+                    Convert.ToString(left, System.Globalization.CultureInfo.InvariantCulture), result));
                 reason = TaskRuntimeValues.Describe(condition.Left) + " " + condition.Comparison + " "
                     + TaskRuntimeValues.Describe(condition.Right) + "；当前值：" + left + " / " + right;
                 return true;
@@ -31,7 +40,7 @@ namespace MotionControl.TaskEngine.Execution
             {
                 bool childResult;
                 string childReason;
-                if (!TryEvaluate(child, catalog, variables, out childResult, out childReason))
+                if (!TryEvaluate(child, catalog, variables, out childResult, out childReason, observations))
                 {
                     reason = childReason;
                     return false;

@@ -90,11 +90,24 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>当前 Host 主窗口，用于显示控制卡的统一连接状态。</summary>
         private MainWindow _mainWindow;
+        /// <summary>现有配置与任务仿真工作台的组合入口。</summary>
+        private Tasks.TaskMonitorLauncher _taskMonitorLauncher;
+        /// <summary>防止主窗口关闭时重复等待仿真收尾。</summary>
+        private bool _closingTaskSimulation;
 
         /// <summary>创建当前单机的 JSON 配置存储，并接入轴映射和 IO 映射页面。</summary>
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+
+            // 独立任务仿真入口在任何控制卡服务和现场恢复服务创建前返回。
+            if (e.Args.Contains("--task-simulation"))
+            {
+                MainWindow = new MotionControl.TaskEngine.Wpf.Views.TaskSimulationWindow(
+                    MotionControl.TaskEngine.Wpf.Simulation.TaskMonitorExample.Create());
+                MainWindow.Show();
+                return;
+            }
 
             _singleInstanceMutex = new Mutex(true, SingleInstanceMutexName, out _ownsSingleInstanceMutex);
             if (!_ownsSingleInstanceMutex)
@@ -148,6 +161,8 @@ namespace MotionControl.Host.Wpf
             _mainWindow.SetIoMappingConfigurationPage(_ioMappingPage);
             _mainWindow.SetSafetyInterlockConfigurationPage(_safetyInterlockPage);
             _mainWindow.SetDeviceVariablePage(_deviceVariablePage);
+            _taskMonitorLauncher = new Tasks.TaskMonitorLauncher(_configurationStore, MachineId, _mainWindow);
+            _mainWindow.SetTaskMonitorPage(_taskMonitorLauncher);
             RefreshIoMonitorPage();
 
             MainWindow = _mainWindow;
@@ -443,8 +458,9 @@ namespace MotionControl.Host.Wpf
         }
 
         /// <summary>关闭前阻止设备仍在运行或报警处理中，并保存当前变量与可续跑状态。</summary>
-        private void MainWindow_Closing(object sender, CancelEventArgs e)
+        private async void MainWindow_Closing(object sender, CancelEventArgs e)
         {
+            if (_closingTaskSimulation) { e.Cancel = true; return; }
             MachineRunState? runtimeState = _machineRuntime == null
                 ? (MachineRunState?)null
                 : _machineRuntime.State;
@@ -474,6 +490,22 @@ namespace MotionControl.Host.Wpf
                     "恢复状态保存失败",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
+                return;
+            }
+            if (_taskMonitorLauncher != null && _taskMonitorLauncher.HasSimulationWindow)
+            {
+                e.Cancel = true; _closingTaskSimulation = true;
+                try
+                {
+                    await _taskMonitorLauncher.CloseSimulationAsync();
+                    _closingTaskSimulation = false;
+                    _mainWindow.Close();
+                }
+                catch (Exception error)
+                {
+                    _closingTaskSimulation = false;
+                    MessageBox.Show(error.ToString(), "任务仿真收尾失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
             }
         }
 

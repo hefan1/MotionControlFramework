@@ -84,7 +84,12 @@ namespace MotionControl.TaskEngine.Execution
             try
             {
                 acquired = await AcquireActionAsync(scope, "Output:" + node.OutputName).ConfigureAwait(false);
-                await scope.StepAsync(() => _device.WriteOutput(node.OutputName, node.Value)).ConfigureAwait(false);
+                await scope.StepAsync(() =>
+                {
+                    _device.WriteOutput(node.OutputName, node.Value);
+                    scope.Diagnostics = new TaskStepDiagnostics("输出写入记录；机构到位另看反馈输入。", new[] {
+                        new TaskObservedValue(node.OutputName, node.Value.ToString(), _device.ReadOutput(node.OutputName)?.ToString(), true) });
+                }).ConfigureAwait(false);
             }
             finally
             {

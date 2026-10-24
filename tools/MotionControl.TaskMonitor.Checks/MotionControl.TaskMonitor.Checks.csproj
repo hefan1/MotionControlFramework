@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+ <PropertyGroup><OutputType>Exe</OutputType><UseWPF>true</UseWPF><AssemblyName>MotionControl.TaskMonitor.Checks</AssemblyName></PropertyGroup>
+ <ItemGroup><ProjectReference Include="..\..\src\MotionControl.TaskEngine.Wpf\MotionControl.TaskEngine.Wpf.csproj"/></ItemGroup>
+</Project>

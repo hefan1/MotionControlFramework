@@ -93,7 +93,14 @@ namespace MotionControl.TaskEngine.Execution
             else if (node is SetOutputNode output)
                 await SetOutputAsync(scope, output).ConfigureAwait(false);
             else if (node is SetVariableNode assignment)
-                await scope.StepAsync(() => _device.WriteVariable(assignment.VariableName, ReadRequired(assignment.Value))).ConfigureAwait(false);
+                await scope.StepAsync(() =>
+                {
+                    object value = ReadRequired(assignment.Value);
+                    _device.WriteVariable(assignment.VariableName, value);
+                    string text = Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture);
+                    scope.Diagnostics = new TaskStepDiagnostics("本次写入设备变量", new[] {
+                        new TaskObservedValue(assignment.VariableName, TaskRuntimeValues.Describe(assignment.Value), text, true) });
+                }).ConfigureAwait(false);
             else if (node is MoveAxisNode move) await MoveAsync(scope, move).ConfigureAwait(false);
             else if (node is MoveAxisGroupNode group) await MoveAxisGroupAsync(scope, group).ConfigureAwait(false);
             else if (node is AxisCommandNode command) await AxisCommandAsync(scope, command).ConfigureAwait(false);

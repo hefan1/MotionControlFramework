@@ -16,6 +16,8 @@ namespace MotionControl.TaskEngine.Machine
         public int Revision { get; set; } = 1;
         /// <summary>可选启动初始化任务；成功后才放行各工位，暂停不重复初始化。</summary>
         public string InitializationTaskId { get; set; }
+        /// <summary>本设备明确配置的共享区域、夹具等命名资源。</summary>
+        public List<string> NamedResources { get; set; } = new List<string>();
         /// <summary>本设备的工位列表，启动后互相独立推进。</summary>
         public List<StationTaskConfiguration> Stations { get; set; } = new List<StationTaskConfiguration>();
     }

@@ -8,6 +8,7 @@
     <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\MotionControl.TaskEngine.Wpf\MotionControl.TaskEngine.Wpf.csproj" />
     <ProjectReference Include="..\MotionControl.Equipment.Demo\MotionControl.Equipment.Demo.csproj" />
     <ProjectReference Include="..\MotionControl.Framework.Contracts\MotionControl.Framework.Contracts.csproj" />
     <ProjectReference Include="..\MotionControl.Framework.Runtime\MotionControl.Framework.Runtime.csproj" />

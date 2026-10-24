@@ -1,0 +1,32 @@
+<Window x:Class="MotionControl.TaskEngine.Wpf.Views.TaskSimulationWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Width="1440" Height="900" MinWidth="1060" MinHeight="680" WindowStartupLocation="CenterScreen" Background="#F3F6FA">
+ <Window.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries>
+  <ResourceDictionary Source="../Styles/TaskMonitorStyles.xaml"/><ResourceDictionary Source="../Localization/Strings.zh-CN.xaml"/>
+ </ResourceDictionary.MergedDictionaries></ResourceDictionary></Window.Resources>
+ <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <DockPanel Margin="24,16,24,8">
+   <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+    <Button x:Name="ResetButton" Content="{DynamicResource 任务监控.整机复位}" Click="Reset_Click"/>
+    <Button x:Name="StartButton" Content="{DynamicResource 任务监控.启动}" Click="Start_Click"/>
+    <Button x:Name="PauseButton" Content="{DynamicResource 任务监控.暂停}" Click="Pause_Click"/>
+    <Button Content="中文 / English" Click="Language_Click"/>
+   </StackPanel>
+   <StackPanel><TextBlock Text="{DynamicResource 任务监控.任务运行}" FontSize="23" FontWeight="SemiBold"/>
+    <TextBlock x:Name="MachineStateText" Foreground="#176BD0" Margin="0,4,0,0"/></StackPanel>
+  </DockPanel>
+  <ContentControl x:Name="MonitorContent" Grid.Row="1"/>
+  <Expander Grid.Row="2" Header="{DynamicResource 任务监控.仿真信号与参考}" Margin="14,0,14,10" Background="#EAF2FC">
+   <StackPanel Margin="10"><TextBlock Text="{DynamicResource 任务监控.仿真输入说明}" TextWrapping="Wrap" Margin="0,0,0,7"/>
+    <WrapPanel x:Name="InputsPanel"/>
+    <WrapPanel Margin="0,5"><TextBlock Text="{DynamicResource 任务监控.变量}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+     <ComboBox x:Name="VariableBox" MinWidth="180" Margin="0,0,8,0"/>
+     <TextBox x:Name="VariableValue" Width="160" Margin="0,0,8,0" VerticalContentAlignment="Center"/>
+     <Button Content="{DynamicResource 任务监控.写入内存变量}" Click="WriteVariable_Click"/>
+     <Button Content="{DynamicResource 任务监控.准备内存轴参考}" Click="PrepareAxes_Click"/>
+    </WrapPanel>
+    <TextBlock x:Name="CommandFeedback" TextWrapping="Wrap" Foreground="#40536A"/>
+   </StackPanel>
+  </Expander>
+ </Grid>
+</Window>

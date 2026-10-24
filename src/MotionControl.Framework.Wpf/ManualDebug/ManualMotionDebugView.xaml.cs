@@ -364,6 +364,16 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
+        /// <summary>从任务步骤滚动到指定轴的手动卡片，不执行伺服、回零或移动指令。</summary>
+        public bool FocusAxisByLogicalName(string logicalName)
+        {
+            ManualAxisControl axis = _axisControls.FirstOrDefault(item =>
+                string.Equals(item.AxisName, logicalName, StringComparison.OrdinalIgnoreCase));
+            if (axis == null) return false;
+            AxisCardsScrollViewer.ScrollToVerticalOffset(axis.TranslatePoint(new Point(0, 0), AxisCardsPanel).Y);
+            return true;
+        }
+
         /// <summary>按控制卡和物理轴号生成稳定键，避免改设备显示名称后丢失示教位置。</summary>
         private static string GetAxisPositionKey(AxisHardwareDefinition axisConfiguration)
         {

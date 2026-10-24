@@ -558,4 +558,15 @@
     <sys:String x:Key="变量请选择类型">请选择变量数据类型。</sys:String>
     <sys:String x:Key="取消">取消</sys:String>
     <sys:String x:Key="保存">保存</sys:String>
+    <sys:String x:Key="任务运行">任务运行</sys:String>
+    <sys:String x:Key="任务运行页面说明">复用已有映射与变量查看任务；执行工作台当前使用独立内存仿真。</sys:String>
+    <sys:String x:Key="任务仿真入口说明">读取已保存的轴映射、IO 映射、设备变量和手动示教点。任务在独立内存仿真窗口运行，该窗口的按钮不会控制已连接的运动卡。</sys:String>
+    <sys:String x:Key="读取已有任务配置">读取已有任务配置</sys:String>
+    <sys:String x:Key="打开示例任务仿真">打开示例任务仿真</sys:String>
+    <sys:String x:Key="刷新关联配置目录">刷新关联配置目录</sys:String>
+    <sys:String x:Key="任务关联目录统计">关联目录：{0} 根轴、{1} 个 DI、{2} 个 DO、{3} 个变量、{4} 个示教点。</sys:String>
+    <sys:String x:Key="任务关联手动页不可用">控制卡尚未连接，轴手动页面未创建。本次只请求查看，没有发出运动指令。</sys:String>
+    <sys:String x:Key="任务关联对象">关联对象</sys:String>
+    <sys:String x:Key="任务关联定位成功">已定位到对应项目</sys:String>
+    <sys:String x:Key="任务关联定位未找到">当前页面未找到该项目</sys:String>
 </ResourceDictionary>

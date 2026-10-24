@@ -22,6 +22,10 @@ namespace MotionControl.TaskEngine.Checks
         {
             var checks = new Dictionary<string, Func<Task>>
             {
+                { "诊断未知输入与不可变采样", DiagnosticInputSamples },
+                { "诊断分支固定判断证据", DiagnosticBranchDecision },
+                { "诊断相对运动接受终点", DiagnosticAcceptedTarget },
+                { "诊断暂停冻结延时", DiagnosticDelayPause },
                 { "顺序、示教与动态目标", SequenceAndTargets },
                 { "分支业务 NG 与组合条件", BranchConditions },
                 { "全部变量类型赋值和比较", AllValueTypes },

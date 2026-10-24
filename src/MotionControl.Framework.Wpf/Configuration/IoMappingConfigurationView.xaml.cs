@@ -235,6 +235,19 @@ namespace MotionControl.Framework.Wpf.Configuration
                 relativePath.Replace('/', Path.DirectorySeparatorChar));
         }
 
+        /// <summary>从任务步骤选择指定 DI 或 DO 映射行，只定位现有配置，不切换输出。</summary>
+        public bool FocusPointByLogicalName(string logicalName, bool output)
+        {
+            ObservableCollection<DigitalIoHardwareDefinition> points = output ? DigitalOutputs : DigitalInputs;
+            DataGrid grid = output ? DigitalOutputsGrid : DigitalInputsGrid;
+            DigitalIoHardwareDefinition point = points.FirstOrDefault(item =>
+                string.Equals(item.Name, logicalName, StringComparison.OrdinalIgnoreCase));
+            if (point == null) return false;
+            grid.SelectedItem = point;
+            grid.ScrollIntoView(point);
+            return true;
+        }
+
         /// <summary>清空选中 DI 的逻辑名称，通道行保留在自动探测清单中。</summary>
         private void RemoveInputButton_Click(object sender, RoutedEventArgs e)
         {

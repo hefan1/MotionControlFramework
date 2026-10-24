@@ -21,10 +21,12 @@ namespace MotionControl.TaskEngine.Execution
         public string Detail { get; }
         /// <summary>本次状态更新时间，使用 UTC。</summary>
         public DateTime UpdatedAtUtc { get; }
+        /// <summary>执行时记录的诊断值；尚未采样时为空，完成后保留最后记录。</summary>
+        public TaskStepDiagnostics Diagnostics { get; }
 
         /// <summary>复制一次节点状态，避免监控方修改运行数据。</summary>
         internal TaskNodeSnapshot(string executionId, string parentId, string taskId,
-            string nodeId, string name, TaskNodeState state, string detail)
+            string nodeId, string name, TaskNodeState state, string detail, TaskStepDiagnostics diagnostics)
         {
             ExecutionId = executionId;
             ParentExecutionId = parentId;
@@ -34,6 +36,7 @@ namespace MotionControl.TaskEngine.Execution
             State = state;
             Detail = detail;
             UpdatedAtUtc = DateTime.UtcNow;
+            Diagnostics = diagnostics;
         }
     }
 }

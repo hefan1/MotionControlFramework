@@ -548,4 +548,15 @@
     <sys:String x:Key="变量请选择类型">Select a variable data type.</sys:String>
     <sys:String x:Key="取消">Cancel</sys:String>
     <sys:String x:Key="保存">Save</sys:String>
+    <sys:String x:Key="任务运行">Task monitor</sys:String>
+    <sys:String x:Key="任务运行页面说明">Monitor tasks using existing mappings and variables. The execution workbench currently uses memory simulation.</sys:String>
+    <sys:String x:Key="任务仿真入口说明">This module reuses saved axis mappings, IO mappings, variables and teach points. Open a separate memory simulation workbench; its buttons do not control the connected motion card.</sys:String>
+    <sys:String x:Key="读取已有任务配置">Open saved machine tasks</sys:String>
+    <sys:String x:Key="打开示例任务仿真">Open example simulation</sys:String>
+    <sys:String x:Key="刷新关联配置目录">Refresh shared catalog</sys:String>
+    <sys:String x:Key="任务关联目录统计">Shared catalog: {0} axes, {1} DI, {2} DO, {3} variables, {4} teach points.</sys:String>
+    <sys:String x:Key="任务关联手动页不可用">The axis manual page is unavailable because the controller is not connected. No motion has been requested.</sys:String>
+    <sys:String x:Key="任务关联对象">Referenced object</sys:String>
+    <sys:String x:Key="任务关联定位成功">Item located</sys:String>
+    <sys:String x:Key="任务关联定位未找到">Item is not present on this page</sys:String>
 </ResourceDictionary>

@@ -26,6 +26,8 @@ namespace MotionControl.TaskEngine.Execution
         internal TaskResourceRequest ResourceLease { get; set; }
         /// <summary>当前资源或互锁等待原因，超时时保留在错误中。</summary>
         internal string WaitDetail { get; set; }
+        /// <summary>当前调用最后一次明确采样，重进节点时由新采样替换。</summary>
+        internal TaskStepDiagnostics Diagnostics { get; set; }
         /// <summary>父调用，故障复位后可为仍然活动的步骤重新建立时限。</summary>
         private readonly TaskExecutionScope _parent;
         /// <summary>本节点的绝对活动时间截止值，单位毫秒。</summary>

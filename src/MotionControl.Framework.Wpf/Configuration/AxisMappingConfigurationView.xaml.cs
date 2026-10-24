@@ -285,6 +285,16 @@ namespace MotionControl.Framework.Wpf.Configuration
             UpdateHomeModeEditor(axis);
         }
 
+        /// <summary>从任务步骤定位到指定逻辑轴，只选择并滚动页面，不读取或修改控制卡。</summary>
+        public bool FocusAxisByLogicalName(string logicalName)
+        {
+            AxisMappingEntry axis = _allAxes.FirstOrDefault(item =>
+                string.Equals(item.Name, logicalName, StringComparison.OrdinalIgnoreCase));
+            if (axis == null) return false;
+            SelectAxis(axis);
+            return true;
+        }
+
         /// <summary>保存当前厂商选择，并刷新该厂商实际接入的卡型和轴数量。</summary>
         private void CardVendorComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {

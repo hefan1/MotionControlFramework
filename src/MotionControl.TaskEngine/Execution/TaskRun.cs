@@ -140,7 +140,7 @@ namespace MotionControl.TaskEngine.Execution
                 if (state == TaskNodeState.Failed && _nodes.ContainsKey(scope.ExecutionId))
                     detail = "失败前：" + _nodes[scope.ExecutionId].Detail + "；" + detail;
                 _nodes[scope.ExecutionId] = new TaskNodeSnapshot(scope.ExecutionId, scope.ParentId,
-                    scope.TaskId, scope.Node.Id, scope.Node.Name, state, detail);
+                    scope.TaskId, scope.Node.Id, scope.Node.Name, state, detail, scope.Diagnostics);
             }
         }
 

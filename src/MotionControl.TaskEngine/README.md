@@ -3,7 +3,7 @@
 当前完成阶段 1 的定义/存储/校验、阶段 2 的纯软件仿真执行器，以及阶段 3 的资源仲裁和显式互锁。
 在此基础上已加入同卡轴组定位，各轴独立目标与速度，全部到位后继续。
 设备级入口也已加入：任务清单、独立循环/触发工位、可选初始化、统一复位启停、故障当前步骤恢复和连续生产监控。
-执行器只接收独立的 `SimulatedTaskDevice`，不连接控制器或 Host。编辑器页面尚未开发；定义校验通过不等于允许实际设备运行。
+执行器只接收独立的 `SimulatedTaskDevice`，不连接控制器或 Host。运行监控 WPF 位于单独的 `MotionControl.TaskEngine.Wpf` 项目；完整的任务定义编辑器仍未开发。定义校验通过不等于允许实际设备运行。
 
 ## 文件如何定位
 
@@ -263,7 +263,7 @@ var move = new MoveAxisGroupNode
 ### 清单与正文分开
 
 - 任务正文仍是 `Tasks/*.json`，保存步骤与参数。
-- 设备清单固定是 `Parameters/TaskMachine.json`，由 `TaskMachineConfigurationStore` 保存。它记录设备标识、修订号、可选 `initializationTaskId` 和 `stations`。
+- 设备清单固定是 `Parameters/TaskMachine.json`，由 `TaskMachineConfigurationStore` 保存。它记录设备标识、修订号、可选 `initializationTaskId`、设备明确配置的 `namedResources` 和 `stations`。共享区域、夹具等命名资源先写入清单，再由资源目录加载器读取；任务文件里的字符串不会自动变成设备能力。
 - 一个工位明确填写 `stationId`、`name`、`taskId`、`enabled` 和 `mode`。`mode` 为 `Once`（会话内一次）、`Cyclic`（独立循环）或 `OnRequest`（请求触发）。不同工位可以引用同一份任务，各有自己的运行实例。
 - `cycleIntervalMs` 默认 20，允许 1–60000 毫秒；是周期之间的轮询间隔，不是轴动作周期，也不提供实时调度保证。
 - OnRequest 还需 `requestVariable` / `completedVariable`，引用两个不同的已有 bool 变量。各触发工位的交接变量不能重复分配；其他模式不填写这两项。

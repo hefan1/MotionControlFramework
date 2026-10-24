@@ -91,6 +91,18 @@ namespace MotionControl.Framework.Wpf.Variables
             }
         }
 
+        /// <summary>从任务步骤选择设备变量并滚动到该行，不改写变量定义或当前值。</summary>
+        public bool FocusVariableByName(string variableName)
+        {
+            DeviceVariableRow variable = Variables.FirstOrDefault(item =>
+                string.Equals(item.Name, variableName, StringComparison.OrdinalIgnoreCase));
+            if (variable == null) return false;
+            VariablesGrid.SelectedItem = variable;
+            VariablesGrid.ScrollIntoView(variable);
+            SelectedVariable = variable;
+            return true;
+        }
+
         /// <summary>通知 WPF 页面绑定属性发生变化。</summary>
         public event PropertyChangedEventHandler PropertyChanged;
 

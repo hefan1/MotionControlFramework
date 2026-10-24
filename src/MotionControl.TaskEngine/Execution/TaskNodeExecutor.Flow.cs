@@ -56,7 +56,11 @@ namespace MotionControl.TaskEngine.Execution
             {
                 bool result;
                 string reason;
-                if (!TaskConditionEvaluator.TryEvaluate(branch.Condition, _device.Catalog, _device.ReadVariables(), out result, out reason))
+                var values = new List<TaskObservedValue>();
+                bool known = TaskConditionEvaluator.TryEvaluate(branch.Condition, _device.Catalog, _device.ReadVariables(), out result, out reason, values);
+                scope.Diagnostics = new TaskStepDiagnostics(reason, values, known ? (bool?)result : null,
+                    known ? (result ? branch.WhenTrue?.Id : branch.WhenFalse?.Id) ?? string.Empty : null);
+                if (!known)
                     throw new InvalidOperationException(reason);
                 selected = result ? branch.WhenTrue : branch.WhenFalse;
                 _run.Report(scope, TaskNodeState.Running, "条件结果=" + result + "；" + reason);
@@ -74,6 +78,7 @@ namespace MotionControl.TaskEngine.Execution
                 await scope.StepAsync(() =>
                 {
                     complete = _run.ActiveMilliseconds >= end;
+                    scope.Diagnostics = new TaskStepDiagnostics("工艺延时", remainingDelayMilliseconds: Math.Max(0, end - _run.ActiveMilliseconds));
                     _run.Report(scope, TaskNodeState.Waiting, "等待工艺延时 " + milliseconds + " ms。");
                 }).ConfigureAwait(false);
                 if (!complete) await scope.NextPollAsync().ConfigureAwait(false);
@@ -90,6 +95,8 @@ namespace MotionControl.TaskEngine.Execution
                 {
                     bool? actual = _device.ReadInput(node.InputName);
                     complete = actual.HasValue && actual.Value == node.Expected;
+                    scope.Diagnostics = new TaskStepDiagnostics("等待输入：" + node.InputName, new[] {
+                        new TaskObservedValue(node.InputName, node.Expected.ToString(), actual?.ToString(), actual.HasValue ? (bool?)complete : null) });
                     _run.Report(scope, TaskNodeState.Waiting, "等待 DI " + node.InputName + "=" + node.Expected
                         + "；当前=" + (actual.HasValue ? actual.Value.ToString() : "未知"));
                 }).ConfigureAwait(false);
@@ -107,7 +114,9 @@ namespace MotionControl.TaskEngine.Execution
                 {
                     bool result;
                     string reason;
-                    bool known = TaskConditionEvaluator.TryEvaluate(node.Condition, _device.Catalog, _device.ReadVariables(), out result, out reason);
+                    var values = new List<TaskObservedValue>();
+                    bool known = TaskConditionEvaluator.TryEvaluate(node.Condition, _device.Catalog, _device.ReadVariables(), out result, out reason, values);
+                    scope.Diagnostics = new TaskStepDiagnostics(reason, values, known ? (bool?)result : null);
                     complete = known && result;
                     _run.Report(scope, TaskNodeState.Waiting, "等待条件：" + reason);
                 }).ConfigureAwait(false);

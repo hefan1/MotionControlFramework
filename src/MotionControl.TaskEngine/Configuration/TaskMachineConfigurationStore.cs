@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using MotionControl.Framework.Runtime.Configuration;
@@ -31,6 +32,15 @@ namespace MotionControl.TaskEngine.Configuration
             var result = Deserialize(File.ReadAllText(Path.Combine(_store.GetMachineDirectory(machineId), RelativePath)));
             RequireValid(machineId, result, definitions, catalog);
             return result;
+        }
+
+        /// <summary>读取供资源目录加载使用的命名资源；调用方随后仍须执行完整 Load 校验。</summary>
+        public IReadOnlyList<string> LoadNamedResources(string machineId)
+        {
+            string path = Path.Combine(_store.GetMachineDirectory(machineId), RelativePath);
+            if (!File.Exists(path)) return new ReadOnlyCollection<string>(new List<string>());
+            TaskMachineConfiguration configuration = Deserialize(File.ReadAllText(path));
+            return new ReadOnlyCollection<string>(configuration.NamedResources ?? new List<string>());
         }
 
         /// <summary>校验成功才保存，内容变化必须递增修订号，覆盖返回原文件备份路径。</summary>

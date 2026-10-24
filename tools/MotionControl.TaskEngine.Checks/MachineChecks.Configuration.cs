@@ -19,6 +19,7 @@ namespace MotionControl.TaskEngine.Checks
             var device = Device();
             var definitions = new[] { TaskDefinition("Work", TaskFixtures.Delay("work")) };
             var configuration = new TaskMachineConfiguration { MachineId = "Test01", Name = "清单检查",
+                NamedResources = new List<string> { "Zone:Camera" },
                 Stations = new List<StationTaskConfiguration> { Station("work", "Work", StationTaskMode.Once) } };
             CheckAssert.True(TaskMachineConfigurationValidator.Validate(configuration, definitions, device.Catalog).Count == 0, "合法清单被拒绝。");
             configuration.Stations.Add(Station("WORK", "Work", StationTaskMode.Once));
@@ -35,6 +36,8 @@ namespace MotionControl.TaskEngine.Checks
             {
                 var store = new TaskMachineConfigurationStore(workspace.Store);
                 CheckAssert.True(store.Save("Test01", configuration, definitions, device.Catalog) == null, "首次保存有备份。");
+                CheckAssert.True(store.LoadNamedResources("Test01").SequenceEqual(new[] { "Zone:Camera" }),
+                    "设备清单没有保留供资源目录加载的共享资源名称。");
                 string path = Path.Combine(workspace.Root, "Test01", "Parameters", "TaskMachine.json");
                 string original = File.ReadAllText(path);
                 configuration.Name = "内容已修改";

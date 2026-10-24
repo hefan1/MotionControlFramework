@@ -73,6 +73,9 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>当前卡片对应的逻辑轴。</summary>
         private readonly IAxis _axis;
 
+        /// <summary>当前卡片对应的逻辑轴名，供任务步骤导航使用。</summary>
+        public string AxisName => _axis.Name;
+
         /// <summary>当前轴的软限位和手动速度配置。</summary>
         private readonly AxisHardwareDefinition _axisConfiguration;
 

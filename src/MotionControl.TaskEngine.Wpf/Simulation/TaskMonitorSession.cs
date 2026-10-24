@@ -1,0 +1,56 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.IO;
+using System.Linq;
+using MotionControl.Framework.Runtime.Configuration;
+using MotionControl.TaskEngine.Catalog;
+using MotionControl.TaskEngine.Configuration;
+using MotionControl.TaskEngine.Definitions;
+using MotionControl.TaskEngine.Machine;
+using MotionControl.TaskEngine.Simulation;
+
+namespace MotionControl.TaskEngine.Wpf.Simulation
+{
+    /// <summary>一个监控窗口独占一个内存会话；所有引用通过既有目录校验。</summary>
+    public sealed class TaskMonitorSession
+    {
+        /// <summary>本会话冻结的任务定义副本，页面不修改它们。</summary>
+        public IReadOnlyDictionary<string, TaskDefinition> Library { get; }
+        /// <summary>仅供内存仿真使用的设备。</summary>
+        public SimulatedTaskDevice Device { get; }
+        /// <summary>整机启停入口，页面不直接控制单个 TaskRun。</summary>
+        public TaskMachineController Machine { get; }
+        /// <summary>配置来源文字，便于区分示例与本机。</summary>
+        public string Source { get; }
+        /// <summary>示例数据不允许跳转为真实配置中的同名对象。</summary>
+        public bool IsExample { get; }
+
+        /// <summary>冻结显示库并建立控制器；不会启动或连接任何运动卡。</summary>
+        public TaskMonitorSession(TaskMachineConfiguration configuration, IEnumerable<TaskDefinition> definitions,
+            SimulatedTaskDevice device, string source, bool isExample)
+        {
+            var frozen = definitions.Select(item => TaskDefinitionJson.Deserialize(TaskDefinitionJson.Serialize(item)))
+                .ToDictionary(item => item.TaskId, StringComparer.OrdinalIgnoreCase);
+            Machine = new TaskMachineController(configuration, frozen.Values, device);
+            Library = new ReadOnlyDictionary<string, TaskDefinition>(frozen);
+            Device = device; Source = source; IsExample = isExample;
+        }
+
+        /// <summary>只读本机任务及已有轴、IO、变量、示教点文件，不创建另一份映射清单。</summary>
+        public static TaskMonitorSession LoadMachine(MachineConfigurationStore store, string machineId)
+        {
+            string taskFolder = Path.Combine(store.GetMachineDirectory(machineId), "Tasks");
+            if (!Directory.Exists(taskFolder)) throw new InvalidOperationException("本机尚无 Tasks 任务目录。可先打开示例任务查看页面。");
+            var definitionStore = new TaskDefinitionStore(store);
+            var definitions = Directory.GetFiles(taskFolder, "*.json").OrderBy(path => path)
+                .Select(path => definitionStore.LoadForEditing(machineId, Path.GetFileName(path))).ToList();
+            var machineStore = new TaskMachineConfigurationStore(store);
+            var namedResources = machineStore.LoadNamedResources(machineId);
+            var catalog = new TaskResourceCatalogLoader(store).Load(machineId, namedResources);
+            var configuration = machineStore.Load(machineId, definitions, catalog);
+            return new TaskMonitorSession(configuration, definitions, new SimulatedTaskDevice(catalog),
+                store.GetMachineDirectory(machineId), false);
+        }
+    }
+}
