@@ -51,6 +51,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MotionControl.TaskEngine.Wp
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MotionControl.TaskMonitor.Checks", "tools\MotionControl.TaskMonitor.Checks\MotionControl.TaskMonitor.Checks.csproj", "{12FC1421-4E6F-475B-B93A-AADDC84B77ED}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MotionControl.TaskEditing.Checks", "tools\MotionControl.TaskEditing.Checks\MotionControl.TaskEditing.Checks.csproj", "{1F5D5088-9222-4616-8E9A-B541AC652FC5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -241,6 +243,18 @@ Global
 		{12FC1421-4E6F-475B-B93A-AADDC84B77ED}.Release|x64.Build.0 = Release|Any CPU
 		{12FC1421-4E6F-475B-B93A-AADDC84B77ED}.Release|x86.ActiveCfg = Release|Any CPU
 		{12FC1421-4E6F-475B-B93A-AADDC84B77ED}.Release|x86.Build.0 = Release|Any CPU
+		{1F5D5088-9222-4616-8E9A-B541AC652FC5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1F5D5088-9222-4616-8E9A-B541AC652FC5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1F5D5088-9222-4616-8E9A-B541AC652FC5}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{1F5D5088-9222-4616-8E9A-B541AC652FC5}.Debug|x64.Build.0 = Debug|Any CPU
+		{1F5D5088-9222-4616-8E9A-B541AC652FC5}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{1F5D5088-9222-4616-8E9A-B541AC652FC5}.Debug|x86.Build.0 = Debug|Any CPU
+		{1F5D5088-9222-4616-8E9A-B541AC652FC5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1F5D5088-9222-4616-8E9A-B541AC652FC5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1F5D5088-9222-4616-8E9A-B541AC652FC5}.Release|x64.ActiveCfg = Release|Any CPU
+		{1F5D5088-9222-4616-8E9A-B541AC652FC5}.Release|x64.Build.0 = Release|Any CPU
+		{1F5D5088-9222-4616-8E9A-B541AC652FC5}.Release|x86.ActiveCfg = Release|Any CPU
+		{1F5D5088-9222-4616-8E9A-B541AC652FC5}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -263,5 +277,6 @@ Global
 		{BE7E1F39-8011-42B3-B97D-2C72501EF9E1} = {D332C5B3-46FA-4CE6-8F85-E0CD793C007B}
 		{E013E8CA-FB73-4E89-B822-CFBCD0DE8AA4} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{12FC1421-4E6F-475B-B93A-AADDC84B77ED} = {D332C5B3-46FA-4CE6-8F85-E0CD793C007B}
+		{1F5D5088-9222-4616-8E9A-B541AC652FC5} = {D332C5B3-46FA-4CE6-8F85-E0CD793C007B}
 	EndGlobalSection
 EndGlobal

@@ -29,9 +29,18 @@ namespace MotionControl.TaskEngine.Configuration
         /// <summary>读取并校验全部引用；清单设备标识必须与目录一致。</summary>
         public TaskMachineConfiguration Load(string machineId, IEnumerable<TaskDefinition> definitions, TaskResourceCatalog catalog)
         {
+            // 正常运行入口不读取半应用清单；编辑器恢复使用明确的 LoadForEditing 入口。
+            if (File.Exists(Path.Combine(_store.GetMachineDirectory(machineId), "Drafts/TaskApplyPending.json")))
+                throw new InvalidOperationException("任务应用尚未完成，请先在任务配置页恢复上次应用。");
             var result = Deserialize(File.ReadAllText(Path.Combine(_store.GetMachineDirectory(machineId), RelativePath)));
             RequireValid(machineId, result, definitions, catalog);
             return result;
+        }
+
+        /// <summary>供编辑器读取清单形状；引用校验在检查和应用时执行。</summary>
+        public TaskMachineConfiguration LoadForEditing(string machineId)
+        {
+            return Deserialize(File.ReadAllText(Path.Combine(_store.GetMachineDirectory(machineId), RelativePath)));
         }
 
         /// <summary>读取供资源目录加载使用的命名资源；调用方随后仍须执行完整 Load 校验。</summary>

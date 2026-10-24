@@ -94,11 +94,22 @@ namespace MotionControl.Host.Wpf
         private Tasks.TaskMonitorLauncher _taskMonitorLauncher;
         /// <summary>防止主窗口关闭时重复等待仿真收尾。</summary>
         private bool _closingTaskSimulation;
+        /// <summary>本机任务草稿与列表编辑页面。</summary>
+        private MotionControl.TaskEngine.Wpf.Editing.TaskConfigurationView _taskConfigurationPage;
+        /// <summary>异步收尾重入关闭事件时不重复询问同一批草稿。</summary>
+        private bool _taskEditsCloseConfirmed;
 
         /// <summary>创建当前单机的 JSON 配置存储，并接入轴映射和 IO 映射页面。</summary>
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+
+            // 独立编辑预览使用单独数据目录，不创建正常 Host 的控制卡服务。
+            if (e.Args.Contains("--task-editing-preview"))
+            {
+                MainWindow = new MotionControl.TaskEngine.Wpf.Simulation.TaskEditingPreviewWindow();
+                MainWindow.Show(); return;
+            }
 
             // 独立任务仿真入口在任何控制卡服务和现场恢复服务创建前返回。
             if (e.Args.Contains("--task-simulation"))
@@ -163,6 +174,9 @@ namespace MotionControl.Host.Wpf
             _mainWindow.SetDeviceVariablePage(_deviceVariablePage);
             _taskMonitorLauncher = new Tasks.TaskMonitorLauncher(_configurationStore, MachineId, _mainWindow);
             _mainWindow.SetTaskMonitorPage(_taskMonitorLauncher);
+            _taskConfigurationPage = new MotionControl.TaskEngine.Wpf.Editing.TaskConfigurationView(_configurationStore, MachineId, GetTaskApplyBlockedReason);
+            _taskConfigurationPage.ReferenceRequested += TaskEditorReferenceRequested;
+            _mainWindow.SetTaskConfigurationPage(_taskConfigurationPage);
             RefreshIoMonitorPage();
 
             MainWindow = _mainWindow;
@@ -278,6 +292,7 @@ namespace MotionControl.Host.Wpf
         /// <summary>Host 语言切换后刷新轴映射页和 IO 映射页中由代码生成的文字。</summary>
         private void MainWindow_LanguageChanged(object sender, EventArgs e)
         {
+            _taskConfigurationPage?.SetLanguage(_mainWindow.CurrentLanguage);
             if (_axisMappingPage != null)
             {
                 _axisMappingPage.RefreshLocalizedText();
@@ -477,6 +492,11 @@ namespace MotionControl.Host.Wpf
                 return;
             }
 
+            if (!_taskEditsCloseConfirmed)
+            {
+                if (_taskConfigurationPage != null && !_taskConfigurationPage.ConfirmClose()) { e.Cancel = true; return; }
+                _taskEditsCloseConfirmed = true;
+            }
             try
             {
                 bool savePausedFlow = runtimeState == MachineRunState.Paused;
@@ -485,6 +505,7 @@ namespace MotionControl.Host.Wpf
             catch (Exception error)
             {
                 e.Cancel = true;
+                _taskEditsCloseConfirmed = false;
                 MessageBox.Show(
                     "设备恢复状态保存失败，软件暂不关闭。请处理存储问题后重试。\n" + error.Message,
                     "恢复状态保存失败",
@@ -504,10 +525,25 @@ namespace MotionControl.Host.Wpf
                 catch (Exception error)
                 {
                     _closingTaskSimulation = false;
+                    _taskEditsCloseConfirmed = false;
                     MessageBox.Show(error.ToString(), "任务仿真收尾失败", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
+
+        /// <summary>第一轮只在没有任务仿真会话且控制卡会话已断开时应用文件，不替人员自动断卡。</summary>
+        private string GetTaskApplyBlockedReason()
+        {
+            if (_taskMonitorLauncher != null && _taskMonitorLauncher.HasSimulationWindow)
+                return _mainWindow.TryFindResource("任务配置先关闭仿真") as string ?? "请先关闭任务仿真会话，再应用任务配置。";
+            if (_cardConnection != null && (_cardConnection.IsConnected || _cardConnection.ConnectedMotionCard != null))
+                return _mainWindow.TryFindResource("任务配置先断开会话") as string ?? "当前控制卡会话仍连接。本阶段请先在轴映射页断开会话，再应用任务文件；草稿可以随时保存。";
+            return null;
+        }
+
+        /// <summary>保留编辑页对象并导航，返回任务配置时仍有原任务与草稿。</summary>
+        private void TaskEditorReferenceRequested(object sender, MotionControl.TaskEngine.Wpf.Views.TaskReferenceEventArgs e)
+        { _mainWindow.OpenTaskReference(e.Page, e.Name, e.Direction); }
 
         /// <summary>把恢复文件保存错误显示到 WPF 界面线程，不隐藏数据写入失败。</summary>
         private void ShowRecoverySaveWarning(Exception error)

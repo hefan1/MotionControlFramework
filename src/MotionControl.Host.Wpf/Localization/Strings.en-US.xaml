@@ -559,4 +559,8 @@
     <sys:String x:Key="任务关联对象">Referenced object</sys:String>
     <sys:String x:Key="任务关联定位成功">Item located</sys:String>
     <sys:String x:Key="任务关联定位未找到">Item is not present on this page</sys:String>
+    <sys:String x:Key="任务配置">Task configuration</sys:String>
+    <sys:String x:Key="任务配置页面说明">Station assignment, task library and step drafts. Apply validated files without starting the machine.</sys:String>
+    <sys:String x:Key="任务配置先关闭仿真">Close the task simulation session before applying. Drafts can still be edited and saved.</sys:String>
+    <sys:String x:Key="任务配置先断开会话">The controller session is connected. For this stage, disconnect it on the axis mapping page before applying task files. Drafts can be saved at any time.</sys:String>
 </ResourceDictionary>

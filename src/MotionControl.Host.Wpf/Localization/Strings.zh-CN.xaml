@@ -569,4 +569,8 @@
     <sys:String x:Key="任务关联对象">关联对象</sys:String>
     <sys:String x:Key="任务关联定位成功">已定位到对应项目</sys:String>
     <sys:String x:Key="任务关联定位未找到">当前页面未找到该项目</sys:String>
+    <sys:String x:Key="任务配置">任务配置</sys:String>
+    <sys:String x:Key="任务配置页面说明">工位安排、任务库与步骤草稿；检查后应用运行文件，不会启动设备。</sys:String>
+    <sys:String x:Key="任务配置先关闭仿真">请先关闭任务仿真会话，再应用任务配置。草稿可以继续编辑和保存。</sys:String>
+    <sys:String x:Key="任务配置先断开会话">当前控制卡会话仍连接。本阶段请先在轴映射页断开会话再应用任务文件；不会自动断开，草稿可随时保存。</sys:String>
 </ResourceDictionary>

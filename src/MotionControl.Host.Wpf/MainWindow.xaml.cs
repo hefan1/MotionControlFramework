@@ -32,7 +32,7 @@ namespace MotionControl.Host.Wpf
             { "Statistics", new[] { "产量统计", "节拍统计", "运行统计" } },
             { "Monitor", new[] { "设备状态", "轴监控", "IO监控", "流程状态", "任务运行", "设备变量" } },
             { "Manual", new[] { "轴手动", "IO手动", "气缸手动", "通讯调试" } },
-            { "Settings", new[] { "轴映射配置", "IO映射", "安全联锁", "通讯设置", "数据采集" } },
+            { "Settings", new[] { "轴映射配置", "IO映射", "安全联锁", "通讯设置", "数据采集", "任务配置" } },
             { "Alarms", new[] { "当前报警", "历史报警", "报警统计", "操作日志" } },
             { "Users", new[] { "密码登录", "刷卡登录", "权限管理" } },
             { "Help", new[] { "软件信息", "使用说明" } }
@@ -302,6 +302,12 @@ namespace MotionControl.Host.Wpf
         /// <summary>根据当前导航在映射页、手动调试页或占位内容之间切换。</summary>
         private void UpdatePageContent()
         {
+            if (_taskConfigurationPage != null && _currentSectionKey == "Settings" && _currentPageResourceKey == "任务配置")
+            {
+                ManualDebugContent.Content = _taskConfigurationPage; ManualDebugContent.Visibility = Visibility.Visible;
+                PagePlaceholder.Visibility = Visibility.Collapsed;
+                PageDescription.SetResourceReference(TextBlock.TextProperty, "任务配置页面说明"); return;
+            }
             if (_taskMonitorPage != null && _currentSectionKey == "Monitor" && _currentPageResourceKey == "任务运行")
             {
                 ManualDebugContent.Content = _taskMonitorPage;

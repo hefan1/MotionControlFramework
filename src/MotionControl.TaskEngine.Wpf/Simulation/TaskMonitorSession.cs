@@ -40,6 +40,7 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
         /// <summary>只读本机任务及已有轴、IO、变量、示教点文件，不创建另一份映射清单。</summary>
         public static TaskMonitorSession LoadMachine(MachineConfigurationStore store, string machineId)
         {
+            new MotionControl.TaskEngine.Editing.TaskWorkspaceStore(store).RequireNoPendingApply(machineId);
             string taskFolder = Path.Combine(store.GetMachineDirectory(machineId), "Tasks");
             if (!Directory.Exists(taskFolder)) throw new InvalidOperationException("本机尚无 Tasks 任务目录。可先打开示例任务查看页面。");
             var definitionStore = new TaskDefinitionStore(store);

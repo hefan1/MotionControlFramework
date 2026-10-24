@@ -10,6 +10,11 @@ namespace MotionControl.Host.Wpf
     {
         /// <summary>本机任务目录及独立仿真入口页。</summary>
         private UserControl _taskMonitorPage;
+        /// <summary>任务配置与草稿编辑页面，独立于运行监控。</summary>
+        private UserControl _taskConfigurationPage;
+
+        /// <summary>组合根显式接入任务配置页，不改变已有页面布局。</summary>
+        public void SetTaskConfigurationPage(UserControl page) { _taskConfigurationPage = page; UpdatePageContent(); }
 
         /// <summary>由 Host 显式接入任务模块。</summary>
         public void SetTaskMonitorPage(UserControl page) { _taskMonitorPage = page; UpdatePageContent(); }
