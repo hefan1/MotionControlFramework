@@ -56,7 +56,7 @@
        <TextBlock Text="{DynamicResource 任务监控.步序}"/><TextBlock Grid.Column="1" Text="{DynamicResource 任务监控.动作说明}"/><TextBlock Grid.Column="2" Text="{DynamicResource 任务监控.状态}"/><TextBlock Grid.Column="3" Text="{DynamicResource 任务监控.执行说明}"/>
       </Grid>
      </Border>
-     <TreeView x:Name="StepsTree" Grid.Row="2" BorderBrush="#D9E0E8" BorderThickness="1,0,1,1" SelectedItemChanged="Step_Selected" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+     <TreeView x:Name="StepsTree" Grid.Row="2" BorderBrush="#D9E0E8" BorderThickness="1,0,1,1" SelectedItemChanged="Step_Selected" PreviewMouseDown="StepsTree_PreviewMouseDown" PreviewKeyDown="StepsTree_PreviewKeyDown" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
     </Grid>
    </Border>
    <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="#D8E2EE"/>

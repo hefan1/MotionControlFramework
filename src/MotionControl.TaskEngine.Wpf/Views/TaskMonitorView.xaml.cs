@@ -4,6 +4,8 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using MotionControl.TaskEngine.Execution;
 using MotionControl.TaskEngine.Machine;
@@ -27,6 +29,8 @@ namespace MotionControl.TaskEngine.Wpf.Views
         private readonly DispatcherTimer _timer;
         /// <summary>区分跟随选择与用户手动选择。</summary>
         private bool _following;
+        /// <summary>最近一次步骤选择是否由现场人员输入触发。</summary>
+        private bool _operatorSelectionPending;
         /// <summary>当前显示详情的稳定步骤行。</summary>
         private TaskStepRow _selected;
         /// <summary>防止刷新失败后继续把旧数据称为当前状态。</summary>
@@ -84,13 +88,14 @@ namespace MotionControl.TaskEngine.Wpf.Views
             }
         }
 
-        /// <summary>选中工位时建立一次步骤树，随后保持选择与展开状态。</summary>
+        /// <summary>切换工位时恢复自动跟随，并显示该工位当前活动步骤。</summary>
         private void Station_Selected(object sender, SelectionChangedEventArgs e)
         {
             if (!(StationsGrid.SelectedItem is TaskStationRow station)) return;
             _steps = TaskStepTree.Build(station.Snapshot.TaskId, _session.Library);
             _selected = null;
             StepsTree.ItemsSource = _steps;
+            FollowBox.IsChecked = true;
             StepsTitle.Text = station.Name + " · " + T("运行步骤");
             RefreshSteps();
             if (_selected == null && _steps.Count > 0) SelectFollowing(_steps[0]);
@@ -127,11 +132,45 @@ namespace MotionControl.TaskEngine.Wpf.Views
             finally { _following = false; }
         }
 
+        /// <summary>按键盘方向键时标记接下来的步骤切换来自现场人员。</summary>
+        private void StepsTree_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Up || e.Key == Key.Down || e.Key == Key.Home || e.Key == Key.End ||
+                e.Key == Key.PageUp || e.Key == Key.PageDown)
+                MarkOperatorSelection();
+        }
+
+        /// <summary>点击步骤行时标记接下来的步骤切换来自现场人员。</summary>
+        private void StepsTree_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton != MouseButton.Left || !IsStepRow(e.OriginalSource as DependencyObject)) return;
+            MarkOperatorSelection();
+        }
+
+        /// <summary>在本次输入处理完成后清除标记，避免误认后续后台选择。</summary>
+        private void MarkOperatorSelection()
+        {
+            _operatorSelectionPending = true;
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _operatorSelectionPending = false));
+        }
+
+        /// <summary>沿界面元素树向上查找被点击的步骤行。</summary>
+        private bool IsStepRow(DependencyObject element)
+        {
+            while (element != null && element != StepsTree)
+            {
+                if (element is TreeViewItem) return true;
+                element = LogicalTreeHelper.GetParent(element) ??
+                    (element is Visual ? VisualTreeHelper.GetParent(element) : null);
+            }
+            return false;
+        }
+
         /// <summary>保留操作员选择，避免后台运行不断抢回正在查看的步骤。</summary>
         private void Step_Selected(object sender, RoutedPropertyChangedEventArgs<object> e)
         {
             _selected = e.NewValue as TaskStepRow;
-            if (!_following) FollowBox.IsChecked = false;
+            if (!_following && _operatorSelectionPending) FollowBox.IsChecked = false;
             ShowDetails(_selected);
         }
 

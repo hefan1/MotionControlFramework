@@ -4,6 +4,9 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Threading;
 using MotionControl.Framework.Contracts.Variables;
 using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Definitions;
@@ -113,7 +116,7 @@ namespace MotionControl.TaskMonitor.Checks
             finally { run.Cancel(); await run.Completion; }
         }
 
-        /// <summary>只离屏构造监控页面并计算布局，不声称用户看到过界面。</summary>
+        /// <summary>离屏验证语言资源、工位切换跟随和监控页面布局。</summary>
         private static void ConstructViews()
         {
             var application = new Application();
@@ -125,7 +128,39 @@ namespace MotionControl.TaskMonitor.Checks
                 Assert(view.T("步骤详情") == "Step details", "英文资源未加载。");
                 view.SetLanguage("zh-CN");
                 view.Measure(new Size(1360, 720)); view.Arrange(new Rect(0, 0, 1360, 720)); view.UpdateLayout();
-                Assert(view.ActualWidth == 1360 && view.T("步骤详情") == "步骤详情", "页面资源或布局构造失败。");
+                var stationsGrid = view.FindName("StationsGrid") as System.Windows.Controls.DataGrid;
+                var followBox = view.FindName("FollowBox") as System.Windows.Controls.CheckBox;
+                var stepsTree = view.FindName("StepsTree") as TreeView;
+                var window = new Window { Content = view, Width = 1360, Height = 720, Opacity = 0, ShowInTaskbar = false };
+                window.Show();
+                application.Dispatcher.Invoke(new Action(() => { }), DispatcherPriority.ApplicationIdle);
+                Assert(stationsGrid != null && stationsGrid.Items.Count > 1 && followBox != null && stepsTree != null, "工位列表、步骤树或跟随选项未加载。");
+                followBox.IsChecked = false;
+                stationsGrid.SelectedIndex = 2;
+                view.UpdateLayout();
+                application.Dispatcher.Invoke(new Action(() => { }), DispatcherPriority.ApplicationIdle);
+                Assert(followBox.IsChecked == true, "切换工位后没有恢复当前步骤跟随。");
+
+                var firstStep = stepsTree.Items[0] as MotionControl.TaskEngine.Wpf.Monitoring.TaskStepRow;
+                Assert(firstStep != null, "切换工位后没有生成步骤。");
+                firstStep.IsSelected = false;
+                view.UpdateLayout();
+                firstStep.IsSelected = true;
+                view.UpdateLayout();
+                Assert(followBox.IsChecked == true, "界面绑定导致的步骤选择错误关闭了跟随。");
+
+                var secondStep = stepsTree.Items.Count > 1
+                    ? stepsTree.Items[1] as MotionControl.TaskEngine.Wpf.Monitoring.TaskStepRow : null;
+                var firstContainer = stepsTree.ItemContainerGenerator.ContainerFromItem(firstStep) as TreeViewItem;
+                Assert(secondStep != null && firstContainer != null, "没有生成可验证的步骤行。");
+                var mouseInput = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+                { RoutedEvent = UIElement.PreviewMouseDownEvent };
+                firstContainer.RaiseEvent(mouseInput);
+                secondStep.IsSelected = true;
+                view.UpdateLayout();
+                Assert(followBox.IsChecked == false, "现场人员选择其他步骤后没有暂停自动跟随。");
+                window.Close();
+                Assert(view.ActualWidth > 0 && view.T("步骤详情") == "步骤详情", "页面资源或布局构造失败。");
             }
             finally { session.Machine.CloseAsync().GetAwaiter().GetResult(); application.Shutdown(); }
         }
