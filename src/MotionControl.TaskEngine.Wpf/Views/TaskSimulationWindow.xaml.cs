@@ -135,12 +135,14 @@ namespace MotionControl.TaskEngine.Wpf.Views
             catch (Exception error) { _closing = false; IsEnabled = true; _timer.Start(); CommandFeedback.Text = error.ToString(); }
         }
 
-        /// <summary>供所属 Host 关闭前等待内存工位收尾，避免拥有者关闭跳过子窗口 Closing。</summary>
+        /// <summary>等待内存工位收尾，并把窗口关闭排到当前关闭事件之后执行。</summary>
         public async System.Threading.Tasks.Task CloseSessionAsync()
         {
             if (_closed) return;
             await _session.Machine.CloseAsync();
-            _closed = true; _timer.Stop(); Close();
+            _closed = true;
+            _timer.Stop();
+            await Dispatcher.InvokeAsync(new System.Action(Close), DispatcherPriority.Background);
         }
     }
 }
