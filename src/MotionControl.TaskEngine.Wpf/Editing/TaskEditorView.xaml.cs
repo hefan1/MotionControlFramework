@@ -287,7 +287,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 // 先把已输入值读入任务定义，再用新目录重建当前步骤的下拉选项。
                 BuildDetails();
                 var issues = new TaskDefinitionValidator().Validate(Definition, _catalog, _others);
-                IssuesGrid.ItemsSource = issues.Select(issue => new TaskEditingIssueRow(issue, issue.TaskId == Definition.TaskId ? Definition : _others.FirstOrDefault(task => task.TaskId == issue.TaskId), T(issue.Severity == TaskIssueSeverity.Error ? "错误" : "提醒"))).ToList();
+                IssuesGrid.ItemsSource = issues.Select(issue => new TaskEditingIssueRow(issue, issue.TaskId == Definition.TaskId ? Definition : _others.FirstOrDefault(task => task.TaskId == issue.TaskId), T(issue.Severity == TaskIssueSeverity.Error ? "错误" : "提醒"), T)).ToList();
                 IssuesGrid.Visibility = issues.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
                 IssuesRow.Height = new GridLength(issues.Count > 0 ? 110 : 0);
                 StatusText.Text = T("检查结果") + "：" + issues.Count + " · " + Definition.TaskId;
@@ -305,8 +305,8 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         { if (IssuesGrid.SelectedItem is TaskEditingIssueRow row) { if (row.Issue.TaskId == Definition.TaskId) FocusIssue(row.Issue); else StatusText.Text = row.TaskName + " / " + row.Field + "：" + row.Message; } }
         /// <summary>供任务配置页定位清单检查发现的任务节点。</summary>
         public void FocusNode(string nodeId) { if (TryRead()) RebuildTree(nodeId); }
-        /// <summary>定位步骤后在顶部完整显示问题，长消息不会被表格截断。</summary>
-        public void FocusIssue(TaskValidationIssue issue) { FocusNode(issue.NodeId); StatusText.Text = issue.Field + "：" + issue.Message; }
+        /// <summary>定位步骤后用现场可读字段名完整显示问题，长消息不会被表格截断。</summary>
+        public void FocusIssue(TaskValidationIssue issue) { FocusNode(issue.NodeId); StatusText.Text = TaskEditingIssueRow.GetReadableField(issue.Field, T) + "：" + issue.Message; }
         /// <summary>关闭或返回时仅对未保存内容确认一次。</summary>
         public bool ConfirmLeave()
         {

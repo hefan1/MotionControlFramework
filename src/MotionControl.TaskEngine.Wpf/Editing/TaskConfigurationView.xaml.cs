@@ -172,7 +172,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         /// <summary>没有问题时收起空表，给工位和参数留出空间。</summary>
         private void ShowIssues(IReadOnlyList<TaskValidationIssue> issues)
         {
-            IssuesGrid.ItemsSource = issues.Select(issue => new TaskEditingIssueRow(issue, _workspace?.Tasks.FirstOrDefault(task => task.Definition.TaskId == issue.TaskId)?.Definition, T(issue.Severity == TaskIssueSeverity.Error ? "错误" : "提醒"))).ToList();
+            IssuesGrid.ItemsSource = issues.Select(issue => new TaskEditingIssueRow(issue, _workspace?.Tasks.FirstOrDefault(task => task.Definition.TaskId == issue.TaskId)?.Definition, T(issue.Severity == TaskIssueSeverity.Error ? "错误" : "提醒"), T)).ToList();
             bool show = issues.Count > 0 && _editor == null;
             IssuesGrid.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
             ConfigIssueRow.Height = new GridLength(show ? 110 : 0);

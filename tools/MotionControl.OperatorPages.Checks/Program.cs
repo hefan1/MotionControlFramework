@@ -160,7 +160,7 @@ namespace MotionControl.OperatorPages.Checks
                 Assert(page.ReturnToConfiguration(), "已保存任务无法返回配置页。");
                 var libraryRow = library.Items.Cast<TaskLibraryRow>().Single(item => item.Definition.TaskId == "Transfer");
                 Assert(libraryRow.AppliedVersion == "R1" && libraryRow.DraftState == "草稿待检查", "保存草稿冒充了已应用版本或已通过检查。");
-                FindButton(page, "检查配置").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                FindButton(page, "保存并检查").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Assert(library.Items.Cast<TaskLibraryRow>().Single(item => item.Definition.TaskId == "Transfer").DraftState == "任务检查通过", "检查结果没有更新任务行。");
                 var machineDetails = (StackPanel)page.FindName("MachineDetails");
                 machineDetails.Children.OfType<TextBox>().First().Text += " 修改";
