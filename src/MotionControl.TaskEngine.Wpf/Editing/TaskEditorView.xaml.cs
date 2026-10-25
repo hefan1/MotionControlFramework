@@ -34,8 +34,10 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         public event EventHandler BackRequested;
         /// <summary>请求 Host 只读定位已有页面。</summary>
         public event EventHandler<TaskReferenceEventArgs> ReferenceRequested;
-        /// <summary>编辑用的现有对象目录。</summary>
-        private readonly TaskResourceCatalog _catalog;
+        /// <summary>编辑用的最新轴、IO、变量和示教点目录。</summary>
+        private TaskResourceCatalog _catalog;
+        /// <summary>按当前设备配置重新读取任务资源目录。</summary>
+        private readonly Func<TaskResourceCatalog> _loadCurrentCatalog;
         /// <summary>供子任务引用校验使用的其他定义。</summary>
         private readonly List<TaskDefinition> _others;
         /// <summary>当前界面语言。</summary>
@@ -55,10 +57,14 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         /// <summary>当前具体表单字段，键名与读取方法直接对应。</summary>
         private readonly Dictionary<string, FrameworkElement> _fields = new Dictionary<string, FrameworkElement>();
 
-        /// <summary>复制定义后建立列表，构造不运行任何步骤。</summary>
-        public TaskEditorView(TaskDefinition definition, TaskResourceCatalog catalog, IEnumerable<TaskDefinition> others)
+        /// <summary>复制定义后建立列表，并保留重新读取当前设备资源目录的入口；构造不运行任何步骤。</summary>
+        public TaskEditorView(TaskDefinition definition, TaskResourceCatalog catalog,
+            Func<TaskResourceCatalog> loadCurrentCatalog, IEnumerable<TaskDefinition> others)
         {
-            Definition = TaskEditorNodes.CopyTask(definition); _catalog = catalog; _others = others.ToList();
+            Definition = TaskEditorNodes.CopyTask(definition);
+            _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+            _loadCurrentCatalog = loadCurrentCatalog ?? throw new ArgumentNullException(nameof(loadCurrentCatalog));
+            _others = others.ToList();
             InitializeComponent(); UpdateHeaders(); IssuesGrid.Visibility = Visibility.Collapsed; _building = true; TaskNameBox.Text = Definition.Name; _building = false;
             TaskVersionText.Text = T("草稿基准版本") + " R" + Definition.Revision;
             AddHandler(TextBox.TextChangedEvent, new TextChangedEventHandler(ContentChanged));
@@ -269,14 +275,30 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         /// <summary>显示独立副本的实际路径，便于现场人员找回；不清除未保存状态。</summary>
         public void ShowLocalCopySaved(string path)
         { StatusText.Text = T("草稿副本已保留，原草稿尚未保存") + "\n" + path; }
-        /// <summary>显示当前任务与依赖定义的问题，不持久化定义。</summary>
+        /// <summary>读取最新设备资源目录后检查当前任务，不持久化任务定义。</summary>
         private void Check_Click(object sender, RoutedEventArgs e)
         {
             if (!TryRead()) return;
-            var issues = new TaskDefinitionValidator().Validate(Definition, _catalog, _others);
-            IssuesGrid.ItemsSource = issues.Select(issue => new TaskEditingIssueRow(issue, issue.TaskId == Definition.TaskId ? Definition : _others.FirstOrDefault(task => task.TaskId == issue.TaskId), T(issue.Severity == TaskIssueSeverity.Error ? "错误" : "提醒"))).ToList();
-            IssuesGrid.Visibility = issues.Count > 0 ? Visibility.Visible : Visibility.Collapsed; IssuesRow.Height = new GridLength(issues.Count > 0 ? 110 : 0);
-            StatusText.Text = T("检查结果") + "：" + issues.Count + " · " + Definition.TaskId;
+            try
+            {
+                _catalog = _loadCurrentCatalog();
+                if (_catalog == null) throw new InvalidOperationException("当前设备没有可用的任务资源目录。");
+
+                // 先把已输入值读入任务定义，再用新目录重建当前步骤的下拉选项。
+                BuildDetails();
+                var issues = new TaskDefinitionValidator().Validate(Definition, _catalog, _others);
+                IssuesGrid.ItemsSource = issues.Select(issue => new TaskEditingIssueRow(issue, issue.TaskId == Definition.TaskId ? Definition : _others.FirstOrDefault(task => task.TaskId == issue.TaskId), T(issue.Severity == TaskIssueSeverity.Error ? "错误" : "提醒"))).ToList();
+                IssuesGrid.Visibility = issues.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+                IssuesRow.Height = new GridLength(issues.Count > 0 ? 110 : 0);
+                StatusText.Text = T("检查结果") + "：" + issues.Count + " · " + Definition.TaskId;
+            }
+            catch (Exception error)
+            {
+                IssuesGrid.ItemsSource = null;
+                IssuesGrid.Visibility = Visibility.Collapsed;
+                IssuesRow.Height = new GridLength(0);
+                StatusText.Text = T("任务检查失败") + "：" + error.Message;
+            }
         }
         /// <summary>点击错误行按稳定节点 ID 定位，不依赖显示步号。</summary>
         private void IssueSelected(object sender, SelectionChangedEventArgs e)

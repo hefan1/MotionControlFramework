@@ -61,6 +61,7 @@
  <sys:String x:Key="任务编辑.减速度">减速度</sys:String>
  <sys:String x:Key="任务编辑.减速停止">减速停止</sys:String>
  <sys:String x:Key="任务编辑.检查结果">检查结果</sys:String>
+ <sys:String x:Key="任务编辑.任务检查失败">任务检查失败</sys:String>
  <sys:String x:Key="任务编辑.检查配置">检查配置</sys:String>
  <sys:String x:Key="任务编辑.检查任务">检查任务</sys:String>
  <sys:String x:Key="任务编辑.检查完成，双击问题定位">检查完成，双击问题定位</sys:String>

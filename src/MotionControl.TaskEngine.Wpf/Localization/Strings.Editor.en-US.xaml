@@ -61,6 +61,7 @@
  <sys:String x:Key="任务编辑.减速度">Deceleration</sys:String>
  <sys:String x:Key="任务编辑.减速停止">Controlled stop</sys:String>
  <sys:String x:Key="任务编辑.检查结果">Validation results</sys:String>
+ <sys:String x:Key="任务编辑.任务检查失败">Task check failed</sys:String>
  <sys:String x:Key="任务编辑.检查配置">Validate configuration</sys:String>
  <sys:String x:Key="任务编辑.检查任务">Validate task</sys:String>
  <sys:String x:Key="任务编辑.检查完成，双击问题定位">Validation complete. Double-click an issue to locate it.</sys:String>

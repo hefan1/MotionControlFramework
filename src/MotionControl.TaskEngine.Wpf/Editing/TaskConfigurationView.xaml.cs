@@ -362,7 +362,9 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             try
             {
                 _catalog = _store.LoadCatalog(_workspace); _editingEntry = entry;
-                _editor = new TaskEditorView(entry.Definition, _catalog, _workspace.Tasks.Where(item => !ReferenceEquals(item, entry)).Select(item => item.Definition));
+                _editor = new TaskEditorView(entry.Definition, _catalog,
+                    () => _store.LoadCatalog(_workspace),
+                    _workspace.Tasks.Where(item => !ReferenceEquals(item, entry)).Select(item => item.Definition));
                 _editor.SetLanguage(_language); _editor.DraftSaved += EditorSaved; _editor.BackRequested += EditorBack; _editor.ReferenceRequested += EditorReference;
                 _editor.LocalCopyRequested += EditorLocalCopy;
                 ContentHost.Content = _editor; ShowEditor(true); RefreshPermission(null, EventArgs.Empty);
