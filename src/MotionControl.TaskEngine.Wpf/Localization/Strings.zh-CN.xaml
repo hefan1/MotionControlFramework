@@ -108,10 +108,10 @@
  <sys:String x:Key="任务监控.启动">启动</sys:String>
  <sys:String x:Key="任务监控.暂停">暂停</sys:String>
  <sys:String x:Key="任务监控.任务运行">任务运行</sys:String>
- <sys:String x:Key="任务监控.仿真信号与参考">仿真信号与参考</sys:String>
- <sys:String x:Key="任务监控.仿真输入说明">仿真输入说明</sys:String>
+ <sys:String x:Key="任务监控.仿真信号与参考">仿真信号与轴准备（仅内存）</sys:String>
+ <sys:String x:Key="任务监控.仿真输入说明">本页只修改内存仿真，不会控制运动卡。首次启动前，如果流程没有初始化或回零步骤，可点击“准备仿真轴”将模拟轴设为已使能、已回零。</sys:String>
  <sys:String x:Key="任务监控.写入内存变量">写入内存变量</sys:String>
- <sys:String x:Key="任务监控.准备内存轴参考">准备内存轴参考</sys:String>
+ <sys:String x:Key="任务监控.准备内存轴参考">准备仿真轴（设为已使能、已回零）</sys:String>
  <sys:String x:Key="任务监控.内存仿真">内存仿真</sys:String>
  <sys:String x:Key="任务监控.操作已完成">操作已完成</sys:String>
  <sys:String x:Key="任务监控.运行开始后不能重建内存轴参考">运行开始后不能重建内存轴参考</sys:String>

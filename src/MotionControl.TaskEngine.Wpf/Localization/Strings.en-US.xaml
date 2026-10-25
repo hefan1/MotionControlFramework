@@ -108,10 +108,10 @@
  <sys:String x:Key="任务监控.启动">Start</sys:String>
  <sys:String x:Key="任务监控.暂停">Pause</sys:String>
  <sys:String x:Key="任务监控.任务运行">Task monitor</sys:String>
- <sys:String x:Key="任务监控.仿真信号与参考">Simulation inputs and references</sys:String>
- <sys:String x:Key="任务监控.仿真输入说明">Only this window's memory data is changed. Checked = ON, unchecked = OFF, filled = unknown. No physical IO is used.</sys:String>
+ <sys:String x:Key="任务监控.仿真信号与参考">Simulation inputs and axis setup (memory only)</sys:String>
+ <sys:String x:Key="任务监控.仿真输入说明">This page changes memory simulation only and does not control the motion card. Before the first start, if the flow has no initialization or homing step, prepare simulated axes as enabled and homed.</sys:String>
  <sys:String x:Key="任务监控.写入内存变量">Write memory variable</sys:String>
- <sys:String x:Key="任务监控.准备内存轴参考">Prepare memory axes</sys:String>
+ <sys:String x:Key="任务监控.准备内存轴参考">Prepare simulated axes (enabled and homed)</sys:String>
  <sys:String x:Key="任务监控.内存仿真">Memory simulation</sys:String>
  <sys:String x:Key="任务监控.操作已完成">Operation completed</sys:String>
  <sys:String x:Key="任务监控.运行开始后不能重建内存轴参考">Axis references cannot be rebuilt after execution starts.</sys:String>

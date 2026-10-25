@@ -16,7 +16,7 @@
     <TextBlock x:Name="MachineStateText" Foreground="#176BD0" Margin="0,4,0,0"/></StackPanel>
   </DockPanel>
   <ContentControl x:Name="MonitorContent" Grid.Row="1"/>
-  <Expander Grid.Row="2" Header="{DynamicResource 任务监控.仿真信号与参考}" Margin="14,0,14,10" Background="#EAF2FC">
+  <Expander Grid.Row="2" Header="{DynamicResource 任务监控.仿真信号与参考}" Margin="14,0,14,10" Background="#EAF2FC" IsExpanded="True">
    <StackPanel Margin="10"><TextBlock Text="{DynamicResource 任务监控.仿真输入说明}" TextWrapping="Wrap" Margin="0,0,0,7"/>
     <WrapPanel x:Name="InputsPanel"/>
     <WrapPanel Margin="0,5"><TextBlock Text="{DynamicResource 任务监控.变量}" VerticalAlignment="Center" Margin="0,0,8,0"/>
