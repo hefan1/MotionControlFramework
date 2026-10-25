@@ -85,10 +85,20 @@ namespace MotionControl.Host.Wpf.Operation
             double width = Math.Max(250, e.NewSize.Width / columns - 12);
             foreach (var card in _cards) if (Math.Abs(card.Container.Width - width) > 0.5) card.Container.Width = width;
         }
-        /// <summary>下一步依据整机状态，不从动作文字猜测复位或回零结果。</summary>
+        /// <summary>依据整机状态和自动工位配置提示可执行的下一步，不从动作文字猜测复位或回零结果。</summary>
         private static string NextAction(OperationSnapshot snapshot)
         {
             if (!snapshot.HasRuntime) return "连接后查看就绪条件，启停使用顶部按钮";
+            if (snapshot.Stations.Count == 0)
+            {
+                switch (snapshot.State)
+                {
+                    case MachineRunState.Paused: return "设备已暂停，确认现场状态后按整机复位";
+                    case MachineRunState.Alarmed: return "先查看报警并处理原因，条件恢复后按整机复位";
+                    case MachineRunState.Ready: return "未启用自动工位，可进入轴手动和 IO 手动页面调试";
+                    case MachineRunState.ResetRequired: return "检查急停与轴状态，整机复位后可进行手动调试";
+                }
+            }
             switch (snapshot.State)
             {
                 case MachineRunState.Running: return "设备正在运行，处理工件前请先暂停";

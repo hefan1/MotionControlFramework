@@ -25,6 +25,10 @@
  <sys:String x:Key="操作页.保留当前步骤，确认现场后按设备规则复位再启动">保留当前步骤，确认现场后按设备规则复位再启动</sys:String>
  <sys:String x:Key="操作页.先查看报警并处理原因，条件恢复后复位再启动">先查看报警并处理原因，条件恢复后复位再启动</sys:String>
  <sys:String x:Key="操作页.设备已就绪，使用顶部启动按钮">设备已就绪，使用顶部启动按钮</sys:String>
+ <sys:String x:Key="操作页.设备已暂停，确认现场状态后按整机复位">设备已暂停，确认现场状态后按整机复位</sys:String>
+ <sys:String x:Key="操作页.先查看报警并处理原因，条件恢复后按整机复位">先查看报警并处理原因，条件恢复后按整机复位</sys:String>
+ <sys:String x:Key="操作页.未启用自动工位，可进入轴手动和 IO 手动页面调试">未启用自动工位，可进入轴手动和 IO 手动页面调试</sys:String>
+ <sys:String x:Key="操作页.检查急停与轴状态，整机复位后可进行手动调试">检查急停与轴状态，整机复位后可进行手动调试</sys:String>
  <sys:String x:Key="操作页.检查连接与就绪条件，按设备规则复位后启动">检查连接与就绪条件，按设备规则复位后启动</sys:String>
  <sys:String x:Key="操作页.设备运行中">设备运行中</sys:String>
  <sys:String x:Key="操作页.设备已就绪">设备已就绪</sys:String>

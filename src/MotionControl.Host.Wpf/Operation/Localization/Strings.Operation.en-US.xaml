@@ -25,6 +25,10 @@
  <sys:String x:Key="操作页.保留当前步骤，确认现场后按设备规则复位再启动">Current step retained. Check the equipment, then reset and start as required.</sys:String>
  <sys:String x:Key="操作页.先查看报警并处理原因，条件恢复后复位再启动">Check alarms and resolve the cause, then reset and start when conditions recover.</sys:String>
  <sys:String x:Key="操作页.设备已就绪，使用顶部启动按钮">Machine ready. Use Start above.</sys:String>
+ <sys:String x:Key="操作页.设备已暂停，确认现场状态后按整机复位">Machine paused. Check the equipment, then use Machine Reset.</sys:String>
+ <sys:String x:Key="操作页.先查看报警并处理原因，条件恢复后按整机复位">Check the alarm and resolve its cause. Use Machine Reset when the condition clears.</sys:String>
+ <sys:String x:Key="操作页.未启用自动工位，可进入轴手动和 IO 手动页面调试">No automatic station is enabled. Use the axis and I/O manual pages for debugging.</sys:String>
+ <sys:String x:Key="操作页.检查急停与轴状态，整机复位后可进行手动调试">Check the emergency stop and axis status. Manual debugging is available after Machine Reset.</sys:String>
  <sys:String x:Key="操作页.检查连接与就绪条件，按设备规则复位后启动">Check connection and readiness, then reset and start as required.</sys:String>
  <sys:String x:Key="操作页.设备运行中">Machine running</sys:String>
  <sys:String x:Key="操作页.设备已就绪">Machine ready</sys:String>
