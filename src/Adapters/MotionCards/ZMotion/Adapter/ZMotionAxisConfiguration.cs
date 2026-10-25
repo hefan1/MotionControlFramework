@@ -44,7 +44,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         /// <summary>手动调试页面初始速度，单位为工程单位/秒。</summary>
         public double ManualSpeed { get; set; }
 
-        /// <summary>定位时允许的最大实际反馈误差，单位为该轴工程单位，不写入控制器参数。</summary>
+        /// <summary>定位时命令位置和反馈位置的允许误差，单位为该轴工程单位，不写入控制器参数。</summary>
         public double PositionTolerance { get; set; }
 
         /// <summary>正运动控制卡手册定义的 DATUM 原始模式编号；框架按原编号调用厂商接口，不转换成其他厂商含义。</summary>

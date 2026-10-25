@@ -30,6 +30,11 @@ namespace MotionControl.ZMotionSimulatorCheck
                 return LiveComplexMachineCheck.Run();
             }
 
+            if (args.Any(argument => string.Equals(argument, "--rotary-assembly-simulator", StringComparison.OrdinalIgnoreCase)))
+            {
+                return LiveRotaryAssemblyCheck.Run();
+            }
+
             if (args.Any(argument => string.Equals(argument, "--parallel-station-simulator", StringComparison.OrdinalIgnoreCase)))
             {
                 return LiveParallelStationCheck.Run();
@@ -758,6 +763,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             Console.WriteLine("  --manual-ui-simulator [--home-mode N] 连接正运动仿真器并打开实时手动调试页");
             Console.WriteLine("  --parallel-station-simulator  仅在确认 VPLC5xx-Simu 后并行驱动四根仿真轴，验证四个工位同时运行");
             Console.WriteLine("  --complex-machine-simulator  使用仿真物理轴 0–11 验证六任务、多轴并行、共用轴排队和暂停恢复");
+            Console.WriteLine("  --rotary-assembly-simulator 使用仿真物理轴 0–11 验证转盘多工位并行、送料握手、结果分流和共享轴排队");
             Console.WriteLine("  --demo-flow-simulator         仅在确认 VPLC5xx-Simu 后运行 Demo 工位的轴、DI、DO 及暂停恢复闭环");
             Console.WriteLine("  --help               显示帮助");
         }

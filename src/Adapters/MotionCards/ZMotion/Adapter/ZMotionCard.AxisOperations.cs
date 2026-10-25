@@ -221,7 +221,12 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             {
                 var startedAt = DateTime.UtcNow;
                 bool observedMotion = false;
-                double commandPositionTolerance = 0.5 / axis.Configuration.UnitsPerEngineeringUnit + 0.000001;
+                // 命令位置允许按轴配置的到位容差判断，并保留半个脉冲的最小分辨率余量。
+                double pulseResolutionTolerance =
+                    0.5 / axis.Configuration.UnitsPerEngineeringUnit + 0.000001;
+                double commandPositionTolerance = Math.Max(
+                    pulseResolutionTolerance,
+                    axis.Configuration.PositionTolerance);
 
                 while (true)
                 {
