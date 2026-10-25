@@ -189,15 +189,66 @@ namespace MotionControl.ZMotionSimulatorCheck
                     EnsureAxisStoppedAtTarget(axes[index].Name, finalStatus, stationFlows[index].TargetPosition);
                 }
 
+                await RestoreOriginalAxisPositionsAsync(axes, initialStatuses).ConfigureAwait(false);
+
                 Console.WriteLine(
                     "[通过] 四个工位已并行启动；四根逻辑轴均在重叠时间内运动并到位；"
-                    + "Runtime 已暂停，所有轴均已停稳。");
+                    + "Runtime 已暂停，所有轴已停稳并返回测试前位置。");
                 return 0;
             }
             finally
             {
                 await StopRuntimeAndDisconnectAsync(runtime, card, motionCards).ConfigureAwait(false);
             }
+        }
+
+        /// <summary>四工位仿真验证结束后，将每根轴依次移动回测试前的位置并检查停稳状态。</summary>
+        private static async Task RestoreOriginalAxisPositionsAsync(
+            IReadOnlyList<IAxis> axes,
+            IReadOnlyList<AxisStatus> initialStatuses)
+        {
+            var restoreProfile = new AxisMotionProfile(5, 10, 10);
+
+            for (var index = 0; index < axes.Count; index++)
+            {
+                await axes[index].MoveAbsoluteAsync(
+                    initialStatuses[index].Position,
+                    restoreProfile,
+                    CancellationToken.None).ConfigureAwait(false);
+
+                await WaitForStableAxisPositionAsync(
+                    axes[index],
+                    initialStatuses[index].Position).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>连续读取到三次停稳且位置正确后，才确认仿真轴已恢复到测试前的位置。</summary>
+        private static async Task WaitForStableAxisPositionAsync(IAxis axis, double targetPosition)
+        {
+            Stopwatch elapsed = Stopwatch.StartNew();
+            var stableSamples = 0;
+
+            while (elapsed.Elapsed < MotionTimeout)
+            {
+                AxisStatus status = await axis
+                    .ReadStatusAsync(CancellationToken.None)
+                    .ConfigureAwait(false);
+                bool isStable = !status.Moving
+                    && Math.Abs(status.Velocity) <= 0.01
+                    && Math.Abs(status.Position - targetPosition) <= 0.05;
+
+                stableSamples = isStable ? stableSamples + 1 : 0;
+                if (stableSamples >= 3)
+                {
+                    EnsureAxisStoppedAtTarget(axis.Name, status, targetPosition);
+                    return;
+                }
+
+                await Task.Delay(StatusPollInterval).ConfigureAwait(false);
+            }
+
+            throw new TimeoutException(
+                "逻辑轴 '" + axis.Name + "' 未能稳定恢复到测试前位置 " + targetPosition + "。");
         }
 
         /// <summary>轮询四根逻辑轴，记录同时运动，并在四个工位到位后返回。</summary>

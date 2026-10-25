@@ -615,16 +615,29 @@ namespace MotionControl.ZMotionSimulatorCheck
         {
             var originalValue = await card.ReadOutputAsync(outputName, cancellationToken).ConfigureAwait(false);
             var testValue = !originalValue;
-            await card.WriteOutputAsync(outputName, testValue, cancellationToken).ConfigureAwait(false);
-            var actualValue = await card.ReadOutputAsync(outputName, cancellationToken).ConfigureAwait(false);
-            if (actualValue != testValue)
+            try
+            {
+                await card.WriteOutputAsync(outputName, testValue, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromMilliseconds(1000), cancellationToken).ConfigureAwait(false);
+
+                var actualValue = await card.ReadOutputAsync(outputName, cancellationToken).ConfigureAwait(false);
+                if (actualValue != testValue)
+                {
+                    throw new InvalidOperationException("仿真 DO 写入后读回值不一致：" + outputName + "。");
+                }
+            }
+            finally
             {
                 await card.WriteOutputAsync(outputName, originalValue, CancellationToken.None).ConfigureAwait(false);
-                throw new InvalidOperationException("仿真 DO 写入后读回值不一致：" + outputName + "。");
             }
 
-            await card.WriteOutputAsync(outputName, originalValue, CancellationToken.None).ConfigureAwait(false);
-            Console.WriteLine("[通过] 仿真 DO " + outputName + " 翻转读回正常，且已恢复原值。");
+            var restoredValue = await card.ReadOutputAsync(outputName, CancellationToken.None).ConfigureAwait(false);
+            if (restoredValue != originalValue)
+            {
+                throw new InvalidOperationException("仿真 DO 测试结束后没有恢复原值：" + outputName + "。");
+            }
+
+            Console.WriteLine("[通过] 仿真 DO " + outputName + " 翻转读回正常，保持 1 秒后已恢复原值。");
         }
 
         /// <summary>通过实际仿真卡实例验证 Runtime 连接、复位、启动、暂停、复位和断开状态流程。</summary>
