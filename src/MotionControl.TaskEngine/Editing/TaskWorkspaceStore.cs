@@ -94,6 +94,59 @@ namespace MotionControl.TaskEngine.Editing
             return Path.GetFullPath(Path.Combine(_store.GetMachineDirectory(draft.MachineId), relativePath));
         }
 
+        /// <summary>把当前工作区导出为单个可拷走的 JSON 备份，不修改草稿或运行文件。</summary>
+        public void ExportBackup(TaskWorkspaceDocument draft, string filePath, TaskWorkspaceTask editedTask = null)
+        {
+            if (string.IsNullOrWhiteSpace(filePath)) throw new ArgumentException("备份文件路径不能为空。", nameof(filePath));
+            RequireDraftShape(draft?.MachineId, draft);
+
+            var copy = ReadDraft(JObject.FromObject(draft, TaskDefinitionJson.CreateSerializer()).ToString());
+            if (editedTask != null)
+            {
+                TaskWorkspaceTask target = copy.Tasks.SingleOrDefault(item => string.Equals(item.FileName, editedTask.FileName, StringComparison.OrdinalIgnoreCase));
+                if (target == null) throw new InvalidDataException("当前编辑任务不属于这份设备工作区。");
+                target.Definition = TaskDefinitionJson.Deserialize(TaskDefinitionJson.Serialize(editedTask.Definition));
+            }
+
+            RequireDraftShape(copy.MachineId, copy);
+            string fullPath = Path.GetFullPath(filePath);
+            string folder = Path.GetDirectoryName(fullPath);
+            if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder)) throw new DirectoryNotFoundException("备份文件夹不存在：" + folder);
+
+            JObject document = JObject.FromObject(copy, TaskDefinitionJson.CreateSerializer());
+            string temporaryPath = fullPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                File.WriteAllText(temporaryPath, document.ToString(Formatting.Indented), new UTF8Encoding(false));
+                if (File.Exists(fullPath)) File.Replace(temporaryPath, fullPath, null);
+                else File.Move(temporaryPath, fullPath);
+            }
+            finally
+            {
+                if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
+            }
+        }
+
+        /// <summary>严格读取备份并存为当前设备草稿；不直接改写运行任务文件。</summary>
+        public TaskWorkspaceDocument ImportBackupAsDraft(string machineId, string filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath)) throw new ArgumentException("备份文件路径不能为空。", nameof(filePath));
+            if (!File.Exists(filePath)) throw new FileNotFoundException("找不到任务配置备份文件。", filePath);
+
+            var backupFile = new FileInfo(filePath);
+            if (backupFile.Length > 64L * 1024 * 1024) throw new InvalidDataException("任务配置备份超过 64 MB，已拒绝读取。");
+
+            string json = File.ReadAllText(filePath, new UTF8Encoding(false, true));
+            TaskWorkspaceDocument draft = ReadDraft(json);
+            RequireDraftShape(machineId, draft);
+
+            // 恢复是人员明确选择的操作；用当前硬件配置重新检查资源引用，而不是沿用备份时的旧签名。
+            draft.BaseSignature = ComputeSignature(machineId);
+            draft.DraftSignature = CurrentDraftSignature(machineId);
+            SaveDraft(draft);
+            return draft;
+        }
+
         /// <summary>同一份草稿从读取到写入期间发生变化时，保留两边内容并要求重新核对。</summary>
         private void RequireCurrentDraft(TaskWorkspaceDocument draft)
         {

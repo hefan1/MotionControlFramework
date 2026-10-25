@@ -560,9 +560,9 @@
     <sys:String x:Key="任务关联定位成功">Item located</sys:String>
     <sys:String x:Key="任务关联定位未找到">Item is not present on this page</sys:String>
     <sys:String x:Key="任务配置">Task configuration</sys:String>
-    <sys:String x:Key="任务配置页面说明">Station assignment, task library and step drafts. Apply validated files without starting the machine.</sys:String>
-    <sys:String x:Key="任务配置先关闭仿真">Close the task simulation session before applying. Drafts can still be edited and saved.</sys:String>
-    <sys:String x:Key="任务配置先断开会话">The controller session is connected. For this stage, disconnect it on the axis mapping page before applying task files. Drafts can be saved at any time.</sys:String>
+    <sys:String x:Key="任务配置页面说明">Station assignment, task library and step drafts. Check and update simulation task files without starting equipment.</sys:String>
+    <sys:String x:Key="任务配置先关闭仿真">Close the task simulation session before updating simulation task files. Drafts can still be edited and saved.</sys:String>
+    <sys:String x:Key="任务配置先断开会话">The controller session is connected. For this stage, disconnect it on the axis mapping page before updating simulation task files. It will not disconnect automatically; drafts can still be saved.</sys:String>
     <sys:String x:Key="设备总览页面说明">View the current Runtime, station steps and alarms. Use the fixed machine controls above.</sys:String>
     <sys:String x:Key="当前报警页面说明">View the location, condition and handling guidance. Refreshing does not reset alarms.</sys:String>
     <sys:String x:Key="关联页面尚未就绪">This page is not available from the current Runtime. Check the connection. No device action was performed.</sys:String>

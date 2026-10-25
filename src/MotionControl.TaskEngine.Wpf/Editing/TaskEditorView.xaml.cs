@@ -28,8 +28,8 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         private bool _isDirty;
         /// <summary>保存草稿时通知所属任务配置页持久化完整草稿包。</summary>
         public event EventHandler DraftSaved;
-        /// <summary>请求所属页面保留本窗口的完整草稿副本，不覆盖共享草稿。</summary>
-        public event EventHandler LocalCopyRequested;
+        /// <summary>请求所属页面导出包含当前未保存任务的设备任务备份。</summary>
+        public event EventHandler BackupExportRequested;
         /// <summary>返回所属任务配置页。</summary>
         public event EventHandler BackRequested;
         /// <summary>请求 Host 只读定位已有页面。</summary>
@@ -253,7 +253,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         }
         /// <summary>将任务副本提交给所属页面保存完整草稿；失败时仍保持未保存状态。</summary>
         private void Save_Click(object sender, RoutedEventArgs e) { SaveDraft(); }
-        /// <summary>保存只写草稿，不应用到设备。</summary>
+        /// <summary>保存只写草稿，不更新仿真任务文件或设备。</summary>
         public bool SaveDraft()
         {
             if (!TryRead()) return false;
@@ -261,20 +261,20 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 _savedDefinitionJson = TaskDefinitionJson.Serialize(Definition); StatusText.Text = T("草稿已保存，未改变运行版本"); RebuildTree(_selected.Id); return true; }
             catch (Exception error) { StatusText.Text = error.ToString(); return false; }
         }
-        /// <summary>保留本窗口副本也不等于已保存公共草稿，未保存标记继续保留。</summary>
-        private void LocalCopy_Click(object sender, RoutedEventArgs e)
+        /// <summary>把当前任务编辑内容交给所属页面导出为设备任务备份。</summary>
+        private void ExportBackup_Click(object sender, RoutedEventArgs e)
         {
             if (!TryRead()) return;
             try
             {
-                if (LocalCopyRequested == null) throw new InvalidOperationException("未配置草稿副本保存入口。");
-                LocalCopyRequested.Invoke(this, EventArgs.Empty);
+                if (BackupExportRequested == null) throw new InvalidOperationException("未配置任务备份导出入口。");
+                BackupExportRequested.Invoke(this, EventArgs.Empty);
             }
             catch (Exception error) { StatusText.Text = error.ToString(); }
         }
-        /// <summary>显示独立副本的实际路径，便于现场人员找回；不清除未保存状态。</summary>
-        public void ShowLocalCopySaved(string path)
-        { StatusText.Text = T("草稿副本已保留，原草稿尚未保存") + "\n" + path; }
+        /// <summary>显示任务备份的实际路径，未保存标记仍保留。</summary>
+        public void ShowBackupExported(string path)
+        { StatusText.Text = T("任务配置备份已导出") + "\n" + path; }
         /// <summary>读取最新设备资源目录后检查当前任务，不持久化任务定义。</summary>
         private void Check_Click(object sender, RoutedEventArgs e)
         {

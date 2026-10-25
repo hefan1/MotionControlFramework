@@ -8,6 +8,7 @@ using MotionControl.Framework.Contracts.Variables;
 using MotionControl.TaskEngine.Configuration;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Editing;
+using MotionControl.TaskEngine.Validation;
 using MotionControl.TaskEngine.Wpf.Editing;
 using Newtonsoft.Json.Linq;
 
@@ -81,7 +82,7 @@ namespace MotionControl.TaskEditing.Checks
                     }
                 };
                 string before = TaskDefinitionJson.Serialize(task);
-                var editor = new TaskEditorView(task, catalog, workspace.Tasks.Select(item => item.Definition));
+                var editor = new TaskEditorView(task, catalog, () => catalog, workspace.Tasks.Select(item => item.Definition));
                 // 此项只验证表单往返，保存回调明确不写任何文件。
                 editor.DraftSaved += (sender, e) => { task = editor.Definition; };
                 foreach (var node in AllNodes(task.Root)) editor.FocusNode(node.Id);
@@ -92,7 +93,8 @@ namespace MotionControl.TaskEditing.Checks
                 workspace.Machine.InitializationTaskId = "LOAD";
                 test.Store.SaveDraft(workspace);
                 var page = new TaskConfigurationView(test.Configuration, Workspace.Id, () => null);
-                FindButton(page, "保存草稿").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                FindButton(page, "保存并检查").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert(((TextBlock)page.FindName("StatusText")).Text.StartsWith("草稿已保存"), "合并按钮没有报告保存与检查结果。");
                 var loaded = test.Store.Load(Workspace.Id);
                 Assert(loaded.Machine.Stations[1].TaskId == "transfer" && loaded.Machine.InitializationTaskId == "LOAD", "工位或初始化任务引用被误清空。");
             }
@@ -108,7 +110,8 @@ namespace MotionControl.TaskEditing.Checks
                 foreach (var kind in new[] { TaskConditionKind.All, TaskConditionKind.Any, TaskConditionKind.Not })
                     ((SequenceNode)task.Root).Children.Add(new WaitConditionNode { Id = kind.ToString(), Name = kind.ToString(), Condition = new TaskCondition { Kind = kind } });
                 string before = TaskDefinitionJson.Serialize(task);
-                var editor = new TaskEditorView(task, test.Store.LoadCatalog(workspace), new TaskDefinition[0]);
+                var catalog = test.Store.LoadCatalog(workspace);
+                var editor = new TaskEditorView(task, catalog, () => catalog, new TaskDefinition[0]);
                 // 此项只验证表单往返，保存回调明确不写任何文件。
                 editor.DraftSaved += (sender, e) => { task = editor.Definition; };
                 foreach (var node in AllNodes(task.Root)) editor.FocusNode(node.Id);
@@ -128,7 +131,7 @@ namespace MotionControl.TaskEditing.Checks
             }
         }
 
-        /// <summary>保存和语言切换保留当前选择，编辑器副本包含当前输入且不清除未保存标记。</summary>
+        /// <summary>保存和语言切换保留当前选择，编辑器提供导出备份入口且保留未保存标记。</summary>
         private static void ConfigurationContext()
         {
             using (var test = new Workspace())
@@ -140,7 +143,8 @@ namespace MotionControl.TaskEditing.Checks
                 stations.SelectedIndex = 1;
                 tasks.SelectedIndex = 2;
                 string taskId = ((TaskLibraryRow)tasks.SelectedItem).Definition.TaskId;
-                FindButton(page, "保存草稿").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                FindButton(page, "保存并检查").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert(((TextBlock)page.FindName("StatusText")).Text.StartsWith("草稿已保存"), "保存并检查后没有显示操作结果。");
                 Assert(stations.SelectedIndex == 1 && ((TaskLibraryRow)tasks.SelectedItem).Definition.TaskId == taskId, "保存后跳回第一工位或丢失任务选择。");
                 page.SetLanguage("en-US");
                 Assert(stations.SelectedIndex == 1 && ((TaskLibraryRow)tasks.SelectedItem).Definition.TaskId == taskId, "语言切换丢失当前选择。");
@@ -151,16 +155,53 @@ namespace MotionControl.TaskEditing.Checks
                 ((TextBox)editor.FindName("TaskNameBox")).Text = "尚未保存的编辑器副本";
                 string draftPath = Path.Combine(test.Root, Workspace.Id, "Drafts/TaskWorkspace.json");
                 string before = File.ReadAllText(draftPath);
-                FindButton(editor, "保留草稿副本").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                Assert(editor.IsDirty && before == File.ReadAllText(draftPath), "保留副本清除了未保存状态或覆盖共享草稿。");
-                string local = Directory.GetFiles(Path.Combine(test.Root, Workspace.Id, "Backups"), "TaskLocal-*.json").Single();
-                var copy = JObject.Parse(File.ReadAllText(local));
-                Assert(copy["tasks"].Any(item => (string)item["definition"]["name"] == "尚未保存的编辑器副本"), "副本不包含编辑器尚未保存的任务内容。");
-                Assert(((TextBlock)editor.FindName("StatusText")).Text.Contains(local), "没有显示副本实际路径。");
+                Assert(FindButton(editor, "导出当前任务备份...") != null, "编辑器缺少导出当前任务备份入口。");
+                Assert(editor.IsDirty && before == File.ReadAllText(draftPath), "仅显示备份入口就清除了未保存状态或覆盖共享草稿。");
                 File.WriteAllText(draftPath, "损坏的外部草稿");
                 page.LoadWorkspace();
                 Assert(ReferenceEquals(((ContentControl)page.FindName("ContentHost")).Content, editor), "载入损坏草稿时丢失了原编辑器。");
                 Assert(((TextBox)editor.FindName("TaskNameBox")).Text == "尚未保存的编辑器副本", "载入失败时丢失了本窗口输入。");
+            }
+        }
+
+        /// <summary>外部备份可带走并恢复为草稿；恢复前后运行任务文件都保持原样。</summary>
+        private static void ExternalBackupRoundTrip()
+        {
+            using (var test = new Workspace())
+            {
+                TaskWorkspaceDocument draft = test.Store.Load(Workspace.Id);
+                string activeBefore = test.ActiveBytes();
+                string backupPath = Path.Combine(test.Root, "TaskBackup.json");
+                TaskWorkspaceTask edited = new TaskWorkspaceTask
+                {
+                    FileName = draft.Tasks[0].FileName,
+                    Definition = TaskDefinitionJson.Deserialize(TaskDefinitionJson.Serialize(draft.Tasks[0].Definition))
+                };
+                edited.Definition.Name = "未保存任务也进入备份";
+
+                test.Store.ExportBackup(draft, backupPath, edited);
+                Assert(File.Exists(backupPath), "没有生成可拷走的 JSON 备份文件。");
+                Assert((string)JObject.Parse(File.ReadAllText(backupPath))["tasks"][0]["definition"]["name"] == "未保存任务也进入备份", "编辑器中未保存的任务没有带入外部备份。");
+                Assert(activeBefore == test.ActiveBytes(), "导出备份改动了运行任务文件。");
+
+                draft.Tasks[0].Definition.Name = "当前草稿的后续修改";
+                test.Store.SaveDraft(draft);
+                TaskWorkspaceDocument restored = test.Store.ImportBackupAsDraft(Workspace.Id, backupPath);
+                Assert(restored.Tasks[0].Definition.Name == "未保存任务也进入备份", "导入后没有恢复到任务草稿。");
+                Assert(restored.BaseSignature == test.Store.ComputeSignature(Workspace.Id), "恢复草稿没有绑定当前硬件配置签名。");
+                Assert(!test.Store.Check(restored).Any(issue => issue.Severity == TaskIssueSeverity.Error), "有效备份恢复后出现任务检查错误。");
+                Assert(activeBefore == test.ActiveBytes(), "导入备份直接改写了运行任务文件。");
+
+                string draftPath = Path.Combine(test.Root, Workspace.Id, "Drafts/TaskWorkspace.json");
+                string draftBeforeInvalidImport = File.ReadAllText(draftPath);
+                string invalidPath = Path.Combine(test.Root, "OtherMachineBackup.json");
+                JObject otherMachine = JObject.Parse(File.ReadAllText(backupPath));
+                otherMachine["machineId"] = "OtherMachine";
+                otherMachine["machine"]["machineId"] = "OtherMachine";
+                File.WriteAllText(invalidPath, otherMachine.ToString());
+                Throws(() => test.Store.ImportBackupAsDraft(Workspace.Id, invalidPath));
+                Assert(draftBeforeInvalidImport == File.ReadAllText(draftPath), "拒绝其他设备备份时覆盖了当前草稿。");
+                Assert(activeBefore == test.ActiveBytes(), "拒绝其他设备备份时改写了运行任务文件。");
             }
         }
 
@@ -183,7 +224,7 @@ namespace MotionControl.TaskEditing.Checks
                         }
                     }
                 };
-                var editor = new TaskEditorView(task, catalog, new TaskDefinition[0]);
+                var editor = new TaskEditorView(task, catalog, () => catalog, new TaskDefinition[0]);
                 editor.FocusNode("write");
                 string before = TaskDefinitionJson.Serialize(editor.Definition);
                 var details = (StackPanel)editor.FindName("Details");

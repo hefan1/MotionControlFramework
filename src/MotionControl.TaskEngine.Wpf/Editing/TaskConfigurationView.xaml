@@ -3,12 +3,9 @@
  <UserControl.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="../Styles/TaskMonitorStyles.xaml"/><ResourceDictionary Source="../Styles/TaskEditingStyles.xaml"/><ResourceDictionary Source="../Localization/Strings.Editor.zh-CN.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></UserControl.Resources>
  <Grid Margin="14,8,14,12"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition x:Name="ConfigIssueRow" Height="100"/></Grid.RowDefinitions>
   <Border x:Name="ConfigToolbar" Background="#F7F9FC" BorderBrush="#D8E2EE" BorderThickness="1" CornerRadius="6" Padding="7"><WrapPanel>
-   <Button Content="{DynamicResource 任务编辑.保存草稿}" Click="Save_Click"/>
-   <Button Content="{DynamicResource 任务编辑.检查配置}" Click="Check_Click"/>
-   <Button Content="{DynamicResource 任务编辑.保留草稿副本}" Click="LocalCopy_Click"/>
-   <Button Content="{DynamicResource 任务编辑.载入最新草稿}" Click="LoadLatest_Click"/>
-   <Button x:Name="ApplyButton" Content="{DynamicResource 任务编辑.应用到设备}" Click="Apply_Click" Style="{StaticResource 编辑主要按钮}"/>
-   <Button Content="{DynamicResource 任务编辑.重新载入运行文件}" Click="Reload_Click"/>
+   <Button Content="{DynamicResource 任务编辑.保存并检查}" Click="SaveAndCheck_Click" Style="{StaticResource 编辑主要按钮}"/>
+   <Button Content="{DynamicResource 任务编辑.备份与恢复}" Click="BackupRestore_Click"/>
+   <Button x:Name="ApplyButton" Content="{DynamicResource 任务编辑.更新仿真任务文件}" Click="Apply_Click"/>
    <Button x:Name="RecoverButton" Content="{DynamicResource 任务编辑.恢复上次应用}" Click="Recover_Click"/>
   </WrapPanel></Border>
   <StackPanel x:Name="ConfigurationStatus" Grid.Row="1" Margin="2,7"><TextBlock x:Name="StatusText" TextWrapping="Wrap" Foreground="#176BD0"/><TextBlock x:Name="ApplyReasonText" TextWrapping="Wrap" Foreground="#946200"/></StackPanel>

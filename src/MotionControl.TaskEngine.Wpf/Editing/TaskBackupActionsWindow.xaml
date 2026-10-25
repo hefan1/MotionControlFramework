@@ -1,0 +1,31 @@
+<Window x:Class="MotionControl.TaskEngine.Wpf.Editing.TaskBackupActionsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="{DynamicResource 任务编辑.备份与恢复}" Width="470" SizeToContent="Height"
+        MinWidth="420" WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        Background="#F3F6FA">
+ <Window.Resources>
+  <ResourceDictionary>
+   <ResourceDictionary.MergedDictionaries>
+    <ResourceDictionary Source="../Styles/TaskMonitorStyles.xaml"/>
+    <ResourceDictionary Source="../Styles/TaskEditingStyles.xaml"/>
+    <ResourceDictionary Source="../Localization/Strings.Editor.zh-CN.xaml"/>
+   </ResourceDictionary.MergedDictionaries>
+  </ResourceDictionary>
+ </Window.Resources>
+ <Border Margin="16" Padding="16" Background="White" BorderBrush="#D9E0E8" BorderThickness="1" CornerRadius="6">
+  <Grid>
+   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+   <TextBlock Text="{DynamicResource 任务编辑.备份说明}" Foreground="#596B7D" TextWrapping="Wrap" Margin="0,0,0,10"/>
+   <Button Grid.Row="1" Content="{DynamicResource 任务编辑.导出任务配置备份}" Click="Export_Click" Style="{StaticResource 编辑主要按钮}" HorizontalAlignment="Stretch"/>
+   <Button Grid.Row="2" Content="{DynamicResource 任务编辑.从备份恢复为草稿}" Click="Restore_Click" HorizontalAlignment="Stretch"/>
+   <Separator Grid.Row="3" Margin="0,8"/>
+   <TextBlock Grid.Row="4" Text="{DynamicResource 任务编辑.其他草稿操作}" Foreground="#596B7D" Margin="2,0,0,2"/>
+   <StackPanel Grid.Row="5">
+    <Button Content="{DynamicResource 任务编辑.重新读取最新草稿}" Click="LoadLatest_Click" HorizontalAlignment="Stretch"/>
+    <Button Content="{DynamicResource 任务编辑.放弃草稿并读取运行版本}" Click="ReloadRuntime_Click" HorizontalAlignment="Stretch"/>
+    <Button Content="{DynamicResource 任务编辑.关闭}" IsCancel="True" HorizontalAlignment="Right" MinWidth="86"/>
+   </StackPanel>
+  </Grid>
+ </Border>
+</Window>

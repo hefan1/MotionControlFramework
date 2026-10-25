@@ -15,7 +15,7 @@
     <Button x:Name="CopyButton" Content="{DynamicResource 任务编辑.复制}" Click="Copy_Click"/><Button x:Name="DeleteButton" Content="{DynamicResource 任务编辑.删除}" Click="Delete_Click"/>
     <Button Content="{DynamicResource 任务编辑.保存草稿}" Click="Save_Click" Style="{StaticResource 编辑主要按钮}"/>
     <Button Content="{DynamicResource 任务编辑.检查任务}" Click="Check_Click"/>
-    <Button Content="{DynamicResource 任务编辑.保留草稿副本}" Click="LocalCopy_Click"/>
+    <Button Content="{DynamicResource 任务编辑.导出当前任务备份}" Click="ExportBackup_Click"/>
    </WrapPanel>
   </Border>
   <TextBlock x:Name="StatusText" Grid.Row="1" TextWrapping="Wrap" Foreground="#176BD0" Margin="2,8"/>

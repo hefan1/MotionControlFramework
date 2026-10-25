@@ -34,11 +34,12 @@ namespace MotionControl.TaskEditing.Checks
             Check("分类表单、复制ID和保存交互", EditingControls, ref failed);
             Check("中英文及两种尺寸离屏布局", Layouts, ref failed);
             Check("多窗口草稿冲突与本地副本", DraftWindowConflicts, ref failed);
+            Check("外部任务备份导出、恢复和设备校验", ExternalBackupRoundTrip, ref failed);
             Check("大小写无关引用完整保留", CaseInsensitiveReferences, ref failed);
             Check("空组合条件往返与取反条件重建", ConditionRoundTrip, ref failed);
             Check("工位任务选择与草稿副本交互", ConfigurationContext, ref failed);
             Check("无效参数不部分修改任务模型", InvalidFieldsKeepDefinition, ref failed);
-            Console.WriteLine("任务编辑内部检查：12 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
+            Console.WriteLine("任务编辑内部检查：13 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
             return failed == 0 ? 0 : 1;
         }
         /// <summary>逐项执行并保留异常堆栈。</summary>
@@ -130,7 +131,7 @@ namespace MotionControl.TaskEditing.Checks
             using (var test = new Workspace())
             {
                 var draft = test.Store.Load(Workspace.Id); var entry = draft.Tasks.Single(item => item.Definition.TaskId == "Transfer");
-                var editor = new TaskEditorView(entry.Definition, test.Store.LoadCatalog(draft), draft.Tasks.Where(item => item != entry).Select(item => item.Definition));
+                var editor = new TaskEditorView(entry.Definition, test.Store.LoadCatalog(draft), () => test.Store.LoadCatalog(draft), draft.Tasks.Where(item => item != entry).Select(item => item.Definition));
                 editor.DraftSaved += (sender, e) => { entry.Definition = editor.Definition; test.Store.SaveDraft(draft); };
                 foreach (string id in AllNodes(editor.Definition.Root).Select(node => node.Id).ToArray()) { editor.FocusNode(id); Assert(((TaskNode)((TreeViewItem)((TreeView)editor.FindName("StepsTree")).SelectedItem).Tag).Id == id, "字段读取错误阻止了节点选择：" + id); }
                 editor.FocusNode("place"); var ids = AllNodes(editor.Definition.Root).Select(node => node.Id).ToArray();
@@ -141,14 +142,14 @@ namespace MotionControl.TaskEditing.Checks
                 Assert(editor.SaveDraft(), "编辑器保存失败。"); Assert(test.Store.Load(Workspace.Id).Tasks.Single(item => item.Definition.TaskId == "Transfer").Definition.Name == "编辑控件保存", "保存未进入完整草稿包。");
                 foreach (var task in draft.Tasks)
                 {
-                    var view = new TaskEditorView(task.Definition, test.Store.LoadCatalog(draft), draft.Tasks.Where(item => item != task).Select(item => item.Definition));
+                    var view = new TaskEditorView(task.Definition, test.Store.LoadCatalog(draft), () => test.Store.LoadCatalog(draft), draft.Tasks.Where(item => item != task).Select(item => item.Definition));
                     foreach (var node in AllNodes(view.Definition.Root).ToArray()) view.FocusNode(node.Id);
                 }
                 var extra = TaskDefinitionJson.Deserialize(TaskDefinitionJson.Serialize(entry.Definition));
                 ((SequenceNode)extra.Root).Children.Add(new AxisCommandNode { Id = "home", Name = "回零", AxisName = "搬运X", Command = TaskAxisCommand.Home });
                 ((SequenceNode)extra.Root).Children.Add(new AxisCommandNode { Id = "stop", Name = "停轴", AxisName = "搬运X", Command = TaskAxisCommand.Stop, StopMode = MotionControl.Framework.Contracts.Motion.AxisStopMode.Controlled });
                 ((SequenceNode)extra.Root).Children.Add(new WaitConditionNode { Id = "condition", Name = "等待变量", Condition = new TaskCondition { Kind = TaskConditionKind.All, Conditions = new List<TaskCondition> { new TaskCondition { Kind = TaskConditionKind.Compare, Comparison = TaskComparison.Equal, Left = new TaskValueBinding { Source = TaskValueSource.Variable, VariableName = "Vision.OK" }, Right = new TaskValueBinding { Source = TaskValueSource.Constant, DataType = MotionControl.Framework.Contracts.Variables.DeviceVariableType.Boolean, Constant = "true" } } } } });
-                var allTypes = new TaskEditorView(extra, test.Store.LoadCatalog(draft), draft.Tasks.Where(item => item.Definition.TaskId != extra.TaskId).Select(item => item.Definition));
+                var allTypes = new TaskEditorView(extra, test.Store.LoadCatalog(draft), () => test.Store.LoadCatalog(draft), draft.Tasks.Where(item => item.Definition.TaskId != extra.TaskId).Select(item => item.Definition));
                 foreach (var node in AllNodes(extra.Root).ToArray()) { allTypes.FocusNode(node.Id); Assert(((TaskNode)((TreeViewItem)((TreeView)allTypes.FindName("StepsTree")).SelectedItem).Tag).Id == node.Id, "分类表单未正确读取：" + node.Kind); }
                 allTypes.FocusNode("condition"); FindButton(allTypes, "添加条件").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Assert(allTypes.IsDirty, "增加子条件未记录未保存状态。");
@@ -163,16 +164,33 @@ namespace MotionControl.TaskEditing.Checks
                 Render(page, "configuration-zh", 1200, 780);
                 Assert(!((TextBlock)page.FindName("StatusText")).Text.Contains("有未保存"), "仅渲染页面就误标未保存。");
                 Assert(((DataGrid)page.FindName("StationsGrid")).Columns.All(column => !string.IsNullOrEmpty(column.Header as string)), "表头没有正确加载局部资源。");
+                Assert(FindButton(page, "保存并检查") != null, "任务配置页缺少合并后的保存检查入口。");
+                Assert(FindButton(page, "备份与恢复") != null, "任务配置页缺少备份与恢复入口。");
+                Assert(FindButton(page, "更新仿真任务文件") != null, "任务配置页没有准确说明仿真文件更新操作。");
+                Assert(FindButton(page, "保留草稿副本") == null, "单独的草稿副本按钮仍占据日常工具栏。");
+                Assert(((Button)page.FindName("RecoverButton")).Visibility == Visibility.Collapsed, "无异常恢复记录时仍显示恢复按钮。");
                 page.SetLanguage("en-US"); Render(page, "configuration-en-small", 824, 550);
+                Assert(FindButton(page, "Save and check") != null, "英语界面没有更新保存检查按钮文字。");
+                var backupDialog = new TaskBackupActionsWindow("zh-CN");
+                Render((FrameworkElement)backupDialog.Content, "backup-actions-zh", 470, 390);
+                Assert(FindButton(backupDialog, "导出任务配置备份...") != null && FindButton(backupDialog, "从备份恢复为草稿...") != null,
+                    "备份管理窗口缺少明确的导出和恢复入口。");
+                var backupDialogEn = new TaskBackupActionsWindow("en-US");
+                Render((FrameworkElement)backupDialogEn.Content, "backup-actions-en", 470, 390);
+                Assert(FindButton(backupDialogEn, "Export task configuration backup...") != null,
+                    "备份管理窗口未按英语语言切换按钮文字。");
+                var readyPage = new TaskConfigurationView(test.Configuration, Workspace.Id, () => null);
+                Render(readyPage, "configuration-ready-zh", 1200, 780);
+                Assert(((Button)readyPage.FindName("ApplyButton")).IsEnabled, "会话空闲且草稿可用时，仿真任务文件更新按钮仍被禁用。");
                 var draft = test.Store.Load(Workspace.Id); var task = draft.Tasks.Single(item => item.Definition.TaskId == "Inspect");
-                var editor = new TaskEditorView(task.Definition, test.Store.LoadCatalog(draft), draft.Tasks.Where(item => item != task).Select(item => item.Definition));
+                var editor = new TaskEditorView(task.Definition, test.Store.LoadCatalog(draft), () => test.Store.LoadCatalog(draft), draft.Tasks.Where(item => item != task).Select(item => item.Definition));
                 editor.FocusNode("judge"); Render(editor, "editor-condition-zh", 1200, 780);
                 editor.SetLanguage("en-US"); Render(editor, "editor-condition-en-small", 824, 550);
                 var resourceTask = TaskDefinitionJson.Deserialize(TaskDefinitionJson.Serialize(draft.Tasks.Single(item => item.Definition.TaskId == "Transfer").Definition));
                 var scope = AllNodes(resourceTask.Root).OfType<ResourceScopeNode>().First();
                 scope.EntryInterlock = new TaskInterlock { Axes = new List<TaskAxisInterlock> { new TaskAxisInterlock { AxisName = "搬运X", MinimumPosition = -1, MaximumPosition = 1 } },
                     Inputs = new List<TaskInputInterlock> { new TaskInputInterlock { InputName = "产品到位", Expected = true } } };
-                var resourceEditor = new TaskEditorView(resourceTask, test.Store.LoadCatalog(draft), draft.Tasks.Where(item => item.Definition.TaskId != resourceTask.TaskId).Select(item => item.Definition));
+                var resourceEditor = new TaskEditorView(resourceTask, test.Store.LoadCatalog(draft), () => test.Store.LoadCatalog(draft), draft.Tasks.Where(item => item.Definition.TaskId != resourceTask.TaskId).Select(item => item.Definition));
                 resourceEditor.FocusNode(scope.Id); Render(resourceEditor, "editor-resource-zh", 1200, 780);
                 Assert(!resourceEditor.IsDirty, "显示联锁绑定值就误标了未保存。");
                 Assert(((Button)page.FindName("ApplyButton")).IsEnabled == false, "受阻应用按钮仍可用。");
