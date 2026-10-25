@@ -384,10 +384,29 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             var editedTask = new TaskWorkspaceTask { FileName = _editingEntry.FileName, Definition = _editor.Definition };
             _editor.ShowLocalCopySaved(_store.SaveLocalCopy(_workspace, editedTask));
         }
-        /// <summary>返回任务库，不重新载入而丢弃当前设备草稿。</summary>
-        private void EditorBack(object sender, EventArgs e) { ContentHost.Content = MainTabs; _editor = null; ShowEditor(false); Rebuild(); MainTabs.SelectedIndex = 1;
-            TasksGrid.SelectedItem = TasksGrid.Items.Cast<TaskLibraryRow>().FirstOrDefault(row => ReferenceEquals(row.Source, _editingEntry));
-            StatusText.Text = _dirty ? T("有未保存修改，运行版本未改变") : T("草稿与现有目录已载入"); RefreshPermission(null, EventArgs.Empty); }
+        /// <summary>返回任务库；没有保存任务修改时保留仍然有效的整机检查结果。</summary>
+        private void EditorBack(object sender, EventArgs e)
+        {
+            IReadOnlyList<TaskValidationIssue> previousCheckIssues = _lastCheckIssues;
+
+            ContentHost.Content = MainTabs;
+            _editor = null;
+            ShowEditor(false);
+            Rebuild();
+
+            if (previousCheckIssues != null)
+            {
+                _lastCheckIssues = previousCheckIssues;
+                ShowIssues(_lastCheckIssues);
+                RefreshLibraryRows();
+            }
+
+            MainTabs.SelectedIndex = 1;
+            TasksGrid.SelectedItem = TasksGrid.Items.Cast<TaskLibraryRow>()
+                .FirstOrDefault(row => ReferenceEquals(row.Source, _editingEntry));
+            StatusText.Text = _dirty ? T("有未保存修改，运行版本未改变") : T("草稿与现有目录已载入");
+            RefreshPermission(null, EventArgs.Empty);
+        }
         /// <summary>编辑器显示自己的工具栏和问题表，避免同屏重复两套保存检查。</summary>
         private void ShowEditor(bool visible)
         {
