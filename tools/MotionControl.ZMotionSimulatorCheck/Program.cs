@@ -25,6 +25,11 @@ namespace MotionControl.ZMotionSimulatorCheck
         [STAThread]
         private static int Main(string[] args)
         {
+            if (args.Any(argument => string.Equals(argument, "--parallel-station-simulator", StringComparison.OrdinalIgnoreCase)))
+            {
+                return LiveParallelStationCheck.Run();
+            }
+
             if (args.Any(argument => string.Equals(argument, "--manual-ui-smoke", StringComparison.OrdinalIgnoreCase)))
             {
                 return ManualDebugSmokeCheck.Run();
@@ -728,6 +733,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             Console.WriteLine("  --validate-config   校验指定目录中的卡、轴、IO 和急停映射，不连接仿真器");
             Console.WriteLine("  --manual-ui-smoke   检查通用手动页 XAML、轴/IO 行和 Host 导航注入，不连接硬件");
             Console.WriteLine("  --manual-ui-simulator [--home-mode N] 连接正运动仿真器并打开实时手动调试页");
+            Console.WriteLine("  --parallel-station-simulator  仅在确认 VPLC5xx-Simu 后并行驱动四根仿真轴，验证四个工位同时运行");
             Console.WriteLine("  --help               显示帮助");
         }
 
