@@ -19,6 +19,8 @@ namespace MotionControl.ZMotionSimulatorCheck
     {
         /// <summary>本次测试使用的物理轴数量。</summary>
         private const int AxisCount = 12;
+        /// <summary>仿真轴每个工程单位使用的脉冲数，提供稳定的回读分辨率。</summary>
+        private const double SimulatorPulsesPerEngineeringUnit = 1000;
         /// <summary>轴状态采样间隔。</summary>
         private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(100);
         /// <summary>六个任务全部完成的最长等待时间。</summary>
@@ -51,8 +53,11 @@ namespace MotionControl.ZMotionSimulatorCheck
             ZMotionCard card = null;
             MachineRuntime runtime = null;
             List<IAxis> axes = null;
+            List<ZMotionAxisConfiguration> originalAxisMappings = null;
             AxisStatus[] initial = null;
             bool parametersApplied = false;
+            bool baselineCapturedAfterConfiguration = false;
+            bool parametersRestored = false;
             bool restored = false;
 
             try
@@ -69,7 +74,10 @@ namespace MotionControl.ZMotionSimulatorCheck
                     .ToObject<ZMotionCardConfiguration>();
                 ZMotionAxisConfiguration template = axesJson["axes"].First()
                     .ToObject<ZMotionAxisConfiguration>();
-                List<ZMotionAxisConfiguration> axisMappings = CreateAxisMappings(template, controllerId);
+                List<ZMotionAxisConfiguration> axisMappings = CreateAxisMappings(
+                    template, controllerId, SimulatorPulsesPerEngineeringUnit);
+                originalAxisMappings = CreateAxisMappings(
+                    template, controllerId, template.UnitsPerEngineeringUnit);
                 List<ZMotionIoPointConfiguration> inputs = ioJson["digitalInputs"]
                     .Select(item => item.ToObject<ZMotionIoPointConfiguration>()).ToList();
                 List<ZMotionIoPointConfiguration> outputs = ioJson["digitalOutputs"]
@@ -107,6 +115,17 @@ namespace MotionControl.ZMotionSimulatorCheck
                 }
                 Console.WriteLine("[预检通过] 十二根轴全部可读且停稳；本次测试不会写任何 DO。");
 
+                await card.ApplyAxisParametersAsync(CancellationToken.None).ConfigureAwait(false);
+                parametersApplied = true;
+                for (int index = 0; index < AxisCount; index++)
+                {
+                    initial[index] = await axes[index].ReadStatusAsync(CancellationToken.None).ConfigureAwait(false);
+                    EnsureReadyForTest(axes[index].Name, initial[index], axisMappings[index]);
+                    Console.WriteLine("[参数应用后基准] 物理轴 " + index + " / " + axes[index].Name
+                        + "，位置=" + initial[index].Position.ToString("F3"));
+                }
+                baselineCapturedAfterConfiguration = true;
+
                 double[] target = new double[AxisCount];
                 for (int index = 0; index < AxisCount; index++)
                     target[index] = SafeTarget(initial[index].Position, axisMappings[index],
@@ -122,8 +141,6 @@ namespace MotionControl.ZMotionSimulatorCheck
                 transfer.SetTargets(target[9], target[10]);
                 feeder.SetTarget(target[11]);
 
-                await card.ApplyAxisParametersAsync(CancellationToken.None).ConfigureAwait(false);
-                parametersApplied = true;
                 await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
                 await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
                 int firstPeak = await WaitForInitialMotionAsync(axes).ConfigureAwait(false);
@@ -135,9 +152,10 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Console.WriteLine("[暂停通过] 首轮同时运动峰值=" + firstPeak + "；发出暂停前 "
                     + movingMidway + " 根轴处于运动中段，停止后 " + midway + " 根轴停在中途。");
 
+                signals.ResetSharedAxisContentionObservation();
                 await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
                 await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
-                await WaitForSharedAxisContentionAsync(aInspection, bInspection).ConfigureAwait(false);
+                await WaitForSharedAxisContentionAsync(signals, aInspection, bInspection).ConfigureAwait(false);
                 int movingBeforeSharedPause = await CountMovingAxesAsync(axes).ConfigureAwait(false);
                 if (movingBeforeSharedPause < 1)
                     throw new InvalidOperationException("检测任务争用共用 Z 轴时没有观察到实际运动，不能执行占用期间暂停检查。");
@@ -168,24 +186,69 @@ namespace MotionControl.ZMotionSimulatorCheck
 
                 await RestoreAxesAsync(axes, initial).ConfigureAwait(false);
                 restored = true;
-                Console.WriteLine("[通过] 十二轴、六任务、七轴并行、共用轴排队及占用期间暂停恢复、原位恢复均完成；未写入 DO。");
+                await RestoreAxisParametersAsync(card, originalAxisMappings).ConfigureAwait(false);
+                parametersRestored = true;
+                Console.WriteLine("[通过] 十二轴、六任务、七轴并行、共用轴排队及占用期间暂停恢复、原位恢复、轴参数恢复均完成；未写入 DO。");
                 return 0;
             }
             finally
             {
-                if (runtime != null && (runtime.State == MachineRunState.Running || runtime.State == MachineRunState.Pausing))
-                    await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
-                if (!restored && parametersApplied && axes != null && initial != null
-                    && initial.All(status => status != null) && runtime != null
-                    && runtime.State == MachineRunState.Paused)
+                bool flowsStopped = runtime == null
+                    || runtime.State == MachineRunState.Ready
+                    || runtime.State == MachineRunState.Paused
+                    || runtime.State == MachineRunState.ResetRequired
+                    || runtime.State == MachineRunState.Disconnected;
+                if (runtime != null && (runtime.State == MachineRunState.Running
+                    || runtime.State == MachineRunState.Pausing || runtime.State == MachineRunState.Alarmed))
                 {
-                    try { await RestoreAxesAsync(axes, initial).ConfigureAwait(false); }
-                    catch (Exception error) { Console.Error.WriteLine("[恢复未完成] " + error.Message); }
+                    try
+                    {
+                        await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+                        flowsStopped = true;
+                    }
+                    catch (Exception error)
+                    {
+                        flowsStopped = false;
+                        Console.Error.WriteLine("[流程停止未确认] " + error.Message);
+                    }
                 }
-                if (runtime != null && runtime.State != MachineRunState.Disconnected)
-                    await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
-                else if (card != null && card.IsConnected)
-                    await card.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+                if (!restored && parametersApplied && baselineCapturedAfterConfiguration && axes != null
+                    && initial != null && initial.All(status => status != null) && flowsStopped)
+                {
+                    try
+                    {
+                        await RestoreAxesAsync(axes, initial).ConfigureAwait(false);
+                    }
+                    catch (Exception error)
+                    {
+                        Console.Error.WriteLine("[恢复未完成] " + error.Message);
+                    }
+                }
+                if (!parametersRestored && parametersApplied && flowsStopped && card != null && card.IsConnected)
+                {
+                    try
+                    {
+                        if (originalAxisMappings == null)
+                            throw new InvalidOperationException("未能读取原始仿真轴配置，无法安全恢复轴参数。");
+                        await RestoreAxisParametersAsync(card, originalAxisMappings).ConfigureAwait(false);
+                        parametersRestored = true;
+                    }
+                    catch (Exception error)
+                    {
+                        Console.Error.WriteLine("[参数恢复未完成] " + error.Message);
+                    }
+                }
+                try
+                {
+                    if (runtime != null && runtime.State != MachineRunState.Disconnected)
+                        await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+                    else if (card != null && card.IsConnected)
+                        await card.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception error)
+                {
+                    Console.Error.WriteLine("[断开未完成] " + error.Message);
+                }
             }
         }
 
@@ -199,7 +262,9 @@ namespace MotionControl.ZMotionSimulatorCheck
 
         /// <summary>只在测试进程内把样例轴参数扩展成物理轴 0 到 11 的逻辑映射。</summary>
         private static List<ZMotionAxisConfiguration> CreateAxisMappings(
-            ZMotionAxisConfiguration template, string controllerId)
+            ZMotionAxisConfiguration template,
+            string controllerId,
+            double unitsPerEngineeringUnit)
         {
             var mappings = new List<ZMotionAxisConfiguration>();
             for (int index = 0; index < AxisCount; index++)
@@ -207,7 +272,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 mappings.Add(new ZMotionAxisConfiguration {
                     ControllerId = controllerId, Name = AxisNames[index], AxisNumber = index,
                     EngineeringUnit = template.EngineeringUnit,
-                    UnitsPerEngineeringUnit = template.UnitsPerEngineeringUnit,
+                    UnitsPerEngineeringUnit = unitsPerEngineeringUnit,
                     MinimumPosition = template.MinimumPosition,
                     MaximumPosition = template.MaximumPosition,
                     SoftLimitEnabled = template.SoftLimitEnabled,
@@ -221,6 +286,34 @@ namespace MotionControl.ZMotionSimulatorCheck
                 });
             }
             return mappings;
+        }
+
+        /// <summary>将仿真轴映射参数恢复为项目样例配置，并逐轴读回核对。</summary>
+        private static async Task RestoreAxisParametersAsync(
+            ZMotionCard card,
+            IReadOnlyList<ZMotionAxisConfiguration> originalMappings)
+        {
+            await card.ApplyAxisMappingsAsync(originalMappings, CancellationToken.None).ConfigureAwait(false);
+            foreach (ZMotionAxisConfiguration mapping in originalMappings)
+            {
+                ZMotionPhysicalAxisParameters actual = await card
+                    .ReadPhysicalAxisParametersAsync(mapping.AxisNumber, CancellationToken.None)
+                    .ConfigureAwait(false);
+                bool parametersMatch = Math.Abs(actual.UnitsPerEngineeringUnit
+                        - mapping.UnitsPerEngineeringUnit) < 0.001
+                    && actual.SoftLimitEnabled.HasValue
+                    && actual.SoftLimitEnabled.Value == mapping.SoftLimitEnabled
+                    && Math.Abs(actual.MinimumPosition - mapping.MinimumPosition) < 0.01
+                    && Math.Abs(actual.MaximumPosition - mapping.MaximumPosition) < 0.01
+                    && Math.Abs(actual.Speed - mapping.HomeSearchSpeed) < 0.01
+                    && Math.Abs(actual.CreepSpeed - mapping.HomeCreepSpeed) < 0.01
+                    && Math.Abs(actual.Acceleration - mapping.HomeAcceleration) < 0.01
+                    && Math.Abs(actual.Deceleration - mapping.HomeDeceleration) < 0.01;
+                if (!parametersMatch)
+                    throw new InvalidOperationException("物理轴 " + mapping.AxisNumber
+                        + " 的工程单位、软限位或运动参数未恢复到样例配置。");
+            }
+            Console.WriteLine("[参数恢复] 十二根轴的工程单位、软限位和运动参数均已读回核对。");
         }
 
         /// <summary>写参数和运动之前确认每根轴可读、停稳、无报警且位置在测试范围内。</summary>
@@ -319,23 +412,26 @@ namespace MotionControl.ZMotionSimulatorCheck
 
         /// <summary>等到一个检测任务持有共用轴运动、另一个任务正排队等待。</summary>
         private static async Task WaitForSharedAxisContentionAsync(
-            ComplexInspectionFlow aInspection, ComplexInspectionFlow bInspection)
+            ComplexMachineSignals signals,
+            ComplexInspectionFlow aInspection,
+            ComplexInspectionFlow bInspection)
         {
             var elapsed = Stopwatch.StartNew();
             while (elapsed.Elapsed < TimeSpan.FromSeconds(30))
             {
-                bool aIsMoving = aInspection.CurrentStepName == "三轴同时动作，等待全部到位";
-                bool bIsMoving = bInspection.CurrentStepName == "三轴同时动作，等待全部到位";
-                bool aIsWaiting = aInspection.CurrentStepName == "申请两根工具轴和共用 Z 轴";
-                bool bIsWaiting = bInspection.CurrentStepName == "申请两根工具轴和共用 Z 轴";
-                if ((aIsMoving && bIsWaiting) || (bIsMoving && aIsWaiting))
+                if (signals.SharedAxisContentionObserved
+                    && signals.SharedAxisOwners == 1 && signals.SharedAxisWaiters > 0)
                 {
                     Console.WriteLine("[共用轴排队] 一侧检测正在驱动三轴，另一侧正在申请同一根 Z 轴。");
                     return;
                 }
                 await Task.Delay(50).ConfigureAwait(false);
             }
-            throw new TimeoutException("未能同时观察到共用 Z 轴的持有任务和等待任务。");
+            throw new TimeoutException("未能同时观察到共用 Z 轴的持有任务和等待任务。"
+                + "当前持有数=" + signals.SharedAxisOwners
+                + "，等待数=" + signals.SharedAxisWaiters
+                + "，A侧步骤=" + aInspection.CurrentStepName
+                + "，B侧步骤=" + bInspection.CurrentStepName + "。");
         }
 
         /// <summary>读取十二根轴并统计当前实际运动数量。</summary>

@@ -13,6 +13,10 @@ namespace MotionControl.ZMotionSimulatorCheck
         private int _transferDone;
         /// <summary>当前占用共用 Z 轴的流程数量。</summary>
         private int _sharedAxisOwners;
+        /// <summary>当前正在申请共用 Z 轴的流程数量。</summary>
+        private int _sharedAxisWaiters;
+        /// <summary>本轮是否真实观察到共用轴同时存在持有者和等待者。</summary>
+        private int _sharedAxisContentionObserved;
         /// <summary>最后一个检测流程接受的共用 Z 轴目标位置。</summary>
         private double _lastSharedAxisTarget;
 
@@ -26,6 +30,10 @@ namespace MotionControl.ZMotionSimulatorCheck
         public bool TransferDone => Volatile.Read(ref _transferDone) == 1;
         /// <summary>当前正在进入共用 Z 轴动作段的检测任务数量，暂停后应回到 0。</summary>
         public int SharedAxisOwners => Volatile.Read(ref _sharedAxisOwners);
+        /// <summary>当前等待共用 Z 轴资源的检测任务数量。</summary>
+        public int SharedAxisWaiters => Volatile.Read(ref _sharedAxisWaiters);
+        /// <summary>本轮运行中是否曾实际观察到共用轴争用。</summary>
+        public bool SharedAxisContentionObserved => Volatile.Read(ref _sharedAxisContentionObserved) == 1;
         /// <summary>最后完成检测的任务在共用轴上留下的目标位置。</summary>
         public double LastSharedAxisTarget => _lastSharedAxisTarget;
 
@@ -39,11 +47,43 @@ namespace MotionControl.ZMotionSimulatorCheck
         /// <summary>检查任何时刻只有一个检测任务进入共用 Z 轴动作区。</summary>
         public void EnterSharedAxis()
         {
-            if (Interlocked.Increment(ref _sharedAxisOwners) != 1)
+            int ownerCount = Interlocked.Increment(ref _sharedAxisOwners);
+            if (ownerCount != 1)
             {
                 Interlocked.Decrement(ref _sharedAxisOwners);
                 throw new InvalidOperationException("共用 Z 轴同时分配给了两个检测任务。");
             }
+
+            if (SharedAxisWaiters > 0)
+                Interlocked.Exchange(ref _sharedAxisContentionObserved, 1);
+        }
+
+        /// <summary>记录一个检测任务开始申请包含共用 Z 轴的完整轴组。</summary>
+        public void BeginSharedAxisRequest()
+        {
+            Interlocked.Increment(ref _sharedAxisWaiters);
+            if (SharedAxisOwners > 0)
+                Interlocked.Exchange(ref _sharedAxisContentionObserved, 1);
+        }
+
+        /// <summary>在轴组申请成功、取消或失败后移除对应的等待记录。</summary>
+        public void EndSharedAxisRequest()
+        {
+            int waiterCount = Interlocked.Decrement(ref _sharedAxisWaiters);
+            if (waiterCount < 0)
+            {
+                Interlocked.Exchange(ref _sharedAxisWaiters, 0);
+                throw new InvalidOperationException("共用 Z 轴等待计数出现负数。");
+            }
+        }
+
+        /// <summary>新一轮争用验证前清除历史记录，并确认上一轮资源已全部归还。</summary>
+        public void ResetSharedAxisContentionObservation()
+        {
+            if (SharedAxisOwners != 0 || SharedAxisWaiters != 0)
+                throw new InvalidOperationException("共用 Z 轴仍被占用或仍有任务等待，不能清除争用记录。");
+
+            Interlocked.Exchange(ref _sharedAxisContentionObserved, 0);
         }
 
         /// <summary>检测任务的轴都停稳后归还共用 Z 轴记录。</summary>

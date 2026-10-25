@@ -25,6 +25,8 @@ namespace MotionControl.ZMotionSimulatorCheck
         private double _toolOneTarget, _toolTwoTarget, _sharedZTarget;
         /// <summary>三轴全部到位后才为真。</summary>
         private int _completed;
+        /// <summary>累计等待共享轴组资源的时间。</summary>
+        private long _resourceWaitMilliseconds;
 
         /// <summary>建立一个等待定位结果并使用共用 Z 轴的检测任务。</summary>
         public ComplexInspectionFlow(string name, IAxis toolOne, IAxis toolTwo, IAxis sharedZ,
@@ -43,7 +45,7 @@ namespace MotionControl.ZMotionSimulatorCheck
         /// <summary>本侧检测的三根轴是否均到位。</summary>
         public bool Completed => Volatile.Read(ref _completed) == 1;
         /// <summary>等待共用 Z 轴占用凭证花费的毫秒数。</summary>
-        public long ResourceWaitMilliseconds { get; private set; }
+        public long ResourceWaitMilliseconds => Interlocked.Read(ref _resourceWaitMilliseconds);
 
         /// <summary>保存三个轴的绝对目标位置。</summary>
         public void SetTargets(double toolOne, double toolTwo, double sharedZ)
@@ -62,21 +64,33 @@ namespace MotionControl.ZMotionSimulatorCheck
 
             CurrentStepName = "申请两根工具轴和共用 Z 轴";
             Stopwatch wait = Stopwatch.StartNew();
-            using (await _axisResources.AcquireAxisGroupAsync(
-                new[] { _toolOne.Name, _toolTwo.Name, _sharedZ.Name }, cancellationToken).ConfigureAwait(false))
+            _signals.BeginSharedAxisRequest();
+            bool waitingRequestRecorded = true;
+            try
             {
-                ResourceWaitMilliseconds = wait.ElapsedMilliseconds;
-                _signals.EnterSharedAxis();
-                try
+                using (await _axisResources.AcquireAxisGroupAsync(
+                    new[] { _toolOne.Name, _toolTwo.Name, _sharedZ.Name }, cancellationToken).ConfigureAwait(false))
                 {
-                    CurrentStepName = "三轴同时动作，等待全部到位";
-                    await Task.WhenAll(
-                        _toolOne.MoveAbsoluteAsync(_toolOneTarget, _profile, cancellationToken),
-                        _toolTwo.MoveAbsoluteAsync(_toolTwoTarget, _profile, cancellationToken),
-                        _sharedZ.MoveAbsoluteAsync(_sharedZTarget, _profile, cancellationToken)).ConfigureAwait(false);
-                    _signals.MarkInspectionDone(_stationA, _sharedZTarget);
+                    _signals.EndSharedAxisRequest();
+                    waitingRequestRecorded = false;
+                    Interlocked.Add(ref _resourceWaitMilliseconds, wait.ElapsedMilliseconds);
+                    _signals.EnterSharedAxis();
+                    try
+                    {
+                        CurrentStepName = "三轴同时动作，等待全部到位";
+                        await Task.WhenAll(
+                            _toolOne.MoveAbsoluteAsync(_toolOneTarget, _profile, cancellationToken),
+                            _toolTwo.MoveAbsoluteAsync(_toolTwoTarget, _profile, cancellationToken),
+                            _sharedZ.MoveAbsoluteAsync(_sharedZTarget, _profile, cancellationToken)).ConfigureAwait(false);
+                        _signals.MarkInspectionDone(_stationA, _sharedZTarget);
+                    }
+                    finally { _signals.LeaveSharedAxis(); }
                 }
-                finally { _signals.LeaveSharedAxis(); }
+            }
+            finally
+            {
+                if (waitingRequestRecorded)
+                    _signals.EndSharedAxisRequest();
             }
             Interlocked.Exchange(ref _completed, 1);
             _step = 20;
