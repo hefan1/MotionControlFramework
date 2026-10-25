@@ -73,8 +73,16 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             panel.Children.Add(MotionFields(new[] { "逻辑轴", "定位方式" }, new FrameworkElement[] { row.Axis, row.Mode }));
             panel.Children.Add(TaskEditingUi.Label(this, "目标来源和值")); panel.Children.Add(row.Value);
             var links = new WrapPanel();
-            var map = TaskEditingUi.Button(this, "查看轴映射", OpenAxisMapping); map.Tag = row; links.Children.Add(map);
-            var manual = TaskEditingUi.Button(this, "查看轴手动", OpenAxisManual); manual.Tag = row; links.Children.Add(manual); panel.Children.Add(links);
+            row.AxisMappingButton = TaskEditingUi.Button(this, "查看轴映射", OpenAxisMapping);
+            row.AxisMappingButton.Tag = row;
+            row.AxisManualButton = TaskEditingUi.Button(this, "查看轴手动", OpenAxisManual);
+            row.AxisManualButton.Tag = row;
+            bool hasAxis = !string.IsNullOrWhiteSpace(row.Axis.SelectedItem as string);
+            row.AxisMappingButton.IsEnabled = hasAxis;
+            row.AxisManualButton.IsEnabled = hasAxis;
+            links.Children.Add(row.AxisMappingButton);
+            links.Children.Add(row.AxisManualButton);
+            panel.Children.Add(links);
             if (group) { var remove = TaskEditingUi.Button(this, "移除此轴目标", RemoveTarget); remove.Tag = row; panel.Children.Add(remove); }
             row.Container = new Expander { Header = string.IsNullOrEmpty(target.AxisName) ? T("未选择逻辑轴") : target.AxisName, Content = panel,
                 IsExpanded = true, Margin = new Thickness(0, 7, 0, 0) };
@@ -122,6 +130,9 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         {
             var row = (TaskMotionEditRow)((ComboBox)sender).Tag; row.Value.SelectAxis(row.Axis.SelectedItem as string);
             row.Container.Header = row.Axis.SelectedItem as string; UpdateMotionUnit(row);
+            bool hasAxis = !string.IsNullOrWhiteSpace(row.Axis.SelectedItem as string);
+            row.AxisMappingButton.IsEnabled = hasAxis;
+            row.AxisManualButton.IsEnabled = hasAxis;
         }
         /// <summary>相对模式不允许新选绝对示教点。</summary>
         private void MotionModeChanged(object sender, SelectionChangedEventArgs e)
@@ -191,6 +202,10 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         internal TextBox Deceleration;
         /// <summary>工程单位提示。</summary>
         internal TextBlock Unit;
+        /// <summary>跳转到当前逻辑轴映射页的按钮。</summary>
+        internal Button AxisMappingButton;
+        /// <summary>跳转到当前逻辑轴手动页的按钮。</summary>
+        internal Button AxisManualButton;
         /// <summary>轴组中的折叠行。</summary>
         internal Expander Container;
     }
