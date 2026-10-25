@@ -300,9 +300,21 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 StatusText.Text = T("任务检查失败") + "：" + error.Message;
             }
         }
-        /// <summary>点击错误行按稳定节点 ID 定位，不依赖显示步号。</summary>
+        /// <summary>选择检查项时定位当前任务问题，跨任务问题提示返回清单双击打开。</summary>
         private void IssueSelected(object sender, SelectionChangedEventArgs e)
-        { if (IssuesGrid.SelectedItem is TaskEditingIssueRow row) { if (row.Issue.TaskId == Definition.TaskId) FocusIssue(row.Issue); else StatusText.Text = row.TaskName + " / " + row.Field + "：" + row.Message; } }
+        {
+            if (!(IssuesGrid.SelectedItem is TaskEditingIssueRow row)) return;
+
+            if (row.Issue.TaskId == Definition.TaskId)
+            {
+                FocusIssue(row.Issue);
+                return;
+            }
+
+            StatusText.Text = string.Format(
+                T("该问题来自其他任务“{0}”，当前任务未切换。请返回任务配置页，在检查清单中双击该问题定位。"),
+                row.TaskName);
+        }
         /// <summary>供任务配置页定位清单检查发现的任务节点。</summary>
         public void FocusNode(string nodeId) { if (TryRead()) RebuildTree(nodeId); }
         /// <summary>定位步骤后用现场可读字段名完整显示问题，长消息不会被表格截断。</summary>

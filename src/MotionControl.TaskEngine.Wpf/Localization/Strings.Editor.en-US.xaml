@@ -223,6 +223,7 @@
  <sys:String x:Key="任务编辑.当前步骤暂时只读，原定义保留">This step is temporarily read-only. Its original definition is preserved.</sys:String>
  <sys:String x:Key="任务编辑.错误">Error</sys:String>
  <sys:String x:Key="任务编辑.提醒">Warning</sys:String>
+ <sys:String x:Key="任务编辑.该问题来自其他任务“{0}”，当前任务未切换。请返回任务配置页，在检查清单中双击该问题定位。">This issue belongs to another task: {0}. The current task has not changed. Return to Task Configuration and double-click the issue in the check list to locate it.</sys:String>
  <sys:String x:Key="任务编辑.保留草稿副本">Keep local copy</sys:String>
  <sys:String x:Key="任务编辑.载入最新草稿">Load latest draft</sys:String>
  <sys:String x:Key="任务编辑.草稿副本已保留，原草稿尚未保存">Local copy kept. The shared draft has not been saved.</sys:String>
