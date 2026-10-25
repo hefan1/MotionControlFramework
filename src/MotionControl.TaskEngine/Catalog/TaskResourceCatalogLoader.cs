@@ -55,6 +55,7 @@ namespace MotionControl.TaskEngine.Catalog
             List<string> inputs = ReadIoNames(ioDocument, "digitalInputs");
             List<string> outputs = ReadIoNames(ioDocument, "digitalOutputs");
             var variables = new Dictionary<string, DeviceVariableType>(StringComparer.OrdinalIgnoreCase);
+            var variableInitialValues = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             JObject variableDocument = ReadDocument(machineId, "Parameters/DeviceVariables.json", true, notices);
             if (variableDocument != null)
             {
@@ -67,6 +68,7 @@ namespace MotionControl.TaskEngine.Catalog
                         || !Enum.IsDefined(typeof(DeviceVariableType), type))
                         throw new InvalidDataException("变量类型不受支持：" + definition.Name);
                     variables.Add(definition.Name, type);
+                    variableInitialValues.Add(definition.Name, definition.InitialValue);
                 }
             }
 
@@ -94,7 +96,8 @@ namespace MotionControl.TaskEngine.Catalog
                     }
                 }
             }
-            return new TaskResourceCatalog(axes, inputs, outputs, variables, points, namedResources, notices);
+            return new TaskResourceCatalog(axes, inputs, outputs, variables, points,
+                namedResources, notices, variableInitialValues);
         }
 
         /// <summary>读取已知格式文件；只允许可选文件不存在，不忽略损坏文件。</summary>

@@ -27,7 +27,7 @@ namespace MotionControl.TaskEngine.Simulation
         /// <summary>本内存设备共用的协调器；不影响其他设备实例或旧工位运行器。</summary>
         internal TaskResourceCoordinator Resources { get; }
 
-        /// <summary>从目录建立隔离状态；轴默认未使能、未回零，变量默认无效。</summary>
+        /// <summary>从目录建立隔离状态；轴默认未使能、未回零，变量使用配置初值。</summary>
         public SimulatedTaskDevice(TaskResourceCatalog catalog)
         {
             Catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
@@ -37,7 +37,10 @@ namespace MotionControl.TaskEngine.Simulation
             foreach (string output in catalog.Outputs) _outputs.Add(output, null);
             _variables = new DeviceVariableStore(catalog.Variables.Select(variable => new DeviceVariableDefinition
             {
-                Name = variable.Key, DataType = variable.Value.ToString(), AllowOperatorWrite = false
+                Name = variable.Key,
+                DataType = variable.Value.ToString(),
+                InitialValue = catalog.VariableInitialValues[variable.Key],
+                AllowOperatorWrite = false
             }));
         }
 

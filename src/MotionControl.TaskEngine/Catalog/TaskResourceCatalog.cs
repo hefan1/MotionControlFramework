@@ -16,6 +16,8 @@ namespace MotionControl.TaskEngine.Catalog
         public IReadOnlyCollection<string> Outputs { get; private set; }
         /// <summary>设备变量及现有数据类型。</summary>
         public IReadOnlyDictionary<string, DeviceVariableType> Variables { get; private set; }
+        /// <summary>设备变量初始值；未设置初值的变量对应 null。</summary>
+        public IReadOnlyDictionary<string, string> VariableInitialValues { get; private set; }
         /// <summary>现有示教点；用逻辑轴和点位 ID 联合定位。</summary>
         public IReadOnlyList<TaskTeachPoint> TeachPoints { get; private set; }
         /// <summary>轴、输出资源及 Host 明确提供的区域、夹具等资源名称。</summary>
@@ -27,7 +29,7 @@ namespace MotionControl.TaskEngine.Catalog
         public TaskResourceCatalog(IEnumerable<TaskAxisInfo> axes, IEnumerable<string> inputs,
             IEnumerable<string> outputs, IDictionary<string, DeviceVariableType> variables,
             IEnumerable<TaskTeachPoint> teachPoints, IEnumerable<string> namedResources = null,
-            IEnumerable<string> notices = null)
+            IEnumerable<string> notices = null, IDictionary<string, string> variableInitialValues = null)
         {
             if (axes == null || inputs == null || outputs == null || variables == null || teachPoints == null)
                 throw new ArgumentNullException("目录中的轴、IO、变量和示教点集合均不能为空。");
@@ -62,6 +64,23 @@ namespace MotionControl.TaskEngine.Catalog
                 variableMap.Add(variable.Key, variable.Value);
             }
             Variables = new ReadOnlyDictionary<string, DeviceVariableType>(variableMap);
+
+            var initialValueMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (variableInitialValues != null)
+            {
+                foreach (var initialValue in variableInitialValues)
+                {
+                    CheckName(initialValue.Key);
+                    if (!variableMap.ContainsKey(initialValue.Key))
+                        throw new ArgumentException("变量初值对应的变量不存在：" + initialValue.Key);
+                    if (initialValueMap.ContainsKey(initialValue.Key))
+                        throw new ArgumentException("变量初值名称重复：" + initialValue.Key);
+                    initialValueMap.Add(initialValue.Key, initialValue.Value);
+                }
+            }
+            foreach (string variableName in variableMap.Keys)
+                if (!initialValueMap.ContainsKey(variableName)) initialValueMap.Add(variableName, null);
+            VariableInitialValues = new ReadOnlyDictionary<string, string>(initialValueMap);
 
             var points = new List<TaskTeachPoint>();
             var pointKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

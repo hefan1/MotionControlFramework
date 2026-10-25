@@ -1,7 +1,9 @@
 using System;
 using System.IO;
 using System.Linq;
+using MotionControl.Framework.Contracts.Variables;
 using MotionControl.TaskEngine.Catalog;
+using MotionControl.TaskEngine.Simulation;
 using Newtonsoft.Json.Linq;
 
 namespace MotionControl.TaskEngine.Checks
@@ -9,7 +11,7 @@ namespace MotionControl.TaskEngine.Checks
     /// <summary>使用现有配置文件格式验证离线共享目录。</summary>
     internal static class CatalogChecks
     {
-        /// <summary>逻辑轴、物理点位键、变量和 IO 从同一套旧配置读取。</summary>
+        /// <summary>验证目录保留设备变量初值，并由内存设备装入布尔和数值初值。</summary>
         internal static void ExistingConfiguration()
         {
             using (var workspace = new TestWorkspace())
@@ -17,7 +19,10 @@ namespace MotionControl.TaskEngine.Checks
                 WriteHardware(workspace);
                 workspace.Store.SaveJson("Test01", "Parameters/DeviceVariables.json", new {
                     schemaVersion = 1,
-                    variables = new[] { new { name = "Counter", dataType = "UInt32", initialValue = "5", allowOperatorWrite = true } }
+                    variables = new[] {
+                        new { name = "Counter", dataType = "UInt32", initialValue = "5", allowOperatorWrite = true },
+                        new { name = "Vision.Request", dataType = "Boolean", initialValue = "false", allowOperatorWrite = false }
+                    }
                 });
                 workspace.Store.SaveJson("Test01", "Parameters/ManualAxisPositions.json", new {
                     schemaVersion = 1,
@@ -31,6 +36,13 @@ namespace MotionControl.TaskEngine.Checks
                 CheckAssert.True(catalog.Axes.Count == 1 && catalog.Axes.ContainsKey("x"), "逻辑轴没有正确读取。");
                 CheckAssert.True(catalog.FindTeachPoint("X", "P001").Position == 12.5, "旧物理键没有对应到逻辑轴。");
                 CheckAssert.True(catalog.Variables.ContainsKey("Counter") && catalog.Inputs.Contains("PartReady"), "变量或 IO 丢失。");
+                CheckAssert.True(catalog.VariableInitialValues["Counter"] == "5"
+                    && catalog.VariableInitialValues["Vision.Request"] == "false", "变量配置初值没有进入只读目录。");
+                var device = new SimulatedTaskDevice(catalog);
+                var counter = device.ReadVariables().Single(value => value.Name == "Counter");
+                var request = device.ReadVariables().Single(value => value.Name == "Vision.Request");
+                CheckAssert.True(counter.HasValue && counter.CurrentValue == "5", "内存仿真没有装入 UInt32 变量初值。");
+                CheckAssert.True(request.HasValue && request.CurrentValue == "False", "内存仿真没有装入 Boolean 握手初值。");
                 CheckAssert.True(catalog.Notices.Any(item => item.Contains("OldCard")), "旧卡点位被静默丢弃。");
                 CheckAssert.True(before.SequenceEqual(Directory.GetFiles(workspace.Root, "*", SearchOption.AllDirectories)), "目录读取创建了额外文件。");
             }
