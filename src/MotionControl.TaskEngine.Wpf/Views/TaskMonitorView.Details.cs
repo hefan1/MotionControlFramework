@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Execution;
+using MotionControl.TaskEngine.Machine;
 using MotionControl.TaskEngine.Wpf.Monitoring;
 
 namespace MotionControl.TaskEngine.Wpf.Views
@@ -18,7 +19,7 @@ namespace MotionControl.TaskEngine.Wpf.Views
         /// <summary>上次构建关联入口时的界面语言标记。</summary>
         private string _referenceLanguage;
 
-        /// <summary>刷新采样表和类型专属内容；完成节点始终标记为执行记录。</summary>
+        /// <summary>刷新采样表和类型专属内容；非运行状态下不把暂停轴显示成仍在运动。</summary>
         private void ShowDetails(TaskStepRow row)
         {
             if (row == null)
@@ -40,8 +41,10 @@ namespace MotionControl.TaskEngine.Wpf.Views
             var diagnostic = row.Snapshot?.Diagnostics;
             DetailTitle.Text = row.Number + " · " + row.Name;
             DetailKind.Text = KindName(node);
-            DetailSummary.Text = row.Snapshot?.State == TaskNodeState.Failed ? row.Detail : diagnostic?.Summary ?? row.Detail;
-            if (row.StateText == T("已暂停")) DetailSummary.Text = T("已暂停") + " · " + DetailSummary.Text;
+            string detail = (row.Snapshot?.State == TaskNodeState.Failed ? row.Detail : diagnostic?.Summary ?? row.Detail) ?? string.Empty;
+            if (_snapshot != null && _snapshot.State != TaskMachineState.Running)
+                detail = detail.Replace("（运动中）", "（设备未运行，目标未到位）");
+            DetailSummary.Text = row.StateText == T("已暂停") ? T("已暂停") + " · " + detail : detail;
             RecordNote.Text = diagnostic == null ? T("尚无执行采样") : T("最后执行采样") + " "
                 + diagnostic.CapturedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
                 + ((row.Snapshot.State == TaskNodeState.Completed || row.Snapshot.State == TaskNodeState.Cancelled) ? " · " + T("历史记录") : string.Empty);

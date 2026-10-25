@@ -19,7 +19,7 @@ namespace MotionControl.TaskEngine.Wpf.Monitoring
         public string Name => Snapshot.Name;
         /// <summary>单次、循环或信号触发。</summary>
         public string Mode { get; private set; }
-        /// <summary>工位状态，受整机暂停覆盖。</summary>
+        /// <summary>工位状态，按工位阶段和整机状态显示。</summary>
         public string State { get; private set; }
         /// <summary>全部正在执行的末端步骤名称。</summary>
         public string Action { get; private set; }
@@ -43,12 +43,19 @@ namespace MotionControl.TaskEngine.Wpf.Monitoring
             Action = leaves != null && leaves.Count > 0 ? string.Join(" / ", leaves.Select(node => node.Name)) : "—";
             Detail = snapshot.Detail;
             if (leaves != null && leaves.Count > 0) Detail = string.Join("；", leaves.Select(node => node.Detail));
+            if (machineState != TaskMachineState.Running && !string.IsNullOrEmpty(Detail))
+                Detail = Detail.Replace("（运动中）", "（设备未运行，目标未到位）");
             string state = "等待"; Color = "#596B7D";
             if (snapshot.State == StationTaskState.Disabled) state = "未启用";
             else if (snapshot.State == StationTaskState.WaitingReset) { state = "故障"; Color = "#B42318"; }
             else if (snapshot.State == StationTaskState.Completed) { state = "已完成"; Color = "#16824B"; }
             else if (snapshot.State == StationTaskState.Stopped) state = "已终止";
-            else if (machineState == TaskMachineState.Faulted || machineState == TaskMachineState.Paused || machineState == TaskMachineState.Ready) state = "已暂停";
+            else if (machineState == TaskMachineState.Faulted || machineState == TaskMachineState.NeedsReset)
+            {
+                state = machineState.ToString();
+                Color = "#B42318";
+            }
+            else if (machineState != TaskMachineState.Running) state = machineState.ToString();
             else if (snapshot.State == StationTaskState.Executing) { state = leaves?.Any(node => node.State == TaskNodeState.Waiting) == true ? "等待" : "运行"; Color = "#176BD0"; }
             State = text(state);
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));

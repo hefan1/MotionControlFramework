@@ -96,12 +96,11 @@ namespace MotionControl.TaskEngine.Wpf.Views
             if (_selected == null && _steps.Count > 0) SelectFollowing(_steps[0]);
         }
 
-        /// <summary>应用整机暂停状态，并选择当前活动末端；多个并行步骤仍同时显示状态。</summary>
+        /// <summary>应用整机状态并选择当前活动末端；多个并行步骤仍同时显示状态。</summary>
         private void RefreshSteps()
         {
             if (!(StationsGrid.SelectedItem is TaskStationRow station)) return;
-            bool paused = _snapshot.State != TaskMachineState.Running;
-            TaskStepTree.Update(_steps, station.Snapshot.Run, paused, T);
+            TaskStepTree.Update(_steps, station.Snapshot.Run, _snapshot.State, T);
             if (FollowBox.IsChecked == true)
             {
                 var flat = TaskStepTree.Flatten(_steps).ToList();

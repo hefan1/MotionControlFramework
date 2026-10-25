@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Execution;
+using MotionControl.TaskEngine.Machine;
 
 namespace MotionControl.TaskEngine.Wpf.Monitoring
 {
@@ -52,18 +53,18 @@ namespace MotionControl.TaskEngine.Wpf.Monitoring
             }
         }
 
-        /// <summary>把快照匹配到定义调用路径；未进入不当作完成，未选中不当作故障。</summary>
-        public static void Update(IEnumerable<TaskStepRow> rows, TaskRunSnapshot run, bool paused, Func<string, string> text)
+        /// <summary>把快照匹配到定义调用路径，并按整机状态显示活动步骤。</summary>
+        public static void Update(IEnumerable<TaskStepRow> rows, TaskRunSnapshot run, TaskMachineState machineState, Func<string, string> text)
         {
             var nodes = run?.Nodes ?? new TaskNodeSnapshot[0];
             var byParent = nodes.ToLookup(node => node.ParentExecutionId ?? string.Empty);
             var root = nodes.FirstOrDefault(node => string.IsNullOrEmpty(node.ParentExecutionId));
-            foreach (var row in rows) Apply(row, root?.ExecutionId, byParent, false, paused, text);
+            foreach (var row in rows) Apply(row, root?.ExecutionId, byParent, false, machineState, text);
         }
 
         /// <summary>逐层匹配父调用，确保同一子任务的两次调用互不覆盖。</summary>
         private static void Apply(TaskStepRow row, string parentId, ILookup<string, TaskNodeSnapshot> nodes,
-            bool notSelected, bool paused, Func<string, string> text)
+            bool notSelected, TaskMachineState machineState, Func<string, string> text)
         {
             var snapshot = parentId == null ? null : nodes[parentId].FirstOrDefault(node =>
                 string.Equals(node.TaskId, row.TaskId, StringComparison.OrdinalIgnoreCase)
@@ -77,17 +78,34 @@ namespace MotionControl.TaskEngine.Wpf.Monitoring
                     case TaskNodeState.Completed: state = "已完成"; color = "#16824B"; break;
                     case TaskNodeState.Failed: state = "故障"; color = "#B42318"; break;
                     case TaskNodeState.Cancelled: state = "已终止"; break;
-                    default: state = paused ? "已暂停" : snapshot.State == TaskNodeState.Waiting ? "等待" : "运行";
-                        color = paused ? "#596B7D" : "#176BD0"; break;
+                    default:
+                        if (machineState == TaskMachineState.Faulted || machineState == TaskMachineState.NeedsReset)
+                        {
+                            state = machineState.ToString();
+                            color = "#B42318";
+                        }
+                        else if (machineState != TaskMachineState.Running)
+                        {
+                            state = machineState.ToString();
+                        }
+                        else
+                        {
+                            state = snapshot.State == TaskNodeState.Waiting ? "等待" : "运行";
+                            color = "#176BD0";
+                        }
+                        break;
                 }
             }
-            row.Update(snapshot, notSelected, text(state), snapshot?.Detail ?? text(notSelected ? "本次未选择此分支" : "尚未进入本步骤"), color);
+            string detail = snapshot?.Detail ?? text(notSelected ? "本次未选择此分支" : "尚未进入本步骤");
+            if (snapshot != null && machineState != TaskMachineState.Running)
+                detail = detail.Replace("（运动中）", "（设备未运行，目标未到位）");
+            row.Update(snapshot, notSelected, text(state), detail, color);
             foreach (var child in row.Children)
             {
                 bool skipped = notSelected;
                 if (row.Node is ConditionBranchNode && snapshot?.Diagnostics?.Decision != null)
                     skipped = !string.Equals(child.Node.Id, snapshot.Diagnostics.SelectedBranchId, StringComparison.OrdinalIgnoreCase);
-                Apply(child, snapshot?.ExecutionId, nodes, skipped, paused, text);
+                Apply(child, snapshot?.ExecutionId, nodes, skipped, machineState, text);
             }
         }
     }

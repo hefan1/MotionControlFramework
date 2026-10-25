@@ -53,8 +53,12 @@ namespace MotionControl.TaskMonitor.Checks
                 session.Machine.Pause();
                 var stationSnapshot = session.Machine.GetSnapshot().Stations.Single(station => station.StationId == "inspect");
                 var tree = TaskStepTree.Build("Inspect", session.Library);
-                TaskStepTree.Update(tree, stationSnapshot.Run, true, text => text);
-                Assert(TaskStepTree.Flatten(tree).Single(row => row.Node.Id == "clamped").StateText == "已暂停", "暂停未覆盖活动节点。");
+                TaskStepTree.Update(tree, stationSnapshot.Run, TaskMachineState.Paused, text => text);
+                Assert(TaskStepTree.Flatten(tree).Single(row => row.Node.Id == "clamped").StateText == "Paused", "暂停未覆盖活动节点。");
+                TaskStepTree.Update(tree, stationSnapshot.Run, TaskMachineState.Ready, text => text);
+                Assert(TaskStepTree.Flatten(tree).Single(row => row.Node.Id == "clamped").StateText == "Ready", "复位后仍把活动步骤显示成暂停。");
+                TaskStepTree.Update(tree, stationSnapshot.Run, TaskMachineState.Faulted, text => text);
+                Assert(TaskStepTree.Flatten(tree).Single(row => row.Node.Id == "clamped").StateText == "Faulted", "整机故障时没有区分故障暂停状态。");
                 session.Device.SetInput("上料机构安全位", true);
                 session.Device.SetInput("夹紧到位", true);
                 session.Machine.Reset(); session.Machine.Start();
@@ -81,12 +85,12 @@ namespace MotionControl.TaskMonitor.Checks
                 var snapshot = await run.Completion;
                 Assert(snapshot.Error == null, snapshot.Error?.ToString());
                 var tree = TaskStepTree.Build("Parent", library);
-                TaskStepTree.Update(tree, snapshot, false, text => text);
+                TaskStepTree.Update(tree, snapshot, TaskMachineState.Running, text => text);
                 var children = TaskStepTree.Flatten(tree).Where(row => row.Node.Id == "childDelay").ToArray();
                 Assert(children.Length == 2 && children.All(row => row.StateText == "已完成")
                     && children[0].Snapshot.ExecutionId != children[1].Snapshot.ExecutionId, "重复调用串行错配。");
                 Assert(TaskStepTree.Flatten(tree).Single(row => row.Node.Id == "yesDelay").NotSelected, "未选择分支被显示为未执行或故障。");
-                TaskStepTree.Update(tree, null, false, text => text);
+                TaskStepTree.Update(tree, null, TaskMachineState.Running, text => text);
                 Assert(TaskStepTree.Flatten(tree).All(row => row.Snapshot == null && !row.NotSelected), "新轮仍残留旧调用状态。");
             }
             finally { run.Cancel(); await run.Completion; }
@@ -103,13 +107,13 @@ namespace MotionControl.TaskMonitor.Checks
                 await Until(() => run.GetSnapshot().Nodes.Count(node => node.NodeId.StartsWith("wait") && node.State == TaskNodeState.Waiting) == 2);
                 run.Pause();
                 var tree = TaskStepTree.Build(task.TaskId, new Dictionary<string, TaskDefinition> { { task.TaskId, task } });
-                TaskStepTree.Update(tree, run.GetSnapshot(), true, text => text);
-                Assert(TaskStepTree.Flatten(tree).Count(row => row.Node.Id.StartsWith("wait") && row.StateText == "已暂停") == 2, "并行进度被折成一个当前步。");
+                TaskStepTree.Update(tree, run.GetSnapshot(), TaskMachineState.Paused, text => text);
+                Assert(TaskStepTree.Flatten(tree).Count(row => row.Node.Id.StartsWith("wait") && row.StateText == "Paused") == 2, "并行进度被折成一个当前步。");
             }
             finally { run.Cancel(); await run.Completion; }
         }
 
-        /// <summary>只离屏构造控件并计算布局，不声称用户看到过界面。</summary>
+        /// <summary>只离屏构造监控页面并计算布局，不声称用户看到过界面。</summary>
         private static void ConstructViews()
         {
             var application = new Application();
@@ -122,8 +126,6 @@ namespace MotionControl.TaskMonitor.Checks
                 view.SetLanguage("zh-CN");
                 view.Measure(new Size(1360, 720)); view.Arrange(new Rect(0, 0, 1360, 720)); view.UpdateLayout();
                 Assert(view.ActualWidth == 1360 && view.T("步骤详情") == "步骤详情", "页面资源或布局构造失败。");
-                var window = new TaskSimulationWindow(session);
-                window.CloseSessionAsync().GetAwaiter().GetResult();
             }
             finally { session.Machine.CloseAsync().GetAwaiter().GetResult(); application.Shutdown(); }
         }
