@@ -56,6 +56,9 @@ namespace MotionControl.Host.Wpf
         /// <summary>由组合根注入显示全部物理 DI/DO 状态的 IO 监控页面。</summary>
         private UserControl _ioMonitorPage;
 
+        /// <summary>由 Host 注入按已映射逻辑轴读取状态的只读监控页面。</summary>
+        private UserControl _axisMonitorPage;
+
         /// <summary>由 Host 注入的自动工位步骤与报警状态页面。</summary>
         private UserControl _flowStatusPage;
 
@@ -234,6 +237,13 @@ namespace MotionControl.Host.Wpf
             UpdatePageContent();
         }
 
+        /// <summary>由 Host 组合根注入当前设备的只读轴状态监控页面。</summary>
+        public void SetAxisMonitorPage(UserControl axisMonitorPage)
+        {
+            _axisMonitorPage = axisMonitorPage;
+            UpdatePageContent();
+        }
+
         /// <summary>由 Host 注入与手动页面共用同一 Runtime 的工位状态页面。</summary>
         public void SetFlowStatusPage(UserControl flowStatusPage)
         {
@@ -346,9 +356,26 @@ namespace MotionControl.Host.Wpf
                 return;
             }
 
+            var isAxisMonitorPage = _axisMonitorPage != null
+                && ((string.Equals(_currentSectionKey, "Home", StringComparison.Ordinal)
+                        && string.Equals(_currentPageResourceKey, "轴状态", StringComparison.Ordinal))
+                    || (string.Equals(_currentSectionKey, "Monitor", StringComparison.Ordinal)
+                        && string.Equals(_currentPageResourceKey, "轴监控", StringComparison.Ordinal)));
+
+            if (isAxisMonitorPage)
+            {
+                ManualDebugContent.Content = _axisMonitorPage;
+                ManualDebugContent.Visibility = Visibility.Visible;
+                PagePlaceholder.Visibility = Visibility.Collapsed;
+                PageDescription.SetResourceReference(TextBlock.TextProperty, "轴状态页面说明");
+                return;
+            }
+
             var isIoMonitorPage = _ioMonitorPage != null
-                && string.Equals(_currentSectionKey, "Monitor", StringComparison.Ordinal)
-                && string.Equals(_currentPageResourceKey, "IO监控", StringComparison.Ordinal);
+                && ((string.Equals(_currentSectionKey, "Monitor", StringComparison.Ordinal)
+                        && string.Equals(_currentPageResourceKey, "IO监控", StringComparison.Ordinal))
+                    || (string.Equals(_currentSectionKey, "Home", StringComparison.Ordinal)
+                        && string.Equals(_currentPageResourceKey, "IO状态", StringComparison.Ordinal)));
 
             if (isIoMonitorPage)
             {

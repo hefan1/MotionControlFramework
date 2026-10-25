@@ -20,6 +20,7 @@ using MotionControl.Framework.Runtime.Safety;
 using MotionControl.Framework.Runtime.Variables;
 using MotionControl.Framework.Wpf.Configuration;
 using MotionControl.Framework.Wpf.ManualDebug;
+using MotionControl.Framework.Wpf.Monitoring;
 using MotionControl.Framework.Wpf.Variables;
 using MotionControl.Host.Wpf.Recovery;
 
@@ -81,6 +82,9 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>当前控制卡 DI/DO 物理通道对应的 IO 监控页面。</summary>
         private IoMonitorView _ioMonitorPage;
+
+        /// <summary>当前设备已映射逻辑轴对应的只读轴状态页面。</summary>
+        private AxisMonitorView _axisMonitorPage;
 
         /// <summary>与轴手动、IO 手动共用当前 Runtime 的工位状态页面。</summary>
         private FlowStatusView _flowStatusPage;
@@ -185,6 +189,7 @@ namespace MotionControl.Host.Wpf
             _taskConfigurationPage.ReferenceRequested += TaskEditorReferenceRequested;
             _mainWindow.SetTaskConfigurationPage(_taskConfigurationPage);
             RefreshIoMonitorPage();
+            RefreshAxisMonitorPage(null);
 
             MainWindow = _mainWindow;
             _mainWindow.Show();
@@ -320,6 +325,11 @@ namespace MotionControl.Host.Wpf
                 _ioMonitorPage.RefreshLocalizedText();
             }
 
+            if (_axisMonitorPage != null)
+            {
+                _axisMonitorPage.RefreshLocalizedText();
+            }
+
             if (_flowStatusPage != null)
             {
                 _flowStatusPage.RefreshLocalizedText();
@@ -362,6 +372,7 @@ namespace MotionControl.Host.Wpf
                 _mainWindow.SetFlowStatusPage(null);
                 _mainWindow.SetManualMotionDebugPage(null);
                 _mainWindow.SetManualIoDebugPage(null);
+                RefreshAxisMonitorPage(null);
                 RefreshIoMonitorPage();
                 return;
             }
@@ -432,6 +443,7 @@ namespace MotionControl.Host.Wpf
                 _mainWindow.SetFlowStatusPage(null);
                 _mainWindow.SetManualMotionDebugPage(null);
                 _mainWindow.SetManualIoDebugPage(null);
+                RefreshAxisMonitorPage(null);
                 RefreshIoMonitorPage();
                 MessageBox.Show(
                     "控制卡已连接，但创建运行时或调试页面失败：" + error.Message,
@@ -652,7 +664,26 @@ namespace MotionControl.Host.Wpf
             _manualIoDebugPage = ioManualPage;
             _mainWindow.SetManualMotionDebugPage(manualPage);
             _mainWindow.SetManualIoDebugPage(ioManualPage);
+            RefreshAxisMonitorPage(motionCards);
             RefreshIoMonitorPage();
+        }
+
+        /// <summary>按当前轴映射和连接状态创建只读监控页，不执行任何运动或伺服操作。</summary>
+        private void RefreshAxisMonitorPage(MotionCardGroup motionCards)
+        {
+            if (_mainWindow == null || _cardConnection == null)
+            {
+                return;
+            }
+
+            bool isCardConnected = _cardConnection.IsConnected
+                && motionCards != null
+                && motionCards.IsConnected;
+            _axisMonitorPage = new AxisMonitorView(
+                isCardConnected,
+                isCardConnected ? motionCards : null,
+                _cardConnection.AxisHardwareDefinitions);
+            _mainWindow.SetAxisMonitorPage(_axisMonitorPage);
         }
 
         /// <summary>按当前连接对象和 IO 映射刷新监控页，不连接控制卡或发送 IO 命令。</summary>
