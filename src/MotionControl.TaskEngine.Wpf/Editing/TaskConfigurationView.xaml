@@ -29,7 +29,7 @@
    </DataGrid.Columns></DataGrid></DockPanel></TabItem>
   </TabControl></ContentControl>
   <DataGrid x:Name="IssuesGrid" Grid.Row="3" Margin="0,8,0,0" AutoGenerateColumns="False" IsReadOnly="True" MouseDoubleClick="IssueOpen"><DataGrid.Columns>
-   <DataGridTextColumn Binding="{Binding Severity}" Width="65"/><DataGridTextColumn Binding="{Binding TaskName}" Width="160"/><DataGridTextColumn Binding="{Binding Message}" Width="*"/>
+   <DataGridTextColumn Binding="{Binding Severity}" Width="65"/><DataGridTextColumn Binding="{Binding TaskName}" Width="160"/><DataGridTextColumn Binding="{Binding StepName}" Width="180"/><DataGridTextColumn Binding="{Binding Field}" Width="90"/><DataGridTextColumn Binding="{Binding Message}" Width="*"/>
   </DataGrid.Columns></DataGrid>
  </Grid>
 </UserControl>

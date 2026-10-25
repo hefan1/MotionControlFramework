@@ -165,7 +165,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         /// <summary>列本身不在可视树中，明确赋值表头以可靠切换局部语言资源。</summary>
         private void UpdateHeaders()
         {
-            string[][] texts = { new[] { "参与运行", "工位名称", "执行任务", "运行方式", "设备文件版本", "操作" }, new[] { "任务名称", "任务标识", "设备文件版本", "草稿状态", "文件" }, new[] { "等级", "任务标识", "说明" } };
+            string[][] texts = { new[] { "参与运行", "工位名称", "执行任务", "运行方式", "设备文件版本", "操作" }, new[] { "任务名称", "任务标识", "设备文件版本", "草稿状态", "文件" }, new[] { "等级", "任务", "动作步骤", "字段", "说明" } };
             DataGrid[] grids = { StationsGrid, TasksGrid, IssuesGrid };
             for (int g = 0; g < grids.Length; g++) for (int i = 0; i < texts[g].Length; i++) grids[g].Columns[i].Header = T(texts[g][i]);
         }
@@ -175,7 +175,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             IssuesGrid.ItemsSource = issues.Select(issue => new TaskEditingIssueRow(issue, _workspace?.Tasks.FirstOrDefault(task => task.Definition.TaskId == issue.TaskId)?.Definition, T(issue.Severity == TaskIssueSeverity.Error ? "错误" : "提醒"), T)).ToList();
             bool show = issues.Count > 0 && _editor == null;
             IssuesGrid.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-            ConfigIssueRow.Height = new GridLength(show ? 110 : 0);
+            ConfigIssueRow.Height = new GridLength(show ? 140 : 0);
         }
         /// <summary>更新列表并按稳定标识恢复工位和任务选择；保存或换语言不跳回第一行。</summary>
         private void Rebuild()

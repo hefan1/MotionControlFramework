@@ -124,6 +124,8 @@
  <sys:String x:Key="任务编辑.任务标识">Task ID</sys:String>
  <sys:String x:Key="任务编辑.任务库">Task library</sys:String>
  <sys:String x:Key="任务编辑.任务名称">Task name</sys:String>
+ <sys:String x:Key="任务编辑.任务">Task</sys:String>
+ <sys:String x:Key="任务编辑.动作步骤">Step</sys:String>
  <sys:String x:Key="任务编辑.任务仍被引用，不能删除">This task is referenced and cannot be deleted.</sys:String>
  <sys:String x:Key="任务编辑.任务文件超过 4MB，拒绝导入。">任务文件超过 4MB，拒绝导入。</sys:String>
  <sys:String x:Key="任务编辑.任一成立">Any condition (OR)</sys:String>

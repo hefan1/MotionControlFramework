@@ -124,6 +124,8 @@
  <sys:String x:Key="任务编辑.任务标识">任务标识</sys:String>
  <sys:String x:Key="任务编辑.任务库">任务库</sys:String>
  <sys:String x:Key="任务编辑.任务名称">任务名称</sys:String>
+ <sys:String x:Key="任务编辑.任务">任务</sys:String>
+ <sys:String x:Key="任务编辑.动作步骤">动作步骤</sys:String>
  <sys:String x:Key="任务编辑.任务仍被引用，不能删除">任务仍被引用，不能删除</sys:String>
  <sys:String x:Key="任务编辑.任务文件超过 4MB，拒绝导入。">任务文件超过 4MB，拒绝导入。</sys:String>
  <sys:String x:Key="任务编辑.任一成立">任一成立</sys:String>
