@@ -24,6 +24,8 @@ namespace MotionControl.ZMotionSimulatorCheck
             && Volatile.Read(ref _bInspectionDone) == 1;
         /// <summary>送料任务等待的搬运交接结果。</summary>
         public bool TransferDone => Volatile.Read(ref _transferDone) == 1;
+        /// <summary>当前正在进入共用 Z 轴动作段的检测任务数量，暂停后应回到 0。</summary>
+        public int SharedAxisOwners => Volatile.Read(ref _sharedAxisOwners);
         /// <summary>最后完成检测的任务在共用轴上留下的目标位置。</summary>
         public double LastSharedAxisTarget => _lastSharedAxisTarget;
 

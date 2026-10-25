@@ -127,12 +127,26 @@ namespace MotionControl.ZMotionSimulatorCheck
                 await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
                 await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
                 int firstPeak = await WaitForInitialMotionAsync(axes).ConfigureAwait(false);
-                await Task.Delay(300).ConfigureAwait(false);
+                int movingMidway = await WaitForMotionInProgressAsync(axes, initial, target).ConfigureAwait(false);
                 await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
                 int midway = await CountIntermediateStoppedAxesAsync(axes, initial, target).ConfigureAwait(false);
                 if (midway < 4)
                     throw new InvalidOperationException("暂停时只有 " + midway + " 根轴停在起点和目标之间，未充分验证运动中暂停。");
-                Console.WriteLine("[暂停通过] 首轮同时运动峰值=" + firstPeak + "；" + midway + " 根轴停在中途。");
+                Console.WriteLine("[暂停通过] 首轮同时运动峰值=" + firstPeak + "；发出暂停前 "
+                    + movingMidway + " 根轴处于运动中段，停止后 " + midway + " 根轴停在中途。");
+
+                await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+                await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+                await WaitForSharedAxisContentionAsync(aInspection, bInspection).ConfigureAwait(false);
+                int movingBeforeSharedPause = await CountMovingAxesAsync(axes).ConfigureAwait(false);
+                if (movingBeforeSharedPause < 1)
+                    throw new InvalidOperationException("检测任务争用共用 Z 轴时没有观察到实际运动，不能执行占用期间暂停检查。");
+                await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+                int movingAfterSharedPause = await CountMovingAxesAsync(axes).ConfigureAwait(false);
+                if (movingAfterSharedPause != 0 || signals.SharedAxisOwners != 0)
+                    throw new InvalidOperationException("共用 Z 轴争用期间暂停后仍有轴运动或资源占用未释放。");
+                Console.WriteLine("[共享轴暂停通过] 争用期间观察到 " + movingBeforeSharedPause
+                    + " 根轴运动；暂停后全部停止且共用轴占用数为 0。");
 
                 await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
                 await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
@@ -154,7 +168,7 @@ namespace MotionControl.ZMotionSimulatorCheck
 
                 await RestoreAxesAsync(axes, initial).ConfigureAwait(false);
                 restored = true;
-                Console.WriteLine("[通过] 十二轴、六任务、共用轴串行、暂停复位续跑和原位恢复均完成；未写入 DO。");
+                Console.WriteLine("[通过] 十二轴、六任务、七轴并行、共用轴排队及占用期间暂停恢复、原位恢复均完成；未写入 DO。");
                 return 0;
             }
             finally
@@ -271,8 +285,69 @@ namespace MotionControl.ZMotionSimulatorCheck
                 double traveled = (status.Position - initial[index].Position) * direction;
                 double total = Math.Abs(target[index] - initial[index].Position);
                 if (traveled > 0.05 && traveled < total - 0.05) middleCount++;
+                Console.WriteLine("[暂停位置] " + axes[index].Name + " 起点="
+                    + initial[index].Position.ToString("F3") + "，当前位置="
+                    + status.Position.ToString("F3") + "，目标=" + target[index].ToString("F3"));
             }
             return middleCount;
+        }
+
+        /// <summary>按实时位置等待至少四根轴正在途中运动，避免用固定延时猜测暂停时机。</summary>
+        private static async Task<int> WaitForMotionInProgressAsync(
+            IReadOnlyList<IAxis> axes, IReadOnlyList<AxisStatus> initial, IReadOnlyList<double> target)
+        {
+            int[] firstAxes = { 0, 1, 4, 5, 9, 10, 11 };
+            var elapsed = Stopwatch.StartNew();
+            while (elapsed.Elapsed < TimeSpan.FromSeconds(10))
+            {
+                int movingMidway = 0;
+                foreach (int index in firstAxes)
+                {
+                    AxisStatus status = await axes[index].ReadStatusAsync(CancellationToken.None).ConfigureAwait(false);
+                    double direction = Math.Sign(target[index] - initial[index].Position);
+                    double traveled = (status.Position - initial[index].Position) * direction;
+                    double total = Math.Abs(target[index] - initial[index].Position);
+                    if ((status.Moving || Math.Abs(status.Velocity) > 0.01)
+                        && traveled > 0.05 && traveled < total - 0.05)
+                        movingMidway++;
+                }
+                if (movingMidway >= 4) return movingMidway;
+                await Task.Delay(50).ConfigureAwait(false);
+            }
+            throw new TimeoutException("未能按实时位置观察到至少四根轴同时位于运动中段。");
+        }
+
+        /// <summary>等到一个检测任务持有共用轴运动、另一个任务正排队等待。</summary>
+        private static async Task WaitForSharedAxisContentionAsync(
+            ComplexInspectionFlow aInspection, ComplexInspectionFlow bInspection)
+        {
+            var elapsed = Stopwatch.StartNew();
+            while (elapsed.Elapsed < TimeSpan.FromSeconds(30))
+            {
+                bool aIsMoving = aInspection.CurrentStepName == "三轴同时动作，等待全部到位";
+                bool bIsMoving = bInspection.CurrentStepName == "三轴同时动作，等待全部到位";
+                bool aIsWaiting = aInspection.CurrentStepName == "申请两根工具轴和共用 Z 轴";
+                bool bIsWaiting = bInspection.CurrentStepName == "申请两根工具轴和共用 Z 轴";
+                if ((aIsMoving && bIsWaiting) || (bIsMoving && aIsWaiting))
+                {
+                    Console.WriteLine("[共用轴排队] 一侧检测正在驱动三轴，另一侧正在申请同一根 Z 轴。");
+                    return;
+                }
+                await Task.Delay(50).ConfigureAwait(false);
+            }
+            throw new TimeoutException("未能同时观察到共用 Z 轴的持有任务和等待任务。");
+        }
+
+        /// <summary>读取十二根轴并统计当前实际运动数量。</summary>
+        private static async Task<int> CountMovingAxesAsync(IReadOnlyList<IAxis> axes)
+        {
+            int count = 0;
+            foreach (IAxis axis in axes)
+            {
+                AxisStatus status = await axis.ReadStatusAsync(CancellationToken.None).ConfigureAwait(false);
+                if (status.Moving || Math.Abs(status.Velocity) > 0.01) count++;
+            }
+            return count;
         }
 
         /// <summary>观察恢复后的轴运动，并等待六个工位任务全部完成或报告运行故障。</summary>
