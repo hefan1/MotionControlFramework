@@ -179,6 +179,7 @@
  <sys:String x:Key="任务编辑.新增工位">新增工位</sys:String>
  <sys:String x:Key="任务编辑.新增任务">新增任务</sys:String>
  <sys:String x:Key="任务编辑.选择步骤类型">选择步骤类型</sys:String>
+ <sys:String x:Key="任务编辑.先选择步骤类型，再点插入">先选择步骤类型，再点“插入”。</sys:String>
  <sys:String x:Key="任务编辑.选中步骤只编辑参数，不执行动作">选中步骤只编辑参数，不执行动作</sys:String>
  <sys:String x:Key="任务编辑.选中成立或不成立分支的顺序段后添加动作">选中成立或不成立分支的顺序段后添加动作</sys:String>
  <sys:String x:Key="任务编辑.选中顺序段后新增步骤，子步骤按列表顺序执行">选中顺序段后新增步骤，子步骤按列表顺序执行</sys:String>

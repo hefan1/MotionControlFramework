@@ -179,6 +179,7 @@
  <sys:String x:Key="任务编辑.新增工位">Add station</sys:String>
  <sys:String x:Key="任务编辑.新增任务">New task</sys:String>
  <sys:String x:Key="任务编辑.选择步骤类型">Select step type</sys:String>
+ <sys:String x:Key="任务编辑.先选择步骤类型，再点插入">Select a step type, then choose “Insert”.</sys:String>
  <sys:String x:Key="任务编辑.选中步骤只编辑参数，不执行动作">Selecting a step edits parameters only. It does not execute actions.</sys:String>
  <sys:String x:Key="任务编辑.选中成立或不成立分支的顺序段后添加动作">Select the true or false sequence to add steps.</sys:String>
  <sys:String x:Key="任务编辑.选中顺序段后新增步骤，子步骤按列表顺序执行">Add steps inside this sequence. Children execute in list order.</sys:String>
