@@ -171,6 +171,29 @@ namespace MotionControl.ZMotionSimulatorCheck
                 await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
                 await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
 
+                await WaitForAllAxesMovingAsync(axes).ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromMilliseconds(500)).ConfigureAwait(false);
+                await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+
+                for (var index = 0; index < axes.Count; index++)
+                {
+                    AxisStatus pausedStatus = await axes[index]
+                        .ReadStatusAsync(CancellationToken.None)
+                        .ConfigureAwait(false);
+                    EnsureAxisPausedBeforeTarget(
+                        axes[index].Name,
+                        pausedStatus,
+                        initialStatuses[index].Position,
+                        stationFlows[index].TargetPosition);
+                    Console.WriteLine(
+                        "[暂停确认] " + axes[index].Name + " 停在中间位置 "
+                        + pausedStatus.Position.ToString("F3") + "，目标仍为 "
+                        + stationFlows[index].TargetPosition.ToString("F3") + "。");
+                }
+
+                await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+                await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+
                 bool allAxesMovedAtTheSameTime = await ObserveParallelMotionAsync(
                     axes,
                     stationFlows).ConfigureAwait(false);
@@ -193,12 +216,74 @@ namespace MotionControl.ZMotionSimulatorCheck
 
                 Console.WriteLine(
                     "[通过] 四个工位已并行启动；四根逻辑轴均在重叠时间内运动并到位；"
-                    + "Runtime 已暂停，所有轴已停稳并返回测试前位置。");
+                    + "运动中暂停后已复位并从原步骤继续；所有轴已停稳并返回测试前位置。");
                 return 0;
             }
             finally
             {
                 await StopRuntimeAndDisconnectAsync(runtime, card, motionCards).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>等待四根轴同时进入运动状态，确保随后暂停发生在实际运动期间。</summary>
+        private static async Task WaitForAllAxesMovingAsync(IReadOnlyList<IAxis> axes)
+        {
+            Stopwatch elapsed = Stopwatch.StartNew();
+
+            while (elapsed.Elapsed < MotionTimeout)
+            {
+                var statuses = new List<AxisStatus>();
+                for (var index = 0; index < axes.Count; index++)
+                {
+                    statuses.Add(await axes[index]
+                        .ReadStatusAsync(CancellationToken.None)
+                        .ConfigureAwait(false));
+                }
+
+                bool allAxesMoving = statuses.All(
+                    status => status.Moving || Math.Abs(status.Velocity) > 0.01);
+                if (allAxesMoving)
+                {
+                    Console.WriteLine("[运行中] 已观察到四根轴同时运动；500 毫秒后请求整机暂停。");
+                    return;
+                }
+
+                await Task.Delay(StatusPollInterval).ConfigureAwait(false);
+            }
+
+            throw new TimeoutException("启动后未能观察到四根轴同时运动，不能验证运动中暂停。");
+        }
+
+        /// <summary>确认运动中暂停后轴已停稳，且仍处于起点与目标之间。</summary>
+        private static void EnsureAxisPausedBeforeTarget(
+            string axisName,
+            AxisStatus status,
+            double startPosition,
+            double targetPosition)
+        {
+            if (status.Moving || Math.Abs(status.Velocity) > 0.01)
+            {
+                throw new InvalidOperationException("整机暂停后逻辑轴 '" + axisName + "' 仍在运动。");
+            }
+
+            if (Math.Abs(status.Position - startPosition) <= 0.05)
+            {
+                throw new InvalidOperationException(
+                    "逻辑轴 '" + axisName + "' 尚未离开起点，无法证明暂停发生在运动中。");
+            }
+
+            if (Math.Abs(status.Position - targetPosition) <= 0.05)
+            {
+                throw new InvalidOperationException(
+                    "逻辑轴 '" + axisName + "' 已经到达目标，无法证明暂停发生在运动中。");
+            }
+
+            double travelDirection = Math.Sign(targetPosition - startPosition);
+            double traveledDistance = (status.Position - startPosition) * travelDirection;
+            if (traveledDistance <= 0)
+            {
+                throw new InvalidOperationException(
+                    "逻辑轴 '" + axisName + "' 暂停位置偏离目标方向，实际位置为 " + status.Position + "。");
             }
         }
 
