@@ -96,8 +96,6 @@ namespace MotionControl.Host.Wpf
         private MainWindow _mainWindow;
         /// <summary>现有配置与任务仿真工作台的组合入口。</summary>
         private Tasks.TaskMonitorLauncher _taskMonitorLauncher;
-        /// <summary>防止主窗口关闭时重复等待仿真收尾。</summary>
-        private bool _closingTaskSimulation;
         /// <summary>本机任务草稿与列表编辑页面。</summary>
         private MotionControl.TaskEngine.Wpf.Editing.TaskConfigurationView _taskConfigurationPage;
         /// <summary>异步收尾重入关闭事件时不重复询问同一批草稿。</summary>
@@ -492,9 +490,8 @@ namespace MotionControl.Host.Wpf
         }
 
         /// <summary>关闭前阻止设备仍在运行或报警处理中，并保存当前变量与可续跑状态。</summary>
-        private async void MainWindow_Closing(object sender, CancelEventArgs e)
+        private void MainWindow_Closing(object sender, CancelEventArgs e)
         {
-            if (_closingTaskSimulation) { e.Cancel = true; return; }
             MachineRunState? runtimeState = _machineRuntime == null
                 ? (MachineRunState?)null
                 : _machineRuntime.State;
@@ -532,29 +529,11 @@ namespace MotionControl.Host.Wpf
                     MessageBoxImage.Error);
                 return;
             }
-            if (_taskMonitorLauncher != null && _taskMonitorLauncher.HasSimulationWindow)
-            {
-                e.Cancel = true; _closingTaskSimulation = true;
-                try
-                {
-                    await _taskMonitorLauncher.CloseSimulationAsync();
-                    _closingTaskSimulation = false;
-                    _mainWindow.Close();
-                }
-                catch (Exception error)
-                {
-                    _closingTaskSimulation = false;
-                    _taskEditsCloseConfirmed = false;
-                    MessageBox.Show(error.ToString(), "任务仿真收尾失败", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            }
         }
 
-        /// <summary>第一轮只在没有任务仿真会话且控制卡会话已断开时应用文件，不替人员自动断卡。</summary>
+        /// <summary>更新任务文件前要求控制卡会话断开，不替人员自动断卡。</summary>
         private string GetTaskApplyBlockedReason()
         {
-            if (_taskMonitorLauncher != null && _taskMonitorLauncher.HasSimulationWindow)
-                return _mainWindow.TryFindResource("任务配置先关闭仿真") as string ?? "请先关闭任务仿真会话，再应用任务配置。";
             if (_cardConnection != null && (_cardConnection.IsConnected || _cardConnection.ConnectedMotionCard != null))
                 return _mainWindow.TryFindResource("任务配置先断开会话") as string ?? "当前控制卡会话仍连接。本阶段请先在轴映射页断开会话，再应用任务文件；草稿可以随时保存。";
             return null;

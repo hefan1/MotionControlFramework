@@ -193,10 +193,10 @@
  <sys:String x:Key="任务编辑.移除轴条件">Remove axis condition</sys:String>
  <sys:String x:Key="任务编辑.已从运行文件载入，尚无草稿">Active files loaded. No draft has been saved.</sys:String>
  <sys:String x:Key="任务编辑.应用到设备">Apply to machine</sys:String>
- <sys:String x:Key="任务编辑.更新仿真任务文件">Update simulation task files</sys:String>
- <sys:String x:Key="任务编辑.仅更新仿真任务文件，不启动设备">Updates task files for a new simulation session; does not start equipment</sys:String>
- <sys:String x:Key="任务编辑.确认更新以下仿真任务文件">Update the following task simulation files? This will not connect to or start a controller. A new simulation session will read these files.</sys:String>
- <sys:String x:Key="任务编辑.仿真任务文件已更新，下次新仿真会话读取">Simulation task files updated. A new simulation session will read them.</sys:String>
+ <sys:String x:Key="任务编辑.更新仿真任务文件">Update task files</sys:String>
+ <sys:String x:Key="任务编辑.仅更新仿真任务文件，不启动设备">Updates task files only. Task execution is not connected to equipment and will not start it.</sys:String>
+ <sys:String x:Key="任务编辑.确认更新以下仿真任务文件">Update the following task files? Task execution is not connected to equipment; this will not connect to or start a controller.</sys:String>
+ <sys:String x:Key="任务编辑.仿真任务文件已更新，下次新仿真会话读取">Task files updated; task execution is not connected to equipment.</sys:String>
  <sys:String x:Key="任务编辑.有未保存修改，运行版本未改变">Unsaved changes. Active files are unchanged.</sys:String>
  <sys:String x:Key="任务编辑.有效">Active</sys:String>
  <sys:String x:Key="任务编辑.右值">Right value</sys:String>

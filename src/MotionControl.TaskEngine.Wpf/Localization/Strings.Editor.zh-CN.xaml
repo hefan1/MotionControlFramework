@@ -193,10 +193,10 @@
  <sys:String x:Key="任务编辑.移除轴条件">移除轴条件</sys:String>
  <sys:String x:Key="任务编辑.已从运行文件载入，尚无草稿">已从运行文件载入，尚无草稿</sys:String>
  <sys:String x:Key="任务编辑.应用到设备">应用到设备</sys:String>
- <sys:String x:Key="任务编辑.更新仿真任务文件">更新仿真任务文件</sys:String>
- <sys:String x:Key="任务编辑.仅更新仿真任务文件，不启动设备">仅更新任务文件，供新仿真会话读取；不启动设备</sys:String>
- <sys:String x:Key="任务编辑.确认更新以下仿真任务文件">确认更新以下任务仿真文件？不会连接控制卡或启动设备。新建仿真会话时会读取这些文件。</sys:String>
- <sys:String x:Key="任务编辑.仿真任务文件已更新，下次新仿真会话读取">仿真任务文件已更新，下次新仿真会话读取</sys:String>
+ <sys:String x:Key="任务编辑.更新仿真任务文件">更新任务文件</sys:String>
+ <sys:String x:Key="任务编辑.仅更新仿真任务文件，不启动设备">仅更新任务文件；任务运行尚未接入设备，不会启动设备</sys:String>
+ <sys:String x:Key="任务编辑.确认更新以下仿真任务文件">确认更新以下任务文件？当前任务运行尚未接入设备，此操作不会连接控制卡或启动设备。</sys:String>
+ <sys:String x:Key="任务编辑.仿真任务文件已更新，下次新仿真会话读取">任务文件已更新；任务运行尚未接入设备</sys:String>
  <sys:String x:Key="任务编辑.有未保存修改，运行版本未改变">有未保存修改，运行版本未改变</sys:String>
  <sys:String x:Key="任务编辑.有效">有效</sys:String>
  <sys:String x:Key="任务编辑.右值">右值</sys:String>
