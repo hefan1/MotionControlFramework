@@ -2,6 +2,12 @@
 
 Host 是设备上位机的组合入口：它创建当前设备配置、通用页面、运行时和本次运行选择的运动卡连接实现。
 
+## 隔离配置调试
+
+开发调试可传入 `--simulation-config-root <本机绝对目录>`，让同一个 Host 把设备配置和恢复文件放在指定目录，并在窗口标题和顶部显示“隔离测试配置”。该目录不能是磁盘根目录、目录联接，也不能与正常配置根目录相同或互相包含；参数错误时直接停止启动。此入口与正常 Host 共用单实例锁，不能同时控制同一张卡。未传该参数时仍使用正常配置目录。
+
+隔离的是配置文件，不是控制器或硬件安全回路；启动后仍按配置连接当前适配器，因此在连接或操作前必须确认控制器身份、轴和 IO 状态。目前 Host 的正运动适配器只允许本机 `VPLC5xx-Simu`。该入口不改变实际卡型的支持范围。
+
 “首页 → 设备总览”和“报警 → 当前报警”已接入当前传统 Runtime。任务配置与列表编辑沿用“设置 → 任务配置”。独立四页预览参数 `--ui-workspace-preview` 在创建控制卡和现场恢复服务之前返回，使用独立配置目录。页面职责、数据边界和代码位置见 [Operation/README.md](Operation/README.md)。
 
 “监控 → 设备变量”显示本机变量表。首次启动时 Host 从当前设备项目的 `EquipmentTemplates/Parameters/DeviceVariables.json` 复制默认变量；之后只读写本机 `%LOCALAPPDATA%/MotionControlFramework/Configurations/<MachineId>/Parameters/DeviceVariables.json`，不会覆盖已存在的现场配置。变量运行值在内存中供设备流程和监控页共用。

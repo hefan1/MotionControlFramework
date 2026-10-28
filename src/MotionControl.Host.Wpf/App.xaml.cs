@@ -106,6 +106,21 @@ namespace MotionControl.Host.Wpf
         {
             base.OnStartup(e);
 
+            string productionRoot = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "MotionControlFramework", "Configurations");
+            string simulationRoot;
+            try
+            {
+                simulationRoot = SimulationConfigurationRoot.Parse(e.Args, productionRoot);
+            }
+            catch (Exception error)
+            {
+                MessageBox.Show(error.Message, "测试配置启动失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                Shutdown();
+                return;
+            }
+
             // 四页离线预览先于控制卡、现场配置和恢复服务创建。
             if (e.Args.Contains("--ui-workspace-preview"))
             {
@@ -146,10 +161,7 @@ namespace MotionControl.Host.Wpf
                 return;
             }
 
-            string configurationRoot = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "MotionControlFramework",
-                "Configurations");
+            string configurationRoot = simulationRoot ?? productionRoot;
             _configurationStore = new MachineConfigurationStore(configurationRoot);
             _deviceVariableStore = CreateDeviceVariableStore();
             var recoveryStore = new MachineRecoveryStore(_configurationStore, MachineId);
@@ -174,6 +186,7 @@ namespace MotionControl.Host.Wpf
                 _configurationStore,
                 MachineId);
             _mainWindow = new MainWindow();
+            if (simulationRoot != null) _mainWindow.SetSimulationConfiguration(simulationRoot);
             _mainWindow.Loaded += MainWindow_Loaded;
             _mainWindow.Closing += MainWindow_Closing;
             _mainWindow.LanguageChanged += MainWindow_LanguageChanged;

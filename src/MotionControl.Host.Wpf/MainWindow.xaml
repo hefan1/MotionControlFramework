@@ -97,12 +97,18 @@
                         Margin="8,4"
                         Background="#EEF0F2"
                         CornerRadius="6">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Border x:Name="SimulationConfigurationBadge" Visibility="Collapsed" Background="#FFF0C5"
+                            BorderBrush="#C98915" BorderThickness="1" CornerRadius="4" Padding="7,3" Margin="0,0,8,0">
+                        <TextBlock Text="{DynamicResource 仿真配置标识}" Foreground="#6D4800" FontWeight="SemiBold" />
+                    </Border>
                     <TextBlock x:Name="HeaderMessage"
                                Text="{DynamicResource 设备状态标题}"
                                FontSize="15"
                                Foreground="#44494D"
                                VerticalAlignment="Center"
                                HorizontalAlignment="Center" />
+                    </StackPanel>
                 </Border>
 
                 <StackPanel Grid.Column="2"

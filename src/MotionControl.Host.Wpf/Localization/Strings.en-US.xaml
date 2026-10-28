@@ -8,6 +8,7 @@
 
     <!-- 中文原文作为资源键，中文开发者可直接按界面文字搜索。 -->
     <sys:String x:Key="运动控制上位机">Motion Control Host</sys:String>
+    <sys:String x:Key="仿真配置标识">Isolated test configuration</sys:String>
     <sys:String x:Key="首页">Home</sys:String>
     <sys:String x:Key="统计">Statistics</sys:String>
     <sys:String x:Key="监控">Monitor</sys:String>

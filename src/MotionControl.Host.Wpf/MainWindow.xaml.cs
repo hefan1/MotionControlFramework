@@ -77,6 +77,9 @@ namespace MotionControl.Host.Wpf
         /// <summary>当前已连接设备的运行时，用于显示整机状态并执行整机复位。</summary>
         private MachineRuntime _machineRuntime;
 
+        /// <summary>显式指定时记录隔离仿真配置目录；正常设备运行时为空。</summary>
+        private string _simulationConfigurationRoot;
+
         /// <summary>标记整机复位正在执行，防止操作员重复点击复位按钮。</summary>
         private bool _isResetting;
 
@@ -110,6 +113,23 @@ namespace MotionControl.Host.Wpf
             _clockTimer.Start();
 
             Closed += MainWindow_Closed;
+        }
+
+        /// <summary>持续标识当前使用隔离仿真配置，并提供配置目录供核对。</summary>
+        internal void SetSimulationConfiguration(string configurationRoot)
+        {
+            _simulationConfigurationRoot = configurationRoot;
+            SimulationConfigurationBadge.ToolTip = configurationRoot;
+            SimulationConfigurationBadge.Visibility = Visibility.Visible;
+            UpdateWindowTitle();
+        }
+
+        /// <summary>更新窗口标题，语言切换后仍保留仿真配置标识。</summary>
+        private void UpdateWindowTitle()
+        {
+            Title = GetLocalizedText("运动控制上位机");
+            if (_simulationConfigurationRoot != null)
+                Title += " — " + GetLocalizedText("仿真配置标识");
         }
 
         /// <summary>
@@ -492,7 +512,7 @@ namespace MotionControl.Host.Wpf
             ReplaceLanguageResources(languageResources);
             _equipmentOverviewPage.SetLanguage(languageCode);
             _currentAlarmsPage.SetLanguage(languageCode);
-            Title = GetLocalizedText("运动控制上位机");
+            UpdateWindowTitle();
             UpdateMachineStateDisplay();
 
             // 左侧导航由代码生成，切换语言后重新生成当前导航项；保留当前选中页面。
