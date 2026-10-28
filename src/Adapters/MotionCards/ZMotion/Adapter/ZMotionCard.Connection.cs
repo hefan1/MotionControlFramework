@@ -38,7 +38,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 {
                     CheckResult(
                         zmcaux.ZAux_OpenEth(_configuration.Address, out openedHandle),
-                        "连接 ZDevelop 仿真器",
+                        "连接 ZDevelop 控制器",
                         null);
                     if (openedHandle == IntPtr.Zero)
                     {
@@ -58,9 +58,9 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     if (!string.Equals(actualType, SimulationControllerType, StringComparison.OrdinalIgnoreCase))
                     {
                         throw new InvalidOperationException(
-                            "拒绝连接正运动控制器 '" + ControllerId + "'：期望仿真器 '"
+                            "拒绝连接正运动控制器 '" + ControllerId + "'：期望控制器 '"
                             + SimulationControllerType + "'，实际身份为 '" + actualType + "'。"
-                            + "当前适配器仅支持 ZDevelop 仿真，不支持实体控制卡。");
+                            + "当前适配器仅支持本机 VPLC5xx-Simu，不支持实体控制卡。");
                     }
 
                     ActualControllerType = actualType;
@@ -124,7 +124,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     }
                 }
 
-                CheckResult(zmcaux.ZAux_Close(handle), "断开仿真器", null);
+                CheckResult(zmcaux.ZAux_Close(handle), "断开控制器", null);
                 _handle = IntPtr.Zero;
                 _axisParametersApplied = false;
                 ActualControllerType = null;

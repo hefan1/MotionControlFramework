@@ -583,7 +583,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 throw new ArgumentOutOfRangeException(
                     nameof(targetPosition),
                     "逻辑轴 '" + axis.Name + "' 的目标位置 " + targetPosition
-                    + " 超出仿真软限位 [" + axis.Configuration.MinimumPosition + ", "
+                    + " 超出软限位 [" + axis.Configuration.MinimumPosition + ", "
                     + axis.Configuration.MaximumPosition + "]。");
             }
         }

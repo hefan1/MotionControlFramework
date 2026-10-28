@@ -95,7 +95,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     || MinimumPosition >= MaximumPosition))
             {
                 throw new InvalidOperationException(
-                    "轴 '" + Name + "' 的仿真软限位范围无效：MinimumPosition 必须小于 MaximumPosition。");
+                    "轴 '" + Name + "' 的软限位范围无效：MinimumPosition 必须小于 MaximumPosition。");
             }
 
             if (!IsFinite(ManualSpeed) || ManualSpeed <= 0)

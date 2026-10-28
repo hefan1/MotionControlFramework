@@ -29,13 +29,13 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         {
             if (SchemaVersion != 1)
             {
-                throw new InvalidOperationException("正运动仿真配置只支持 schemaVersion 1。");
+                throw new InvalidOperationException("正运动控制器配置只支持 schemaVersion 1。");
             }
 
             if (!string.Equals(Address, "127.0.0.1", StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
-                    "当前适配器只连接 ZDevelop 本机仿真器，请将 Address 配置为 127.0.0.1。");
+                    "当前适配器只连接本机 VPLC5xx-Simu，请将 Address 配置为 127.0.0.1；不支持实体控制卡。");
             }
 
             if (MotionTimeoutMilliseconds <= 0)
