@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using MotionControl.Framework.Runtime.Configuration;
@@ -19,6 +20,16 @@ namespace MotionControl.Host.Wpf.Tasks
         private readonly MainWindow _host;
         /// <summary>目录读取结果和错误反馈。</summary>
         private readonly TextBlock _status;
+        /// <summary>默认收起的完整错误详情，供维护人员定位配置和异常来源。</summary>
+        private readonly Expander _diagnostics;
+        /// <summary>可复制的原始异常内容。</summary>
+        private readonly TextBox _diagnosticText;
+        /// <summary>最近一次失败，用于语言切换后重新生成操作提示。</summary>
+        private Exception _lastError;
+        /// <summary>最近一次失败所属的操作资源键。</summary>
+        private string _failureOperationKey;
+        /// <summary>最近一次失败后的建议资源键。</summary>
+        private string _failureAdviceKey;
         /// <summary>当前打开的仿真窗口，避免重复创建运行会话。</summary>
         private TaskSimulationWindow _window;
 
@@ -35,7 +46,15 @@ namespace MotionControl.Host.Wpf.Tasks
             AddButton(buttons, "刷新关联配置目录", RefreshCatalog_Click);
             panel.Children.Add(buttons);
             _status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,14,0,0) };
-            panel.Children.Add(_status); Content = panel;
+            panel.Children.Add(_status);
+            _diagnosticText = new TextBox { IsReadOnly = true, TextWrapping = TextWrapping.Wrap,
+                MaxHeight = 200, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto };
+            _diagnostics = new Expander { Margin = new Thickness(0,8,0,0),
+                Visibility = Visibility.Collapsed, Content = _diagnosticText };
+            _diagnostics.SetResourceReference(HeaderedContentControl.HeaderProperty, "任务仿真错误详情");
+            panel.Children.Add(_diagnostics); Content = panel;
+            _host.LanguageChanged += Host_LanguageChanged;
             Loaded += Launcher_Loaded;
         }
 
@@ -57,11 +76,15 @@ namespace MotionControl.Host.Wpf.Tasks
                 var namedResources = new MotionControl.TaskEngine.Configuration.TaskMachineConfigurationStore(_store)
                     .LoadNamedResources(_machineId);
                 var catalog = new TaskResourceCatalogLoader(_store).Load(_machineId, namedResources);
+                ClearError();
                 _status.Text = string.Format((string)FindResource("任务关联目录统计"), catalog.Axes.Count, catalog.Inputs.Count,
                     catalog.Outputs.Count, catalog.Variables.Count, catalog.TeachPoints.Count)
                     + "\n" + _store.GetMachineDirectory(_machineId) + "\n" + string.Join("\n", catalog.Notices);
             }
-            catch (Exception error) { _status.Text = error.ToString(); }
+            catch (Exception error)
+            {
+                ShowError(error, "任务目录读取失败", "任务配置检查建议");
+            }
         }
         /// <summary>用本机 Tasks 与 TaskMachine 配置创建内存会话，所有引用仍经过校验。</summary>
         private void OpenMachine_Click(object sender, RoutedEventArgs e) { Open(false); }
@@ -79,13 +102,58 @@ namespace MotionControl.Host.Wpf.Tasks
                 _window.ReferenceRequested += ReferenceRequested;
                 _window.Closed += Simulation_Closed;
                 _window.Show();
+                // 打开成功后清除过期的打开错误，重新展示当前目录状态；目录错误仍然保留。
+                if (_lastError != null && _failureOperationKey != "任务目录读取失败")
+                    RefreshCatalog();
             }
             catch (Exception error)
             {
                 _window = null;
                 if (session != null) session.Machine.CloseAsync().GetAwaiter().GetResult();
-                _status.Text = error.ToString();
+                ShowError(error, example ? "任务示例打开失败" : "任务配置打开失败",
+                    example ? "任务示例重试建议" : "任务配置检查建议");
             }
+        }
+        /// <summary>保留异常详情，同时显示操作人员可执行的下一步。</summary>
+        private void ShowError(Exception error, string operationKey, string adviceKey)
+        {
+            _lastError = error;
+            _failureOperationKey = operationKey;
+            _failureAdviceKey = adviceKey;
+            _diagnosticText.Text = error.ToString();
+            _diagnostics.IsExpanded = false;
+            _diagnostics.Visibility = Visibility.Visible;
+            RefreshErrorText();
+        }
+
+        /// <summary>语言切换后保留当前错误并更新提示，不重新读取或更改配置。</summary>
+        private void Host_LanguageChanged(object sender, EventArgs e)
+        {
+            if (_lastError != null) RefreshErrorText();
+        }
+
+        /// <summary>显示失败操作、文件路径或错误原因，以及下一步建议。</summary>
+        private void RefreshErrorText()
+        {
+            string reason = _lastError.Message;
+            var missingFile = _lastError as FileNotFoundException;
+            if (missingFile != null && !string.IsNullOrWhiteSpace(missingFile.FileName))
+                reason = string.Format((string)_host.FindResource("任务配置文件不存在"), missingFile.FileName);
+
+            _status.Text = (string)_host.FindResource(_failureOperationKey) + "\n" + reason + "\n"
+                + string.Format((string)_host.FindResource("任务配置设备目录"), _store.GetMachineDirectory(_machineId))
+                + "\n" + (string)_host.FindResource(_failureAdviceKey);
+        }
+
+        /// <summary>成功后清除过期的错误详情。</summary>
+        private void ClearError()
+        {
+            _lastError = null;
+            _failureOperationKey = null;
+            _failureAdviceKey = null;
+            _diagnosticText.Text = string.Empty;
+            _diagnostics.IsExpanded = false;
+            _diagnostics.Visibility = Visibility.Collapsed;
         }
         /// <summary>窗口关闭完成后才允许创建下一个会话。</summary>
         private void Simulation_Closed(object sender, EventArgs e) { _window = null; }

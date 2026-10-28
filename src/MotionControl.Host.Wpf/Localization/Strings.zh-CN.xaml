@@ -605,6 +605,14 @@
     <sys:String x:Key="打开示例任务仿真">打开示例任务仿真</sys:String>
     <sys:String x:Key="刷新关联配置目录">刷新关联配置目录</sys:String>
     <sys:String x:Key="任务关联目录统计">关联目录：{0} 根轴、{1} 个 DI、{2} 个 DO、{3} 个变量、{4} 个示教点。</sys:String>
+    <sys:String x:Key="任务仿真错误详情">查看完整诊断信息</sys:String>
+    <sys:String x:Key="任务目录读取失败">无法读取任务关联配置。</sys:String>
+    <sys:String x:Key="任务配置打开失败">无法打开本机任务仿真。</sys:String>
+    <sys:String x:Key="任务示例打开失败">无法打开示例任务仿真。</sys:String>
+    <sys:String x:Key="任务配置文件不存在">找不到配置文件：{0}</sys:String>
+    <sys:String x:Key="任务配置设备目录">设备配置目录：{0}</sys:String>
+    <sys:String x:Key="任务配置检查建议">请检查对应配置文件；如尚未配置，请在设置中检查轴映射、IO 映射和任务配置。也可先打开示例任务仿真。</sys:String>
+    <sys:String x:Key="任务示例重试建议">请重试；如仍失败，请展开完整诊断信息并联系维护人员。</sys:String>
     <sys:String x:Key="任务关联手动页不可用">控制卡尚未连接，轴手动页面未创建。本次只请求查看，没有发出运动指令。</sys:String>
     <sys:String x:Key="任务关联对象">关联对象</sys:String>
     <sys:String x:Key="任务关联定位成功">已定位到对应项目</sys:String>

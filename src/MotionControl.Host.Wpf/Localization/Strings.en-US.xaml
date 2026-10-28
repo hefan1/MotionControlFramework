@@ -595,6 +595,14 @@
     <sys:String x:Key="打开示例任务仿真">Open example simulation</sys:String>
     <sys:String x:Key="刷新关联配置目录">Refresh shared catalog</sys:String>
     <sys:String x:Key="任务关联目录统计">Shared catalog: {0} axes, {1} DI, {2} DO, {3} variables, {4} teach points.</sys:String>
+    <sys:String x:Key="任务仿真错误详情">View full diagnostic details</sys:String>
+    <sys:String x:Key="任务目录读取失败">Unable to read the shared task configuration.</sys:String>
+    <sys:String x:Key="任务配置打开失败">Unable to open the machine task simulation.</sys:String>
+    <sys:String x:Key="任务示例打开失败">Unable to open the example task simulation.</sys:String>
+    <sys:String x:Key="任务配置文件不存在">Configuration file not found: {0}</sys:String>
+    <sys:String x:Key="任务配置设备目录">Machine configuration directory: {0}</sys:String>
+    <sys:String x:Key="任务配置检查建议">Check the relevant configuration files. If not yet configured, review Axis Mapping, I/O Mapping and Task Configuration in Settings. You can also open the example simulation first.</sys:String>
+    <sys:String x:Key="任务示例重试建议">Try again. If the problem persists, expand the diagnostic details and contact maintenance.</sys:String>
     <sys:String x:Key="任务关联手动页不可用">The axis manual page is unavailable because the controller is not connected. No motion has been requested.</sys:String>
     <sys:String x:Key="任务关联对象">Referenced object</sys:String>
     <sys:String x:Key="任务关联定位成功">Item located</sys:String>
