@@ -28,7 +28,7 @@ namespace MotionControl.Host.Wpf
         /// <summary>按导航分区保存左侧子页面的中文资源键。</summary>
         private readonly Dictionary<string, string[]> _pagesBySection = new Dictionary<string, string[]>
         {
-            { "Home", new[] { "设备总览", "轴状态", "IO状态", "运行日志" } },
+            { "Home", new[] { "设备总览", "轴状态", "运行日志" } },
             { "Statistics", new[] { "产量统计", "节拍统计", "运行统计" } },
             { "Monitor", new[] { "设备状态", "轴监控", "IO监控", "流程状态", "任务运行", "设备变量" } },
             { "Manual", new[] { "轴手动", "IO手动", "气缸手动", "通讯调试" } },
@@ -372,10 +372,8 @@ namespace MotionControl.Host.Wpf
             }
 
             var isIoMonitorPage = _ioMonitorPage != null
-                && ((string.Equals(_currentSectionKey, "Monitor", StringComparison.Ordinal)
-                        && string.Equals(_currentPageResourceKey, "IO监控", StringComparison.Ordinal))
-                    || (string.Equals(_currentSectionKey, "Home", StringComparison.Ordinal)
-                        && string.Equals(_currentPageResourceKey, "IO状态", StringComparison.Ordinal)));
+                && string.Equals(_currentSectionKey, "Monitor", StringComparison.Ordinal)
+                && string.Equals(_currentPageResourceKey, "IO监控", StringComparison.Ordinal);
 
             if (isIoMonitorPage)
             {
