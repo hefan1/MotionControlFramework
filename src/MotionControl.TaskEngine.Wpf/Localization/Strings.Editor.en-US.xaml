@@ -193,10 +193,10 @@
  <sys:String x:Key="任务编辑.移除轴条件">Remove axis condition</sys:String>
  <sys:String x:Key="任务编辑.已从运行文件载入，尚无草稿">Active files loaded. No draft has been saved.</sys:String>
  <sys:String x:Key="任务编辑.应用到设备">Apply to machine</sys:String>
- <sys:String x:Key="任务编辑.更新仿真任务文件">Update task files</sys:String>
- <sys:String x:Key="任务编辑.仅更新仿真任务文件，不启动设备">Updates task files only. Task execution is not connected to equipment and will not start it.</sys:String>
- <sys:String x:Key="任务编辑.确认更新以下仿真任务文件">Update the following task files? Task execution is not connected to equipment; this will not connect to or start a controller.</sys:String>
- <sys:String x:Key="任务编辑.仿真任务文件已更新，下次新仿真会话读取">Task files updated; task execution is not connected to equipment.</sys:String>
+ <sys:String x:Key="任务编辑.更新任务文件">Update task files</sys:String>
+ <sys:String x:Key="任务编辑.仅更新任务文件，不启动设备">Updates task configuration files only. Flow execution is not connected to the controller and will not connect to or start equipment.</sys:String>
+ <sys:String x:Key="任务编辑.确认更新以下任务文件">Update the following task files? Flow execution is not connected to the controller; this will not connect to or start equipment.</sys:String>
+ <sys:String x:Key="任务编辑.任务文件已更新">Task files updated. Flow execution is not connected to the controller.</sys:String>
  <sys:String x:Key="任务编辑.有未保存修改，运行版本未改变">Unsaved changes. Active files are unchanged.</sys:String>
  <sys:String x:Key="任务编辑.有效">Active</sys:String>
  <sys:String x:Key="任务编辑.右值">Right value</sys:String>
@@ -243,4 +243,7 @@
  <sys:String x:Key="任务编辑.目标">Target</sys:String>
  <sys:String x:Key="任务编辑.单位">Unit</sys:String>
  <sys:String x:Key="任务编辑.选中一根轴，在下方填写该轴目标和独立参数">Select an axis, then edit its target and individual profile below.</sys:String>
+ <sys:String x:Key="任务编辑.查看完整诊断信息">View full diagnostic details</sys:String>
+ <sys:String x:Key="任务编辑.任务配置尚未成功加载，请先处理上方错误提示">Task configuration did not load. Resolve the error above first.</sys:String>
+ <sys:String x:Key="任务编辑.缺少轴参数配置操作指引">Axis parameters are missing. Go to Settings → Axis Mapping, enter the logical axis names and motion parameters, check and save the mapping, then return to Task Configuration.</sys:String>
 </ResourceDictionary>

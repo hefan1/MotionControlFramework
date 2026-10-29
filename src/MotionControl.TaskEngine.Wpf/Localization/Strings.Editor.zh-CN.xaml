@@ -193,10 +193,10 @@
  <sys:String x:Key="任务编辑.移除轴条件">移除轴条件</sys:String>
  <sys:String x:Key="任务编辑.已从运行文件载入，尚无草稿">已从运行文件载入，尚无草稿</sys:String>
  <sys:String x:Key="任务编辑.应用到设备">应用到设备</sys:String>
- <sys:String x:Key="任务编辑.更新仿真任务文件">更新任务文件</sys:String>
- <sys:String x:Key="任务编辑.仅更新仿真任务文件，不启动设备">仅更新任务文件；任务运行尚未接入设备，不会启动设备</sys:String>
- <sys:String x:Key="任务编辑.确认更新以下仿真任务文件">确认更新以下任务文件？当前任务运行尚未接入设备，此操作不会连接控制卡或启动设备。</sys:String>
- <sys:String x:Key="任务编辑.仿真任务文件已更新，下次新仿真会话读取">任务文件已更新；任务运行尚未接入设备</sys:String>
+ <sys:String x:Key="任务编辑.更新任务文件">更新任务文件</sys:String>
+ <sys:String x:Key="任务编辑.仅更新任务文件，不启动设备">仅更新任务配置文件；当前流程执行尚未接入控制卡，不会连接或启动设备</sys:String>
+ <sys:String x:Key="任务编辑.确认更新以下任务文件">确认更新以下任务文件？当前流程执行尚未接入控制卡，本操作不会连接或启动设备。</sys:String>
+ <sys:String x:Key="任务编辑.任务文件已更新">任务文件已更新；当前流程执行尚未接入控制卡</sys:String>
  <sys:String x:Key="任务编辑.有未保存修改，运行版本未改变">有未保存修改，运行版本未改变</sys:String>
  <sys:String x:Key="任务编辑.有效">有效</sys:String>
  <sys:String x:Key="任务编辑.右值">右值</sys:String>
@@ -243,4 +243,7 @@
  <sys:String x:Key="任务编辑.目标">目标</sys:String>
  <sys:String x:Key="任务编辑.单位">单位</sys:String>
  <sys:String x:Key="任务编辑.选中一根轴，在下方填写该轴目标和独立参数">选中一根轴，在下方填写该轴目标和独立参数</sys:String>
+ <sys:String x:Key="任务编辑.查看完整诊断信息">查看完整诊断信息</sys:String>
+ <sys:String x:Key="任务编辑.任务配置尚未成功加载，请先处理上方错误提示">任务配置尚未成功加载；请先处理上方错误提示。</sys:String>
+ <sys:String x:Key="任务编辑.缺少轴参数配置操作指引">缺少轴参数配置。请到“设置 → 轴映射配置”填写设备轴名称和运动参数，检查映射并保存，再返回任务配置。</sys:String>
 </ResourceDictionary>
