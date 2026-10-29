@@ -110,6 +110,15 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             Unloaded += IoMonitorView_Unloaded;
         }
 
+        /// <summary>选择 DI 标签页，供流程状态跳转后直接核对输入信号。</summary>
+        public void SelectDigitalInputs()
+        {
+            if (MonitorTabs.SelectedIndex != 0)
+            {
+                MonitorTabs.SelectedIndex = 0;
+            }
+        }
+
         /// <summary>重新应用当前语言资源，更新通道地址、状态和页签数量。</summary>
         public void RefreshLocalizedText()
         {

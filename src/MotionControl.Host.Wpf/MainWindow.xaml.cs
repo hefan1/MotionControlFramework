@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Threading;
+using MotionControl.Framework.Wpf.ManualDebug;
 using MotionControl.Framework.Runtime.Machine;
 
 namespace MotionControl.Host.Wpf
@@ -28,9 +29,9 @@ namespace MotionControl.Host.Wpf
         /// <summary>按导航分区保存左侧子页面的中文资源键。</summary>
         private readonly Dictionary<string, string[]> _pagesBySection = new Dictionary<string, string[]>
         {
-            { "Home", new[] { "设备总览", "轴状态", "运行日志" } },
+            { "Home", new[] { "设备总览", "运行日志" } },
             { "Statistics", new[] { "产量统计", "节拍统计", "运行统计" } },
-            { "Monitor", new[] { "设备状态", "轴监控", "IO监控", "流程状态", "任务运行", "设备变量" } },
+            { "Monitor", new[] { "轴监控", "IO监控", "流程状态", "任务运行", "设备变量" } },
             { "Manual", new[] { "轴手动", "IO手动", "气缸手动", "通讯调试" } },
             { "Settings", new[] { "轴映射配置", "IO映射", "安全联锁", "通讯设置", "数据采集", "任务配置" } },
             { "Alarms", new[] { "当前报警", "历史报警", "报警统计", "操作日志" } },
@@ -46,6 +47,9 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>当前选中的左侧页面中文资源键。</summary>
         private string _currentPageResourceKey;
+
+        /// <summary>从流程状态进入 IO 监控时自动切到 DI，方便核对等待信号。</summary>
+        private bool _selectInputTabWhenOpeningIoMonitor;
 
         /// <summary>由组合根注入的通用轴手动调试页面。</summary>
         private UserControl _manualMotionDebugPage;
@@ -231,7 +235,13 @@ namespace MotionControl.Host.Wpf
                 }
             }
 
-            _currentPageResourceKey = selectedPageButton.Tag as string;
+            string nextPageResourceKey = selectedPageButton.Tag as string;
+            _selectInputTabWhenOpeningIoMonitor = string.Equals(
+                _currentPageResourceKey,
+                "流程状态",
+                StringComparison.Ordinal)
+                && string.Equals(nextPageResourceKey, "IO监控", StringComparison.Ordinal);
+            _currentPageResourceKey = nextPageResourceKey;
             PageTitle.Text = GetLocalizedText(_currentPageResourceKey);
             UpdatePageContent();
         }
@@ -377,10 +387,8 @@ namespace MotionControl.Host.Wpf
             }
 
             var isAxisMonitorPage = _axisMonitorPage != null
-                && ((string.Equals(_currentSectionKey, "Home", StringComparison.Ordinal)
-                        && string.Equals(_currentPageResourceKey, "轴状态", StringComparison.Ordinal))
-                    || (string.Equals(_currentSectionKey, "Monitor", StringComparison.Ordinal)
-                        && string.Equals(_currentPageResourceKey, "轴监控", StringComparison.Ordinal)));
+                && string.Equals(_currentSectionKey, "Monitor", StringComparison.Ordinal)
+                && string.Equals(_currentPageResourceKey, "轴监控", StringComparison.Ordinal);
 
             if (isAxisMonitorPage)
             {
@@ -397,6 +405,12 @@ namespace MotionControl.Host.Wpf
 
             if (isIoMonitorPage)
             {
+                if (_selectInputTabWhenOpeningIoMonitor && _ioMonitorPage is IoMonitorView ioMonitorView)
+                {
+                    ioMonitorView.SelectDigitalInputs();
+                }
+
+                _selectInputTabWhenOpeningIoMonitor = false;
                 ManualDebugContent.Content = _ioMonitorPage;
                 ManualDebugContent.Visibility = Visibility.Visible;
                 PagePlaceholder.Visibility = Visibility.Collapsed;
