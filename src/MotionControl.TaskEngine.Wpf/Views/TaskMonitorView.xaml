@@ -47,7 +47,8 @@
    <Border Style="{StaticResource 内容边框}">
     <Grid Margin="10"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
      <DockPanel Margin="0,0,0,8">
-      <Button DockPanel.Dock="Right" Content="{DynamicResource 任务监控.定位故障}" Click="LocateFault_Click"/>
+      <Button x:Name="LocateCurrentCauseButton" DockPanel.Dock="Right" Content="{DynamicResource 任务监控.定位当前原因}"
+              ToolTip="{DynamicResource 任务监控.定位当前原因说明}" Click="LocateCurrentCause_Click"/>
       <CheckBox x:Name="FollowBox" DockPanel.Dock="Right" Content="{DynamicResource 任务监控.跟随执行}" IsChecked="True" VerticalAlignment="Center" Margin="10,0"/>
       <TextBlock x:Name="StepsTitle" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
      </DockPanel>

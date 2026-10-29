@@ -5,7 +5,8 @@
  <sys:String x:Key="任务监控.当前动作">Current actions</sys:String>
  <sys:String x:Key="任务监控.等待或异常说明">Waiting / fault details</sys:String>
  <sys:String x:Key="任务监控.完成次数">Cycles</sys:String>
- <sys:String x:Key="任务监控.定位故障">Locate fault</sys:String>
+ <sys:String x:Key="任务监控.定位当前原因">Locate current cause</sys:String>
+ <sys:String x:Key="任务监控.定位当前原因说明">With a stop fault, open its step. Otherwise, open a waiting step and show its wait condition.</sys:String>
  <sys:String x:Key="任务监控.跟随执行">Follow execution</sys:String>
  <sys:String x:Key="任务监控.运行步骤">Steps</sys:String>
  <sys:String x:Key="任务监控.步序">Step</sys:String>
@@ -17,7 +18,7 @@
  <sys:String x:Key="任务监控.关联配置">Related configuration</sys:String>
  <sys:String x:Key="任务监控.内存仿真来源">Memory simulation source</sys:String>
  <sys:String x:Key="任务监控.刷新失败，以下为旧数据">Refresh failed: displayed data is stale</sys:String>
- <sys:String x:Key="任务监控.当前无停机故障">No latched stop faults</sys:String>
+ <sys:String x:Key="任务监控.当前无等待或停机故障">There are no waiting steps or stop faults.</sys:String>
  <sys:String x:Key="任务监控.故障恢复提示">Check the stated cause. After restoring the condition, reset the machine and press Start. Completed actions are retained.</sys:String>
  <sys:String x:Key="任务监控.请选择步骤">Select a step</sys:String>
  <sys:String x:Key="任务监控.尚无执行采样">No execution sample yet</sys:String>

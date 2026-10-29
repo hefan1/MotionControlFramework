@@ -131,10 +131,13 @@ namespace MotionControl.TaskMonitor.Checks
                 var stationsGrid = view.FindName("StationsGrid") as System.Windows.Controls.DataGrid;
                 var followBox = view.FindName("FollowBox") as System.Windows.Controls.CheckBox;
                 var stepsTree = view.FindName("StepsTree") as TreeView;
+                var causeButton = view.FindName("LocateCurrentCauseButton") as Button;
                 var window = new Window { Content = view, Width = 1360, Height = 720, Opacity = 0, ShowInTaskbar = false };
                 window.Show();
                 application.Dispatcher.Invoke(new Action(() => { }), DispatcherPriority.ApplicationIdle);
-                Assert(stationsGrid != null && stationsGrid.Items.Count > 1 && followBox != null && stepsTree != null, "工位列表、步骤树或跟随选项未加载。");
+                Assert(stationsGrid != null && stationsGrid.Items.Count > 1 && followBox != null && stepsTree != null && causeButton != null,
+                    "工位列表、步骤树、跟随选项或原因定位按钮未加载。");
+                Assert(!causeButton.IsEnabled, "没有运行步骤或停机故障时仍允许点击原因定位。");
                 followBox.IsChecked = false;
                 stationsGrid.SelectedIndex = 2;
                 view.UpdateLayout();
@@ -159,6 +162,19 @@ namespace MotionControl.TaskMonitor.Checks
                 secondStep.IsSelected = true;
                 view.UpdateLayout();
                 Assert(followBox.IsChecked == false, "现场人员选择其他步骤后没有暂停自动跟随。");
+                session.Machine.Reset();
+                session.Machine.Start();
+                Until(() => session.Machine.GetSnapshot().Stations.Any(station => station.Run?.Nodes.Any(node => node.State == TaskNodeState.Waiting) == true))
+                    .GetAwaiter().GetResult();
+                view.Refresh();
+                Assert(causeButton.IsEnabled, "存在等待步骤时原因定位按钮仍被禁用。");
+                causeButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, causeButton));
+                view.UpdateLayout();
+                var selectedStation = stationsGrid.SelectedItem as TaskStationRow;
+                Assert(selectedStation?.Snapshot?.Run?.Nodes.Any(node => node.State == TaskNodeState.Waiting) == true,
+                    "原因定位没有选中含等待步骤的工位。");
+                Assert(stepsTree.SelectedItem is MotionControl.TaskEngine.Wpf.Monitoring.TaskStepRow selectedStep
+                    && selectedStep.Snapshot?.State == TaskNodeState.Waiting, "原因定位没有选中具体等待步骤。");
                 window.Close();
                 Assert(view.ActualWidth > 0 && view.T("步骤详情") == "步骤详情", "页面资源或布局构造失败。");
             }

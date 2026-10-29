@@ -77,11 +77,13 @@ namespace MotionControl.TaskEngine.Wpf.Views
                 RefreshStatus.Text = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
                 _refreshFailed = false;
                 RefreshSteps();
+                RefreshCurrentCauseButton();
             }
             catch (Exception error)
             {
                 _refreshFailed = true;
                 RefreshStatus.Text = T("刷新失败，以下为旧数据");
+                LocateCurrentCauseButton.IsEnabled = false;
                 DetailSummary.Text = error.Message;
                 System.Diagnostics.Trace.TraceError("任务监控刷新失败：" + error);
                 _timer.Stop();
@@ -174,18 +176,67 @@ namespace MotionControl.TaskEngine.Wpf.Views
             ShowDetails(_selected);
         }
 
-        /// <summary>按故障的工位和调用编号定位，外部故障没有步骤时直接显示原因。</summary>
-        private void LocateFault_Click(object sender, RoutedEventArgs e)
+        /// <summary>有停机故障时定位故障步骤；无故障时定位当前等待步骤。</summary>
+        private void LocateCurrentCause_Click(object sender, RoutedEventArgs e)
         {
             if (_snapshot == null || _refreshFailed) return;
             var fault = _snapshot.Faults.FirstOrDefault();
-            if (fault == null) { DetailNotice.Text = T("当前无停机故障"); return; }
-            var station = _stations.FirstOrDefault(item => item.Id == fault.Source);
-            if (station != null) StationsGrid.SelectedItem = station;
+            if (fault != null)
+            {
+                var faultStation = _stations.FirstOrDefault(item => item.Id == fault.Source);
+                if (faultStation != null) StationsGrid.SelectedItem = faultStation;
+                FollowBox.IsChecked = false;
+                var faultStep = fault.Error == null ? null : TaskStepTree.Flatten(_steps).FirstOrDefault(item => item.Snapshot?.ExecutionId == fault.Error.ExecutionId);
+                if (faultStep != null) SelectFollowing(faultStep);
+                DetailNotice.Text = fault.Message + "\n" + T("故障恢复提示");
+                return;
+            }
+
+            var waitingStation = FindWaitingStation();
+            if (waitingStation == null)
+            {
+                DetailNotice.Text = T("当前无等待或停机故障");
+                return;
+            }
+
+            StationsGrid.SelectedItem = waitingStation;
             FollowBox.IsChecked = false;
-            var step = fault.Error == null ? null : TaskStepTree.Flatten(_steps).FirstOrDefault(item => item.Snapshot?.ExecutionId == fault.Error.ExecutionId);
-            if (step != null) SelectFollowing(step);
-            DetailNotice.Text = fault.Message + "\n" + T("故障恢复提示");
+            var waitingNode = FindWaitingLeaf(waitingStation.Snapshot.Run);
+            var waitingStep = waitingNode == null ? null : TaskStepTree.Flatten(_steps)
+                .FirstOrDefault(item => item.Snapshot?.ExecutionId == waitingNode.ExecutionId);
+            if (waitingStep != null) SelectFollowing(waitingStep);
+            else DetailNotice.Text = waitingStation.Detail;
+        }
+
+        /// <summary>按当前选择优先查找等待工位，避免跳到无关工位。</summary>
+        private TaskStationRow FindWaitingStation()
+        {
+            var selected = StationsGrid.SelectedItem as TaskStationRow;
+            if (HasActiveWaitingStep(selected)) return selected;
+            return _stations.FirstOrDefault(HasActiveWaitingStep);
+        }
+
+        /// <summary>判断工位是否存在等待中的执行节点。</summary>
+        private bool HasActiveWaitingStep(TaskStationRow station)
+        {
+            return station?.Snapshot?.Run?.Nodes?.Any(node => node.State == TaskNodeState.Waiting) == true;
+        }
+
+        /// <summary>优先返回最深层等待节点，使步骤树定位到具体等待动作。</summary>
+        private TaskNodeSnapshot FindWaitingLeaf(TaskRunSnapshot run)
+        {
+            var nodes = run?.Nodes;
+            if (nodes == null) return null;
+            return nodes.FirstOrDefault(node => node.State == TaskNodeState.Waiting
+                && !nodes.Any(child => string.Equals(child.ParentExecutionId, node.ExecutionId, StringComparison.OrdinalIgnoreCase)
+                    && (child.State == TaskNodeState.Running || child.State == TaskNodeState.Waiting || child.State == TaskNodeState.Moving)))
+                ?? nodes.FirstOrDefault(node => node.State == TaskNodeState.Waiting);
+        }
+
+        /// <summary>只有存在故障或等待步骤时才启用原因定位入口。</summary>
+        private void RefreshCurrentCauseButton()
+        {
+            LocateCurrentCauseButton.IsEnabled = _snapshot.Faults.Any() || _stations.Any(HasActiveWaitingStep);
         }
 
         /// <summary>按中文资源键读取文字，方便开发者从页面搜索到代码。</summary>
