@@ -10,7 +10,7 @@ using MotionControl.Framework.Contracts.Motion;
 namespace MotionControl.Equipment.Demo
 {
     /// <summary>按逻辑轴、逻辑 DI 和逻辑 DO 执行一次运动、检测及输出，再等待传感器复位。</summary>
-    public sealed class DemoStationFlow : IStationFlow, IRecoverableStationFlow
+    public sealed class DemoStationFlow : IStationFlow, IRecoverableStationFlow, IStationCycleStatistics
     {
         /// <summary>传感器等待超时使用的停机报警，同次超时只保留一条待复位记录。</summary>
         private static readonly MachineAlarmDefinition SensorTimeoutAlarm = new MachineAlarmDefinition(
@@ -37,6 +37,15 @@ namespace MotionControl.Equipment.Demo
         /// <summary>保护步骤编号和说明的一致读取与更新。</summary>
         private readonly object _stepSync = new object();
 
+        /// <summary>测量从一轮定位开始到传感器复位的完整循环时间。</summary>
+        private readonly Stopwatch _cycleStopwatch = new Stopwatch();
+
+        /// <summary>本次 Runtime 生命周期内完成的循环数。</summary>
+        private long _completedCycles;
+
+        /// <summary>最近一次完整循环的有效测量时长。</summary>
+        private TimeSpan? _lastCycleDuration;
+
         /// <summary>检查依赖与参数，并从定位步骤开始。</summary>
         public DemoStationFlow(
             IAxis axis,
@@ -59,6 +68,18 @@ namespace MotionControl.Equipment.Demo
 
         /// <summary>返回该设备中的示例工位名称。</summary>
         public string StationName { get { return _settings.StationName; } }
+
+        /// <summary>返回当前 Runtime 生命周期内的完整循环数。</summary>
+        public long CompletedCycles
+        {
+            get { lock (_stepSync) { return _completedCycles; } }
+        }
+
+        /// <summary>返回最近一个完整循环的测量时长。</summary>
+        public TimeSpan? LastCycleDuration
+        {
+            get { lock (_stepSync) { return _lastCycleDuration; } }
+        }
 
         /// <summary>返回操作员能直接理解的当前工位动作。</summary>
         public string CurrentStepName
@@ -98,6 +119,11 @@ namespace MotionControl.Equipment.Demo
                 throw new ArgumentOutOfRangeException(nameof(stepNumber), "示例工位不支持恢复到该步骤。");
             }
 
+            lock (_stepSync)
+            {
+                _cycleStopwatch.Reset();
+            }
+
             switch (stepNumber)
             {
                 case 10:
@@ -115,7 +141,7 @@ namespace MotionControl.Equipment.Demo
             }
         }
 
-        /// <summary>按当前步骤编号分派一次流程动作；暂停取消后保留当前步骤。</summary>
+        /// <summary>按当前步骤编号分派一次流程动作；暂停取消时保留当前步骤和最近完整周期。</summary>
         public async Task ExecuteCurrentStepAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -125,28 +151,48 @@ namespace MotionControl.Equipment.Demo
                 currentStep = _step;
             }
 
-            switch (currentStep)
+            try
             {
-                case 10:
-                    await MoveAxisAsync(cancellationToken).ConfigureAwait(false);
-                    return;
-                case 20:
-                    await WaitForSensorAsync(cancellationToken).ConfigureAwait(false);
-                    return;
-                case 30:
-                    await PulseOutputAsync(cancellationToken).ConfigureAwait(false);
-                    return;
-                case 40:
-                    await WaitForSensorReleaseAsync(cancellationToken).ConfigureAwait(false);
-                    return;
-                default:
-                    throw new InvalidOperationException("示例工位包含未知流程步骤：" + currentStep + "。");
+                switch (currentStep)
+                {
+                    case 10:
+                        await MoveAxisAsync(cancellationToken).ConfigureAwait(false);
+                        return;
+                    case 20:
+                        await WaitForSensorAsync(cancellationToken).ConfigureAwait(false);
+                        return;
+                    case 30:
+                        await PulseOutputAsync(cancellationToken).ConfigureAwait(false);
+                        return;
+                    case 40:
+                        await WaitForSensorReleaseAsync(cancellationToken).ConfigureAwait(false);
+                        return;
+                    default:
+                        throw new InvalidOperationException("示例工位包含未知流程步骤：" + currentStep + "。");
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                lock (_stepSync)
+                {
+                    _cycleStopwatch.Reset();
+                }
+
+                throw;
             }
         }
 
         /// <summary>执行绝对定位；同一目标位置可在暂停恢复时安全重发。</summary>
         private async Task MoveAxisAsync(CancellationToken cancellationToken)
         {
+            lock (_stepSync)
+            {
+                if (!_cycleStopwatch.IsRunning)
+                {
+                    _cycleStopwatch.Restart();
+                }
+            }
+
             await _axis.MoveAbsoluteAsync(
                 _settings.TargetPosition,
                 new AxisMotionProfile(_settings.Speed, _settings.Acceleration, _settings.Deceleration),
@@ -210,6 +256,17 @@ namespace MotionControl.Equipment.Demo
             if (!await _io.ReadInputAsync(_settings.SensorInputName, cancellationToken).ConfigureAwait(false))
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                lock (_stepSync)
+                {
+                    if (_cycleStopwatch.IsRunning)
+                    {
+                        _lastCycleDuration = _cycleStopwatch.Elapsed;
+                        _cycleStopwatch.Reset();
+                    }
+
+                    _completedCycles++;
+                }
+
                 SetStep(10, "轴定位到 " + _settings.TargetPosition);
                 return;
             }

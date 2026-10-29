@@ -19,6 +19,7 @@ namespace MotionControl.ZMotionSimulatorCheck
         public static async Task RunAsync()
         {
             await SuccessfulCycleUsesMappedResourcesAsync().ConfigureAwait(false);
+            await PausingPartialCycleKeepsLastCompletedDurationAsync().ConfigureAwait(false);
             await TimeoutRaisesAlarmAndCanRetryAsync().ConfigureAwait(false);
             await PausingOutputTurnsItOffAsync().ConfigureAwait(false);
             await RestartRestoresCompletedStepWithoutRepeatingMoveAsync().ConfigureAwait(false);
@@ -49,8 +50,44 @@ namespace MotionControl.ZMotionSimulatorCheck
             Ensure(context.Io.LastWrittenOutputName == "ActionOutput", "工位没有写入配置的逻辑 DO。");
             Ensure(context.Runtime.AlarmService.Alarms.Count == 0, "正常循环产生了报警。");
 
+            context.Io.SensorActive = false;
+            await WaitUntilAsync(() => context.Flow.CompletedCycles == 1,
+                "传感器复位后记录一个完整循环").ConfigureAwait(false);
+            Ensure(context.Flow.LastCycleDuration.HasValue && context.Flow.LastCycleDuration.Value > TimeSpan.Zero,
+                "完整循环没有记录有效的最近周期。");
+
             await context.Runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
             Ensure(context.Runtime.State == MachineRunState.Paused, "正常流程暂停后整机状态不正确。");
+            await context.Runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        /// <summary>确认暂停中断下一循环后保留上一个完整周期时长。</summary>
+        private static async Task PausingPartialCycleKeepsLastCompletedDurationAsync()
+        {
+            var context = CreateContext(500, 40);
+            await context.Runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await context.Runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await context.Runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await WaitUntilAsync(() => context.Axis.MoveCount == 1
+                && context.Flow.CurrentStepName.Contains("等待传感器"), "首循环定位后等待传感器").ConfigureAwait(false);
+
+            context.Io.SensorActive = true;
+            await WaitUntilAsync(() => context.Io.OutputValues.Count >= 2,
+                "首循环输出脉冲完成").ConfigureAwait(false);
+            context.Io.SensorActive = false;
+            await WaitUntilAsync(() => context.Flow.CompletedCycles == 1,
+                "首循环完成并开始下一循环").ConfigureAwait(false);
+            Ensure(context.Flow.LastCycleDuration.HasValue, "首循环完成后没有周期时间。");
+            TimeSpan lastCompletedDuration = context.Flow.LastCycleDuration.Value;
+
+            await WaitUntilAsync(() => context.Axis.MoveCount >= 2
+                && context.Flow.CurrentStepName.Contains("等待传感器"), "下一循环定位后等待传感器").ConfigureAwait(false);
+            await context.Runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+
+            Ensure(context.Runtime.State == MachineRunState.Paused, "下一循环暂停后整机状态不正确。");
+            Ensure(context.Flow.LastCycleDuration == lastCompletedDuration,
+                "暂停中断下一循环后没有保留最近一次完整周期时长。");
+            Ensure(context.Flow.CompletedCycles == 1, "未完成的循环被错误计入产量。");
             await context.Runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
         }
 

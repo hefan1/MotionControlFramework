@@ -17,7 +17,8 @@
    <Border Style="{StaticResource 内容边框}" Padding="16"><StackPanel><TextBlock Text="{DynamicResource 操作页.本次完成}" FontWeight="SemiBold"/><TextBlock x:Name="CompletedText" FontSize="30" Foreground="#2375D1" Margin="0,7,0,0"/></StackPanel></Border>
    <Border Grid.Column="2" Style="{StaticResource 内容边框}" Padding="16"><StackPanel><TextBlock Text="{DynamicResource 操作页.当前周期}" FontWeight="SemiBold"/><TextBlock x:Name="CycleText" FontSize="30" Foreground="#2375D1" Margin="0,7,0,0"/></StackPanel></Border>
   </Grid>
-  <Border Grid.Row="3" Background="#FFF8E9" BorderBrush="#F0D396" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,10,0,0"><DockPanel>
+  <!-- 报警区域按当前记录状态切换中性、正常和提醒颜色。 -->
+  <Border x:Name="AlertBanner" Grid.Row="3" Background="#FFF8E9" BorderBrush="#F0D396" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,10,0,0"><DockPanel>
    <Button DockPanel.Dock="Right" Content="{DynamicResource 操作页.查看当前报警}" Click="Alarms_Click"/>
    <StackPanel><TextBlock Text="{DynamicResource 操作页.当前提醒}" FontWeight="SemiBold"/><TextBlock x:Name="AlertText" TextWrapping="Wrap" Margin="0,4,8,0"/></StackPanel>
   </DockPanel></Border>

@@ -17,6 +17,18 @@ namespace MotionControl.Host.Wpf.Operation
         public event EventHandler<OperatorNavigationEventArgs> NavigationRequested;
         /// <summary>当前生产运行入口，可为空。</summary>
         private MachineRuntime _runtime;
+        /// <summary>没有报警记录时使用的清晰状态配色。</summary>
+        private static readonly Brush ClearAlertBackground = new SolidColorBrush(Color.FromRgb(240, 247, 244));
+        /// <summary>没有报警记录时使用的边框配色。</summary>
+        private static readonly Brush ClearAlertBorder = new SolidColorBrush(Color.FromRgb(182, 220, 199));
+        /// <summary>报警状态未知时使用的中性配色。</summary>
+        private static readonly Brush UnknownAlertBackground = new SolidColorBrush(Color.FromRgb(243, 246, 250));
+        /// <summary>报警状态未知时使用的边框配色。</summary>
+        private static readonly Brush UnknownAlertBorder = new SolidColorBrush(Color.FromRgb(217, 224, 232));
+        /// <summary>存在报警记录时使用的提示配色。</summary>
+        private static readonly Brush ActiveAlertBackground = new SolidColorBrush(Color.FromRgb(255, 248, 233));
+        /// <summary>存在报警记录时使用的边框配色。</summary>
+        private static readonly Brush ActiveAlertBorder = new SolidColorBrush(Color.FromRgb(240, 211, 150));
         /// <summary>仅独立预览明确传入的示例，不会在正常 Host 自动补入。</summary>
         private OperationSnapshot _preview;
         /// <summary>只在本页可见时刷新软件状态。</summary>
@@ -59,8 +71,12 @@ namespace MotionControl.Host.Wpf.Operation
             SourceText.Text = T(snapshot.IsPreview ? "离线页面示例" : "来源：传统C#工位Runtime");
             SampleText.Text = T("软件状态采样") + " · " + snapshot.SampledAt.ToString("yyyy-MM-dd HH:mm:ss");
             NextActionText.Text = T(NextAction(snapshot));
-            CompletedText.Text = snapshot.CompletedCount.HasValue ? snapshot.CompletedCount.Value.ToString(CultureInfo.InvariantCulture) + " pcs" : T("未接入计数");
-            CycleText.Text = snapshot.CycleSeconds.HasValue ? snapshot.CycleSeconds.Value.ToString("0.0", CultureInfo.InvariantCulture) + " s" : T("未接入节拍");
+            CompletedText.Text = snapshot.Stations.Count > 1 ? T("按工位查看")
+                : snapshot.CompletedCount.HasValue ? snapshot.CompletedCount.Value.ToString(CultureInfo.InvariantCulture) + " " + T("次")
+                : T("未接入");
+            CycleText.Text = snapshot.Stations.Count > 1 ? T("按工位查看")
+                : snapshot.CycleSeconds.HasValue ? snapshot.CycleSeconds.Value.ToString("0.0", CultureInfo.InvariantCulture) + " " + T("秒")
+                : T("未完成");
             EmptyText.Text = snapshot.Stations.Count == 0 ? T(snapshot.HasRuntime ? "未配置自动工位" : "尚无运行时，请先检查控制卡连接") : "";
             EmptyText.Visibility = snapshot.Stations.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             bool changed = _cards.Count != snapshot.Stations.Count || _cards.Where((card, index) => card.StationName != snapshot.Stations[index].Name).Any();
@@ -74,8 +90,24 @@ namespace MotionControl.Host.Wpf.Operation
                 }
             }
             for (int index = 0; index < _cards.Count; index++) _cards[index].Update(snapshot, snapshot.Stations[index]);
-            AlertText.Text = !snapshot.HasRuntime ? T("未读取报警状态") : snapshot.Alarms.Count == 0
-                ? T("当前软件报警表为空") : string.Join(" · ", snapshot.Alarms.Take(3).Select(alarm => alarm.SourceName + "：" + alarm.Definition.Message));
+            if (!snapshot.HasRuntime)
+            {
+                AlertText.Text = T("未读取报警状态");
+                AlertBanner.Background = UnknownAlertBackground;
+                AlertBanner.BorderBrush = UnknownAlertBorder;
+            }
+            else if (snapshot.Alarms.Count == 0)
+            {
+                AlertText.Text = T("当前无报警");
+                AlertBanner.Background = ClearAlertBackground;
+                AlertBanner.BorderBrush = ClearAlertBorder;
+            }
+            else
+            {
+                AlertText.Text = string.Join(" · ", snapshot.Alarms.Take(3).Select(alarm => alarm.SourceName + "：" + alarm.Definition.Message));
+                AlertBanner.Background = ActiveAlertBackground;
+                AlertBanner.BorderBrush = ActiveAlertBorder;
+            }
         }
         /// <summary>内容区按一到三列排列卡片，窗口缩小时滚动仍只发生在工位区。</summary>
         private void CardsSizeChanged(object sender, SizeChangedEventArgs e)
@@ -101,7 +133,7 @@ namespace MotionControl.Host.Wpf.Operation
             }
             switch (snapshot.State)
             {
-                case MachineRunState.Running: return "设备正在运行，处理工件前请先暂停";
+                case MachineRunState.Running: return "设备自动运行中；需要人工介入时请先暂停";
                 case MachineRunState.Paused: return "保留当前步骤，确认现场后按设备规则复位再启动";
                 case MachineRunState.Alarmed: return "先查看报警并处理原因，条件恢复后复位再启动";
                 case MachineRunState.Ready: return "设备已就绪，使用顶部启动按钮";
@@ -118,7 +150,7 @@ namespace MotionControl.Host.Wpf.Operation
             var snapshot = _preview ?? OperationSnapshot.Read(_runtime);
             var station = snapshot.Stations.FirstOrDefault(item => item.Name == name);
             if (station == null) return;
-            string reason = snapshot.IsPreview && !string.IsNullOrEmpty(station.PreviewReason) ? station.PreviewReason : T("当前工位未提供结构化等待条件，请查看当前动作和报警");
+            string reason = snapshot.IsPreview && !string.IsNullOrEmpty(station.PreviewReason) ? station.PreviewReason : T("请在流程状态核对当前步骤；等待输入时到 IO 监控的 DI 页按信号名检查；如有报警，先处理后再复位");
             string alarms = string.Join("\n", snapshot.Alarms.Where(alarm => alarm.SourceName == name).Select(alarm => alarm.Definition.Message + "：" + alarm.Detail));
             MessageBox.Show(name + "\n" + station.CurrentStep + "\n\n" + reason + "\n" + alarms, T("当前动作与原因"), MessageBoxButton.OK, MessageBoxImage.Information);
         }
@@ -141,8 +173,10 @@ namespace MotionControl.Host.Wpf.Operation
         private readonly TextBlock _state;
         /// <summary>当前流程动作原文。</summary>
         private readonly TextBlock _step;
-        /// <summary>明确说明尚无独立工位状态。</summary>
+        /// <summary>提示操作员从流程与信号页面确认下一步。</summary>
         private readonly TextBlock _note;
+        /// <summary>仅在多个工位时展示各自独立的循环统计。</summary>
+        private readonly TextBlock _metrics;
         /// <summary>按 PDF 的标题、状态、动作和操作区构造卡片。</summary>
         internal StationOverviewCard(EquipmentOverviewView owner, string name, RoutedEventHandler flow, RoutedEventHandler reason)
         {
@@ -150,6 +184,8 @@ namespace MotionControl.Host.Wpf.Operation
             var panel = new StackPanel { Margin = new Thickness(15) };
             panel.Children.Add(new TextBlock { Text = name, FontSize = 20, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = name });
             _state = new TextBlock { Margin = new Thickness(0, 10, 0, 10), FontWeight = FontWeights.SemiBold }; panel.Children.Add(_state);
+            _metrics = new TextBlock { Margin = new Thickness(0, 0, 0, 10), Foreground = Brushes.SlateGray, TextWrapping = TextWrapping.Wrap };
+            panel.Children.Add(_metrics);
             panel.Children.Add(new TextBlock { Text = owner.T("当前动作"), Foreground = Brushes.SlateGray });
             _step = new TextBlock { TextWrapping = TextWrapping.Wrap, MinHeight = 58, Margin = new Thickness(0, 7, 0, 5), FontSize = 15 }; panel.Children.Add(_step);
             _note = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 11, Foreground = Brushes.SlateGray, MinHeight = 34 }; panel.Children.Add(_note);
@@ -164,7 +200,15 @@ namespace MotionControl.Host.Wpf.Operation
             _state.Text = _owner.T("整机状态") + " · " + _owner.T(OperationUi.StateKey(snapshot.State));
             _state.Foreground = OperationUi.StateBrush(snapshot.State);
             _step.Text = string.IsNullOrEmpty(station.CurrentStep) ? _owner.T("未提供当前动作") : station.CurrentStep;
-            _note.Text = _owner.T("独立工位状态未提供，不据动作名称猜测运行或等待");
+            _note.Text = _owner.T("查看流程确认当前步骤；等待传感器时到 IO 监控的 DI 页按信号名核对");
+            bool showCardStatistics = snapshot.Stations.Count > 1;
+            _metrics.Visibility = showCardStatistics ? Visibility.Visible : Visibility.Collapsed;
+            _metrics.Text = station.CompletedCycles.HasValue
+                ? station.CompletedCycles.Value.ToString(CultureInfo.InvariantCulture) + " " + _owner.T("次") + " · "
+                    + (station.LastCycleSeconds.HasValue
+                        ? _owner.T("最近周期") + " " + station.LastCycleSeconds.Value.ToString("0.0", CultureInfo.InvariantCulture) + " " + _owner.T("秒")
+                        : _owner.T("尚无完整周期"))
+                : _owner.T("未接入循环统计");
         }
     }
 }

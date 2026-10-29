@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using MotionControl.Framework.Contracts.Alarms;
+using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Runtime.Machine;
 
 namespace MotionControl.Host.Wpf.Operation
@@ -23,9 +24,9 @@ namespace MotionControl.Host.Wpf.Operation
         public List<MachineAlarmRecord> Alarms { get; set; } = new List<MachineAlarmRecord>();
         /// <summary>最近整机异常的完整诊断，不能当作每条报警的根因。</summary>
         public string LastError { get; set; }
-        /// <summary>本次产量，当前传统流程没有提供时为空。</summary>
+        /// <summary>单工位时的完整循环数；多工位不将不同工位计数相加。</summary>
         public long? CompletedCount { get; set; }
-        /// <summary>本次周期秒数，没有可靠来源时为空。</summary>
+        /// <summary>单工位时最近一个完整循环的周期秒数。</summary>
         public double? CycleSeconds { get; set; }
         /// <summary>只读采样当前 Runtime，保留当前步骤原文，不从文字推断等待条件或独立工位状态。</summary>
         public static OperationSnapshot Read(MachineRuntime runtime)
@@ -36,7 +37,23 @@ namespace MotionControl.Host.Wpf.Operation
             result.Alarms = runtime.AlarmService.Alarms.ToList();
             result.LastError = runtime.LastError?.ToString();
             foreach (var flow in runtime.StationFlows)
-                result.Stations.Add(new StationOverviewData { Name = flow.StationName, CurrentStep = flow.CurrentStepName });
+            {
+                var statistics = flow as IStationCycleStatistics;
+                result.Stations.Add(new StationOverviewData
+                {
+                    Name = flow.StationName,
+                    CurrentStep = flow.CurrentStepName,
+                    CompletedCycles = statistics?.CompletedCycles,
+                    LastCycleSeconds = statistics?.LastCycleDuration?.TotalSeconds
+                });
+            }
+
+            if (result.Stations.Count == 1)
+            {
+                result.CompletedCount = result.Stations[0].CompletedCycles;
+                result.CycleSeconds = result.Stations[0].LastCycleSeconds;
+            }
+
             return result;
         }
     }
@@ -48,6 +65,10 @@ namespace MotionControl.Host.Wpf.Operation
         public string Name { get; set; }
         /// <summary>工位提供的当前动作或保留步骤原文。</summary>
         public string CurrentStep { get; set; }
+        /// <summary>工位提供的完整循环数；为空表示该工位没有此统计能力。</summary>
+        public long? CompletedCycles { get; set; }
+        /// <summary>工位最近完整循环时长；为空表示尚无可测量的完整循环。</summary>
+        public double? LastCycleSeconds { get; set; }
         /// <summary>仅离线示例使用的结构化等待说明；传统工位没有该数据。</summary>
         public string PreviewReason { get; set; }
     }
