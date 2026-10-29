@@ -215,7 +215,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             set { SetValue(ref _homeDeceleration, value, "HomeDeceleration"); }
         }
 
-        /// <summary>根据逻辑轴名称判断当前物理通道是否已经配置。</summary>
+        /// <summary>判断当前物理通道是否填写了逻辑轴名称；不代表参数校验通过或已经保存。</summary>
         [JsonIgnore]
         public bool IsConfigured
         {

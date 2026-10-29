@@ -75,7 +75,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             string[] resourceKeys =
             {
                 "物理轴号", "设备轴名称", "轴类型", "工程单位", "单位换算",
-                "软限位下限", "软限位上限", "配置状态"
+                "软限位下限", "软限位上限", "轴名称状态"
             };
 
             int headerCount = Math.Min(AxisMappingGrid.Columns.Count, resourceKeys.Length);

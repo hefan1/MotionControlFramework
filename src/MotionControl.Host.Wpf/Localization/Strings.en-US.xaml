@@ -421,8 +421,12 @@
     <sys:String x:Key="厂商正运动">ZMotion</sys:String>
     <sys:String x:Key="总线型">Bus</sys:String>
     <sys:String x:Key="脉冲型">Pulse</sys:String>
-    <sys:String x:Key="已配置轴数量默认">Configured 0 / 0 channels</sys:String>
-    <sys:String x:Key="已配置轴数量格式">Configured {0} / {1} channels</sys:String>
+    <sys:String x:Key="已配置轴数量默认">Named 0 / 0 axis channels</sys:String>
+    <sys:String x:Key="已配置轴数量格式">Named {0} / {1} axis channels</sys:String>
+    <sys:String x:Key="轴名称状态">Name status</sys:String>
+    <sys:String x:Key="轴已命名">Named</sys:String>
+    <sys:String x:Key="轴未命名">Unnamed</sys:String>
+    <sys:String x:Key="轴名称状态说明">Shows whether a logical axis name is entered; it does not mean the parameters are complete or saved. Use Check Mapping, then save the configuration.</sys:String>
     <sys:String x:Key="卡适配器由Host指定">The Host project selects the motion card adapter.</sys:String>
     <sys:String x:Key="物理轴映射">Physical Axis Mapping</sys:String>
     <sys:String x:Key="物理轴映射说明">Physical numbers follow the controller channel layout. Machine axis names are used by flow code and maintenance.</sys:String>

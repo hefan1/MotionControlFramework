@@ -174,7 +174,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
         }
 
-        /// <summary>根据当前物理轴名称刷新已配置轴数量，并更新当前轴的写卡按钮状态。</summary>
+        /// <summary>根据当前物理轴名称刷新已命名通道数量，并更新当前轴的写卡按钮状态。</summary>
         private void Axis_PropertyChanged(object sender, PropertyChangedEventArgs e)
         {
             if (string.Equals(e.PropertyName, "Name", StringComparison.Ordinal))
@@ -244,7 +244,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             UpdateConfiguredAxisCountText();
         }
 
-        /// <summary>刷新顶部显示的已配置通道数量和控制卡通道总数。</summary>
+        /// <summary>刷新顶部显示的已命名通道数量；参数完整性仍由映射检查确定。</summary>
         private void UpdateConfiguredAxisCountText()
         {
             if (_cardConfiguration == null || ConfiguredAxisCountText == null)

@@ -431,8 +431,12 @@
     <sys:String x:Key="厂商正运动">正运动</sys:String>
     <sys:String x:Key="总线型">总线型</sys:String>
     <sys:String x:Key="脉冲型">脉冲型</sys:String>
-    <sys:String x:Key="已配置轴数量默认">已配置 0 / 0 个轴通道</sys:String>
-    <sys:String x:Key="已配置轴数量格式">已配置 {0} / {1} 个轴通道</sys:String>
+    <sys:String x:Key="已配置轴数量默认">已命名 0 / 0 个轴通道</sys:String>
+    <sys:String x:Key="已配置轴数量格式">已命名 {0} / {1} 个轴通道</sys:String>
+    <sys:String x:Key="轴名称状态">名称状态</sys:String>
+    <sys:String x:Key="轴已命名">已命名</sys:String>
+    <sys:String x:Key="轴未命名">未命名</sys:String>
+    <sys:String x:Key="轴名称状态说明">仅表示是否填写逻辑轴名称，不代表参数完整或已保存。请使用“检查映射”检查参数，再保存配置。</sys:String>
     <sys:String x:Key="卡适配器由Host指定">具体运动卡适配器由 Host 项目选择。</sys:String>
     <sys:String x:Key="物理轴映射">物理轴映射</sys:String>
     <sys:String x:Key="物理轴映射说明">物理轴号按控制卡通道排布；设备轴名称供流程代码和维护人员使用。</sys:String>

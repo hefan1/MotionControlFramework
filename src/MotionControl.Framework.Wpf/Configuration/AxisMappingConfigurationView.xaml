@@ -193,7 +193,7 @@
                 <TextBlock x:Name="ConfiguredAxisCountText" VerticalAlignment="Center" Margin="0,0,14,0"
                            FontSize="12" FontWeight="SemiBold" Foreground="#26384D"
                            Text="{DynamicResource 已配置轴数量默认}"
-                           ToolTip="{DynamicResource 卡适配器由Host指定}" />
+                           ToolTip="{DynamicResource 轴名称状态说明}" />
                 <Border x:Name="CardConnectionStatusBadge" VerticalAlignment="Center" Padding="9,6"
                         Margin="0,0,10,0" Background="#EFF4F9" CornerRadius="12"
                         ToolTip="{Binding Text, ElementName=CardConnectionStatusText}">
@@ -307,19 +307,20 @@
                                             ElementStyle="{StaticResource AxisMappingCellText}" />
                         <DataGridTextColumn Header="{DynamicResource 软限位上限}" Binding="{Binding MaximumPosition, TargetNullValue='-', StringFormat={}{0:0.000}}" Width="78"
                                             ElementStyle="{StaticResource AxisMappingCellText}" />
-                        <DataGridTemplateColumn Header="{DynamicResource 配置状态}" Width="100">
+                        <DataGridTemplateColumn Header="{DynamicResource 轴名称状态}" Width="100">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <Border x:Name="ConfigurationBadge" HorizontalAlignment="Center"
+                                            ToolTip="{DynamicResource 轴名称状态说明}"
                                             Padding="7,2" Background="#E5EAF0" CornerRadius="9">
-                                        <TextBlock x:Name="ConfigurationBadgeText" Text="{DynamicResource 未配置}"
+                                        <TextBlock x:Name="ConfigurationBadgeText" Text="{DynamicResource 轴未命名}"
                                                    VerticalAlignment="Center" FontSize="11" Foreground="#68788A" />
                                     </Border>
                                     <DataTemplate.Triggers>
                                         <DataTrigger Binding="{Binding IsConfigured}" Value="True">
-                                            <Setter TargetName="ConfigurationBadge" Property="Background" Value="#E4F6E9" />
-                                            <Setter TargetName="ConfigurationBadgeText" Property="Text" Value="{DynamicResource 已配置}" />
-                                            <Setter TargetName="ConfigurationBadgeText" Property="Foreground" Value="#168447" />
+                                            <Setter TargetName="ConfigurationBadge" Property="Background" Value="#E7F1FD" />
+                                            <Setter TargetName="ConfigurationBadgeText" Property="Text" Value="{DynamicResource 轴已命名}" />
+                                            <Setter TargetName="ConfigurationBadgeText" Property="Foreground" Value="#235A93" />
                                         </DataTrigger>
                                     </DataTemplate.Triggers>
                                 </DataTemplate>
