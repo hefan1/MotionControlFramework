@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 namespace MotionControl.TaskEngine.Simulation
 {
@@ -71,7 +72,9 @@ namespace MotionControl.TaskEngine.Simulation
                     }
                     completed = completed && move.Completed;
                     string name = move.Operation.AxisName;
-                    descriptions.Add(name + " 当前=" + FindAxis(name).Position + "，目标=" + move.Operation.Target
+                    string currentPosition = FindAxis(name).Position.ToString("0.######", CultureInfo.CurrentCulture);
+                    string targetPosition = move.Operation.Target.ToString("0.######", CultureInfo.CurrentCulture);
+                    descriptions.Add(name + " 当前=" + currentPosition + "，目标=" + targetPosition
                         + " " + Catalog.Axes[name].EngineeringUnit + (move.Completed ? "（已到位）" : "（运动中）"));
                 }
                 detail = "轴组定位：" + string.Join("；", descriptions);
