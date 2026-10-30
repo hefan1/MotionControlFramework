@@ -285,7 +285,7 @@
     <sys:String x:Key="IO有效">已触发</sys:String>
     <sys:String x:Key="IO无效">未触发</sys:String>
     <sys:String x:Key="IO监控页面说明">按物理通道逐路显示 DI/DO 状态，名称与 IO 映射页对应；点击 DO 状态灯可切换输出。</sys:String>
-    <sys:String x:Key="轴状态页面说明">按逻辑轴查看反馈位置、速度、伺服、运动、回零、正负限位与报警状态；此页只读。</sys:String>
+    <sys:String x:Key="轴状态页面说明">按逻辑轴查看反馈位置、速度、伺服、运动、回零、原点输入、正负限位与报警状态；此页只读。</sys:String>
     <sys:String x:Key="轴监控自动刷新说明">只读监控 · 页面打开时每 500 毫秒刷新</sys:String>
     <sys:String x:Key="轴监控逻辑轴列">逻辑轴</sys:String>
     <sys:String x:Key="轴监控物理轴列">卡 / 轴号</sys:String>
@@ -295,6 +295,10 @@
     <sys:String x:Key="轴监控伺服状态列">伺服</sys:String>
     <sys:String x:Key="轴监控运动状态列">运动</sys:String>
     <sys:String x:Key="轴监控回零状态列">回零</sys:String>
+    <sys:String x:Key="轴监控原点输入列">原点输入</sys:String>
+    <sys:String x:Key="轴监控原点输入已触发">已触发</sys:String>
+    <sys:String x:Key="轴监控原点输入未触发">未触发</sys:String>
+    <sys:String x:Key="轴监控原点输入未配置或不可读">未配置/不可读</sys:String>
     <sys:String x:Key="轴监控正限位列">正限位</sys:String>
     <sys:String x:Key="轴监控负限位列">负限位</sys:String>
     <sys:String x:Key="轴监控读取状态">读取状态</sys:String>

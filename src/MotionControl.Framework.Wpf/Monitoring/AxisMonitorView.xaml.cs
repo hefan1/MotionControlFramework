@@ -165,6 +165,7 @@ namespace MotionControl.Framework.Wpf.Monitoring
             AddTextColumn("轴监控伺服状态列", "ServoStateText", 70);
             AddTextColumn("轴监控运动状态列", "MotionStateText", 70);
             AddTextColumn("轴监控回零状态列", "HomedStateText", 70);
+            AddTextColumn("轴监控原点输入列", "OriginInputStateText", 120);
             AddTextColumn("轴监控正限位列", "PositiveLimitText", 135);
             AddTextColumn("轴监控负限位列", "NegativeLimitText", 135);
             AddAlarmColumn();
@@ -333,6 +334,9 @@ namespace MotionControl.Framework.Wpf.Monitoring
             row.ServoStateText = status.ServoEnabled ? GetText("轴监控伺服已使能") : GetText("轴监控伺服未使能");
             row.MotionStateText = status.Moving ? GetText("轴监控运动中") : GetText("轴监控已停止");
             row.HomedStateText = status.Homed ? GetText("轴监控已回零") : GetText("轴监控未回零");
+            row.OriginInputStateText = !status.OriginInputActive.HasValue
+                ? GetText("轴监控原点输入未配置或不可读")
+                : GetText(status.OriginInputActive.Value ? "轴监控原点输入已触发" : "轴监控原点输入未触发");
             row.PositiveLimitText = FormatLimitState(status.PositiveLimitActive, status.PositiveSoftLimitActive);
             row.NegativeLimitText = FormatLimitState(status.NegativeLimitActive, status.NegativeSoftLimitActive);
             row.AlarmStateText = status.AlarmActive
@@ -380,6 +384,7 @@ namespace MotionControl.Framework.Wpf.Monitoring
             row.ServoStateText = GetText("轴监控状态未知");
             row.MotionStateText = GetText("轴监控状态未知");
             row.HomedStateText = GetText("轴监控状态未知");
+            row.OriginInputStateText = GetText("轴监控状态未知");
             row.PositiveLimitText = GetText("轴监控状态未知");
             row.NegativeLimitText = GetText("轴监控状态未知");
             row.AlarmStateText = GetText("轴监控状态未知");
@@ -401,6 +406,7 @@ namespace MotionControl.Framework.Wpf.Monitoring
             row.ServoStateText = GetText("轴监控状态未知");
             row.MotionStateText = GetText("轴监控状态未知");
             row.HomedStateText = GetText("轴监控状态未知");
+            row.OriginInputStateText = GetText("轴监控状态未知");
             row.PositiveLimitText = GetText("轴监控状态未知");
             row.NegativeLimitText = GetText("轴监控状态未知");
             row.AlarmStateText = GetText("轴监控状态未知");

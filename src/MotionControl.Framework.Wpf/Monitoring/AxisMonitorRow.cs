@@ -35,6 +35,9 @@ namespace MotionControl.Framework.Wpf.Monitoring
         /// <summary>当前轴是否已完成回零的显示文字。</summary>
         public string HomedStateText { get; set; }
 
+        /// <summary>当前控制器原点输入的状态；未知时提示维护人员检查回零输入配置。</summary>
+        public string OriginInputStateText { get; set; }
+
         /// <summary>正向硬限位和软件限位的状态文字。</summary>
         public string PositiveLimitText { get; set; }
 

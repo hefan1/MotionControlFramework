@@ -277,7 +277,7 @@
     <sys:String x:Key="IO有效">Active</sys:String>
     <sys:String x:Key="IO无效">Inactive</sys:String>
     <sys:String x:Key="IO监控页面说明">View DI/DO states by physical channel. Names follow I/O Mapping; click a DO lamp to toggle its output.</sys:String>
-    <sys:String x:Key="轴状态页面说明">View feedback position, speed, servo, motion, home, positive/negative limits, and alarms by logical axis. Read-only.</sys:String>
+    <sys:String x:Key="轴状态页面说明">View feedback position, speed, servo, motion, homing, origin input, positive/negative limits, and alarms by logical axis. Read-only.</sys:String>
     <sys:String x:Key="轴监控自动刷新说明">Read-only · Refreshes every 500 ms while this page is open</sys:String>
     <sys:String x:Key="轴监控逻辑轴列">Logical Axis</sys:String>
     <sys:String x:Key="轴监控物理轴列">Card / Axis</sys:String>
@@ -287,6 +287,10 @@
     <sys:String x:Key="轴监控伺服状态列">Servo</sys:String>
     <sys:String x:Key="轴监控运动状态列">Motion</sys:String>
     <sys:String x:Key="轴监控回零状态列">Homed</sys:String>
+    <sys:String x:Key="轴监控原点输入列">Origin Input</sys:String>
+    <sys:String x:Key="轴监控原点输入已触发">Active</sys:String>
+    <sys:String x:Key="轴监控原点输入未触发">Inactive</sys:String>
+    <sys:String x:Key="轴监控原点输入未配置或不可读">Missing / Unavailable</sys:String>
     <sys:String x:Key="轴监控正限位列">Positive Limit</sys:String>
     <sys:String x:Key="轴监控负限位列">Negative Limit</sys:String>
     <sys:String x:Key="轴监控读取状态">Read Status</sys:String>
