@@ -17,6 +17,16 @@ namespace MotionControl.Host.Wpf.Operation
         public event EventHandler<OperatorNavigationEventArgs> NavigationRequested;
         /// <summary>当前生产运行入口，可为空。</summary>
         private MachineRuntime _runtime;
+        /// <summary>当前控制卡连接状态。</summary>
+        private bool _isCardConnected;
+        /// <summary>轴映射页提供的连接结果或失败原因。</summary>
+        private string _connectionStatusMessage;
+        /// <summary>当前轴数量范围内已填写设备轴名称的通道数。</summary>
+        private int _configuredAxisCount;
+        /// <summary>当前控制卡配置的物理轴通道总数。</summary>
+        private int _configuredAxisTotal;
+        /// <summary>Host 是否已提供轴映射统计。</summary>
+        private bool _axisMappingStatusKnown;
         /// <summary>没有报警记录时使用的清晰状态配色。</summary>
         private static readonly Brush ClearAlertBackground = new SolidColorBrush(Color.FromRgb(240, 247, 244));
         /// <summary>没有报警记录时使用的边框配色。</summary>
@@ -45,6 +55,21 @@ namespace MotionControl.Host.Wpf.Operation
         }
         /// <summary>连接或断开时替换当前实际来源，同时清除任何预览数据。</summary>
         public void SetRuntime(MachineRuntime runtime) { _runtime = runtime; _preview = null; RefreshDisplay(); }
+        /// <summary>同步控制卡连接诊断，供操作员在首页直接查看并跳转设置。</summary>
+        public void SetConnectionStatus(bool isConnected, string statusMessage)
+        {
+            _isCardConnected = isConnected;
+            _connectionStatusMessage = statusMessage;
+            RefreshDisplay();
+        }
+        /// <summary>更新轴映射概况；没有设备轴名称时首页优先提示配置步骤。</summary>
+        public void SetAxisMappingStatus(int configuredAxisCount, int configuredAxisTotal)
+        {
+            _configuredAxisTotal = Math.Max(0, configuredAxisTotal);
+            _configuredAxisCount = Math.Max(0, Math.Min(configuredAxisCount, _configuredAxisTotal));
+            _axisMappingStatusKnown = _configuredAxisTotal > 0;
+            RefreshDisplay();
+        }
         /// <summary>独立预览必须明确标记，禁止把普通快照伪装成生产来源。</summary>
         public void SetPreview(OperationSnapshot snapshot)
         {
@@ -70,10 +95,21 @@ namespace MotionControl.Host.Wpf.Operation
             var background = OperationUi.StateBrush(snapshot.State).Clone(); background.Opacity = 0.06; StatusBanner.Background = background;
             SourceText.Text = T(snapshot.IsPreview ? "离线页面示例" : "来源：传统C#工位Runtime");
             SampleText.Text = T("软件状态采样") + " · " + snapshot.SampledAt.ToString("yyyy-MM-dd HH:mm:ss");
-            NextActionText.Text = T(NextAction(snapshot));
+            bool noNamedAxes = _axisMappingStatusKnown && _configuredAxisCount == 0;
+            NextActionText.Text = T(_isCardConnected && noNamedAxes
+                ? "先配置设备轴映射再进行手动调试"
+                : NextAction(snapshot));
+            ConnectionStatusPanel.Visibility = _preview != null || (_isCardConnected && !noNamedAxes)
+                ? Visibility.Collapsed : Visibility.Visible;
+            ConnectionStateText.Text = T(_isCardConnected ? "设备轴映射未完成" : "控制卡未连接");
+            ConnectionDetailText.Text = _isCardConnected && noNamedAxes
+                ? T("尚未命名任何设备轴说明")
+                : string.IsNullOrWhiteSpace(_connectionStatusMessage)
+                    ? T("打开轴映射查看连接原因")
+                    : _connectionStatusMessage;
             CompletedText.Text = snapshot.Stations.Count > 1 ? T("按工位查看")
                 : snapshot.CompletedCount.HasValue ? snapshot.CompletedCount.Value.ToString(CultureInfo.InvariantCulture) + " " + T("次")
-                : T("未接入");
+                : T("未接入循环统计");
             CycleText.Text = snapshot.Stations.Count > 1 ? T("按工位查看")
                 : snapshot.CycleSeconds.HasValue ? snapshot.CycleSeconds.Value.ToString("0.0", CultureInfo.InvariantCulture) + " " + T("秒")
                 : T("未完成");
@@ -156,6 +192,9 @@ namespace MotionControl.Host.Wpf.Operation
         }
         /// <summary>进入当前报警，不执行复位。</summary>
         private void Alarms_Click(object sender, RoutedEventArgs e) { NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("当前报警")); }
+        /// <summary>跳转到轴映射页查看控制卡连接参数和失败原因，不执行连接或运动。</summary>
+        private void ConnectionSettings_Click(object sender, RoutedEventArgs e)
+        { NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("轴映射配置")); }
         /// <summary>中文原文对应当前语言资源。</summary>
         internal string T(string text) { return OperationUi.T(this, text); }
     }

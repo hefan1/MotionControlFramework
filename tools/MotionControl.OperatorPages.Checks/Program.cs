@@ -53,7 +53,7 @@ namespace MotionControl.OperatorPages.Checks
         {
             var overview = new EquipmentOverviewView(); var alarms = new CurrentAlarmsView();
             Assert(((TextBlock)overview.FindName("MachineStateText")).Text.Contains("未读取"), "没有来源却显示已就绪。");
-            Assert(((TextBlock)overview.FindName("CompletedText")).Text == "未接入计数", "没有来源却显示产量零。");
+            Assert(((TextBlock)overview.FindName("CompletedText")).Text == "未接入循环统计", "没有来源却显示产量零或含糊的连接状态。");
             Assert(((TextBlock)alarms.FindName("EmptyText")).Text == "未读取报警状态", "无来源被当作零报警。");
             var card = new GuardCard(); var service = new MachineAlarmService();
             var runtime = CreateRuntime(card, service);
