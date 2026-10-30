@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using MotionControl.Framework.Contracts.Alarms;
@@ -105,13 +106,26 @@ namespace MotionControl.OperatorPages.Checks
             ((Button)view.FindName("IoButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert(requested != null && requested.Page == "IO监控" && service.HasLatchedStopAlarm, "只读导航改变了报警状态。");
         }
-        /// <summary>构造实际 Host 外壳并验证原内容区导航，整个过程不运行 App 启动逻辑。</summary>
+        /// <summary>验证 Host 导航不重复 IO 监控入口，并保留原内容区导航。</summary>
         private static void HostNavigation()
         {
             var card = new GuardCard(); var runtime = CreateRuntime(card, new MachineAlarmService());
             var window = new MainWindow();
             try
             {
+                var primaryNavigation = (StackPanel)window.FindName("PrimaryNavigation");
+                var sidebar = (StackPanel)window.FindName("SidebarNavigation");
+                Assert(!sidebar.Children.OfType<ToggleButton>().Any(button => Equals(button.Tag, "IO状态")),
+                    "首页重复列出了独立的 IO 状态页。");
+                var monitorButton = primaryNavigation.Children.OfType<ToggleButton>()
+                    .Single(button => Equals(button.Tag, "Monitor"));
+                monitorButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                Assert(sidebar.Children.OfType<ToggleButton>().Count(button => Equals(button.Tag, "IO监控")) == 1,
+                    "监控区没有唯一的 IO 监控入口。");
+                var homeButton = primaryNavigation.Children.OfType<ToggleButton>()
+                    .Single(button => Equals(button.Tag, "Home"));
+                homeButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+
                 window.SetFlowStatusPage(new FlowStatusView(runtime)); window.SetMachineRuntime(runtime);
                 var content = (ContentControl)window.FindName("ManualDebugContent");
                 var original = content.Content as EquipmentOverviewView;
