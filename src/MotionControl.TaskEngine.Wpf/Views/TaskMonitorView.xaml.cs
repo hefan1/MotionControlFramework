@@ -31,6 +31,10 @@ namespace MotionControl.TaskEngine.Wpf.Views
         private bool _following;
         /// <summary>最近一次步骤选择是否由现场人员输入触发。</summary>
         private bool _operatorSelectionPending;
+        /// <summary>故障定位后，首次恢复运行时自动回到当前工步。</summary>
+        private bool _followAfterFaultRecovery;
+        /// <summary>标记代码正在更新跟随复选框，避免覆盖操作员的恢复选择。</summary>
+        private bool _updatingFollowBox;
         /// <summary>当前显示详情的稳定步骤行。</summary>
         private TaskStepRow _selected;
         /// <summary>防止刷新失败后继续把旧数据称为当前状态。</summary>
@@ -76,8 +80,13 @@ namespace MotionControl.TaskEngine.Wpf.Views
                 SourceText.Text = T("内存仿真来源") + "：" + _session.Source;
                 RefreshStatus.Text = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
                 _refreshFailed = false;
-                RefreshSteps();
+                if (_followAfterFaultRecovery && _snapshot.State == TaskMachineState.Running)
+                {
+                    _followAfterFaultRecovery = false;
+                    SetFollowExecution(true);
+                }
                 RefreshCurrentCauseButton();
+                RefreshSteps();
             }
             catch (Exception error)
             {
@@ -97,7 +106,7 @@ namespace MotionControl.TaskEngine.Wpf.Views
             _steps = TaskStepTree.Build(station.Snapshot.TaskId, _session.Library);
             _selected = null;
             StepsTree.ItemsSource = _steps;
-            FollowBox.IsChecked = true;
+            SetFollowExecution(true);
             StepsTitle.Text = station.Name + " · " + T("运行步骤");
             RefreshSteps();
             if (_selected == null && _steps.Count > 0) SelectFollowing(_steps[0]);
@@ -176,6 +185,21 @@ namespace MotionControl.TaskEngine.Wpf.Views
             ShowDetails(_selected);
         }
 
+        /// <summary>操作员手动切换跟随时，保留其选择并取消待恢复的自动跟随。</summary>
+        private void FollowBox_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_updatingFollowBox) return;
+            _followAfterFaultRecovery = false;
+        }
+
+        /// <summary>更新跟随复选框而不误认为这是操作员的手动选择。</summary>
+        private void SetFollowExecution(bool enabled)
+        {
+            _updatingFollowBox = true;
+            try { FollowBox.IsChecked = enabled; }
+            finally { _updatingFollowBox = false; }
+        }
+
         /// <summary>有停机故障时定位故障步骤；无故障时定位当前等待步骤。</summary>
         private void LocateCurrentCause_Click(object sender, RoutedEventArgs e)
         {
@@ -185,13 +209,15 @@ namespace MotionControl.TaskEngine.Wpf.Views
             {
                 var faultStation = _stations.FirstOrDefault(item => item.Id == fault.Source);
                 if (faultStation != null) StationsGrid.SelectedItem = faultStation;
-                FollowBox.IsChecked = false;
+                SetFollowExecution(false);
                 var faultStep = fault.Error == null ? null : TaskStepTree.Flatten(_steps).FirstOrDefault(item => item.Snapshot?.ExecutionId == fault.Error.ExecutionId);
                 if (faultStep != null) SelectFollowing(faultStep);
+                _followAfterFaultRecovery = faultStation != null;
                 DetailNotice.Text = fault.Message + "\n" + T("故障恢复提示");
                 return;
             }
 
+            _followAfterFaultRecovery = false;
             var waitingStation = FindWaitingStation();
             if (waitingStation == null)
             {
@@ -200,7 +226,7 @@ namespace MotionControl.TaskEngine.Wpf.Views
             }
 
             StationsGrid.SelectedItem = waitingStation;
-            FollowBox.IsChecked = false;
+            SetFollowExecution(false);
             var waitingNode = FindWaitingLeaf(waitingStation.Snapshot.Run);
             var waitingStep = waitingNode == null ? null : TaskStepTree.Flatten(_steps)
                 .FirstOrDefault(item => item.Snapshot?.ExecutionId == waitingNode.ExecutionId);

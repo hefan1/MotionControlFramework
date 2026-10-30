@@ -49,7 +49,7 @@
      <DockPanel Margin="0,0,0,8">
       <Button x:Name="LocateCurrentCauseButton" DockPanel.Dock="Right" Content="{DynamicResource 任务监控.定位当前原因}"
               ToolTip="{DynamicResource 任务监控.定位当前原因说明}" Click="LocateCurrentCause_Click"/>
-      <CheckBox x:Name="FollowBox" DockPanel.Dock="Right" Content="{DynamicResource 任务监控.跟随执行}" IsChecked="True" VerticalAlignment="Center" Margin="10,0"/>
+      <CheckBox x:Name="FollowBox" DockPanel.Dock="Right" Content="{DynamicResource 任务监控.跟随执行}" IsChecked="True" Checked="FollowBox_Changed" Unchecked="FollowBox_Changed" VerticalAlignment="Center" Margin="10,0"/>
       <TextBlock x:Name="StepsTitle" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
      </DockPanel>
      <Border Grid.Row="1" Background="#F7F9FC" BorderBrush="#D9E0E8" BorderThickness="1" Padding="20,6,4,6">
