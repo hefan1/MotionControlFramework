@@ -92,7 +92,7 @@ namespace MotionControl.Host.Wpf.Operation
         }
         /// <summary>只有人员实际选择或刷新完成后才改变详情。</summary>
         private void AlarmSelected(object sender, SelectionChangedEventArgs e) { if (!_refreshing) ShowDetails(); }
-        /// <summary>处理说明优先显示报警库指导，再附上流程提供的实际轴与信号上下文。</summary>
+        /// <summary>显示报警处理指导；未选中报警时折叠详情区，让列表空态占满可用区域。</summary>
         private void ShowDetails()
         {
             var row = AlarmGrid.SelectedItem as AlarmDisplayRow;
@@ -100,8 +100,16 @@ namespace MotionControl.Host.Wpf.Operation
             IoButton.IsEnabled = AxisButton.IsEnabled = row != null;
             if (row == null)
             {
-                WhereText.Text = CauseText.Text = CheckText.Text = AfterText.Text = T("请选择一条报警"); DiagnosticText.Text = ""; return;
+                DetailsPanel.Visibility = Visibility.Collapsed;
+                DetailsRow.MinHeight = 0;
+                DetailsRow.Height = new GridLength(0);
+                WhereText.Text = CauseText.Text = CheckText.Text = AfterText.Text = string.Empty;
+                DiagnosticText.Clear();
+                return;
             }
+            DetailsPanel.Visibility = Visibility.Visible;
+            DetailsRow.MinHeight = 160;
+            DetailsRow.Height = new GridLength(1.6, GridUnitType.Star);
             _selectedKey = row.Key;
             var alarm = row.Alarm;
             CauseTitle.Text = T(alarm.RequiresReset ? "2 当前为什么不能运行" : "2 当前提醒条件");
@@ -134,7 +142,13 @@ namespace MotionControl.Host.Wpf.Operation
         private void Axis_Click(object sender, RoutedEventArgs e) { Navigate("轴手动"); }
         /// <summary>统一发送明确页面名和报警工位上下文。</summary>
         private void Navigate(string page)
-        { if (AlarmGrid.SelectedItem is AlarmDisplayRow row) NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs(page, row.Alarm.SourceName)); }
+        {
+            if (!(AlarmGrid.SelectedItem is AlarmDisplayRow row)) return;
+            StationOverviewData station = _snapshot.Stations.FirstOrDefault(item =>
+                string.Equals(item.Name, row.Alarm.SourceName, StringComparison.OrdinalIgnoreCase));
+            NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs(
+                page, row.Alarm.SourceName, page == "IO监控" ? station?.WaitingInputName : null));
+        }
         /// <summary>当前语言的中文资源键。</summary>
         private string T(string text) { return OperationUi.T(this, text); }
     }
