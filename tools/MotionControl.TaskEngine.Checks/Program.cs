@@ -32,6 +32,7 @@ namespace MotionControl.TaskEngine.Checks
             Run("说明文档样例定义", DefinitionChecks.SampleFile, ref failures);
             Run("八种变量常量类型", DefinitionChecks.ScalarTypes, ref failures);
             Run("全部节点 JSON 往返和引用", DefinitionChecks.AllNodesRoundTrip, ref failures);
+            Run("旧版单报警字段迁移到多报警列表", DefinitionChecks.LegacyAlarmMigration, ref failures);
             Run("示教点归属及相对距离", DefinitionChecks.TeachPoints, ref failures);
             Run("运动参数、范围和时限", DefinitionChecks.MotionParameters, ref failures);
             Run("变量类型及 UInt32 边界", DefinitionChecks.Variables, ref failures);
@@ -51,7 +52,7 @@ namespace MotionControl.TaskEngine.Checks
             Run("可选文件缺失与损坏区分", CatalogChecks.MissingAndBrokenFiles, ref failures);
             Run("目录重复和范围检查", CatalogChecks.InvalidCatalog, ref failures);
             Run("无 WPF、Host 或厂商依赖", JsonChecks.AssemblyBoundaries, ref failures);
-            Console.WriteLine("阶段 1 离线检查完成：共 22 组，失败 " + failures + " 组。未连接设备。");
+            Console.WriteLine("阶段 1 离线检查完成：共 23 组，失败 " + failures + " 组。未连接设备。");
             failures += ExecutionChecks.RunAll();
             failures += MachineChecks.RunAll();
             Run("执行后仍无 WPF、Host 或厂商依赖", JsonChecks.AssemblyBoundaries, ref failures);

@@ -12,9 +12,12 @@ namespace MotionControl.Equipment.Demo
     /// <summary>按逻辑轴、逻辑 DI 和逻辑 DO 执行一次运动、检测及输出，再等待传感器复位。</summary>
     public sealed class DemoStationFlow : IStationFlow, IRecoverableStationFlow, IStationCycleStatistics
     {
-        /// <summary>传感器等待超时使用的停机报警，同次超时只保留一条待复位记录。</summary>
-        private static readonly MachineAlarmDefinition SensorTimeoutAlarm = new MachineAlarmDefinition(
-            "DEMO_SENSOR_TIMEOUT", "等待传感器超时", MachineAlarmKind.StopMachine);
+        /// <summary>示例工位传感器等待超时报警在设备报警库中的固定引用代码。</summary>
+        public const string SensorTimeoutAlarmCode = "DEMO_SENSOR_TIMEOUT";
+
+        /// <summary>未接入设备报警库的直接构造仍使用的默认停机报警。</summary>
+        private static readonly MachineAlarmDefinition DefaultSensorTimeoutAlarm = new MachineAlarmDefinition(
+            SensorTimeoutAlarmCode, "等待传感器超时", MachineAlarmKind.StopMachine);
 
         /// <summary>执行定位的逻辑轴，不依赖物理轴号和厂商 API。</summary>
         private readonly IAxis _axis;
@@ -24,6 +27,9 @@ namespace MotionControl.Equipment.Demo
 
         /// <summary>向 Runtime 报告可复位的工位超时报警。</summary>
         private readonly IMachineAlarmService _alarms;
+
+        /// <summary>本设备配置的传感器超时报警定义。</summary>
+        private readonly MachineAlarmDefinition _sensorTimeoutAlarm;
 
         /// <summary>本工位在当前设备连接周期内使用的参数。</summary>
         private readonly DemoStationSettings _settings;
@@ -52,11 +58,27 @@ namespace MotionControl.Equipment.Demo
             ILogicalIo io,
             IMachineAlarmService alarms,
             DemoStationSettings settings)
+            : this(axis, io, alarms, settings, DefaultSensorTimeoutAlarm)
+        {
+        }
+
+        /// <summary>使用设备报警库定义创建示例工位流程。</summary>
+        public DemoStationFlow(
+            IAxis axis,
+            ILogicalIo io,
+            IMachineAlarmService alarms,
+            DemoStationSettings settings,
+            MachineAlarmDefinition sensorTimeoutAlarm)
         {
             _axis = axis ?? throw new ArgumentNullException(nameof(axis));
             _io = io ?? throw new ArgumentNullException(nameof(io));
             _alarms = alarms ?? throw new ArgumentNullException(nameof(alarms));
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+            _sensorTimeoutAlarm = sensorTimeoutAlarm ?? throw new ArgumentNullException(nameof(sensorTimeoutAlarm));
+            if (!string.Equals(_sensorTimeoutAlarm.Code, SensorTimeoutAlarmCode, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("示例工位传感器超时报警代码必须是 " + SensorTimeoutAlarmCode + "。");
+            }
             _settings.Validate();
             if (!string.Equals(_axis.Name, _settings.AxisName, StringComparison.OrdinalIgnoreCase))
             {
@@ -224,12 +246,12 @@ namespace MotionControl.Equipment.Demo
                 + " 毫秒；请检查传感器及 IO 映射，复位后可从本步骤重试。";
             try
             {
-                _alarms.ReportCondition(SensorTimeoutAlarm, StationName, true, detail);
+                _alarms.ReportCondition(_sensorTimeoutAlarm, StationName, true, detail);
             }
             finally
             {
                 // 超时是一次性事件；记录继续锁存，条件结束后允许操作员复位重试。
-                _alarms.ReportCondition(SensorTimeoutAlarm, StationName, false, detail);
+                _alarms.ReportCondition(_sensorTimeoutAlarm, StationName, false, detail);
             }
         }
 

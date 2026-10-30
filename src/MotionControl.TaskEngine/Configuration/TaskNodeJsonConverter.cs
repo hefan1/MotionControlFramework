@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using MotionControl.TaskEngine.Definitions;
@@ -68,9 +69,65 @@ namespace MotionControl.TaskEngine.Configuration
                 case "ResourceScope": node = new ResourceScopeNode(); break;
                 default: throw new JsonSerializationException("节点 " + data["id"] + " 使用了未支持的 kind：" + kind);
             }
+            MigrateAlarmCodes(data, node);
             using (JsonReader objectReader = data.CreateReader())
                 serializer.Populate(objectReader, node);
             return node;
+        }
+
+        /// <summary>把旧版单报警字段迁移到多报警数组，读取旧任务时不丢失报警引用。</summary>
+        private static void MigrateAlarmCodes(JObject data, TaskNode node)
+        {
+            string legacyField = null;
+            string multipleField = null;
+            if (node is WaitInputNode)
+            {
+                legacyField = "timeoutAlarmCode";
+                multipleField = "timeoutAlarmCodes";
+            }
+            else if (node is WaitConditionNode)
+            {
+                legacyField = "timeoutAlarmCode";
+                multipleField = "timeoutAlarmCodes";
+            }
+            else if (node is ConditionBranchNode)
+            {
+                legacyField = "whenFalseAlarmCode";
+                multipleField = "whenFalseAlarmCodes";
+            }
+
+            if (legacyField == null || data[legacyField] == null)
+            {
+                return;
+            }
+
+            JToken legacyValue = data[legacyField];
+            if (legacyValue.Type != JTokenType.String)
+            {
+                throw new JsonSerializationException("节点 " + node.Id + " 的旧报警代码字段类型错误：" + legacyField + "。");
+            }
+
+            string legacyCode = (string)legacyValue;
+            JArray codes = data[multipleField] as JArray;
+            if (codes == null)
+            {
+                if (data[multipleField] != null)
+                {
+                    throw new JsonSerializationException("节点 " + node.Id + " 的报警代码列表必须是数组：" + multipleField + "。");
+                }
+
+                codes = new JArray();
+                data[multipleField] = codes;
+            }
+
+            bool alreadyIncluded = codes.Values<string>().Any(
+                code => string.Equals(code, legacyCode, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(legacyCode) && !alreadyIncluded)
+            {
+                codes.Add(legacyCode);
+            }
+
+            data.Remove(legacyField);
         }
 
         /// <summary>本转换器不参与写入；意外直接调用时明确报错。</summary>

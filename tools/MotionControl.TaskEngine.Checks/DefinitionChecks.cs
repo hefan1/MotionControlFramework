@@ -66,14 +66,21 @@ namespace MotionControl.TaskEngine.Checks
                 new ConditionBranchNode {
                     Id = "if", Name = "判断就绪", Condition = TaskFixtures.Condition(),
                     WhenTrue = new SequenceNode { Id = "yes", Name = "就绪处理" },
-                    WhenFalse = new SequenceNode { Id = "no", Name = "未就绪处理" }
+                    WhenFalse = new SequenceNode { Id = "no", Name = "未就绪处理" },
+                    WhenFalseAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT", "OPERATOR_NOTICE" }
                 },
                 coordinated,
                 new AxisCommandNode { Id = "home", Name = "回零定义", AxisName = "X", Command = TaskAxisCommand.Home },
                 new AxisCommandNode { Id = "stop", Name = "停止定义", AxisName = "Y", Command = TaskAxisCommand.Stop, StopMode = AxisStopMode.Controlled },
                 new SetOutputNode { Id = "do", Name = "输出定义", OutputName = "Vacuum", Value = true },
-                new WaitInputNode { Id = "di", Name = "等待来料", InputName = "PartReady", Expected = true },
-                new WaitConditionNode { Id = "wait", Name = "等待条件", Condition = TaskFixtures.Condition() },
+                new WaitInputNode {
+                    Id = "di", Name = "等待来料", InputName = "PartReady", Expected = true,
+                    TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT", "OPERATOR_NOTICE" }
+                },
+                new WaitConditionNode {
+                    Id = "wait", Name = "等待条件", Condition = TaskFixtures.Condition(),
+                    TimeoutAlarmCodes = new List<string> { "OPERATOR_NOTICE" }
+                },
                 new SetVariableNode {
                     Id = "assign", Name = "记录结果", VariableName = "Vision.Result",
                     Value = new TaskValueBinding { Source = TaskValueSource.Constant, DataType = DeviceVariableType.String, Constant = "OK" }
@@ -91,6 +98,36 @@ namespace MotionControl.TaskEngine.Checks
             var issues = new TaskDefinitionValidator().Validate(restored, TaskFixtures.Catalog(), new[] { child });
             CheckAssert.NoErrors(issues);
             CheckAssert.True(issues.Any(issue => issue.Message.Contains("插补")), "未提示协调运动能力待核实。");
+        }
+
+        /// <summary>将旧版单报警字段加载为单项列表，覆盖输入等待、条件等待和条件分支。</summary>
+        internal static void LegacyAlarmMigration()
+        {
+            TaskDefinition original = TaskFixtures.Task(
+                new WaitInputNode { Id = "di", Name = "等待来料", InputName = "PartReady", Expected = true },
+                new WaitConditionNode { Id = "wait", Name = "等待条件", Condition = TaskFixtures.Condition() },
+                new ConditionBranchNode {
+                    Id = "if", Name = "判断就绪", Condition = TaskFixtures.Condition(),
+                    WhenTrue = new SequenceNode { Id = "yes", Name = "就绪处理" },
+                    WhenFalse = new SequenceNode { Id = "no", Name = "未就绪处理" }
+                });
+            JObject oldJson = JObject.Parse(TaskDefinitionJson.Serialize(original));
+            JArray nodes = (JArray)oldJson["root"]["children"];
+            nodes[0]["timeoutAlarmCode"] = "DEMO_SENSOR_TIMEOUT";
+            ((JObject)nodes[0]).Remove("timeoutAlarmCodes");
+            nodes[1]["timeoutAlarmCode"] = "OPERATOR_NOTICE";
+            ((JObject)nodes[1]).Remove("timeoutAlarmCodes");
+            nodes[2]["whenFalseAlarmCode"] = "DEMO_SENSOR_TIMEOUT";
+            ((JObject)nodes[2]).Remove("whenFalseAlarmCodes");
+
+            TaskDefinition migrated = TaskDefinitionJson.Deserialize(oldJson.ToString());
+            var migratedNodes = ((SequenceNode)migrated.Root).Children;
+            CheckAssert.True(((WaitInputNode)migratedNodes[0]).TimeoutAlarmCodes.SequenceEqual(new[] { "DEMO_SENSOR_TIMEOUT" }),
+                "旧 WaitInput 单报警没有迁移到列表。");
+            CheckAssert.True(((WaitConditionNode)migratedNodes[1]).TimeoutAlarmCodes.SequenceEqual(new[] { "OPERATOR_NOTICE" }),
+                "旧 WaitCondition 单报警没有迁移到列表。");
+            CheckAssert.True(((ConditionBranchNode)migratedNodes[2]).WhenFalseAlarmCodes.SequenceEqual(new[] { "DEMO_SENSOR_TIMEOUT" }),
+                "旧条件分支单报警没有迁移到列表。");
         }
 
         /// <summary>同卡独立轴与示教引用合法，跨轴点位、未示教和相对距离误用必须拒绝。</summary>

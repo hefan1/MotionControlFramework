@@ -92,7 +92,7 @@ namespace MotionControl.Host.Wpf.Operation
         }
         /// <summary>只有人员实际选择或刷新完成后才改变详情。</summary>
         private void AlarmSelected(object sender, SelectionChangedEventArgs e) { if (!_refreshing) ShowDetails(); }
-        /// <summary>处理说明只依据明确报警类型和条件状态，不解析消息猜轴或传感器。</summary>
+        /// <summary>处理说明优先显示报警库指导，再附上流程提供的实际轴与信号上下文。</summary>
         private void ShowDetails()
         {
             var row = AlarmGrid.SelectedItem as AlarmDisplayRow;
@@ -108,9 +108,20 @@ namespace MotionControl.Host.Wpf.Operation
             var flow = _snapshot.Stations.FirstOrDefault(station => string.Equals(station.Name, alarm.SourceName, StringComparison.OrdinalIgnoreCase));
             WhereText.Text = alarm.SourceName + (flow == null ? "" : "\n" + T("当前动作") + "：" + flow.CurrentStep);
             CauseText.Text = alarm.Definition.Message + "\n" + row.ConditionText;
-            CheckText.Text = string.IsNullOrWhiteSpace(alarm.Detail) ? T("按报警内容检查相关机构和信号，具体处理要求由设备项目提供") : alarm.Detail;
-            AfterText.Text = T(alarm.RequiresReset ? alarm.ConditionActive ? "条件仍有效，先处理原因，不能通过确认或刷新清除" : "条件已恢复，使用顶部复位后再启动，回零按设备规则检查"
-                : "非停机提醒随条件恢复自动消失，不用人工清除");
+            string catalogGuidance = alarm.Definition.CheckGuidance;
+            string runtimeDetail = alarm.Detail;
+            if (!string.IsNullOrWhiteSpace(catalogGuidance) && !string.IsNullOrWhiteSpace(runtimeDetail))
+                CheckText.Text = catalogGuidance + "\n" + runtimeDetail;
+            else
+                CheckText.Text = string.IsNullOrWhiteSpace(catalogGuidance)
+                    ? string.IsNullOrWhiteSpace(runtimeDetail) ? T("按报警内容检查相关机构和信号，具体处理要求由设备项目提供") : runtimeDetail
+                    : catalogGuidance;
+
+            if (!string.IsNullOrWhiteSpace(alarm.Definition.RecoveryGuidance))
+                AfterText.Text = alarm.Definition.RecoveryGuidance;
+            else
+                AfterText.Text = T(alarm.RequiresReset ? alarm.ConditionActive ? "条件仍有效，先处理原因，不能通过确认或刷新清除" : "条件已恢复，使用顶部复位后再启动，回零按设备规则检查"
+                    : "非停机提醒随条件恢复自动消失，不用人工清除");
             DiagnosticText.Text = T("报警代码") + "：" + alarm.Definition.Code + "\n" + T("首次发生") + "：" + row.OccurredAt
                 + "\n" + T("最近变化") + "：" + alarm.LastChangedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
                 + "\n\n" + T("最近整机异常，不一定属于此报警") + "\n" + (_snapshot.LastError ?? T("未提供"));

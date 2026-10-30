@@ -181,18 +181,20 @@ namespace MotionControl.Framework.Runtime.Alarms
             }
         }
 
-        /// <summary>确认同一报警代码在运行期间没有改变报警类型或说明。</summary>
+        /// <summary>确认同一报警代码在运行期间没有改变类别、说明或操作指导。</summary>
         private static void EnsureSameDefinition(
             MachineAlarmDefinition existingDefinition,
             MachineAlarmDefinition reportedDefinition,
             string sourceName)
         {
             if (existingDefinition.Kind != reportedDefinition.Kind
-                || !string.Equals(existingDefinition.Message, reportedDefinition.Message, StringComparison.Ordinal))
+                || !string.Equals(existingDefinition.Message, reportedDefinition.Message, StringComparison.Ordinal)
+                || !string.Equals(existingDefinition.CheckGuidance, reportedDefinition.CheckGuidance, StringComparison.Ordinal)
+                || !string.Equals(existingDefinition.RecoveryGuidance, reportedDefinition.RecoveryGuidance, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
                     "报警 '" + sourceName + "/" + reportedDefinition.Code
-                    + "' 在运行期间使用了不一致的报警类型或说明。");
+                    + "' 在运行期间使用了不一致的类别、说明或操作指导。");
             }
         }
 

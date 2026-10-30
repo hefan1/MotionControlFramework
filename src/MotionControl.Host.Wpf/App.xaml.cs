@@ -56,6 +56,12 @@ namespace MotionControl.Host.Wpf
         /// <summary>当前 Host 使用的安全联锁页面，独立读写急停 DI 设置。</summary>
         private SafetyInterlockConfigurationView _safetyInterlockPage;
 
+        /// <summary>当前设备报警目录的配置读写入口。</summary>
+        private MachineAlarmCatalogStore _alarmCatalogStore;
+
+        /// <summary>当前设备可维护报警目录的 Host 页面。</summary>
+        private Configuration.AlarmCatalogConfigurationView _alarmCatalogPage;
+
         /// <summary>当前设备配置读写服务，也为示教位置提供持久化。</summary>
         private MachineConfigurationStore _configurationStore;
 
@@ -163,6 +169,19 @@ namespace MotionControl.Host.Wpf
 
             string configurationRoot = simulationRoot ?? productionRoot;
             _configurationStore = new MachineConfigurationStore(configurationRoot);
+            _alarmCatalogStore = new MachineAlarmCatalogStore(_configurationStore);
+            try
+            {
+                _alarmCatalogStore.LoadOrCreate(MachineId, CreateDefaultAlarmCatalog());
+            }
+            catch (Exception error)
+            {
+                MessageBox.Show(
+                    "设备报警库无法读取，自动工位报警配置不会加载；可在设置的报警库页面修复。\n" + error.Message,
+                    "设备报警库",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
             _deviceVariableStore = CreateDeviceVariableStore();
             var recoveryStore = new MachineRecoveryStore(_configurationStore, MachineId);
             _machineRecoveryCoordinator = new MachineRecoveryCoordinator(
@@ -181,6 +200,7 @@ namespace MotionControl.Host.Wpf
             _ioMappingPage.IoMappingApplied += IoMappingPage_IoMappingApplied;
             _safetyInterlockPage = new SafetyInterlockConfigurationView(_configurationStore, MachineId);
             _safetyInterlockPage.ConfigurationSaved += SafetyInterlockPage_ConfigurationSaved;
+            _alarmCatalogPage = new Configuration.AlarmCatalogConfigurationView(_alarmCatalogStore, MachineId);
             _deviceVariablePage = new DeviceVariableView(
                 _deviceVariableStore,
                 _configurationStore,
@@ -193,6 +213,7 @@ namespace MotionControl.Host.Wpf
             _mainWindow.SetAxisMappingConfigurationPage(_axisMappingPage);
             _mainWindow.SetIoMappingConfigurationPage(_ioMappingPage);
             _mainWindow.SetSafetyInterlockConfigurationPage(_safetyInterlockPage);
+            _mainWindow.SetAlarmCatalogConfigurationPage(_alarmCatalogPage);
             _mainWindow.SetDeviceVariablePage(_deviceVariablePage);
             _taskMonitorLauncher = new Tasks.TaskMonitorLauncher(_configurationStore, MachineId, _mainWindow);
             _mainWindow.SetTaskMonitorPage(_taskMonitorLauncher);
@@ -524,6 +545,7 @@ namespace MotionControl.Host.Wpf
             if (!_taskEditsCloseConfirmed)
             {
                 if (_taskConfigurationPage != null && !_taskConfigurationPage.ConfirmClose()) { e.Cancel = true; return; }
+                if (_alarmCatalogPage != null && !_alarmCatalogPage.ConfirmClose()) { e.Cancel = true; return; }
                 _taskEditsCloseConfirmed = true;
             }
             try
@@ -625,10 +647,32 @@ namespace MotionControl.Host.Wpf
                 throw new InvalidOperationException("示例工位找不到已映射逻辑 DO：" + settings.OutputName + "。");
             }
 
+            MachineAlarmCatalogEntry timeoutAlarm = _alarmCatalogStore.Load(MachineId).Alarms.SingleOrDefault(
+                alarm => string.Equals(alarm.Code, DemoStationFlow.SensorTimeoutAlarmCode, StringComparison.OrdinalIgnoreCase));
+            if (timeoutAlarm == null)
+            {
+                throw new InvalidOperationException("报警库缺少示例流程所需的报警代码：" + DemoStationFlow.SensorTimeoutAlarmCode + "。");
+            }
+
             return new IStationFlow[]
             {
-                new DemoStationFlow(motionCards.GetAxis(settings.AxisName), logicalIo, alarmService, settings)
+                new DemoStationFlow(motionCards.GetAxis(settings.AxisName), logicalIo, alarmService, settings, timeoutAlarm.ToDefinition())
             };
+        }
+
+        /// <summary>为首次运行的设备目录建立与示例工艺对应的一条可编辑报警定义。</summary>
+        private static MachineAlarmCatalogDocument CreateDefaultAlarmCatalog()
+        {
+            var document = new MachineAlarmCatalogDocument();
+            document.Alarms.Add(new MachineAlarmCatalogEntry
+            {
+                Code = DemoStationFlow.SensorTimeoutAlarmCode,
+                Message = "等待传感器超时",
+                Kind = MachineAlarmKind.StopMachine,
+                CheckGuidance = "检查传感器安装、工件到位状态和逻辑 DI 映射，再核对当前输入状态。",
+                RecoveryGuidance = "条件恢复后，确认机构无碰撞风险并执行整机复位；流程从等待步骤重新开始。"
+            });
+            return document;
         }
 
         /// <summary>使用当前运行时和映射重建轴手动、IO 手动及 IO 监控页，不创建或连接新的 Runtime。</summary>

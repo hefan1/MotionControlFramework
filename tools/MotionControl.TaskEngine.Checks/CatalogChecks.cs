@@ -56,7 +56,8 @@ namespace MotionControl.TaskEngine.Checks
                 WriteHardware(workspace);
                 var loader = new TaskResourceCatalogLoader(workspace.Store);
                 var catalog = loader.Load("Test01");
-                CheckAssert.True(catalog.Variables.Count == 0 && catalog.TeachPoints.Count == 0 && catalog.Notices.Count == 2, "可选文件缺失处理错误。");
+                CheckAssert.True(catalog.Variables.Count == 0 && catalog.TeachPoints.Count == 0 && catalog.Notices.Count == 3
+                    && catalog.Notices.Any(item => item.Contains("AlarmCatalog.json")), "可选文件或报警库缺失提示处理错误。");
                 workspace.Store.SaveJson("Test01", "Parameters/DeviceVariables.json", new { schemaVersion = 2, variables = new object[0] });
                 CheckAssert.Throws(() => loader.Load("Test01"), "未来变量配置版本没有被拒绝。");
                 workspace.Store.SaveJson("Test01", "Parameters/DeviceVariables.json", new { schemaVersion = 1, variables = new object[0] });

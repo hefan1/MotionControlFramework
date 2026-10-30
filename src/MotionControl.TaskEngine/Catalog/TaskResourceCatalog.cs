@@ -22,6 +22,8 @@ namespace MotionControl.TaskEngine.Catalog
         public IReadOnlyList<TaskTeachPoint> TeachPoints { get; private set; }
         /// <summary>轴、输出资源及 Host 明确提供的区域、夹具等资源名称。</summary>
         public IReadOnlyCollection<string> Resources { get; private set; }
+        /// <summary>当前设备报警库中的稳定报警代码。</summary>
+        public IReadOnlyCollection<string> AlarmCodes { get; private set; }
         /// <summary>读取时发现的可选配置缺失或旧点位无法映射等信息。</summary>
         public IReadOnlyList<string> Notices { get; private set; }
 
@@ -29,7 +31,8 @@ namespace MotionControl.TaskEngine.Catalog
         public TaskResourceCatalog(IEnumerable<TaskAxisInfo> axes, IEnumerable<string> inputs,
             IEnumerable<string> outputs, IDictionary<string, DeviceVariableType> variables,
             IEnumerable<TaskTeachPoint> teachPoints, IEnumerable<string> namedResources = null,
-            IEnumerable<string> notices = null, IDictionary<string, string> variableInitialValues = null)
+            IEnumerable<string> notices = null, IDictionary<string, string> variableInitialValues = null,
+            IEnumerable<string> alarmCodes = null)
         {
             if (axes == null || inputs == null || outputs == null || variables == null || teachPoints == null)
                 throw new ArgumentNullException("目录中的轴、IO、变量和示教点集合均不能为空。");
@@ -110,6 +113,7 @@ namespace MotionControl.TaskEngine.Catalog
                 }
             }
             Resources = CopyNames(resourceNames);
+            AlarmCodes = CopyNames(alarmCodes ?? new string[0]);
             Notices = new List<string>(notices ?? new string[0]).AsReadOnly();
         }
 

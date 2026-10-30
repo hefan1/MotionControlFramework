@@ -33,7 +33,7 @@ namespace MotionControl.Host.Wpf
             { "Statistics", new[] { "产量统计", "节拍统计", "运行统计" } },
             { "Monitor", new[] { "轴监控", "IO监控", "流程状态", "任务运行", "设备变量" } },
             { "Manual", new[] { "轴手动", "IO手动", "气缸手动", "通讯调试" } },
-            { "Settings", new[] { "轴映射配置", "IO映射", "安全联锁", "通讯设置", "数据采集", "任务配置" } },
+            { "Settings", new[] { "轴映射配置", "IO映射", "安全联锁", "报警库", "通讯设置", "数据采集", "任务配置" } },
             { "Alarms", new[] { "当前报警", "历史报警", "报警统计", "操作日志" } },
             { "Users", new[] { "密码登录", "刷卡登录", "权限管理" } },
             { "Help", new[] { "软件信息", "使用说明" } }
@@ -77,6 +77,9 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>由 Host 组合根注入的软件安全联锁配置页面。</summary>
         private UserControl _safetyInterlockConfigurationPage;
+
+        /// <summary>由 Host 组合根注入的设备报警目录配置页面。</summary>
+        private UserControl _alarmCatalogConfigurationPage;
 
         /// <summary>当前已连接设备的运行时，用于显示整机状态并执行整机复位。</summary>
         private MachineRuntime _machineRuntime;
@@ -316,6 +319,13 @@ namespace MotionControl.Host.Wpf
             UpdatePageContent();
         }
 
+        /// <summary>由 Host 组合根注入当前设备可维护的报警库页面。</summary>
+        public void SetAlarmCatalogConfigurationPage(UserControl alarmCatalogConfigurationPage)
+        {
+            _alarmCatalogConfigurationPage = alarmCatalogConfigurationPage;
+            UpdatePageContent();
+        }
+
         /// <summary>接收当前设备运行时，并根据其状态更新整机状态文字和复位按钮。</summary>
         public void SetMachineRuntime(MachineRuntime machineRuntime)
         {
@@ -461,6 +471,19 @@ namespace MotionControl.Host.Wpf
                 ManualDebugContent.Visibility = Visibility.Visible;
                 PagePlaceholder.Visibility = Visibility.Collapsed;
                 PageDescription.SetResourceReference(TextBlock.TextProperty, "安全联锁页面说明");
+                return;
+            }
+
+            var isAlarmCatalogPage = _alarmCatalogConfigurationPage != null
+                && string.Equals(_currentSectionKey, "Settings", StringComparison.Ordinal)
+                && string.Equals(_currentPageResourceKey, "报警库", StringComparison.Ordinal);
+
+            if (isAlarmCatalogPage)
+            {
+                ManualDebugContent.Content = _alarmCatalogConfigurationPage;
+                ManualDebugContent.Visibility = Visibility.Visible;
+                PagePlaceholder.Visibility = Visibility.Collapsed;
+                PageDescription.SetResourceReference(TextBlock.TextProperty, "报警库页面说明");
                 return;
             }
 

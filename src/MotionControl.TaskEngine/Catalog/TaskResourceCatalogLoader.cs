@@ -96,8 +96,22 @@ namespace MotionControl.TaskEngine.Catalog
                     }
                 }
             }
+
+            var alarmCodes = new List<string>();
+            string alarmPath = Path.Combine(_store.GetMachineDirectory(machineId),
+                MachineAlarmCatalogStore.RelativeFilePath.Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(alarmPath))
+            {
+                MachineAlarmCatalogDocument alarmCatalog = new MachineAlarmCatalogStore(_store).Load(machineId);
+                foreach (MachineAlarmCatalogEntry alarm in alarmCatalog.Alarms)
+                    alarmCodes.Add(alarm.Code);
+            }
+            else
+            {
+                notices.Add("报警库尚未建立：" + MachineAlarmCatalogStore.RelativeFilePath);
+            }
             return new TaskResourceCatalog(axes, inputs, outputs, variables, points,
-                namedResources, notices, variableInitialValues);
+                namedResources, notices, variableInitialValues, alarmCodes);
         }
 
         /// <summary>读取已知格式文件；只允许可选文件不存在，不忽略损坏文件。</summary>

@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using MotionControl.Framework.Contracts.Variables;
@@ -15,7 +16,11 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             {
                 AddField("Input", "逻辑输入", TaskEditingUi.Names(_catalog.Inputs, wait.InputName));
                 AddField("Expected", "期望状态", TaskEditingUi.Choices(this, new object[] { true, false }, new[] { "有效", "无效" }, wait.Expected));
+                AddField("TimeoutAlarms", "等待超时关联报警（可多选）",
+                    new TaskAlarmSelector(_catalog.AlarmCodes, wait.TimeoutAlarmCodes,
+                        code => T("报警库不存在") + code, T("当前设备报警库为空，请先维护报警代码")));
                 Details.Children.Add(TaskEditingUi.Label(this, "未知输入不会当作无效信号放行")); AddReference("IO映射", "@Input", "DI");
+                Details.Children.Add(TaskEditingUi.Label(this, "报警引用保存在任务草稿；当前任务执行尚未接入设备 Runtime"));
             }
             else if (_selected is SetOutputNode output)
             {
@@ -47,7 +52,12 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         /// <summary>先完成字段解析再替换模型；失败时保留原值，不调用 IO 或变量运行服务。</summary>
         private void ReadSignals()
         {
-            if (_selected is WaitInputNode wait) { wait.InputName = ((ComboBox)_fields["Input"]).SelectedItem as string ?? ""; wait.Expected = (bool)((ComboBox)_fields["Expected"]).SelectedValue; }
+            if (_selected is WaitInputNode wait)
+            {
+                wait.InputName = ((ComboBox)_fields["Input"]).SelectedItem as string ?? "";
+                wait.Expected = (bool)((ComboBox)_fields["Expected"]).SelectedValue;
+                wait.TimeoutAlarmCodes = ((TaskAlarmSelector)_fields["TimeoutAlarms"]).SelectedCodes.ToList();
+            }
             else if (_selected is SetOutputNode output) { output.OutputName = ((ComboBox)_fields["Output"]).SelectedItem as string ?? ""; output.Value = (bool)((ComboBox)_fields["Value"]).SelectedValue; }
             else if (_selected is SetVariableNode variable)
             {

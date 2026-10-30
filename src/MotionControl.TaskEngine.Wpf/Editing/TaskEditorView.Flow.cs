@@ -14,8 +14,22 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             if (_selected is SequenceNode) Details.Children.Add(TaskEditingUi.Label(this, "选中顺序段后新增步骤，子步骤按列表顺序执行"));
             else if (_selected is ParallelGroupNode) Details.Children.Add(TaskEditingUi.Label(this, "新增步骤会建立一个顺序分支，全部分支完成后汇合"));
             else if (_selected is ConditionBranchNode branch)
-            { AddField("Condition", "条件判断", new TaskConditionEditor(_catalog, branch.Condition, _language)); Details.Children.Add(TaskEditingUi.Label(this, "选中成立或不成立分支的顺序段后添加动作")); }
-            else if (_selected is WaitConditionNode wait) AddField("Condition", "等待成立的条件", new TaskConditionEditor(_catalog, wait.Condition, _language));
+            {
+                AddField("Condition", "条件判断", new TaskConditionEditor(_catalog, branch.Condition, _language));
+                AddField("FalseAlarms", "条件不成立关联报警（可多选）",
+                    new TaskAlarmSelector(_catalog.AlarmCodes, branch.WhenFalseAlarmCodes,
+                        code => T("报警库不存在") + code, T("当前设备报警库为空，请先维护报警代码")));
+                Details.Children.Add(TaskEditingUi.Label(this, "选中成立或不成立分支的顺序段后添加动作"));
+                Details.Children.Add(TaskEditingUi.Label(this, "报警引用保存在任务草稿；当前任务执行尚未接入设备 Runtime"));
+            }
+            else if (_selected is WaitConditionNode wait)
+            {
+                AddField("Condition", "等待成立的条件", new TaskConditionEditor(_catalog, wait.Condition, _language));
+                AddField("TimeoutAlarms", "等待超时关联报警（可多选）",
+                    new TaskAlarmSelector(_catalog.AlarmCodes, wait.TimeoutAlarmCodes,
+                        code => T("报警库不存在") + code, T("当前设备报警库为空，请先维护报警代码")));
+                Details.Children.Add(TaskEditingUi.Label(this, "报警引用保存在任务草稿；当前任务执行尚未接入设备 Runtime"));
+            }
             else if (_selected is CallTaskNode call)
             {
                 AddField("Task", "子任务标识", TaskEditingUi.Names(_others.Select(task => task.TaskId), call.TaskId));
@@ -46,8 +60,16 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         /// <summary>具体读回各容器参数，子步骤结构由列表操作处理。</summary>
         private void ReadFlow()
         {
-            if (_selected is ConditionBranchNode branch) branch.Condition = ((TaskConditionEditor)_fields["Condition"]).Read();
-            else if (_selected is WaitConditionNode wait) wait.Condition = ((TaskConditionEditor)_fields["Condition"]).Read();
+            if (_selected is ConditionBranchNode branch)
+            {
+                branch.Condition = ((TaskConditionEditor)_fields["Condition"]).Read();
+                branch.WhenFalseAlarmCodes = ((TaskAlarmSelector)_fields["FalseAlarms"]).SelectedCodes.ToList();
+            }
+            else if (_selected is WaitConditionNode wait)
+            {
+                wait.Condition = ((TaskConditionEditor)_fields["Condition"]).Read();
+                wait.TimeoutAlarmCodes = ((TaskAlarmSelector)_fields["TimeoutAlarms"]).SelectedCodes.ToList();
+            }
             else if (_selected is CallTaskNode call) call.TaskId = ((ComboBox)_fields["Task"]).SelectedItem as string ?? "";
             else if (_selected is ResourceScopeNode scope)
             {

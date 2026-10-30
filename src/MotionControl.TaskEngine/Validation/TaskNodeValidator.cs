@@ -64,6 +64,7 @@ namespace MotionControl.TaskEngine.Validation
             else if (node is ConditionBranchNode branch)
             {
                 CheckCondition(branch.Condition, node, path + ".condition", new HashSet<TaskCondition>(), 0);
+                CheckAlarmReferences(branch.WhenFalseAlarmCodes, node, path + ".whenFalseAlarmCodes");
                 CheckSequence(branch.WhenTrue, node, path + ".whenTrue", depth);
                 if (branch.WhenFalse != null) CheckSequence(branch.WhenFalse, node, path + ".whenFalse", depth);
             }
@@ -128,6 +129,28 @@ namespace MotionControl.TaskEngine.Validation
         private void Warning(TaskNode node, string field, string message)
         {
             _issues.Add(new TaskValidationIssue(TaskIssueSeverity.Warning, _taskId, node?.Id, field, message));
+        }
+
+        /// <summary>报警代码列表可为空；填写时每项必须来自报警库且不能重复。</summary>
+        private void CheckAlarmReferences(IList<string> codes, TaskNode node, string path)
+        {
+            if (codes == null) return;
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int index = 0; index < codes.Count; index++)
+            {
+                string code = codes[index];
+                string itemPath = path + "[" + index + "]";
+                if (!ValidName(code) || !_catalog.AlarmCodes.Contains(code, StringComparer.OrdinalIgnoreCase))
+                {
+                    Error(node, itemPath, "找不到设备报警库中的报警代码：" + code);
+                    continue;
+                }
+
+                if (!seen.Add(code))
+                {
+                    Error(node, itemPath, "报警代码重复关联：" + code);
+                }
+            }
         }
 
         /// <summary>名称不允许隐式修剪，避免保存与引用出现不同字符串。</summary>

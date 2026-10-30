@@ -209,7 +209,7 @@ namespace MotionControl.TaskEngine.Editing
         {
             string root = _store.GetMachineDirectory(machineId);
             var paths = new List<string> { "Parameters/TaskMachine.json", "HardwareConfig/AxisParameters.json", "HardwareConfig/IoMapping.json",
-                "Parameters/DeviceVariables.json", "Parameters/ManualAxisPositions.json" };
+                "Parameters/DeviceVariables.json", "Parameters/ManualAxisPositions.json", MachineAlarmCatalogStore.RelativeFilePath };
             string tasks = Path.Combine(root, "Tasks");
             if (Directory.Exists(tasks)) paths.AddRange(Directory.GetFiles(tasks, "*.json").Select(path => "Tasks/" + Path.GetFileName(path)));
             using (var bytes = new MemoryStream())
