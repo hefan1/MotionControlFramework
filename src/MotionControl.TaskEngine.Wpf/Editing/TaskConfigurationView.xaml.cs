@@ -220,7 +220,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             string[] stationNames = (_getRuntimeStationNames() ?? Enumerable.Empty<string>())
                 .Where(name => !string.IsNullOrWhiteSpace(name))
                 .ToArray();
-            RuntimeStationsText.Text = T("当前运行工位") + "："
+            RuntimeStationsText.Text = T("设备流程工位") + "："
                 + (stationNames.Length == 0 ? T("没有自动工位") : string.Join("、", stationNames));
             RuntimeStationsText.ToolTip = T("运行工位说明");
             CurrentFlowButton.IsEnabled = stationNames.Length > 0;

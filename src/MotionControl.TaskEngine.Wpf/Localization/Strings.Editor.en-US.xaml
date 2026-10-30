@@ -229,10 +229,10 @@
  <sys:String x:Key="任务编辑.设备等待复位">Equipment reset required</sys:String>
  <sys:String x:Key="任务编辑.设备未连接">Equipment disconnected</sys:String>
  <sys:String x:Key="任务编辑.未读取设备状态">Equipment state unavailable</sys:String>
- <sys:String x:Key="任务编辑.当前运行工位">Current runtime stations</sys:String>
+ <sys:String x:Key="任务编辑.设备流程工位">Equipment flow stations</sys:String>
  <sys:String x:Key="任务编辑.没有连接运行时">No connected equipment runtime</sys:String>
  <sys:String x:Key="任务编辑.没有自动工位">No automatic stations</sys:String>
- <sys:String x:Key="任务编辑.运行工位说明">These stations come from the official equipment Runtime. A task draft marked “Not applied” does not change their flows; names are shown for operator comparison.</sys:String>
+ <sys:String x:Key="任务编辑.运行工位说明">These automatic station flows are currently loaded in the equipment runtime. Their presence does not mean they are running. A task draft marked “Not applied” does not change these flows; names are shown for operator comparison.</sys:String>
  <sys:String x:Key="任务编辑.仅更新任务文件，不启动设备">Updates task configuration files only. Flow execution is not connected to the controller and will not connect to or start equipment.</sys:String>
  <sys:String x:Key="任务编辑.确认更新以下任务文件">Update the following task files? Flow execution is not connected to the controller; this will not connect to or start equipment.</sys:String>
  <sys:String x:Key="任务编辑.任务文件已更新">Task files updated. Flow execution is not connected to the controller.</sys:String>
