@@ -67,7 +67,12 @@ namespace MotionControl.TaskEngine.Checks
             device.SetInput("PartReady", true);
             Success(await Complete(owner));
             await Task.Delay(80);
-            CheckAssert.True(!second.Completion.IsCompleted && ResourceFor(device, second).Detail.Contains(first.RunId), "暂停等待者被插队或等待原因错误。");
+            TaskResourceSnapshot firstRequest = ResourceFor(device, first);
+            TaskResourceSnapshot secondRequest = ResourceFor(device, second);
+            CheckAssert.True(!second.Completion.IsCompleted
+                && firstRequest != null && firstRequest.State == TaskResourceState.Waiting
+                && secondRequest != null && secondRequest.Detail.Contains("搬运任务")
+                && secondRequest.Detail.Contains("“first”步骤"), "暂停等待者被插队或等待原因错误。");
             first.Cancel();
             CheckAssert.True((await Complete(first)).State == TaskRunState.Cancelled, "暂停排队不能取消。");
             Success(await Complete(second));
