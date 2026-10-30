@@ -70,6 +70,7 @@
     <sys:String x:Key="流程页.打开IO监控">打开 IO 监控</sys:String>
     <sys:String x:Key="流程页.IO监控说明">进入 IO 监控并选中 DI 输入，按传感器名称核对当前状态。</sys:String>
     <sys:String x:Key="流程页.查看当前报警">查看当前报警</sys:String>
+    <sys:String x:Key="流程页.查看轴监控">查看轴监控</sys:String>
     <sys:String x:Key="整机当前状态">整机状态：</sys:String>
     <sys:String x:Key="未配置自动工位">未启用自动工位；可继续使用轴手动和 IO 手动页面。</sys:String>
     <sys:String x:Key="无当前报警">当前无报警。</sys:String>

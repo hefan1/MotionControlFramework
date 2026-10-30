@@ -114,6 +114,12 @@ namespace MotionControl.Host.Wpf
             NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("IO监控"));
         }
 
+        /// <summary>打开只读轴状态页，供复位前核对各工位相关轴是否停止。</summary>
+        private void OpenAxisMonitor_Click(object sender, RoutedEventArgs e)
+        {
+            NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("轴监控"));
+        }
+
         /// <summary>打开当前报警页查看设备停机原因。</summary>
         private void OpenCurrentAlarms_Click(object sender, RoutedEventArgs e)
         {
@@ -138,6 +144,13 @@ namespace MotionControl.Host.Wpf
         {
             MachineStateText.Text = ((string)FindResource("整机当前状态"))
                 + (string)FindResource(GetMachineStateResourceKey(_runtime.State));
+            string resetGuidance = _runtime.State == MachineRunState.ResetRequired
+                ? (string)FindResource("整机复位提示")
+                : string.Empty;
+            ResetGuidanceText.Text = resetGuidance;
+            ResetGuidanceText.Visibility = string.IsNullOrWhiteSpace(resetGuidance)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
             foreach (KeyValuePair<IStationFlow, TextBlock> row in _stepTextByFlow)
             {
                 row.Value.Text = row.Key.CurrentStepName;

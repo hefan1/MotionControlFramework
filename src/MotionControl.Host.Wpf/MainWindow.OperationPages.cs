@@ -47,6 +47,7 @@ namespace MotionControl.Host.Wpf
         private void OperationNavigationRequested(object sender, OperatorNavigationEventArgs e)
         {
             bool unavailable = e.Page == "流程状态" && _flowStatusPage == null
+                || e.Page == "轴监控" && _axisMonitorPage == null
                 || e.Page == "轴手动" && _manualMotionDebugPage == null
                 || e.Page == "IO监控" && _ioMonitorPage == null;
             if (unavailable)
