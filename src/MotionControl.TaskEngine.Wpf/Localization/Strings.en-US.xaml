@@ -16,7 +16,8 @@
  <sys:String x:Key="任务监控.结果">Result</sys:String>
  <sys:String x:Key="任务监控.步骤参数">Step parameters</sys:String>
  <sys:String x:Key="任务监控.关联配置">Related configuration</sys:String>
- <sys:String x:Key="任务监控.内存仿真来源">Memory simulation source</sys:String>
+ <sys:String x:Key="任务监控.流程数据来源格式">Flow data source: {0}</sys:String>
+ <sys:String x:Key="任务监控.内置示例来源">Built-in example (field mappings not loaded)</sys:String>
  <sys:String x:Key="任务监控.刷新失败，以下为旧数据">Refresh failed: displayed data is stale</sys:String>
  <sys:String x:Key="任务监控.当前无等待或停机故障">There are no waiting steps or stop faults.</sys:String>
  <sys:String x:Key="任务监控.故障恢复提示">Check the stated cause. After restoring the condition, reset the machine and press Start. Completed actions are retained.</sys:String>
@@ -109,12 +110,29 @@
  <sys:String x:Key="任务监控.启动">Start</sys:String>
  <sys:String x:Key="任务监控.暂停">Pause</sys:String>
  <sys:String x:Key="任务监控.任务运行">Task monitor</sys:String>
- <sys:String x:Key="任务监控.仿真信号与参考">Simulation inputs and axis setup (memory only)</sys:String>
- <sys:String x:Key="任务监控.仿真输入说明">This page changes memory simulation only and does not control the motion card. Before the first start, if the flow has no initialization or homing step, prepare simulated axes as enabled and homed.</sys:String>
- <sys:String x:Key="任务监控.写入内存变量">Write memory variable</sys:String>
- <sys:String x:Key="任务监控.准备内存轴参考">Prepare simulated axes (enabled and homed)</sys:String>
- <sys:String x:Key="任务监控.内存仿真">Memory simulation</sys:String>
+ <sys:String x:Key="任务监控.流程检查信号与轴状态">Flow check signals and axis state</sys:String>
+ <sys:String x:Key="任务监控.流程检查输入说明">Use these inputs and variables to inspect station steps, wait conditions, and output changes. Mapped start, stop, and reset DI buttons release automatically after a click. This page does not write to the controller. Before the first start, if the flow has no initialization or homing step, set the axes to enabled and homed.</sys:String>
+ <sys:String x:Key="任务监控.自动工艺信号">Automatic process signals: continuous feed and delayed clamp feedback; turn off to set inputs manually</sys:String>
+ <sys:String x:Key="任务监控.当前值">Current value</sys:String>
+ <sys:String x:Key="任务监控.写入值">Value to write</sys:String>
+ <sys:String x:Key="任务监控.变量尚未写入">Not written</sys:String>
+ <sys:String x:Key="任务监控.按钮输入提示">Click to send a momentary input and release it automatically.</sys:String>
+ <sys:String x:Key="任务监控.普通输入状态提示">Select the input state directly: Active, Inactive, or Unknown.</sys:String>
+ <sys:String x:Key="任务监控.写入流程变量">Write flow variable</sys:String>
+ <sys:String x:Key="任务监控.设置轴就绪状态">Set axes ready (enabled and homed)</sys:String>
+ <sys:String x:Key="任务监控.流程检查">Flow check</sys:String>
+ <sys:String x:Key="任务监控.设备状态">Equipment state</sys:String>
  <sys:String x:Key="任务监控.操作已完成">Operation completed</sys:String>
+ <sys:String x:Key="任务监控.流程变量写入成功格式">Variable “{0}” was set to “{1}”.</sys:String>
+ <sys:String x:Key="任务监控.输入状态已更新">Input state updated</sys:String>
+ <sys:String x:Key="任务监控.输入状态更新格式">Input “{0}” is now “{1}”.</sys:String>
+ <sys:String x:Key="任务监控.故障暂停输入更新格式">Input “{0}” is now “{1}”. The machine remains fault-paused. Clear the cause and verify the equipment is safe, then select Reset and Start to continue.</sys:String>
+ <sys:String x:Key="任务监控.操作失败">Operation failed</sys:String>
+ <sys:String x:Key="任务监控.按钮当前状态不允许操作">The current machine state does not allow this button action:</sys:String>
+ <sys:String x:Key="任务监控.复位后就绪提示">Machine ready. Press Start to begin or continue production.</sys:String>
+ <sys:String x:Key="任务监控.暂停后恢复提示">Machine paused with current steps saved. Press Reset, then Start to continue.</sys:String>
+ <sys:String x:Key="任务监控.启动运行提示">Automatic cycle started.</sys:String>
+ <sys:String x:Key="任务监控.启动前需要复位">Machine is paused. Press Reset, then Start to resume the current steps.</sys:String>
  <sys:String x:Key="任务监控.运行开始后不能重建内存轴参考">Axis references cannot be rebuilt after execution starts.</sys:String>
  <sys:String x:Key="任务监控.请在首次启动前准备">Prepare before the first start.</sys:String>
  <sys:String x:Key="任务监控.名称">Name</sys:String>
@@ -129,10 +147,21 @@
  <sys:String x:Key="任务监控.未执行">Not entered</sys:String>
  <sys:String x:Key="任务监控.已完成">Completed</sys:String>
  <sys:String x:Key="任务监控.故障">Fault</sys:String>
+ <sys:String x:Key="任务监控.待启动">Ready to resume</sys:String>
  <sys:String x:Key="任务监控.已终止">Terminated</sys:String>
  <sys:String x:Key="任务监控.已暂停">Paused</sys:String>
  <sys:String x:Key="任务监控.等待">Waiting</sys:String>
+ <sys:String x:Key="任务监控.等待资源">Waiting for resource</sys:String>
+ <sys:String x:Key="任务监控.等待互锁">Waiting for interlock</sys:String>
+ <sys:String x:Key="任务监控.等待并行步骤">Waiting for parallel steps</sys:String>
+ <sys:String x:Key="任务监控.等待多项">Multiple waits</sys:String>
+ <sys:String x:Key="任务监控.等待输入详情格式">Waiting for DI “{0}”; expected={1}; current={2}.</sys:String>
+ <sys:String x:Key="任务监控.输入条件满足格式">Input condition met: “{0}”={1}.</sys:String>
+ <sys:String x:Key="任务监控.等待输入超时格式">DI wait timed out: “{0}”; expected={1}; sample before timeout={2}; limit={3}.</sys:String>
+ <sys:String x:Key="任务监控.秒格式">{0} s</sys:String>
+ <sys:String x:Key="任务监控.毫秒格式">{0} ms</sys:String>
  <sys:String x:Key="任务监控.运行">Running</sys:String>
+ <sys:String x:Key="任务监控.运动中">Moving</sys:String>
  <sys:String x:Key="任务监控.本次未选择此分支">This branch was not selected.</sys:String>
  <sys:String x:Key="任务监控.尚未进入本步骤">This step has not been entered.</sys:String>
  <sys:String x:Key="任务监控.单次">Once</sys:String>

@@ -16,7 +16,8 @@
  <sys:String x:Key="任务监控.结果">结果</sys:String>
  <sys:String x:Key="任务监控.步骤参数">步骤参数</sys:String>
  <sys:String x:Key="任务监控.关联配置">关联配置</sys:String>
- <sys:String x:Key="任务监控.内存仿真来源">内存仿真来源</sys:String>
+ <sys:String x:Key="任务监控.流程数据来源格式">流程数据来源：{0}</sys:String>
+ <sys:String x:Key="任务监控.内置示例来源">内置示例（未读取现场映射）</sys:String>
  <sys:String x:Key="任务监控.刷新失败，以下为旧数据">刷新失败，以下为旧数据</sys:String>
  <sys:String x:Key="任务监控.当前无等待或停机故障">当前没有等待步骤或停机故障</sys:String>
  <sys:String x:Key="任务监控.故障恢复提示">故障恢复提示</sys:String>
@@ -109,12 +110,29 @@
  <sys:String x:Key="任务监控.启动">启动</sys:String>
  <sys:String x:Key="任务监控.暂停">暂停</sys:String>
  <sys:String x:Key="任务监控.任务运行">任务运行</sys:String>
- <sys:String x:Key="任务监控.仿真信号与参考">仿真信号与轴准备（仅内存）</sys:String>
- <sys:String x:Key="任务监控.仿真输入说明">本页只修改内存仿真，不会控制运动卡。首次启动前，如果流程没有初始化或回零步骤，可点击“准备仿真轴”将模拟轴设为已使能、已回零。</sys:String>
- <sys:String x:Key="任务监控.写入内存变量">写入内存变量</sys:String>
- <sys:String x:Key="任务监控.准备内存轴参考">准备仿真轴（设为已使能、已回零）</sys:String>
- <sys:String x:Key="任务监控.内存仿真">内存仿真</sys:String>
+ <sys:String x:Key="任务监控.流程检查信号与轴状态">流程检查信号与轴状态</sys:String>
+ <sys:String x:Key="任务监控.流程检查输入说明">本页输入和变量用于检查工位步骤、等待条件和输出变化；映射为启动、停止、复位的 DI 按钮点击后会自动恢复断开。本页不会向控制卡写入。首次启动前，如果流程没有初始化或回零步骤，可点击“设置轴就绪状态”将轴设为已使能、已回零。</sys:String>
+ <sys:String x:Key="任务监控.自动工艺信号">自动工艺信号：连续供料，夹紧输出延时反馈；关闭后可手动设置输入</sys:String>
+ <sys:String x:Key="任务监控.当前值">当前值</sys:String>
+ <sys:String x:Key="任务监控.写入值">写入值</sys:String>
+ <sys:String x:Key="任务监控.变量尚未写入">尚未写入</sys:String>
+ <sys:String x:Key="任务监控.按钮输入提示">点击产生一次瞬时输入并自动恢复断开。</sys:String>
+ <sys:String x:Key="任务监控.普通输入状态提示">从下拉框直接选择输入状态：“有效”“无效”或“未知”。</sys:String>
+ <sys:String x:Key="任务监控.写入流程变量">写入流程变量</sys:String>
+ <sys:String x:Key="任务监控.设置轴就绪状态">设置轴就绪状态（已使能、已回零）</sys:String>
+ <sys:String x:Key="任务监控.流程检查">流程检查</sys:String>
+ <sys:String x:Key="任务监控.设备状态">设备状态</sys:String>
  <sys:String x:Key="任务监控.操作已完成">操作已完成</sys:String>
+ <sys:String x:Key="任务监控.流程变量写入成功格式">流程变量“{0}”已写入为“{1}”。</sys:String>
+ <sys:String x:Key="任务监控.输入状态已更新">输入状态已更新</sys:String>
+ <sys:String x:Key="任务监控.输入状态更新格式">逻辑输入“{0}”已设为“{1}”。</sys:String>
+ <sys:String x:Key="任务监控.故障暂停输入更新格式">逻辑输入“{0}”已设为“{1}”。设备仍处于故障暂停；先确认现场原因已排除、设备安全，再按“整机复位”和“启动”继续。</sys:String>
+ <sys:String x:Key="任务监控.操作失败">操作失败</sys:String>
+ <sys:String x:Key="任务监控.按钮当前状态不允许操作">当前设备状态不允许此按钮操作：</sys:String>
+ <sys:String x:Key="任务监控.复位后就绪提示">设备已就绪。按“启动”开始或继续生产。</sys:String>
+ <sys:String x:Key="任务监控.暂停后恢复提示">设备已暂停，当前步骤已保留。按“复位”，再按“启动”继续。</sys:String>
+ <sys:String x:Key="任务监控.启动运行提示">设备已开始自动运行。</sys:String>
+ <sys:String x:Key="任务监控.启动前需要复位">设备已暂停，请先复位，再按启动继续当前步骤。</sys:String>
  <sys:String x:Key="任务监控.运行开始后不能重建内存轴参考">运行开始后不能重建内存轴参考</sys:String>
  <sys:String x:Key="任务监控.请在首次启动前准备">请在首次启动前准备</sys:String>
  <sys:String x:Key="任务监控.名称">名称</sys:String>
@@ -129,10 +147,21 @@
  <sys:String x:Key="任务监控.未执行">未执行</sys:String>
  <sys:String x:Key="任务监控.已完成">已完成</sys:String>
  <sys:String x:Key="任务监控.故障">故障</sys:String>
+ <sys:String x:Key="任务监控.待启动">待启动</sys:String>
  <sys:String x:Key="任务监控.已终止">已终止</sys:String>
  <sys:String x:Key="任务监控.已暂停">已暂停</sys:String>
  <sys:String x:Key="任务监控.等待">等待</sys:String>
+ <sys:String x:Key="任务监控.等待资源">等待资源</sys:String>
+ <sys:String x:Key="任务监控.等待互锁">等待互锁</sys:String>
+ <sys:String x:Key="任务监控.等待并行步骤">等待并行步骤</sys:String>
+ <sys:String x:Key="任务监控.等待多项">多项等待</sys:String>
+ <sys:String x:Key="任务监控.等待输入详情格式">等待 DI“{0}”；期望={1}；当前={2}。</sys:String>
+ <sys:String x:Key="任务监控.输入条件满足格式">输入条件已满足：“{0}”={1}。</sys:String>
+ <sys:String x:Key="任务监控.等待输入超时格式">等待 DI 超时：“{0}”；期望={1}；超时前采样={2}；时限={3}。</sys:String>
+ <sys:String x:Key="任务监控.秒格式">{0} 秒</sys:String>
+ <sys:String x:Key="任务监控.毫秒格式">{0} 毫秒</sys:String>
  <sys:String x:Key="任务监控.运行">运行</sys:String>
+ <sys:String x:Key="任务监控.运动中">运动中</sys:String>
  <sys:String x:Key="任务监控.本次未选择此分支">本次未选择此分支</sys:String>
  <sys:String x:Key="任务监控.尚未进入本步骤">尚未进入本步骤</sys:String>
  <sys:String x:Key="任务监控.单次">单次</sys:String>

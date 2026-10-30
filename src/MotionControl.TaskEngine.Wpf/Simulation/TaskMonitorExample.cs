@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using MotionControl.Framework.Wpf.Configuration;
 using MotionControl.Framework.Contracts.Variables;
 using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Definitions;
@@ -17,13 +18,15 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
                 new TaskAxisInfo("搬运X", "Memory", "mm", -500, 500),
                 new TaskAxisInfo("搬运Y", "Memory", "mm", -500, 500),
                 new TaskAxisInfo("检测Z", "Memory", "mm", -100, 100) },
-                new[] { "产品到位", "上料机构安全位", "夹紧到位" }, new[] { "夹紧输出", "相机触发" },
+                new[] { "产品到位", "上料机构安全位", "夹紧到位", "启动按钮", "停止按钮", "复位按钮" },
+                new[] { "夹紧输出", "相机触发" },
                 new Dictionary<string, DeviceVariableType> { { "Vision.OK", DeviceVariableType.Boolean },
                     { "Product.Result", DeviceVariableType.String } },
                 new[] { new TaskTeachPoint("搬运X", "place", "放料位置", 120) }, new[] { "拍照区域" });
             var device = new SimulatedTaskDevice(catalog);
             foreach (string axis in catalog.Axes.Keys) device.ConfigureAxis(axis, 0, true, true);
-            device.SetInput("产品到位", true); device.SetInput("上料机构安全位", false); device.SetInput("夹紧到位", false);
+            device.SetInput("产品到位", true); device.SetInput("上料机构安全位", true); device.SetInput("夹紧到位", false);
+            device.SetInput("启动按钮", false); device.SetInput("停止按钮", false); device.SetInput("复位按钮", false);
             device.SetVariable("Vision.OK", "true");
             var place = new MoveAxisGroupNode { Id = "place", Name = "XY 移动到放料位置", Targets = new List<AxisPositionTarget> {
                 new AxisPositionTarget { AxisName = "搬运X", Mode = TaskMoveMode.Absolute,
@@ -57,7 +60,14 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
                 NamedResources = new List<string> { "拍照区域" }, Stations = new List<StationTaskConfiguration> {
                 Station("load", load), Station("transfer", transfer), Station("inspect", inspect),
                 new StationTaskConfiguration { StationId = "disabled", Name = "备用工位", TaskId = "Load", Enabled = false, Mode = StationTaskMode.Once } } };
-            return new TaskMonitorSession(config, new[] { load, transfer, inspect, camera }, device, "内置示例（未读取现场映射）", true);
+            var controlInputs = new SafetyInterlockConfigurationDocument
+            {
+                StartInputName = "启动按钮",
+                PauseInputName = "停止按钮",
+                ResetInputName = "复位按钮"
+            };
+            return new TaskMonitorSession(config, new[] { load, transfer, inspect, camera }, device,
+                "内置示例（未读取现场映射）", true, controlInputs);
         }
 
         /// <summary>示例工位以独立循环方式执行。</summary>

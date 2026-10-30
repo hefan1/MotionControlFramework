@@ -16,16 +16,25 @@
     <TextBlock x:Name="MachineStateText" Foreground="#176BD0" Margin="0,4,0,0"/></StackPanel>
   </DockPanel>
   <ContentControl x:Name="MonitorContent" Grid.Row="1"/>
-  <Expander Grid.Row="2" Header="{DynamicResource 任务监控.仿真信号与参考}" Margin="14,0,14,10" Background="#EAF2FC" IsExpanded="True">
-   <StackPanel Margin="10"><TextBlock Text="{DynamicResource 任务监控.仿真输入说明}" TextWrapping="Wrap" Margin="0,0,0,7"/>
+  <Expander Grid.Row="2" Header="{DynamicResource 任务监控.流程检查信号与轴状态}" Margin="14,0,14,10" Background="#EAF2FC" IsExpanded="False">
+   <StackPanel Margin="10">
+    <CheckBox x:Name="AutomaticProductionSignalsCheckBox" Content="{DynamicResource 任务监控.自动工艺信号}"
+              IsChecked="True" Click="AutomaticProductionSignals_Click" Margin="0,0,0,7"/>
+    <TextBlock Text="{DynamicResource 任务监控.流程检查输入说明}" TextWrapping="Wrap" Margin="0,0,0,7"/>
     <WrapPanel x:Name="InputsPanel"/>
     <WrapPanel Margin="0,5"><TextBlock Text="{DynamicResource 任务监控.变量}" VerticalAlignment="Center" Margin="0,0,8,0"/>
      <ComboBox x:Name="VariableBox" MinWidth="180" Margin="0,0,8,0"/>
+     <TextBlock Text="{DynamicResource 任务监控.当前值}" VerticalAlignment="Center" Margin="8,0,6,0"/>
+     <Border MinWidth="96" MinHeight="28" Padding="8,4" Margin="0,0,8,0" Background="White"
+             BorderBrush="#CAD5E2" BorderThickness="1" CornerRadius="4">
+      <TextBlock x:Name="VariableCurrentValue" Text="—" VerticalAlignment="Center" Foreground="#596B7D"/>
+     </Border>
+     <TextBlock Text="{DynamicResource 任务监控.写入值}" VerticalAlignment="Center" Margin="8,0,6,0"/>
      <TextBox x:Name="VariableValue" Width="160" Margin="0,0,8,0" VerticalContentAlignment="Center"/>
-     <Button Content="{DynamicResource 任务监控.写入内存变量}" Click="WriteVariable_Click"/>
-     <Button Content="{DynamicResource 任务监控.准备内存轴参考}" Click="PrepareAxes_Click"/>
+     <Button Content="{DynamicResource 任务监控.写入流程变量}" Click="WriteVariable_Click"/>
+     <Button Content="{DynamicResource 任务监控.设置轴就绪状态}" Click="PrepareAxes_Click"/>
     </WrapPanel>
-    <TextBlock x:Name="CommandFeedback" TextWrapping="Wrap" Foreground="#40536A"/>
+    <TextBlock x:Name="CommandFeedback" TextWrapping="Wrap" Foreground="#40536A" FontWeight="SemiBold" Margin="0,4,0,0"/>
    </StackPanel>
   </Expander>
  </Grid>
