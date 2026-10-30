@@ -11,6 +11,15 @@
  <sys:String x:Key="任务编辑.从备份恢复为草稿">Restore backup as draft...</sys:String>
  <sys:String x:Key="任务编辑.其他草稿操作">Other draft actions</sys:String>
  <sys:String x:Key="任务编辑.重新读取最新草稿">Reload latest draft</sys:String>
+ <sys:String x:Key="任务编辑.保留草稿并同步来源">Keep draft and sync sources</sys:String>
+ <sys:String x:Key="任务编辑.保留草稿并同步来源提示">Back up the complete draft, then update only its source version. Hardware configuration and active task files stay unchanged.</sys:String>
+ <sys:String x:Key="任务编辑.保留草稿并同步来源确认说明">The current draft will be backed up first, then only its source version will be updated. The draft stays in place; hardware configuration and active task files stay unchanged. The draft will be checked against the current configuration. Continue?</sys:String>
+ <sys:String x:Key="任务编辑.草稿来源已同步">Draft sources synchronized</sys:String>
+ <sys:String x:Key="任务编辑.同步前草稿备份">Draft backup before synchronization</sys:String>
+ <sys:String x:Key="任务编辑.检查发现问题">The check found issues. Review the results below.</sys:String>
+ <sys:String x:Key="任务编辑.检查通过">Check passed</sys:String>
+ <sys:String x:Key="任务编辑.来源文件再次变化，请重新检查">Source files changed again. Check the draft again.</sys:String>
+ <sys:String x:Key="任务编辑.来源文件已经变化，请先同步草稿或重新载入运行文件">Source files changed. Sync the draft or reload active task files.</sys:String>
  <sys:String x:Key="任务编辑.放弃草稿并读取运行版本">Discard draft and load active version...</sys:String>
  <sys:String x:Key="任务编辑.关闭">Close</sys:String>
  <sys:String x:Key="任务编辑.请选择任务配置备份保存位置">Choose where to save the task configuration backup</sys:String>
@@ -67,7 +76,7 @@
  <sys:String x:Key="任务编辑.恢复：">Recovery: </sys:String>
  <sys:String x:Key="任务编辑.报警库不存在"> (missing from alarm catalog)</sys:String>
  <sys:String x:Key="任务编辑.当前设备报警库为空，请先维护报警代码">The equipment alarm catalog is empty. Add alarm codes first.</sys:String>
- <sys:String x:Key="任务编辑.报警引用保存在任务草稿；当前任务执行尚未接入设备 Runtime">Alarm references are saved in the task draft. Task execution is not yet connected to the equipment Runtime.</sys:String>
+ <sys:String x:Key="任务编辑.任务报警关联规则">Runtime behavior after equipment-flow integration: all selected alarms are raised together when the condition triggers; a stop alarm puts the machine into reset-required state. Associations are currently saved in the task draft only.</sys:String>
  <sys:String x:Key="任务编辑.等待DI">Wait for DI</sys:String>
  <sys:String x:Key="任务编辑.等级">Severity</sys:String>
  <sys:String x:Key="任务编辑.等于">Equal</sys:String>
@@ -211,6 +220,9 @@
  <sys:String x:Key="任务编辑.正式设备当前状态">Current equipment state</sys:String>
  <sys:String x:Key="任务编辑.设备运行中">Equipment running</sys:String>
  <sys:String x:Key="任务编辑.设备已就绪">Equipment ready</sys:String>
+ <sys:String x:Key="任务编辑.启动条件未满足">Start conditions not met</sys:String>
+ <sys:String x:Key="任务编辑.正在检查启动条件">Checking start conditions</sys:String>
+ <sys:String x:Key="任务编辑.启动拦截原因">Start blocked by</sys:String>
  <sys:String x:Key="任务编辑.设备暂停中">Equipment pausing</sys:String>
  <sys:String x:Key="任务编辑.设备已暂停">Equipment paused</sys:String>
  <sys:String x:Key="任务编辑.设备有停机报警">Equipment stopped by alarm</sys:String>

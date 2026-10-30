@@ -57,6 +57,48 @@ namespace MotionControl.TaskEditing.Checks
             }
         }
 
+        /// <summary>来源变化时保留草稿与多条报警关联，备份后仅更新来源签名。</summary>
+        private static void DraftSourceRebase()
+        {
+            using (var test = new Workspace())
+            {
+                TaskWorkspaceDocument draft = test.Store.Load(Workspace.Id);
+                string activeBefore = test.ActiveBytes();
+                string root = test.Configuration.GetMachineDirectory(Workspace.Id);
+                string variablesPath = Path.Combine(root, "Parameters/DeviceVariables.json");
+                SequenceNode sequence = (SequenceNode)draft.Tasks[0].Definition.Root;
+                sequence.Children.Add(new WaitInputNode
+                {
+                    Id = "multiple-alarm-wait", Name = "多报警关联等待", InputName = "Load.InPosition", Expected = true,
+                    TimeoutAlarmCodes = new List<string> { "ALARM_ONE", "ALARM_TWO" }
+                });
+                test.Store.SaveDraft(draft);
+                string originalBaseSignature = draft.BaseSignature;
+
+                File.AppendAllText(variablesPath, Environment.NewLine);
+                Assert(test.Store.ComputeSignature(Workspace.Id) != originalBaseSignature, "测试未制造来源文件变化。");
+                string backupPath = test.Store.RebaseDraftToCurrentSources(draft);
+                Assert(File.Exists(backupPath), "同步来源前没有生成草稿备份。");
+                JObject backup = JObject.Parse(File.ReadAllText(backupPath));
+                Assert((string)backup["baseSignature"] == originalBaseSignature, "同步前备份没有保留旧来源签名。");
+                string backupText = File.ReadAllText(backupPath);
+                Assert(backupText.Contains("ALARM_ONE") && backupText.Contains("ALARM_TWO"), "同步前备份没有保留多条报警关联。");
+
+                TaskWorkspaceDocument saved = test.Store.Load(Workspace.Id);
+                WaitInputNode savedWait = ((SequenceNode)saved.Tasks[0].Definition.Root).Children.OfType<WaitInputNode>()
+                    .Single(item => item.Id == "multiple-alarm-wait");
+                Assert(savedWait.TimeoutAlarmCodes.SequenceEqual(new[] { "ALARM_ONE", "ALARM_TWO" }), "同步来源后丢失了多条报警关联。");
+                Assert(saved.BaseSignature == test.Store.ComputeSignature(Workspace.Id), "草稿没有绑定最新来源签名。");
+                Assert(activeBefore == test.ActiveBytes(), "同步来源改动了运行任务文件或工位安排。");
+
+                File.AppendAllText(variablesPath, Environment.NewLine);
+                var page = new TaskConfigurationView(test.Configuration, Workspace.Id, () => null);
+                Assert(((Button)page.FindName("RebaseDraftButton")).Visibility == Visibility.Visible,
+                    "来源变化时没有显示保留草稿并同步来源入口。");
+                Assert(!((Button)page.FindName("ApplyButton")).IsEnabled, "来源变化时更新运行文件仍可用。");
+            }
+        }
+
         /// <summary>目录允许的不同大小写引用，查看或保存表单时不变空，也不改写原拼写。</summary>
         private static void CaseInsensitiveReferences()
         {

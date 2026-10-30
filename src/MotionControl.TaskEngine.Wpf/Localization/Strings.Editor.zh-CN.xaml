@@ -11,6 +11,15 @@
  <sys:String x:Key="任务编辑.从备份恢复为草稿">从备份恢复为草稿...</sys:String>
  <sys:String x:Key="任务编辑.其他草稿操作">其他草稿操作</sys:String>
  <sys:String x:Key="任务编辑.重新读取最新草稿">重新读取最新草稿</sys:String>
+ <sys:String x:Key="任务编辑.保留草稿并同步来源">保留草稿并同步来源</sys:String>
+ <sys:String x:Key="任务编辑.保留草稿并同步来源提示">先备份完整草稿，再仅更新草稿的来源版本；硬件配置和运行任务文件不变。</sys:String>
+ <sys:String x:Key="任务编辑.保留草稿并同步来源确认说明">将先备份当前草稿，再仅更新草稿所依据的来源版本。任务草稿继续保留，硬件配置和运行任务文件不会改变；同步后会按当前配置重新检查。确认继续吗？</sys:String>
+ <sys:String x:Key="任务编辑.草稿来源已同步">草稿来源已同步</sys:String>
+ <sys:String x:Key="任务编辑.同步前草稿备份">同步前草稿备份</sys:String>
+ <sys:String x:Key="任务编辑.检查发现问题">检查发现问题，请查看下方定位结果</sys:String>
+ <sys:String x:Key="任务编辑.检查通过">检查通过</sys:String>
+ <sys:String x:Key="任务编辑.来源文件再次变化，请重新检查">来源文件再次变化，请重新检查</sys:String>
+ <sys:String x:Key="任务编辑.来源文件已经变化，请先同步草稿或重新载入运行文件">来源文件已经变化，请先同步草稿或重新载入运行文件</sys:String>
  <sys:String x:Key="任务编辑.放弃草稿并读取运行版本">放弃草稿并读取运行版本...</sys:String>
  <sys:String x:Key="任务编辑.关闭">关闭</sys:String>
  <sys:String x:Key="任务编辑.请选择任务配置备份保存位置">请选择任务配置备份保存位置</sys:String>
@@ -67,7 +76,7 @@
  <sys:String x:Key="任务编辑.恢复：">恢复：</sys:String>
  <sys:String x:Key="任务编辑.报警库不存在">（报警库不存在）</sys:String>
  <sys:String x:Key="任务编辑.当前设备报警库为空，请先维护报警代码">当前设备报警库为空，请先维护报警代码</sys:String>
- <sys:String x:Key="任务编辑.报警引用保存在任务草稿；当前任务执行尚未接入设备 Runtime">报警引用保存在任务草稿；当前任务执行尚未接入设备 Runtime</sys:String>
+ <sys:String x:Key="任务编辑.任务报警关联规则">运行规则（设备流程接入后）：条件触发时同时上报全部已选报警；停机报警使整机等待复位。当前关联只保存在任务草稿。</sys:String>
  <sys:String x:Key="任务编辑.等待DI">等待DI</sys:String>
  <sys:String x:Key="任务编辑.等级">等级</sys:String>
  <sys:String x:Key="任务编辑.等于">等于</sys:String>
@@ -211,6 +220,9 @@
  <sys:String x:Key="任务编辑.正式设备当前状态">正式设备当前状态</sys:String>
  <sys:String x:Key="任务编辑.设备运行中">设备运行中</sys:String>
  <sys:String x:Key="任务编辑.设备已就绪">设备已就绪</sys:String>
+ <sys:String x:Key="任务编辑.启动条件未满足">启动条件未满足</sys:String>
+ <sys:String x:Key="任务编辑.正在检查启动条件">正在检查启动条件</sys:String>
+ <sys:String x:Key="任务编辑.启动拦截原因">启动拦截原因</sys:String>
  <sys:String x:Key="任务编辑.设备暂停中">设备暂停中</sys:String>
  <sys:String x:Key="任务编辑.设备已暂停">设备已暂停</sys:String>
  <sys:String x:Key="任务编辑.设备有停机报警">设备有停机报警</sys:String>

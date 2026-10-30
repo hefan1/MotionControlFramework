@@ -77,6 +77,52 @@ namespace MotionControl.TaskEngine.Editing
             }
         }
 
+        /// <summary>备份当前草稿后只同步其来源签名，不修改硬件配置或运行任务文件。</summary>
+        public string RebaseDraftToCurrentSources(TaskWorkspaceDocument draft)
+        {
+            RequireDraftShape(draft?.MachineId, draft);
+            using (AcquireEditLock(draft.MachineId))
+            {
+                RequireNoPendingApply(draft.MachineId);
+                RequireCurrentDraft(draft);
+
+                string sourceSignature = ComputeSignature(draft.MachineId);
+                if (string.Equals(sourceSignature, draft.BaseSignature, StringComparison.Ordinal))
+                    throw new InvalidOperationException("任务来源已经与草稿一致，无需同步。");
+
+                string backupPath = SaveLocalCopy(draft);
+                if (!string.Equals(sourceSignature, ComputeSignature(draft.MachineId), StringComparison.Ordinal))
+                    throw new InvalidOperationException("保留草稿期间来源文件再次变化，草稿未同步；已保留本次草稿副本：" + backupPath);
+
+                string previousSignature = draft.BaseSignature;
+                DateTime previousSavedAt = draft.SavedAt;
+                string previousDraftSignature = draft.DraftSignature;
+                DateTime savedAt = DateTime.Now;
+                try
+                {
+                    draft.BaseSignature = sourceSignature;
+                    JObject document = JObject.FromObject(draft, TaskDefinitionJson.CreateSerializer());
+                    document["savedAt"] = JToken.FromObject(savedAt, TaskDefinitionJson.CreateSerializer());
+                    RequireDraftShape(draft.MachineId, ReadDraft(document.ToString()));
+                    if (!string.Equals(sourceSignature, ComputeSignature(draft.MachineId), StringComparison.Ordinal))
+                        throw new InvalidOperationException("保存草稿前来源文件再次变化，草稿未同步；已保留本次草稿副本：" + backupPath);
+
+                    _store.SaveJson(draft.MachineId, DraftPath, document);
+                }
+                catch
+                {
+                    draft.BaseSignature = previousSignature;
+                    draft.SavedAt = previousSavedAt;
+                    draft.DraftSignature = previousDraftSignature;
+                    throw;
+                }
+
+                draft.SavedAt = savedAt;
+                draft.DraftSignature = CurrentDraftSignature(draft.MachineId);
+                return backupPath;
+            }
+        }
+
         /// <summary>把本窗口完整内容保留到唯一备份文件；可带入尚未保存的单个任务，不修改原工作区。</summary>
         public string SaveLocalCopy(TaskWorkspaceDocument draft, TaskWorkspaceTask editedTask = null)
         {
@@ -89,9 +135,10 @@ namespace MotionControl.TaskEngine.Editing
             }
             RequireDraftShape(draft.MachineId, copy);
             JObject document = JObject.FromObject(copy, TaskDefinitionJson.CreateSerializer());
+            string machineDirectory = _store.GetMachineDirectory(draft.MachineId);
             string relativePath = "Backups/TaskLocal-" + Guid.NewGuid().ToString("N") + ".json";
             _store.SaveJson(draft.MachineId, relativePath, document);
-            return Path.GetFullPath(Path.Combine(_store.GetMachineDirectory(draft.MachineId), relativePath));
+            return Path.GetFullPath(Path.Combine(machineDirectory, relativePath));
         }
 
         /// <summary>把当前工作区导出为单个可拷走的 JSON 备份，不修改草稿或运行文件。</summary>

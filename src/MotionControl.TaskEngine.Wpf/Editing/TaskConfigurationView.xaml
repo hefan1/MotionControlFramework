@@ -6,11 +6,22 @@
    <Button x:Name="SaveAndCheckButton" Content="{DynamicResource 任务编辑.保存并检查}" Click="SaveAndCheck_Click" Style="{StaticResource 编辑主要按钮}"/>
    <Button x:Name="BackupRestoreButton" Content="{DynamicResource 任务编辑.备份与恢复}" Click="BackupRestore_Click"/>
    <Button x:Name="ApplyButton" Content="{DynamicResource 任务编辑.更新任务文件}" Click="Apply_Click"/>
+   <Button x:Name="RebaseDraftButton" Content="{DynamicResource 任务编辑.保留草稿并同步来源}" ToolTip="{DynamicResource 任务编辑.保留草稿并同步来源提示}" Click="RebaseDraft_Click" Visibility="Collapsed"/>
    <Button x:Name="ReloadRuntimeButton" Content="{DynamicResource 任务编辑.重新载入运行文件}" ToolTip="{DynamicResource 任务编辑.重新载入运行文件提示}" Click="ReloadRuntimeFiles_Click" Visibility="Collapsed"/>
    <Button x:Name="RecoverButton" Content="{DynamicResource 任务编辑.恢复上次应用}" Click="Recover_Click"/>
   </WrapPanel></Border>
   <StackPanel x:Name="ConfigurationStatus" Grid.Row="1" Margin="2,7">
    <TextBlock x:Name="StatusText" TextWrapping="Wrap" Foreground="#176BD0"/>
+   <Border x:Name="RuntimeContextPanel" Background="#F7F9FC" BorderBrush="#D8E2EE" BorderThickness="1" CornerRadius="6" Padding="9,7" Margin="0,5,0,0">
+    <DockPanel LastChildFill="True">
+     <Button x:Name="CurrentFlowButton" DockPanel.Dock="Right" Content="{DynamicResource 任务编辑.查看当前流程状态}" Click="CurrentFlow_Click" Margin="10,0,0,0" Padding="9,4" VerticalAlignment="Center"/>
+     <StackPanel>
+      <TextBlock x:Name="RuntimeStateText" FontWeight="SemiBold" Foreground="#26384D"/>
+      <TextBlock x:Name="RuntimeReadinessText" TextWrapping="Wrap" Margin="0,3,0,0" Foreground="#845B0A" Visibility="Collapsed"/>
+      <TextBlock x:Name="RuntimeStationsText" TextWrapping="Wrap" Margin="0,3,0,0" Foreground="#40536A"/>
+     </StackPanel>
+    </DockPanel>
+   </Border>
    <Expander x:Name="ErrorDiagnosticsExpander" Margin="0,5,0,0" Visibility="Collapsed" Header="{DynamicResource 任务编辑.查看完整诊断信息}" Background="#F7F9FC" BorderBrush="#D9E0E8" BorderThickness="1" Padding="6">
     <TextBox x:Name="ErrorDiagnosticsText" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="150" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
    </Expander>

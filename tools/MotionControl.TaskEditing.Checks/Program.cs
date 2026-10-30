@@ -34,13 +34,14 @@ namespace MotionControl.TaskEditing.Checks
             Check("分类表单、复制ID和保存交互", EditingControls, ref failed);
             Check("中英文及两种尺寸离屏布局", Layouts, ref failed);
             Check("多窗口草稿冲突与本地副本", DraftWindowConflicts, ref failed);
+            Check("来源变化时保留草稿、备份和多条报警关联", DraftSourceRebase, ref failed);
             Check("外部任务备份导出、恢复和设备校验", ExternalBackupRoundTrip, ref failed);
             Check("大小写无关引用完整保留", CaseInsensitiveReferences, ref failed);
             Check("空组合条件往返与取反条件重建", ConditionRoundTrip, ref failed);
             Check("工位任务选择与草稿副本交互", ConfigurationContext, ref failed);
             Check("无效参数不部分修改任务模型", InvalidFieldsKeepDefinition, ref failed);
             Check("任务检查字段显示为易读名称", ReadableIssueFields, ref failed);
-            Console.WriteLine("任务编辑内部检查：14 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
+            Console.WriteLine("任务编辑内部检查：15 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
             return failed == 0 ? 0 : 1;
         }
         /// <summary>逐项执行并保留异常堆栈。</summary>

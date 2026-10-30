@@ -26,12 +26,20 @@ namespace MotionControl.TaskEngine.Wpf.Editing
     {
         /// <summary>请求定位现有页面；此事件不代表设备动作。</summary>
         public event EventHandler<TaskReferenceEventArgs> ReferenceRequested;
+        /// <summary>请求查看当前正式 Runtime 流程；导航不会应用草稿或执行设备动作。</summary>
+        public event EventHandler CurrentFlowRequested;
         /// <summary>草稿与运行文件的具体存储。</summary>
         private readonly TaskWorkspaceStore _store;
         /// <summary>当前设备稳定标识。</summary>
         private readonly string _machineId;
         /// <summary>由 Host 返回应用受阻原因，空值才允许应用。</summary>
         private readonly Func<string> _getBlockedReason;
+        /// <summary>由 Host 提供当前正式 Runtime 的本地化状态文字。</summary>
+        private readonly Func<string> _getRuntimeStateText;
+        /// <summary>由 Host 提供当前正式 Runtime 的工位名称。</summary>
+        private readonly Func<IEnumerable<string>> _getRuntimeStationNames;
+        /// <summary>由 Host 提供与总览一致的自动启动拦截原因。</summary>
+        private readonly Func<string> _getRuntimeReadinessReason;
         /// <summary>完整设备草稿。</summary>
         private TaskWorkspaceDocument _workspace;
         /// <summary>已应用文件的快照，仅供显示版本与草稿差异。</summary>
@@ -77,10 +85,19 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         /// <summary>可选初始化任务。</summary>
         private ComboBox _initialization;
 
-        /// <summary>接入当前设备目录与 Host 应用边界，不持有运动卡。</summary>
-        public TaskConfigurationView(MachineConfigurationStore store, string machineId, Func<string> getBlockedReason)
+        /// <summary>接入设备目录、Host 应用边界和正式 Runtime 状态，不持有运动卡。</summary>
+        public TaskConfigurationView(
+            MachineConfigurationStore store,
+            string machineId,
+            Func<string> getBlockedReason,
+            Func<string> getRuntimeStateText = null,
+            Func<IEnumerable<string>> getRuntimeStationNames = null,
+            Func<string> getRuntimeReadinessReason = null)
         {
             _store = new TaskWorkspaceStore(store); _machineId = machineId; _getBlockedReason = getBlockedReason ?? (() => "未提供运行会话状态，暂不能应用。");
+            _getRuntimeStateText = getRuntimeStateText;
+            _getRuntimeStationNames = getRuntimeStationNames;
+            _getRuntimeReadinessReason = getRuntimeReadinessReason;
             InitializeComponent();
             UpdateHeaders(); IssuesGrid.Visibility = Visibility.Collapsed; ConfigIssueRow.Height = new GridLength(0);
             AddHandler(TextBox.TextChangedEvent, new TextChangedEventHandler(TextChanged));
@@ -161,21 +178,58 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         private void ViewLoaded(object sender, RoutedEventArgs e) { RefreshPermission(sender, e); _timer.Start(); }
         /// <summary>移出页面停止轮询，草稿仍保留在页面对象中。</summary>
         private void ViewUnloaded(object sender, RoutedEventArgs e) { _timer.Stop(); }
-        /// <summary>显示应用禁用原因，并在来源变化时给出安全重载入口。</summary>
+        /// <summary>显示应用禁用原因，并在来源变化时提供保留草稿或重新载入入口。</summary>
         private void RefreshPermission(object sender, EventArgs e)
         {
+            RefreshRuntimeContext();
             string reason = _getBlockedReason();
             if (_workspace == null) reason = T("任务配置尚未成功加载，请先处理上方错误提示");
             if (_store.HasPendingApply(_machineId)) reason = T("上次应用未完成，请先恢复");
             if (_editor != null) reason = T("请先保存并返回任务配置");
-            if (_sourceChanged) reason = T("来源文件已经变化，请重新载入");
+            if (_sourceChanged) reason = T("来源文件已经变化，请先同步草稿或重新载入运行文件");
             ApplyButton.IsEnabled = _workspace != null && string.IsNullOrEmpty(reason); ApplyButton.ToolTip = reason;
+            RebaseDraftButton.Visibility = _workspace != null && _sourceChanged ? Visibility.Visible : Visibility.Collapsed;
+            RebaseDraftButton.IsEnabled = _workspace != null && _editor == null && !_store.HasPendingApply(_machineId);
             ReloadRuntimeButton.Visibility = _workspace != null && _sourceChanged ? Visibility.Visible : Visibility.Collapsed;
             SaveAndCheckButton.IsEnabled = _workspace != null;
             BackupRestoreButton.IsEnabled = _workspace != null;
             ContentHost.IsEnabled = _workspace != null;
             ApplyReasonText.Text = reason ?? T("仅更新任务文件，不启动设备");
             RecoverButton.Visibility = _store.HasPendingApply(_machineId) ? Visibility.Visible : Visibility.Collapsed;
+        }
+        /// <summary>展示正式 Runtime 状态、启动拦截原因和工位清单，避免把当前草稿误认为正在运行。</summary>
+        private void RefreshRuntimeContext()
+        {
+            if (_getRuntimeStateText == null || _getRuntimeStationNames == null)
+            {
+                RuntimeContextPanel.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            RuntimeContextPanel.Visibility = Visibility.Visible;
+            string stateText = _getRuntimeStateText();
+            RuntimeStateText.Text = T("正式设备当前状态") + "："
+                + (string.IsNullOrWhiteSpace(stateText) ? T("没有连接运行时") : T(stateText));
+            string readinessReason = _getRuntimeReadinessReason == null ? null : _getRuntimeReadinessReason();
+            RuntimeReadinessText.Text = string.IsNullOrWhiteSpace(readinessReason)
+                ? string.Empty
+                : T("启动拦截原因") + "：" + readinessReason;
+            RuntimeReadinessText.Visibility = string.IsNullOrWhiteSpace(readinessReason)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+            string[] stationNames = (_getRuntimeStationNames() ?? Enumerable.Empty<string>())
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .ToArray();
+            RuntimeStationsText.Text = T("当前运行工位") + "："
+                + (stationNames.Length == 0 ? T("没有自动工位") : string.Join("、", stationNames));
+            RuntimeStationsText.ToolTip = T("运行工位说明");
+            CurrentFlowButton.IsEnabled = stationNames.Length > 0;
+            CurrentFlowButton.ToolTip = stationNames.Length > 0 ? T("查看当前流程状态") : T("没有自动工位");
+        }
+        /// <summary>只读跳转到 Host 当前流程页，不更改草稿或运行状态。</summary>
+        private void CurrentFlow_Click(object sender, RoutedEventArgs e)
+        {
+            CurrentFlowRequested?.Invoke(this, EventArgs.Empty);
         }
         /// <summary>只标记当前配置表单修改，编辑器有自己的修改状态。</summary>
         private void TextChanged(object sender, TextChangedEventArgs e)
@@ -499,6 +553,35 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         private void ReloadRuntimeFiles_Click(object sender, RoutedEventArgs e)
         {
             ReloadRuntimeFiles();
+        }
+        /// <summary>先保留完整草稿副本，再把草稿绑定到当前来源并立即检查引用。</summary>
+        private void RebaseDraft_Click(object sender, RoutedEventArgs e)
+        {
+            if (_workspace == null || _editor != null || !ReadSettings()) return;
+            if (MessageBox.Show(T("保留草稿并同步来源确认说明"), T("保留草稿并同步来源"),
+                MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+
+            try
+            {
+                _store.SaveDraft(_workspace);
+                _dirty = false;
+                string backupPath = _store.RebaseDraftToCurrentSources(_workspace);
+                _activeWorkspace = _store.Load(_machineId, false);
+                _catalog = _store.LoadCatalog(_workspace);
+                _sourceChanged = _store.ComputeSignature(_machineId) != _workspace.BaseSignature;
+                Rebuild();
+
+                _lastCheckIssues = _store.Check(_workspace);
+                ShowIssues(_lastCheckIssues);
+                RefreshLibraryRows();
+                _sourceChanged = _store.ComputeSignature(_machineId) != _workspace.BaseSignature;
+                bool hasErrors = _lastCheckIssues.Any(issue => issue.Severity == TaskIssueSeverity.Error);
+                SetStatusText(T("草稿来源已同步") + "；" + T(hasErrors ? "检查发现问题" : "检查通过")
+                    + (_sourceChanged ? "；" + T("来源文件再次变化，请重新检查") : "") + "\n"
+                    + T("同步前草稿备份") + "：" + backupPath);
+                RefreshPermission(null, EventArgs.Empty);
+            }
+            catch (Exception error) { ShowError(error); }
         }
         /// <summary>把当前页面内容导出到人员选择的 JSON 文件，可选带入尚未保存的任务。</summary>
         private void ExportWorkspaceBackup(TaskWorkspaceTask editedTask)
