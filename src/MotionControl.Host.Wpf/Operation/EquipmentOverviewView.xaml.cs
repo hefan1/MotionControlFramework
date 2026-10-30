@@ -93,7 +93,7 @@ namespace MotionControl.Host.Wpf.Operation
             MachineStateText.Foreground = OperationUi.StateBrush(snapshot.State);
             var border = OperationUi.StateBrush(snapshot.State).Clone(); border.Opacity = 0.32; StatusBanner.BorderBrush = border;
             var background = OperationUi.StateBrush(snapshot.State).Clone(); background.Opacity = 0.06; StatusBanner.Background = background;
-            SourceText.Text = T(snapshot.IsPreview ? "离线页面示例" : "来源：传统C#工位Runtime");
+            SourceText.Text = T(snapshot.IsPreview ? "离线页面示例" : "状态来源：设备运行数据");
             SampleText.Text = T("软件状态采样") + " · " + snapshot.SampledAt.ToString("yyyy-MM-dd HH:mm:ss");
             bool noNamedAxes = _axisMappingStatusKnown && _configuredAxisCount == 0;
             NextActionText.Text = T(_isCardConnected && noNamedAxes

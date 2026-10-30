@@ -62,6 +62,8 @@ namespace MotionControl.OperatorPages.Checks
             service.ReportCondition(notice, "测试工位", true, "测试条件");
             overview.SetRuntime(runtime); alarms.SetRuntime(runtime);
             Assert(((DataGrid)alarms.FindName("AlarmGrid")).Items.Count == 1, "没有读取当前Runtime报警。");
+            Assert(((TextBlock)overview.FindName("SourceText")).Text == "状态来源：设备运行数据", "设备总览显示了内部 Runtime 名称。");
+            Assert(((TextBlock)alarms.FindName("SourceText")).Text.StartsWith("状态来源：设备运行数据"), "当前报警显示了内部 Runtime 名称。");
             service.ReportCondition(notice, "测试工位", false, null); alarms.RefreshDisplay();
             Assert(((DataGrid)alarms.FindName("AlarmGrid")).Items.Count == 0, "非停机提醒恢复后没有消失。");
             overview.SetRuntime(null); alarms.SetRuntime(null);

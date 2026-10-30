@@ -4,7 +4,7 @@
  <sys:String x:Key="操作页.查看当前报警">View current alarms</sys:String>
  <sys:String x:Key="操作页.当前提醒">Current notice</sys:String>
  <sys:String x:Key="操作页.离线页面示例">Offline UI example</sys:String>
- <sys:String x:Key="操作页.来源：传统C#工位Runtime">Source: C# station Runtime</sys:String>
+ <sys:String x:Key="操作页.状态来源：设备运行数据">Status source: equipment data</sys:String>
  <sys:String x:Key="操作页.软件状态采样">Software state sampled at</sys:String>
  <sys:String x:Key="操作页.未统计">Not counted yet</sys:String>
  <sys:String x:Key="操作页.未采集">Not measured yet</sys:String>

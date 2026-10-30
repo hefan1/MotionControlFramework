@@ -70,7 +70,7 @@ namespace MotionControl.Host.Wpf.Operation
             _snapshot = _preview ?? OperationSnapshot.Read(_runtime);
             string query = SearchBox.Text.Trim();
             var alarms = _snapshot.Alarms.Where(alarm => Matches(alarm, query)).OrderBy(alarm => alarm.Definition.Kind == MachineAlarmKind.StopMachine ? 0 : 1).ThenByDescending(alarm => alarm.FirstRaisedAtUtc).ToList();
-            SourceText.Text = T(_snapshot.IsPreview ? "离线页面示例" : "来源：传统C#工位Runtime") + " · " + T("软件状态采样") + " " + _snapshot.SampledAt.ToString("yyyy-MM-dd HH:mm:ss");
+            SourceText.Text = T(_snapshot.IsPreview ? "离线页面示例" : "状态来源：设备运行数据") + " · " + T("软件状态采样") + " " + _snapshot.SampledAt.ToString("yyyy-MM-dd HH:mm:ss");
             CountText.Text = T("当前报警") + "  " + (_snapshot.HasRuntime ? _snapshot.Alarms.Count.ToString() : "—");
             EmptyText.Text = !_snapshot.HasRuntime ? T("未读取报警状态") : _snapshot.Alarms.Count == 0 ? T("当前无报警") : T("没有匹配的报警");
             EmptyText.Visibility = alarms.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
