@@ -275,7 +275,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         /// <summary>显示任务备份的实际路径，未保存标记仍保留。</summary>
         public void ShowBackupExported(string path)
         { StatusText.Text = T("任务配置备份已导出") + "\n" + path; }
-        /// <summary>读取最新设备资源目录后检查当前任务，不持久化任务定义。</summary>
+        /// <summary>读取最新设备资源目录检查当前任务，并说明结果不会保存草稿或更新设备级检查状态。</summary>
         private void Check_Click(object sender, RoutedEventArgs e)
         {
             if (!TryRead()) return;
@@ -290,7 +290,8 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 IssuesGrid.ItemsSource = issues.Select(issue => new TaskEditingIssueRow(issue, issue.TaskId == Definition.TaskId ? Definition : _others.FirstOrDefault(task => task.TaskId == issue.TaskId), T(issue.Severity == TaskIssueSeverity.Error ? "错误" : "提醒"), T)).ToList();
                 IssuesGrid.Visibility = issues.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
                 IssuesRow.Height = new GridLength(issues.Count > 0 ? 110 : 0);
-                StatusText.Text = T("检查结果") + "：" + issues.Count + " · " + Definition.TaskId;
+                StatusText.Text = T("检查结果") + "：" + issues.Count + " · " + Definition.TaskId
+                    + "；" + T("当前任务检查范围");
             }
             catch (Exception error)
             {
