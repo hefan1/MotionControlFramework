@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
+using MotionControl.Host.Wpf.Operation;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Runtime.Machine;
@@ -14,6 +15,9 @@ namespace MotionControl.Host.Wpf
     /// <summary>显示 Runtime 的工位步骤、整机状态和当前报警，供现场核对流程进度。</summary>
     public partial class FlowStatusView : UserControl
     {
+        /// <summary>请求打开只读关联页，不执行轴运动或 IO 写入。</summary>
+        public event EventHandler<OperatorNavigationEventArgs> NavigationRequested;
+
         /// <summary>本页观察的整机运行时，与手动轴和 IO 页面共享同一个实例。</summary>
         private readonly MachineRuntime _runtime;
 
@@ -103,6 +107,19 @@ namespace MotionControl.Host.Wpf
         {
             RefreshDisplay();
         }
+
+        /// <summary>打开 IO 监控；Host 会选中 DI 输入供现场核对传感器状态。</summary>
+        private void OpenIoMonitor_Click(object sender, RoutedEventArgs e)
+        {
+            NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("IO监控"));
+        }
+
+        /// <summary>打开当前报警页查看设备停机原因。</summary>
+        private void OpenCurrentAlarms_Click(object sender, RoutedEventArgs e)
+        {
+            NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("当前报警"));
+        }
+
         /// <summary>从总览或报警按工位名称只读定位，保留原页面布局和设备状态。</summary>
         public bool FocusStationByName(string stationName)
         {

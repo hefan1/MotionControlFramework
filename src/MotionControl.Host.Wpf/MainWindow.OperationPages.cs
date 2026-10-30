@@ -1,6 +1,8 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
+using MotionControl.Framework.Wpf.Configuration;
+using MotionControl.Framework.Wpf.ManualDebug;
 using MotionControl.Host.Wpf.Operation;
 
 namespace MotionControl.Host.Wpf
@@ -28,7 +30,11 @@ namespace MotionControl.Host.Wpf
             UserControl page = null;
             string description = null;
             if (_currentSectionKey == "Home" && _currentPageResourceKey == "设备总览")
-            { page = _equipmentOverviewPage; description = "设备总览页面说明"; }
+            {
+                if (_axisMappingConfigurationPage is AxisMappingConfigurationView axisMappingPage)
+                    _equipmentOverviewPage.SetAxisMappingStatus(axisMappingPage.ConfiguredAxisCount, axisMappingPage.ConfiguredAxisTotal);
+                page = _equipmentOverviewPage; description = "设备总览页面说明";
+            }
             if (_currentSectionKey == "Alarms" && _currentPageResourceKey == "当前报警")
             { page = _currentAlarmsPage; description = "当前报警页面说明"; }
             if (page == null) return false;
@@ -48,10 +54,17 @@ namespace MotionControl.Host.Wpf
                 MessageBox.Show(GetLocalizedText("关联页面尚未就绪"), GetLocalizedText(e.Page), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
-            _operationReturnPage = ReferenceEquals(sender, _currentAlarmsPage) ? "当前报警" : "设备总览";
+            _operationReturnPage = ReferenceEquals(sender, _currentAlarmsPage) ? "当前报警"
+                : ReferenceEquals(sender, _flowStatusPage) ? "流程状态" : "设备总览";
             _currentPageResourceKey = e.Page;
-            string section = e.Page == "当前报警" ? "Alarms" : e.Page == "轴手动" ? "Manual" : "Monitor";
+            string section = e.Page == "当前报警" ? "Alarms"
+                : e.Page == "轴映射配置" ? "Settings"
+                : e.Page == "轴手动" ? "Manual"
+                : e.Page == "IO监控" || e.Page == "流程状态" ? "Monitor"
+                : "Monitor";
             NavigateToSection(section);
+            if (e.Page == "IO监控" && ReferenceEquals(sender, _flowStatusPage) && _ioMonitorPage is IoMonitorView ioMonitorPage)
+                ioMonitorPage.SelectDigitalInputs();
             if (e.Page == "流程状态" && _flowStatusPage is FlowStatusView flow) flow.FocusStationByName(e.StationName);
             OperationReturnButton.Visibility = Visibility.Visible;
         }
@@ -59,7 +72,9 @@ namespace MotionControl.Host.Wpf
         private void OperationReturn_Click(object sender, RoutedEventArgs e)
         {
             _currentPageResourceKey = _operationReturnPage ?? "设备总览";
-            NavigateToSection(_currentPageResourceKey == "当前报警" ? "Alarms" : "Home");
+            string section = _currentPageResourceKey == "当前报警" ? "Alarms"
+                : _currentPageResourceKey == "流程状态" ? "Monitor" : "Home";
+            NavigateToSection(section);
             OperationReturnButton.Visibility = Visibility.Collapsed;
             _operationReturnPage = null;
         }

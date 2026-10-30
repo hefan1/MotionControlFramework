@@ -60,6 +60,9 @@
     <sys:String x:Key="自动流程命令失败标题">Automatic Sequence Command Failed</sys:String>
     <sys:String x:Key="工位流程状态说明">Automatic and manual pages share the same card, logical axes, and I/O mapping. Manual commands are blocked while running.</sys:String>
     <sys:String x:Key="工位当前步骤">Current Station Step</sys:String>
+    <sys:String x:Key="流程页.打开IO监控">Open I/O Monitor</sys:String>
+    <sys:String x:Key="流程页.IO监控说明">Open I/O Monitor on digital inputs to check the sensor by its mapped name.</sys:String>
+    <sys:String x:Key="流程页.查看当前报警">View Current Alarms</sys:String>
     <sys:String x:Key="整机当前状态">Machine state: </sys:String>
     <sys:String x:Key="未配置自动工位">No automatic station is enabled; axis and I/O manual pages remain available.</sys:String>
     <sys:String x:Key="无当前报警">No current alarms.</sys:String>

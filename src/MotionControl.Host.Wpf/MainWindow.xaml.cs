@@ -274,10 +274,17 @@ namespace MotionControl.Host.Wpf
             UpdatePageContent();
         }
 
-        /// <summary>由 Host 注入与手动页面共用同一 Runtime 的工位状态页面。</summary>
+        /// <summary>由 Host 注入工位状态页，并接通只读的 IO 与报警导航。</summary>
         public void SetFlowStatusPage(UserControl flowStatusPage)
         {
+            if (_flowStatusPage is FlowStatusView oldFlowStatusPage)
+                oldFlowStatusPage.NavigationRequested -= OperationNavigationRequested;
+
             _flowStatusPage = flowStatusPage;
+
+            if (_flowStatusPage is FlowStatusView flowStatusView)
+                flowStatusView.NavigationRequested += OperationNavigationRequested;
+
             UpdatePageContent();
         }
 

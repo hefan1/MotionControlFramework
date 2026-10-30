@@ -67,6 +67,9 @@
     <sys:String x:Key="自动流程命令失败标题">自动流程命令失败</sys:String>
     <sys:String x:Key="工位流程状态说明">自动工位与手动页面共用当前控制卡、逻辑轴和 IO 映射；运行时手动操作会被阻止。</sys:String>
     <sys:String x:Key="工位当前步骤">工位当前步骤</sys:String>
+    <sys:String x:Key="流程页.打开IO监控">打开 IO 监控</sys:String>
+    <sys:String x:Key="流程页.IO监控说明">进入 IO 监控并选中 DI 输入，按传感器名称核对当前状态。</sys:String>
+    <sys:String x:Key="流程页.查看当前报警">查看当前报警</sys:String>
     <sys:String x:Key="整机当前状态">整机状态：</sys:String>
     <sys:String x:Key="未配置自动工位">未启用自动工位；可继续使用轴手动和 IO 手动页面。</sys:String>
     <sys:String x:Key="无当前报警">当前无报警。</sys:String>
