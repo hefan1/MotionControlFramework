@@ -49,6 +49,7 @@ namespace MotionControl.TaskEngine.Validation
             {
                 if (!ValidName(input.InputName) || !_catalog.Inputs.Contains(input.InputName, StringComparer.OrdinalIgnoreCase))
                     Error(node, path + ".inputName", "找不到逻辑 DI；不能把 DO 用作输入：" + input.InputName);
+                CheckAlarmReferences(input.TimeoutAlarmCodes, node, path + ".timeoutAlarmCodes");
             }
             else if (node is DelayNode delay)
             {
@@ -58,6 +59,7 @@ namespace MotionControl.TaskEngine.Validation
             else if (node is WaitConditionNode wait)
             {
                 CheckCondition(wait.Condition, node, path + ".condition", new HashSet<TaskCondition>(), 0);
+                CheckAlarmReferences(wait.TimeoutAlarmCodes, node, path + ".timeoutAlarmCodes");
             }
             else if (node is SetVariableNode assignment)
             {

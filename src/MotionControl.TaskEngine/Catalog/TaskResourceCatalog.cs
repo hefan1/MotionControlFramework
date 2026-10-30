@@ -24,6 +24,8 @@ namespace MotionControl.TaskEngine.Catalog
         public IReadOnlyCollection<string> Resources { get; private set; }
         /// <summary>当前设备报警库中的稳定报警代码。</summary>
         public IReadOnlyCollection<string> AlarmCodes { get; private set; }
+        /// <summary>当前设备报警库中供任务编辑器解释代码的类别与说明。</summary>
+        public IReadOnlyList<TaskAlarmInfo> AlarmDefinitions { get; private set; }
         /// <summary>读取时发现的可选配置缺失或旧点位无法映射等信息。</summary>
         public IReadOnlyList<string> Notices { get; private set; }
 
@@ -32,7 +34,7 @@ namespace MotionControl.TaskEngine.Catalog
             IEnumerable<string> outputs, IDictionary<string, DeviceVariableType> variables,
             IEnumerable<TaskTeachPoint> teachPoints, IEnumerable<string> namedResources = null,
             IEnumerable<string> notices = null, IDictionary<string, string> variableInitialValues = null,
-            IEnumerable<string> alarmCodes = null)
+            IEnumerable<string> alarmCodes = null, IEnumerable<TaskAlarmInfo> alarmDefinitions = null)
         {
             if (axes == null || inputs == null || outputs == null || variables == null || teachPoints == null)
                 throw new ArgumentNullException("目录中的轴、IO、变量和示教点集合均不能为空。");
@@ -113,7 +115,29 @@ namespace MotionControl.TaskEngine.Catalog
                 }
             }
             Resources = CopyNames(resourceNames);
-            AlarmCodes = CopyNames(alarmCodes ?? new string[0]);
+            var alarms = new List<TaskAlarmInfo>();
+            var alarmCodesFromDefinitions = new List<string>();
+            if (alarmDefinitions != null)
+            {
+                var alarmNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (TaskAlarmInfo alarm in alarmDefinitions)
+                {
+                    if (alarm == null) throw new ArgumentException("报警目录包含空记录。");
+                    CheckName(alarm.Code);
+                    if (string.IsNullOrWhiteSpace(alarm.Message))
+                        throw new ArgumentException("报警说明不能为空：" + alarm.Code);
+                    if (!Enum.IsDefined(typeof(MotionControl.Framework.Contracts.Alarms.MachineAlarmKind), alarm.Kind))
+                        throw new ArgumentException("报警类别无效：" + alarm.Code);
+                    if (!alarmNames.Add(alarm.Code)) throw new ArgumentException("报警代码重复：" + alarm.Code);
+                    alarms.Add(new TaskAlarmInfo(alarm.Code, alarm.Message, alarm.Kind,
+                        alarm.CheckGuidance, alarm.RecoveryGuidance));
+                    alarmCodesFromDefinitions.Add(alarm.Code);
+                }
+            }
+            AlarmDefinitions = alarms.AsReadOnly();
+            AlarmCodes = CopyNames(alarmCodesFromDefinitions.Count == 0
+                ? alarmCodes ?? new string[0]
+                : alarmCodesFromDefinitions);
             Notices = new List<string>(notices ?? new string[0]).AsReadOnly();
         }
 

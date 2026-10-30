@@ -98,20 +98,25 @@ namespace MotionControl.TaskEngine.Catalog
             }
 
             var alarmCodes = new List<string>();
+            var alarmDefinitions = new List<TaskAlarmInfo>();
             string alarmPath = Path.Combine(_store.GetMachineDirectory(machineId),
                 MachineAlarmCatalogStore.RelativeFilePath.Replace('/', Path.DirectorySeparatorChar));
             if (File.Exists(alarmPath))
             {
                 MachineAlarmCatalogDocument alarmCatalog = new MachineAlarmCatalogStore(_store).Load(machineId);
                 foreach (MachineAlarmCatalogEntry alarm in alarmCatalog.Alarms)
+                {
                     alarmCodes.Add(alarm.Code);
+                    alarmDefinitions.Add(new TaskAlarmInfo(alarm.Code, alarm.Message, alarm.Kind,
+                        alarm.CheckGuidance, alarm.RecoveryGuidance));
+                }
             }
             else
             {
                 notices.Add("报警库尚未建立：" + MachineAlarmCatalogStore.RelativeFilePath);
             }
             return new TaskResourceCatalog(axes, inputs, outputs, variables, points,
-                namedResources, notices, variableInitialValues, alarmCodes);
+                namedResources, notices, variableInitialValues, alarmCodes, alarmDefinitions);
         }
 
         /// <summary>读取已知格式文件；只允许可选文件不存在，不忽略损坏文件。</summary>

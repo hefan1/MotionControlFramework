@@ -60,6 +60,11 @@
  <sys:String x:Key="任务编辑.等待超时关联报警">Alarm on wait timeout</sys:String>
  <sys:String x:Key="任务编辑.条件不成立关联报警（可多选）">Alarms when condition is false (multiple)</sys:String>
  <sys:String x:Key="任务编辑.等待超时关联报警（可多选）">Alarms on wait timeout (multiple)</sys:String>
+ <sys:String x:Key="任务编辑.已关联 {0} 条报警">{0} alarm(s) linked</sys:String>
+ <sys:String x:Key="任务编辑.停机报警">Stop machine</sys:String>
+ <sys:String x:Key="任务编辑.非停机报警">Non-stop</sys:String>
+ <sys:String x:Key="任务编辑.检查：">Check: </sys:String>
+ <sys:String x:Key="任务编辑.恢复：">Recovery: </sys:String>
  <sys:String x:Key="任务编辑.报警库不存在"> (missing from alarm catalog)</sys:String>
  <sys:String x:Key="任务编辑.当前设备报警库为空，请先维护报警代码">The equipment alarm catalog is empty. Add alarm codes first.</sys:String>
  <sys:String x:Key="任务编辑.报警引用保存在任务草稿；当前任务执行尚未接入设备 Runtime">Alarm references are saved in the task draft. Task execution is not yet connected to the equipment Runtime.</sys:String>

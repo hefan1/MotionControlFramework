@@ -17,8 +17,9 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             {
                 AddField("Condition", "条件判断", new TaskConditionEditor(_catalog, branch.Condition, _language));
                 AddField("FalseAlarms", "条件不成立关联报警（可多选）",
-                    new TaskAlarmSelector(_catalog.AlarmCodes, branch.WhenFalseAlarmCodes,
-                        code => T("报警库不存在") + code, T("当前设备报警库为空，请先维护报警代码")));
+                    new TaskAlarmSelector(_catalog.AlarmDefinitions, branch.WhenFalseAlarmCodes,
+                        code => T("报警库不存在") + code, T("当前设备报警库为空，请先维护报警代码"),
+                        T("已关联 {0} 条报警"), T("停机报警"), T("非停机报警"), T("检查："), T("恢复：")));
                 Details.Children.Add(TaskEditingUi.Label(this, "选中成立或不成立分支的顺序段后添加动作"));
                 Details.Children.Add(TaskEditingUi.Label(this, "报警引用保存在任务草稿；当前任务执行尚未接入设备 Runtime"));
             }
@@ -26,8 +27,9 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             {
                 AddField("Condition", "等待成立的条件", new TaskConditionEditor(_catalog, wait.Condition, _language));
                 AddField("TimeoutAlarms", "等待超时关联报警（可多选）",
-                    new TaskAlarmSelector(_catalog.AlarmCodes, wait.TimeoutAlarmCodes,
-                        code => T("报警库不存在") + code, T("当前设备报警库为空，请先维护报警代码")));
+                    new TaskAlarmSelector(_catalog.AlarmDefinitions, wait.TimeoutAlarmCodes,
+                        code => T("报警库不存在") + code, T("当前设备报警库为空，请先维护报警代码"),
+                        T("已关联 {0} 条报警"), T("停机报警"), T("非停机报警"), T("检查："), T("恢复：")));
                 Details.Children.Add(TaskEditingUi.Label(this, "报警引用保存在任务草稿；当前任务执行尚未接入设备 Runtime"));
             }
             else if (_selected is CallTaskNode call)

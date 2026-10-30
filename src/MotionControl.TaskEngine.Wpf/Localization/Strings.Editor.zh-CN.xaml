@@ -60,6 +60,11 @@
  <sys:String x:Key="任务编辑.等待超时关联报警">等待超时关联报警</sys:String>
  <sys:String x:Key="任务编辑.条件不成立关联报警（可多选）">条件不成立关联报警（可多选）</sys:String>
  <sys:String x:Key="任务编辑.等待超时关联报警（可多选）">等待超时关联报警（可多选）</sys:String>
+ <sys:String x:Key="任务编辑.已关联 {0} 条报警">已关联 {0} 条报警</sys:String>
+ <sys:String x:Key="任务编辑.停机报警">停机报警</sys:String>
+ <sys:String x:Key="任务编辑.非停机报警">非停机报警</sys:String>
+ <sys:String x:Key="任务编辑.检查：">检查：</sys:String>
+ <sys:String x:Key="任务编辑.恢复：">恢复：</sys:String>
  <sys:String x:Key="任务编辑.报警库不存在">（报警库不存在）</sys:String>
  <sys:String x:Key="任务编辑.当前设备报警库为空，请先维护报警代码">当前设备报警库为空，请先维护报警代码</sys:String>
  <sys:String x:Key="任务编辑.报警引用保存在任务草稿；当前任务执行尚未接入设备 Runtime">报警引用保存在任务草稿；当前任务执行尚未接入设备 Runtime</sys:String>
