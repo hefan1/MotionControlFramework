@@ -167,7 +167,7 @@ namespace MotionControl.TaskEditing.Checks
                 Assert(((DataGrid)page.FindName("StationsGrid")).Columns.All(column => !string.IsNullOrEmpty(column.Header as string)), "表头没有正确加载局部资源。");
                 Assert(FindButton(page, "保存并检查") != null, "任务配置页缺少合并后的保存检查入口。");
                 Assert(FindButton(page, "备份与恢复") != null, "任务配置页缺少备份与恢复入口。");
-                Assert(FindButton(page, "更新仿真任务文件") != null, "任务配置页没有准确说明仿真文件更新操作。");
+                Assert(FindButton(page, "更新任务文件") != null, "任务配置页没有显示更新任务文件入口。");
                 Assert(FindButton(page, "保留草稿副本") == null, "单独的草稿副本按钮仍占据日常工具栏。");
                 Assert(((Button)page.FindName("RecoverButton")).Visibility == Visibility.Collapsed, "无异常恢复记录时仍显示恢复按钮。");
                 page.SetLanguage("en-US"); Render(page, "configuration-en-small", 824, 550);
@@ -182,7 +182,7 @@ namespace MotionControl.TaskEditing.Checks
                     "备份管理窗口未按英语语言切换按钮文字。");
                 var readyPage = new TaskConfigurationView(test.Configuration, Workspace.Id, () => null);
                 Render(readyPage, "configuration-ready-zh", 1200, 780);
-                Assert(((Button)readyPage.FindName("ApplyButton")).IsEnabled, "会话空闲且草稿可用时，仿真任务文件更新按钮仍被禁用。");
+                Assert(((Button)readyPage.FindName("ApplyButton")).IsEnabled, "会话空闲且草稿可用时，更新任务文件按钮仍被禁用。");
                 var draft = test.Store.Load(Workspace.Id); var task = draft.Tasks.Single(item => item.Definition.TaskId == "Inspect");
                 var editor = new TaskEditorView(task.Definition, test.Store.LoadCatalog(draft), () => test.Store.LoadCatalog(draft), draft.Tasks.Where(item => item != task).Select(item => item.Definition));
                 editor.FocusNode("judge"); Render(editor, "editor-condition-zh", 1200, 780);
@@ -195,6 +195,19 @@ namespace MotionControl.TaskEditing.Checks
                 resourceEditor.FocusNode(scope.Id); Render(resourceEditor, "editor-resource-zh", 1200, 780);
                 Assert(!resourceEditor.IsDirty, "显示联锁绑定值就误标了未保存。");
                 Assert(((Button)page.FindName("ApplyButton")).IsEnabled == false, "受阻应用按钮仍可用。");
+
+                string axisParametersPath = Path.Combine(test.Configuration.GetMachineDirectory(Workspace.Id), "HardwareConfig", "AxisParameters.json");
+                File.Delete(axisParametersPath);
+                var missingAxisPage = new TaskConfigurationView(test.Configuration, Workspace.Id, () => null);
+                var missingAxisStatus = (TextBlock)missingAxisPage.FindName("StatusText");
+                var errorDiagnostics = (Expander)missingAxisPage.FindName("ErrorDiagnosticsExpander");
+                var errorDiagnosticsText = (TextBox)missingAxisPage.FindName("ErrorDiagnosticsText");
+                Assert(missingAxisStatus.Text.StartsWith("缺少轴参数配置。", StringComparison.Ordinal)
+                    && !missingAxisStatus.Text.Contains("FileNotFoundException"), "缺少轴参数时应先显示简洁的操作指引。");
+                Assert(errorDiagnostics.Visibility == Visibility.Visible && !errorDiagnostics.IsExpanded,
+                    "完整异常诊断应可展开查看，但默认不能占满任务配置页。");
+                Assert(errorDiagnosticsText.Text.Contains("FileNotFoundException")
+                    && errorDiagnosticsText.Text.Contains("AxisParameters.json"), "展开详情前仍须保留完整诊断内容。");
             }
         }
         /// <summary>按明确像素尺寸构造并导出控件，不观察实际桌面。</summary>
@@ -230,7 +243,7 @@ namespace MotionControl.TaskEditing.Checks
             foreach (var child in children.Where(item => item != null)) foreach (var item in AllNodes(child)) yield return item;
         }
     }
-    /// <summary>每项检查使用独立临时设备目录。</summary>
+    /// <summary>每项检查使用独立的短路径临时配置目录，不连接现场设备。</summary>
     internal sealed class Workspace : IDisposable
     {
         /// <summary>预览辅助方法声明的隔离设备标识。</summary>
@@ -241,10 +254,10 @@ namespace MotionControl.TaskEditing.Checks
         internal MachineConfigurationStore Configuration { get; private set; }
         /// <summary>被检查的实际存储实现。</summary>
         internal TaskWorkspaceStore Store { get; private set; }
-        /// <summary>创建真实示例配置，不连接控制器。</summary>
+        /// <summary>在短路径临时目录创建真实示例配置，不连接控制器。</summary>
         internal Workspace()
         {
-            Root = Path.Combine(Path.GetTempPath(), "MotionControlTaskEditingChecks", Guid.NewGuid().ToString("N"));
+            Root = Path.Combine(Path.GetTempPath(), "MCTFChecks", Guid.NewGuid().ToString("N"));
             Configuration = TaskEditingPreviewWindow.CreatePreviewStore(Root); Store = new TaskWorkspaceStore(Configuration);
         }
         /// <summary>按固定文件顺序取得原始内容，用于识别部分写入和恢复。</summary>
@@ -253,10 +266,10 @@ namespace MotionControl.TaskEditing.Checks
             string root = Path.Combine(Root, Id); var files = Directory.GetFiles(Path.Combine(root, "Tasks"), "*.json").Concat(new[] { Path.Combine(root, "Parameters/TaskMachine.json") });
             return string.Join("|", files.OrderBy(value => value).Select(path => Path.GetFileName(path) + ":" + Convert.ToBase64String(File.ReadAllBytes(path))));
         }
-        /// <summary>递归清理前验证绝对路径严格位于本检查专用临时父目录。</summary>
+        /// <summary>递归清理前验证绝对路径严格位于本检查专用临时目录。</summary>
         public void Dispose()
         {
-            string parent = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "MotionControlTaskEditingChecks")) + Path.DirectorySeparatorChar;
+            string parent = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "MCTFChecks")) + Path.DirectorySeparatorChar;
             string target = Path.GetFullPath(Root);
             if (!target.StartsWith(parent, StringComparison.OrdinalIgnoreCase) || target.Length <= parent.Length) throw new InvalidOperationException("检查清理路径不在专用目录。");
             if (Directory.Exists(target)) Directory.Delete(target, true);
