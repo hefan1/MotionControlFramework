@@ -31,7 +31,7 @@ namespace MotionControl.TaskEngine.Wpf.Views
         private long _observedLoadCycles;
         /// <summary>下一件物料到达供料位的时间；暂停时保持等待，不继续生成物料。</summary>
         private DateTime? _nextProductArrivalUtc;
-        /// <summary>上一次观察到的夹紧输出，用于检测输出状态变化。</summary>
+        /// <summary>上一次观察到的夹紧输出；本机目录没有该输出时保持未知。</summary>
         private bool? _lastClampOutput;
         /// <summary>夹紧输出变化后反馈夹紧传感器的时间。</summary>
         private DateTime _clampFeedbackDueUtc;
@@ -62,7 +62,11 @@ namespace MotionControl.TaskEngine.Wpf.Views
             MonitorContent.Content = _monitor;
             var loadStation = session.Machine.GetSnapshot().Stations.FirstOrDefault(station => station.StationId == "load");
             _observedLoadCycles = loadStation?.CompletedCycles ?? 0;
-            _lastClampOutput = session.Device.ReadOutput("夹紧输出");
+            // 仅当当前设备目录确实包含示例夹紧输出时读取，普通任务不依赖示例 IO 名称。
+            _lastClampOutput = session.Device.Catalog.Outputs.Any(name =>
+                string.Equals(name, "夹紧输出", StringComparison.OrdinalIgnoreCase))
+                ? session.Device.ReadOutput("夹紧输出")
+                : (bool?)null;
             _clampFeedbackDueUtc = DateTime.UtcNow;
             AutomaticProductionSignalsCheckBox.Visibility = session.IsExample ? Visibility.Visible : Visibility.Collapsed;
             foreach (string name in session.Device.Catalog.Inputs)
