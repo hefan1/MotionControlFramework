@@ -201,6 +201,7 @@
  <sys:String x:Key="任务编辑.已从运行文件载入，尚无草稿">Active files loaded. No draft has been saved.</sys:String>
  <sys:String x:Key="任务编辑.应用到设备">Apply to machine</sys:String>
  <sys:String x:Key="任务编辑.更新任务文件">Update task files</sys:String>
+ <sys:String x:Key="任务编辑.重新载入运行文件提示">The current draft is kept as a copy before active files are loaded. Confirmation is required.</sys:String>
  <sys:String x:Key="任务编辑.查看当前流程状态">View current flow status</sys:String>
  <sys:String x:Key="任务编辑.正式设备当前状态">Current equipment state</sys:String>
  <sys:String x:Key="任务编辑.设备运行中">Equipment running</sys:String>

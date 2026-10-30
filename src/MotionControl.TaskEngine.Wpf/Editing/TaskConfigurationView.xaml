@@ -6,6 +6,7 @@
    <Button x:Name="SaveAndCheckButton" Content="{DynamicResource 任务编辑.保存并检查}" Click="SaveAndCheck_Click" Style="{StaticResource 编辑主要按钮}"/>
    <Button x:Name="BackupRestoreButton" Content="{DynamicResource 任务编辑.备份与恢复}" Click="BackupRestore_Click"/>
    <Button x:Name="ApplyButton" Content="{DynamicResource 任务编辑.更新任务文件}" Click="Apply_Click"/>
+   <Button x:Name="ReloadRuntimeButton" Content="{DynamicResource 任务编辑.重新载入运行文件}" ToolTip="{DynamicResource 任务编辑.重新载入运行文件提示}" Click="ReloadRuntimeFiles_Click" Visibility="Collapsed"/>
    <Button x:Name="RecoverButton" Content="{DynamicResource 任务编辑.恢复上次应用}" Click="Recover_Click"/>
   </WrapPanel></Border>
   <StackPanel x:Name="ConfigurationStatus" Grid.Row="1" Margin="2,7">

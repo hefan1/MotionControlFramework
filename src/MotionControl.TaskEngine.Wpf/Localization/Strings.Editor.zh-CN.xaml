@@ -201,6 +201,7 @@
  <sys:String x:Key="任务编辑.已从运行文件载入，尚无草稿">已从运行文件载入，尚无草稿</sys:String>
  <sys:String x:Key="任务编辑.应用到设备">应用到设备</sys:String>
  <sys:String x:Key="任务编辑.更新任务文件">更新任务文件</sys:String>
+ <sys:String x:Key="任务编辑.重新载入运行文件提示">将当前草稿先保留为副本，再读取当前运行文件；操作前会再次确认。</sys:String>
  <sys:String x:Key="任务编辑.查看当前流程状态">查看当前流程状态</sys:String>
  <sys:String x:Key="任务编辑.正式设备当前状态">正式设备当前状态</sys:String>
  <sys:String x:Key="任务编辑.设备运行中">设备运行中</sys:String>

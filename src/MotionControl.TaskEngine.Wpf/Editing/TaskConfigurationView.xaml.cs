@@ -161,7 +161,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         private void ViewLoaded(object sender, RoutedEventArgs e) { RefreshPermission(sender, e); _timer.Start(); }
         /// <summary>移出页面停止轮询，草稿仍保留在页面对象中。</summary>
         private void ViewUnloaded(object sender, RoutedEventArgs e) { _timer.Stop(); }
-        /// <summary>禁用时显示真实原因，不把已暂停的会话当作已结束。</summary>
+        /// <summary>显示应用禁用原因，并在来源变化时给出安全重载入口。</summary>
         private void RefreshPermission(object sender, EventArgs e)
         {
             string reason = _getBlockedReason();
@@ -170,6 +170,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             if (_editor != null) reason = T("请先保存并返回任务配置");
             if (_sourceChanged) reason = T("来源文件已经变化，请重新载入");
             ApplyButton.IsEnabled = _workspace != null && string.IsNullOrEmpty(reason); ApplyButton.ToolTip = reason;
+            ReloadRuntimeButton.Visibility = _workspace != null && _sourceChanged ? Visibility.Visible : Visibility.Collapsed;
             SaveAndCheckButton.IsEnabled = _workspace != null;
             BackupRestoreButton.IsEnabled = _workspace != null;
             ContentHost.IsEnabled = _workspace != null;
@@ -493,6 +494,11 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             else if (dialog.SelectedAction == TaskBackupAction.Restore) RestoreWorkspaceBackup();
             else if (dialog.SelectedAction == TaskBackupAction.LoadLatestDraft) LoadLatestDraft();
             else if (dialog.SelectedAction == TaskBackupAction.ReloadRuntimeFiles) ReloadRuntimeFiles();
+        }
+        /// <summary>从来源变更提示旁直接进入安全重载流程；重载前仍会确认并保留草稿副本。</summary>
+        private void ReloadRuntimeFiles_Click(object sender, RoutedEventArgs e)
+        {
+            ReloadRuntimeFiles();
         }
         /// <summary>把当前页面内容导出到人员选择的 JSON 文件，可选带入尚未保存的任务。</summary>
         private void ExportWorkspaceBackup(TaskWorkspaceTask editedTask)
