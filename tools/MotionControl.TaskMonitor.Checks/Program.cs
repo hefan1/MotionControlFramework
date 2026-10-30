@@ -116,11 +116,13 @@ namespace MotionControl.TaskMonitor.Checks
             finally { run.Cancel(); await run.Completion; }
         }
 
-        /// <summary>离屏验证语言资源、工位切换跟随和监控页面布局。</summary>
+        /// <summary>离屏验证语言资源、工位切换跟随、循环待执行提示和监控页面布局。</summary>
         private static void ConstructViews()
         {
             var application = new Application();
             var session = TaskMonitorExample.Create();
+            TaskMonitorSession pendingSession = null;
+            Window pendingWindow = null;
             try
             {
                 var view = new TaskMonitorView(session);
@@ -175,10 +177,58 @@ namespace MotionControl.TaskMonitor.Checks
                     "原因定位没有选中含等待步骤的工位。");
                 Assert(stepsTree.SelectedItem is MotionControl.TaskEngine.Wpf.Monitoring.TaskStepRow selectedStep
                     && selectedStep.Snapshot?.State == TaskNodeState.Waiting, "原因定位没有选中具体等待步骤。");
+
+                var pendingTask = Definition("CyclePending", Delay("first", 250), Delay("next", 250));
+                var pendingConfiguration = new TaskMachineConfiguration
+                {
+                    MachineId = "CyclePendingCheck",
+                    Name = "循环待执行提示检查",
+                    Stations = new List<StationTaskConfiguration> { new StationTaskConfiguration
+                    {
+                        StationId = "cycle", Name = "循环工位", TaskId = pendingTask.TaskId,
+                        Enabled = true, Mode = StationTaskMode.Cyclic, CycleIntervalMs = 1
+                    } }
+                };
+                pendingSession = new TaskMonitorSession(pendingConfiguration, new[] { pendingTask }, Device(), "内部检查配置", false);
+                var pendingView = new TaskMonitorView(pendingSession);
+                pendingWindow = new Window { Content = pendingView, Width = 1360, Height = 720, Opacity = 0, ShowInTaskbar = false };
+                pendingWindow.Show();
+                application.Dispatcher.Invoke(new Action(() => { }), DispatcherPriority.ApplicationIdle);
+                pendingSession.Machine.Reset();
+                pendingSession.Machine.Start();
+                Until(() =>
+                {
+                    var cycle = pendingSession.Machine.GetSnapshot().Stations.Single();
+                    return cycle.CompletedCycles > 0 && cycle.State == StationTaskState.Executing
+                        && cycle.Run?.Nodes.Any(node => node.NodeId == "first" && node.State == TaskNodeState.Waiting) == true
+                        && !cycle.Run.Nodes.Any(node => node.NodeId == "next");
+                }).GetAwaiter().GetResult();
+                pendingView.Refresh();
+                var pendingStations = pendingView.FindName("StationsGrid") as System.Windows.Controls.DataGrid;
+                var pendingFollow = pendingView.FindName("FollowBox") as System.Windows.Controls.CheckBox;
+                var pendingTree = pendingView.FindName("StepsTree") as TreeView;
+                var pendingDetail = pendingView.FindName("DetailSummary") as System.Windows.Controls.TextBlock;
+                pendingStations.SelectedIndex = 0;
+                pendingView.UpdateLayout();
+                pendingFollow.IsChecked = false;
+                var notEnteredThisCycle = pendingTree.Items[1] as MotionControl.TaskEngine.Wpf.Monitoring.TaskStepRow;
+                Assert(notEnteredThisCycle != null && notEnteredThisCycle.Snapshot == null && !notEnteredThisCycle.NotSelected,
+                    "循环下一步没有保持为当前周期的待执行步骤。");
+                notEnteredThisCycle.IsSelected = true;
+                pendingView.UpdateLayout();
+                pendingView.Refresh();
+                Assert(notEnteredThisCycle.Detail == "本周期尚未进入此步骤"
+                    && pendingDetail.Text == "本周期尚未进入此步骤", "监控页没有说明选中步骤尚未进入当前周期。");
                 window.Close();
                 Assert(view.ActualWidth > 0 && view.T("步骤详情") == "步骤详情", "页面资源或布局构造失败。");
             }
-            finally { session.Machine.CloseAsync().GetAwaiter().GetResult(); application.Shutdown(); }
+            finally
+            {
+                pendingWindow?.Close();
+                if (pendingSession != null) pendingSession.Machine.CloseAsync().GetAwaiter().GetResult();
+                session.Machine.CloseAsync().GetAwaiter().GetResult();
+                application.Shutdown();
+            }
         }
 
         /// <summary>创建没有硬件对象的空目录设备。</summary>

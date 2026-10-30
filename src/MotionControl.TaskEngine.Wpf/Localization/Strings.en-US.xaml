@@ -164,6 +164,7 @@
  <sys:String x:Key="任务监控.运动中">Moving</sys:String>
  <sys:String x:Key="任务监控.本次未选择此分支">This branch was not selected.</sys:String>
  <sys:String x:Key="任务监控.尚未进入本步骤">This step has not been entered.</sys:String>
+ <sys:String x:Key="任务监控.本周期尚未进入本步骤">This step has not been entered this cycle.</sys:String>
  <sys:String x:Key="任务监控.单次">Once</sys:String>
  <sys:String x:Key="任务监控.循环">Cyclic</sys:String>
  <sys:String x:Key="任务监控.信号触发">On request</sys:String>

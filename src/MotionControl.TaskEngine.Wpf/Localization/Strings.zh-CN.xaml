@@ -164,6 +164,7 @@
  <sys:String x:Key="任务监控.运动中">运动中</sys:String>
  <sys:String x:Key="任务监控.本次未选择此分支">本次未选择此分支</sys:String>
  <sys:String x:Key="任务监控.尚未进入本步骤">尚未进入本步骤</sys:String>
+ <sys:String x:Key="任务监控.本周期尚未进入本步骤">本周期尚未进入此步骤</sys:String>
  <sys:String x:Key="任务监控.单次">单次</sys:String>
  <sys:String x:Key="任务监控.循环">循环</sys:String>
  <sys:String x:Key="任务监控.信号触发">信号触发</sys:String>

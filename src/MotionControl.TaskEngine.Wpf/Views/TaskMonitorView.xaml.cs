@@ -112,7 +112,7 @@ namespace MotionControl.TaskEngine.Wpf.Views
             if (_selected == null && _steps.Count > 0) SelectFollowing(_steps[0]);
         }
 
-        /// <summary>应用整机状态并选择当前活动末端；多个并行步骤仍同时显示状态。</summary>
+        /// <summary>应用整机状态、循环待执行提示并选择当前活动末端；多个并行步骤仍同时显示状态。</summary>
         private void RefreshSteps()
         {
             if (!(StationsGrid.SelectedItem is TaskStationRow station)) return;
@@ -125,6 +125,13 @@ namespace MotionControl.TaskEngine.Wpf.Views
                 var target = flat.FirstOrDefault(row => row.Snapshot?.State == TaskNodeState.Failed)
                     ?? active.FirstOrDefault(row => !active.Any(child => child.Parent == row));
                 if (target != null && target != _selected) SelectFollowing(target);
+            }
+            if (station.Snapshot.Mode == StationTaskMode.Cyclic
+                && station.Snapshot.State == StationTaskState.Executing
+                && station.Snapshot.CompletedCycles > 0 && station.Snapshot.Run != null)
+            {
+                foreach (var pending in TaskStepTree.Flatten(_steps).Where(row => row.Snapshot == null && !row.NotSelected))
+                    pending.Update(null, false, pending.StateText, T("本周期尚未进入本步骤"), pending.StateColor);
             }
             ShowDetails(_selected);
         }
