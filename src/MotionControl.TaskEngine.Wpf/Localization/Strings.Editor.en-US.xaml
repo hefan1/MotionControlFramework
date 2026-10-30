@@ -68,7 +68,7 @@
  <sys:String x:Key="任务编辑.条件不成立时关联报警">Alarm when condition is false</sys:String>
  <sys:String x:Key="任务编辑.等待超时关联报警">Alarm on wait timeout</sys:String>
  <sys:String x:Key="任务编辑.条件不成立关联报警（可多选）">Alarms when condition is false (multiple)</sys:String>
- <sys:String x:Key="任务编辑.等待超时关联报警（可多选）">Alarms on wait timeout (multiple)</sys:String>
+ <sys:String x:Key="任务编辑.等待超时关联报警（可多选）">Wait-timeout alarms (select one or more)</sys:String>
  <sys:String x:Key="任务编辑.已关联 {0} 条报警">{0} alarm(s) linked</sys:String>
  <sys:String x:Key="任务编辑.停机报警">Stop machine</sys:String>
  <sys:String x:Key="任务编辑.非停机报警">Non-stop</sys:String>

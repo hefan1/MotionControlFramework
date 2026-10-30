@@ -48,7 +48,8 @@ namespace MotionControl.TaskEngine.Checks
         private static async Task TimeoutAndExitRecovery()
         {
             var device = Device();
-            var input = new WaitInputNode { Id = "wait", Name = "等待输入", InputName = "PartReady", Expected = true, TimeoutMs = 80 };
+            var input = new WaitInputNode { Id = "wait", Name = "等待输入", InputName = "PartReady", Expected = true, TimeoutMs = 80,
+                TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" } };
             var machine = Machine(device, new[] { TaskDefinition("Wait", input) }, Station("wait", "Wait", StationTaskMode.Once));
             machine.Reset(); machine.Start();
             await Until(() => machine.GetSnapshot().State == TaskMachineState.Faulted, "动作超时没有锁存。");
@@ -101,7 +102,8 @@ namespace MotionControl.TaskEngine.Checks
             var move = TaskFixtures.Move("done"); move.Mode = TaskMoveMode.Relative;
             move.Target.Constant = "5"; move.Profile.Speed = 1000;
             var definition = TaskDefinition("Parent", move,
-                new WaitInputNode { Id = "wait", Name = "等待产品", InputName = "PartReady", Expected = true });
+                new WaitInputNode { Id = "wait", Name = "等待产品", InputName = "PartReady", Expected = true,
+                    TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" } });
             definition.Root.TimeoutMs = 150;
             var machine = Machine(device, new[] { definition }, Station("work", "Parent", StationTaskMode.Once));
             machine.Reset(); machine.Start();

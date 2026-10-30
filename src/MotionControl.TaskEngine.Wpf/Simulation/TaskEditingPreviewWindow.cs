@@ -56,6 +56,9 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
                     digitalOutputs = catalog.Outputs.Select((name, channel) => new { name, controllerId = "Memory", channel, activeHigh = true }).ToArray() });
                 store.SaveJson(machineId, "Parameters/DeviceVariables.json", new { schemaVersion = 1,
                     variables = catalog.Variables.Select(item => new { name = item.Key, dataType = item.Value.ToString(), initialValue = item.Value == DeviceVariableType.Boolean ? "true" : null, allowOperatorWrite = true }).ToArray() });
+                store.SaveJson(machineId, "Parameters/AlarmCatalog.json", new { schemaVersion = 1,
+                    alarms = catalog.AlarmDefinitions.Select(alarm => new { code = alarm.Code, message = alarm.Message,
+                        kind = alarm.Kind.ToString(), checkGuidance = alarm.CheckGuidance, recoveryGuidance = alarm.RecoveryGuidance }).ToArray() });
                 store.SaveJson(machineId, "Parameters/ManualAxisPositions.json", new { schemaVersion = 1,
                     axes = axes.Select((axis, number) => new { axisKey = "Memory.Axis" + number, positions = catalog.TeachPoints.Where(point => point.AxisName == axis.Name).Select(point => new { id = point.PointId, name = point.Name, position = point.Position }).ToArray() }).ToArray() });
                 var definitions = session.Library.Values.ToList();

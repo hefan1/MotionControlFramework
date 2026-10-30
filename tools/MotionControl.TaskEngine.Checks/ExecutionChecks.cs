@@ -174,7 +174,8 @@ namespace MotionControl.TaskEngine.Checks
         /// <summary>构造逻辑输入等待。</summary>
         private static WaitInputNode Input(string id = "input", int timeout = 5000)
         {
-            return new WaitInputNode { Id = id, Name = "等待来料", InputName = "PartReady", Expected = true, TimeoutMs = timeout };
+            return new WaitInputNode { Id = id, Name = "等待来料", InputName = "PartReady", Expected = true, TimeoutMs = timeout,
+                TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" } };
         }
 
         /// <summary>构造类型明确的常量。</summary>

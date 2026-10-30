@@ -11,7 +11,7 @@ namespace MotionControl.TaskEngine.Definitions
         public string InputName { get; set; }
         /// <summary>期望的逻辑状态。</summary>
         public bool Expected { get; set; }
-        /// <summary>等待超时时需要关联的设备报警代码；允许为空或选择多条。</summary>
+        /// <summary>等待超时时需要关联的设备报警代码；任务检查要求至少一条，可关联多条。</summary>
         public List<string> TimeoutAlarmCodes { get; set; } = new List<string>();
     }
 }

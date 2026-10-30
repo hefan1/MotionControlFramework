@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Variables;
 using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Definitions;
@@ -31,7 +32,10 @@ namespace MotionControl.TaskEngine.Checks
                     new TaskTeachPoint("X", "P002", "尚未示教", null)
                 },
                 new[] { "Zone:Camera" },
-                alarmCodes: new[] { "DEMO_SENSOR_TIMEOUT", "OPERATOR_NOTICE" });
+                alarmDefinitions: new[] {
+                    new TaskAlarmInfo("DEMO_SENSOR_TIMEOUT", "等待传感器超时", MachineAlarmKind.StopMachine),
+                    new TaskAlarmInfo("OPERATOR_NOTICE", "操作员提示", MachineAlarmKind.NonStop)
+                });
         }
 
         /// <summary>用一个顺序根节点包装待检查动作。</summary>

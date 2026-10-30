@@ -131,7 +131,7 @@ namespace MotionControl.TaskEngine.Validation
             _issues.Add(new TaskValidationIssue(TaskIssueSeverity.Warning, _taskId, node?.Id, field, message));
         }
 
-        /// <summary>报警代码列表可为空；填写时每项必须来自报警库且不能重复。</summary>
+        /// <summary>检查每条报警引用都来自报警库且不重复；是否必填由流程节点单独判断。</summary>
         private void CheckAlarmReferences(IList<string> codes, TaskNode node, string path)
         {
             if (codes == null) return;
@@ -151,6 +151,13 @@ namespace MotionControl.TaskEngine.Validation
                     Error(node, itemPath, "报警代码重复关联：" + code);
                 }
             }
+        }
+
+        /// <summary>等待超时属于异常结果，至少要关联一条便于现场定位的设备报警。</summary>
+        private void CheckRequiredTimeoutAlarm(IList<string> codes, TaskNode node, string path)
+        {
+            if (codes == null || codes.Count == 0)
+                Error(node, path, "等待超时至少关联一条报警；需要同时提示多个原因时可多选。");
         }
 
         /// <summary>名称不允许隐式修剪，避免保存与引用出现不同字符串。</summary>

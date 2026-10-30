@@ -37,7 +37,7 @@ namespace MotionControl.TaskEngine.Checks
                 var wait = new WaitConditionNode {
                     Id = "value", Name = "常量类型检查", Condition = new TaskCondition {
                         Kind = TaskConditionKind.Compare, Comparison = TaskComparison.Equal, Left = binding, Right = binding
-                    }
+                    }, TimeoutAlarmCodes = new List<string> { "OPERATOR_NOTICE" }
                 };
                 TaskDefinition restored = TaskDefinitionJson.Deserialize(TaskDefinitionJson.Serialize(TaskFixtures.Task(wait)));
                 CheckAssert.NoErrors(new TaskDefinitionValidator().Validate(restored, TaskFixtures.Catalog()));
@@ -128,6 +128,27 @@ namespace MotionControl.TaskEngine.Checks
                 "旧 WaitCondition 单报警没有迁移到列表。");
             CheckAssert.True(((ConditionBranchNode)migratedNodes[2]).WhenFalseAlarmCodes.SequenceEqual(new[] { "DEMO_SENSOR_TIMEOUT" }),
                 "旧条件分支单报警没有迁移到列表。");
+        }
+
+        /// <summary>等待超时必须关联一条或多条报警；正常条件分支允许不关联报警。</summary>
+        internal static void TimeoutAlarmAssociationRequired()
+        {
+            var inputWait = new WaitInputNode { Id = "di", Name = "等待来料", InputName = "PartReady", Expected = true };
+            CheckAssert.HasError(Validate(inputWait), "至少关联一条报警");
+            inputWait.TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT", "OPERATOR_NOTICE" };
+            CheckAssert.NoErrors(Validate(inputWait));
+
+            var conditionWait = new WaitConditionNode { Id = "wait", Name = "等待条件", Condition = TaskFixtures.Condition() };
+            CheckAssert.HasError(Validate(conditionWait), "至少关联一条报警");
+            conditionWait.TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" };
+            CheckAssert.NoErrors(Validate(conditionWait));
+
+            var branch = new ConditionBranchNode {
+                Id = "branch", Name = "正常条件分支", Condition = TaskFixtures.Condition(),
+                WhenTrue = new SequenceNode { Id = "yes", Name = "满足" },
+                WhenFalse = new SequenceNode { Id = "no", Name = "不满足" }
+            };
+            CheckAssert.NoErrors(Validate(branch));
         }
 
         /// <summary>同卡独立轴与示教引用合法，跨轴点位、未示教和相对距离误用必须拒绝。</summary>
@@ -221,7 +242,10 @@ namespace MotionControl.TaskEngine.Checks
         /// <summary>比较类型、组合条件和条件循环均需明确报错。</summary>
         internal static void Conditions()
         {
-            var wait = new WaitConditionNode { Id = "wait", Name = "等待", Condition = TaskFixtures.Condition() };
+            var wait = new WaitConditionNode {
+                Id = "wait", Name = "等待", Condition = TaskFixtures.Condition(),
+                TimeoutAlarmCodes = new List<string> { "OPERATOR_NOTICE" }
+            };
             CheckAssert.NoErrors(Validate(wait));
             wait.Condition.Comparison = TaskComparison.Greater;
             CheckAssert.HasError(Validate(wait), "大小比较只支持");

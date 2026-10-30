@@ -9,7 +9,7 @@ namespace MotionControl.TaskEngine.Definitions
         public override string Kind => "WaitCondition";
         /// <summary>需要成立的条件。</summary>
         public TaskCondition Condition { get; set; }
-        /// <summary>等待超时时需要关联的设备报警代码；允许为空或选择多条。</summary>
+        /// <summary>等待超时时需要关联的设备报警代码；任务检查要求至少一条，可关联多条。</summary>
         public List<string> TimeoutAlarmCodes { get; set; } = new List<string>();
     }
 }

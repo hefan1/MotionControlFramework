@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Wpf.Configuration;
 using MotionControl.Framework.Contracts.Variables;
 using MotionControl.TaskEngine.Catalog;
@@ -22,7 +23,9 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
                 new[] { "夹紧输出", "相机触发" },
                 new Dictionary<string, DeviceVariableType> { { "Vision.OK", DeviceVariableType.Boolean },
                     { "Product.Result", DeviceVariableType.String } },
-                new[] { new TaskTeachPoint("搬运X", "place", "放料位置", 120) }, new[] { "拍照区域" });
+                new[] { new TaskTeachPoint("搬运X", "place", "放料位置", 120) }, new[] { "拍照区域" },
+                alarmDefinitions: new[] { new TaskAlarmInfo("DEMO_SENSOR_TIMEOUT", "等待传感器超时",
+                    MachineAlarmKind.StopMachine, "检查传感器与 DI 映射。", "输入条件恢复后执行整机复位。") });
             var device = new SimulatedTaskDevice(catalog);
             foreach (string axis in catalog.Axes.Keys) device.ConfigureAxis(axis, 0, true, true);
             device.SetInput("产品到位", true); device.SetInput("上料机构安全位", true); device.SetInput("夹紧到位", false);
@@ -40,14 +43,17 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
                     Body = Sequence("transferBody", "区域内搬运", place, Delay("hold", "保持放料位置", 2000), returnHome) });
             var load = Definition("Load", "上料任务",
                 new ParallelGroupNode { Id = "loadReady", Name = "等待产品与机构同时就绪", Branches = new List<TaskNode> {
-                    Sequence("productReadyBranch", "等待产品", new WaitInputNode { Id = "product", Name = "等待产品到位", InputName = "产品到位", Expected = true }),
-                    Sequence("feederReadyBranch", "等待机构", new WaitInputNode { Id = "feeder", Name = "等待上料机构安全位", InputName = "上料机构安全位", Expected = true }) } },
+                    Sequence("productReadyBranch", "等待产品", new WaitInputNode { Id = "product", Name = "等待产品到位", InputName = "产品到位", Expected = true,
+                        TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" } }),
+                    Sequence("feederReadyBranch", "等待机构", new WaitInputNode { Id = "feeder", Name = "等待上料机构安全位", InputName = "上料机构安全位", Expected = true,
+                        TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" } }) } },
                 Delay("load", "上料准备", 3000));
             var camera = Definition("Camera", "拍照子任务", new SetOutputNode { Id = "on", Name = "触发相机", OutputName = "相机触发", Value = true },
                 Delay("exposure", "等待曝光", 1500), new SetOutputNode { Id = "off", Name = "关闭相机触发", OutputName = "相机触发", Value = false });
             var inspect = Definition("Inspect", "检测任务",
                 new SetOutputNode { Id = "clamp", Name = "夹紧产品", OutputName = "夹紧输出", Value = true },
-                new WaitInputNode { Id = "clamped", Name = "等待夹紧到位", InputName = "夹紧到位", Expected = true, TimeoutMs = 20000 },
+                new WaitInputNode { Id = "clamped", Name = "等待夹紧到位", InputName = "夹紧到位", Expected = true, TimeoutMs = 20000,
+                    TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" } },
                 new ResourceScopeNode { Id = "cameraArea", Name = "等待拍照区域", Resources = new List<string> { "拍照区域", "Axis:检测Z", "Output:相机触发" },
                     Body = Sequence("inspectBody", "检测过程", Move("z10", "检测Z", 10),
                         new CallTaskNode { Id = "photo", Name = "执行拍照子任务", TaskId = "Camera" }, Move("z0", "检测Z", 0)) },

@@ -15,7 +15,7 @@ namespace MotionControl.TaskEngine.Checks
         {
             var device = Device();
             var parallel = Parallel(Input(), new WaitConditionNode { Id = "waitReady", Name = "等待变量",
-                Condition = TaskFixtures.Condition() });
+                Condition = TaskFixtures.Condition(), TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" } });
             TaskRun run = Start(TaskFixtures.Task(parallel, Output()), device);
             await Until(() => HasNode(run, "input", TaskNodeState.Waiting) && HasNode(run, "waitReady", TaskNodeState.Waiting), "分支没有独立等待。");
             device.SetInput("PartReady", true);

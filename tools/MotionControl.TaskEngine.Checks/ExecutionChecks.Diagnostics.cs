@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Variables;
@@ -13,7 +14,8 @@ namespace MotionControl.TaskEngine.Checks
         private static async Task DiagnosticInputSamples()
         {
             var device = Device();
-            var run = Start(TaskFixtures.Task(new WaitInputNode { Id = "di", Name = "等待输入", InputName = "PartReady", Expected = true }), device);
+            var run = Start(TaskFixtures.Task(new WaitInputNode { Id = "di", Name = "等待输入", InputName = "PartReady", Expected = true,
+                TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" } }), device);
             await Until(() => run.GetSnapshot().Nodes.Any(node => node.NodeId == "di" && node.Diagnostics != null), "未发布 DI 诊断。");
             var old = run.GetSnapshot().Nodes.Single(node => node.NodeId == "di");
             CheckAssert.True(old.Diagnostics.Values[0].Actual == null && old.Diagnostics.Values[0].Satisfied == null, "未知输入被当成 false。");

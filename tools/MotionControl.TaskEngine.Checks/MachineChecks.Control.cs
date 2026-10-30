@@ -68,7 +68,8 @@ namespace MotionControl.TaskEngine.Checks
             var device = Device();
             var first = TaskFixtures.Move("first"); first.Mode = TaskMoveMode.Relative; first.Target.Constant = "5"; first.Profile.Speed = 100;
             var after = TaskFixtures.Move("after"); after.Mode = TaskMoveMode.Relative; after.Target.Constant = "2"; after.Profile.Speed = 100;
-            var task = TaskDefinition("Fault", first, new WaitInputNode { Id = "gate", Name = "等故障场景就绪", InputName = "PartReady", Expected = true },
+            var task = TaskDefinition("Fault", first, new WaitInputNode { Id = "gate", Name = "等故障场景就绪", InputName = "PartReady", Expected = true,
+                TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" } },
                 CopyValue("bad", "Vision.OffsetX", "Vision.OffsetX"), after);
             var otherMove = TaskFixtures.Move("other", "Y"); otherMove.Target.Constant = "20"; otherMove.Profile.Speed = 10;
             var machine = Machine(device, new[] { task, TaskDefinition("Other", otherMove) },

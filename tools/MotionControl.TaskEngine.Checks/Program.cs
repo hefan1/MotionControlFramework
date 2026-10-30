@@ -33,6 +33,7 @@ namespace MotionControl.TaskEngine.Checks
             Run("八种变量常量类型", DefinitionChecks.ScalarTypes, ref failures);
             Run("全部节点 JSON 往返和引用", DefinitionChecks.AllNodesRoundTrip, ref failures);
             Run("旧版单报警字段迁移到多报警列表", DefinitionChecks.LegacyAlarmMigration, ref failures);
+            Run("等待超时至少关联一条报警", DefinitionChecks.TimeoutAlarmAssociationRequired, ref failures);
             Run("示教点归属及相对距离", DefinitionChecks.TeachPoints, ref failures);
             Run("运动参数、范围和时限", DefinitionChecks.MotionParameters, ref failures);
             Run("变量类型及 UInt32 边界", DefinitionChecks.Variables, ref failures);

@@ -63,7 +63,8 @@ namespace MotionControl.TaskEngine.Checks
                 variables.Add(name, DeviceVariableType.Boolean);
             foreach (string name in new[] { "Source.Id", "Load.Id", "Inspect.Id", "Unload.Id" }) variables.Add(name, DeviceVariableType.UInt32);
             var device = new SimulatedTaskDevice(new TaskResourceCatalog(source.Axes.Values, source.Inputs, source.Outputs,
-                variables, source.TeachPoints, new[] { "Zone:Camera" }));
+                variables, source.TeachPoints, new[] { "Zone:Camera" },
+                alarmCodes: source.AlarmCodes, alarmDefinitions: source.AlarmDefinitions));
             foreach (string axis in device.Catalog.Axes.Keys) device.ConfigureAxis(axis, 0, true, true);
             return device;
         }

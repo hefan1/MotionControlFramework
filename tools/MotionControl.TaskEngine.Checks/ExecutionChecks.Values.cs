@@ -71,25 +71,30 @@ namespace MotionControl.TaskEngine.Checks
                 { DeviceVariableType.DateTime, "2026-10-23T10:30:00.0000000Z" }, { DeviceVariableType.UInt32, "4294967295" }
             };
             var catalog = new TaskResourceCatalog(new TaskAxisInfo[0], new string[0], new[] { "Vacuum" },
-                values.ToDictionary(item => item.Key.ToString(), item => item.Key), new TaskTeachPoint[0]);
+                values.ToDictionary(item => item.Key.ToString(), item => item.Key), new TaskTeachPoint[0],
+                alarmCodes: new[] { "DEMO_SENSOR_TIMEOUT" });
             var device = new SimulatedTaskDevice(catalog);
             var nodes = new List<TaskNode>();
             foreach (var item in values)
             {
                 nodes.Add(Assign("set" + item.Key, item.Key.ToString(), Constant(item.Key, item.Value)));
                 nodes.Add(new WaitConditionNode { Id = "read" + item.Key, Name = "检查类型值",
-                    Condition = Compare(Variable(item.Key.ToString()), Constant(item.Key, item.Value), TaskComparison.Equal) });
+                    Condition = Compare(Variable(item.Key.ToString()), Constant(item.Key, item.Value), TaskComparison.Equal),
+                    TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" } });
             }
             nodes.Add(new WaitConditionNode { Id = "date", Name = "比较日期",
-                Condition = Compare(Variable("DateTime"), Constant(DeviceVariableType.DateTime, "2026-10-24T00:00:00.0000000Z"), TaskComparison.Less) });
+                Condition = Compare(Variable("DateTime"), Constant(DeviceVariableType.DateTime, "2026-10-24T00:00:00.0000000Z"), TaskComparison.Less),
+                TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" } });
             nodes.Add(new WaitConditionNode { Id = "dateZone", Name = "同一时刻不同写法",
-                Condition = Compare(Variable("DateTime"), Constant(DeviceVariableType.DateTime, "2026-10-23T18:30:00.0000000+08:00"), TaskComparison.Equal) });
+                Condition = Compare(Variable("DateTime"), Constant(DeviceVariableType.DateTime, "2026-10-23T18:30:00.0000000+08:00"), TaskComparison.Equal),
+                TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" } });
             nodes.Add(Assign("convert", "Number", Variable("UInt32")));
             Success(await Complete(Start(TaskFixtures.Task(nodes.ToArray()), device)));
             CheckAssert.True(Value(device, "Number") == "4294967295", "uint 到 double 转换损失范围。");
             CheckAssert.True(device.ReadVariables().All(value => value.HasValue), "存在未赋值类型。");
             var ambiguous = new WaitConditionNode { Id = "ambiguous", Name = "拒绝混用时区",
-                Condition = Compare(Variable("DateTime"), Constant(DeviceVariableType.DateTime, "2026-10-23T10:30:00.0000000"), TaskComparison.Equal) };
+                Condition = Compare(Variable("DateTime"), Constant(DeviceVariableType.DateTime, "2026-10-23T10:30:00.0000000"), TaskComparison.Equal),
+                TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" } };
             Failure(await Complete(Start(TaskFixtures.Task(ambiguous), device)), "时区信息不一致");
         }
 
@@ -100,7 +105,7 @@ namespace MotionControl.TaskEngine.Checks
             var input = Input();
             input.Expected = false;
             TaskRun run = Start(TaskFixtures.Task(input, new WaitConditionNode { Id = "variableWait", Name = "等变量",
-                Condition = TaskFixtures.Condition() }, Output()), device);
+                Condition = TaskFixtures.Condition(), TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" } }, Output()), device);
             await Until(() => HasNode(run, "input", TaskNodeState.Waiting), "没有等待未知 DI。");
             CheckAssert.True(device.ReadOutput("Vacuum") == null, "未知 DI 被当作 false。");
             device.SetInput("PartReady", false);

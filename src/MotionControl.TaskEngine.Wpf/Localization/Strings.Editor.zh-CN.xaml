@@ -68,7 +68,7 @@
  <sys:String x:Key="任务编辑.条件不成立时关联报警">条件不成立时关联报警</sys:String>
  <sys:String x:Key="任务编辑.等待超时关联报警">等待超时关联报警</sys:String>
  <sys:String x:Key="任务编辑.条件不成立关联报警（可多选）">条件不成立关联报警（可多选）</sys:String>
- <sys:String x:Key="任务编辑.等待超时关联报警（可多选）">等待超时关联报警（可多选）</sys:String>
+ <sys:String x:Key="任务编辑.等待超时关联报警（可多选）">等待超时报警（至少关联一条，可多选）</sys:String>
  <sys:String x:Key="任务编辑.已关联 {0} 条报警">已关联 {0} 条报警</sys:String>
  <sys:String x:Key="任务编辑.停机报警">停机报警</sys:String>
  <sys:String x:Key="任务编辑.非停机报警">非停机报警</sys:String>
