@@ -3,6 +3,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using MotionControl.Framework.Contracts.Alarms;
+using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.Host.Wpf.Operation;
 
 namespace MotionControl.OperatorPages.Checks
@@ -33,6 +34,44 @@ namespace MotionControl.OperatorPages.Checks
             ((Button)view.FindName("IoButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Require(navigation != null && navigation.Page == "IO监控" && navigation.StationName == "压装"
                 && navigation.IoPointName == null, "报警未记录关联输入时，不能把工位当前等待的其他输入当成报警信号。");
+            var alarmService = new MachineAlarmService();
+            alarmService.ReportConditionGroup(new[] { stop, notice }, "压装", true, "传感器超时", "夹紧等待", "夹紧到位");
+            alarmService.ReportConditionGroup(new[] { stop }, "压装", false, "超时事件结束", "夹紧等待", "夹紧到位");
+            snapshot.Alarms.Clear();
+            snapshot.Alarms.AddRange(alarmService.Alarms);
+            view.RefreshDisplay();
+            grid.SelectedItem = grid.Items.Cast<AlarmDisplayRow>().Single(row => row.Alarm.Definition.Code == "STOP_GUIDE");
+            navigation = null;
+            ((Button)view.FindName("IoButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Require(navigation?.IoPointName == "夹紧到位", "报警锁存后丢失了发生时明确关联的输入。");
+            alarmService.ReportConditionGroup(new[] { notice }, "压装", true, "另一传感器超时", "第二等待", "另一传感器");
+            alarmService.ReportConditionGroup(new[] { notice }, "压装", true, "再次上报", "夹紧等待", "夹紧到位");
+            Require(alarmService.Alarms.Single(alarm => alarm.Definition.Code == "NOTICE_GUIDE").RelatedInputName == null,
+                "同一报警涉及多个输入后，不应定位到任一输入。");
+            alarmService.ReportConditionGroup(new[] { notice }, "压装", false, "已恢复", "夹紧等待", "夹紧到位");
+            Require(alarmService.Alarms.Single(alarm => alarm.Definition.Code == "NOTICE_GUIDE").Detail == "另一传感器超时",
+                "一个条件恢复时错误清除另一个条件，或显示已恢复条件的过期详情。");
+            alarmService.ReportConditionGroup(new[] { notice }, "压装", false, "重复恢复", "夹紧等待", "夹紧到位");
+            Require(alarmService.Alarms.Any(alarm => alarm.Definition.Code == "NOTICE_GUIDE"), "重复恢复错误清除了其他活动条件。");
+            alarmService.ReportConditionGroup(new[] { notice }, "压装", false, "已恢复", "第二等待", "另一传感器");
+            Require(!alarmService.Alarms.Any(alarm => alarm.Definition.Code == "NOTICE_GUIDE"), "所有条件恢复后仍残留非停机报警。");
+            alarmService.ReportConditionGroup(new[] { stop }, "压装", true, "条件甲", "甲", "输入甲");
+            alarmService.ReportConditionGroup(new[] { stop }, "压装", true, "条件乙", "乙", "输入乙");
+            alarmService.ReportConditionGroup(new[] { stop }, "压装", false, "甲已结束", "甲", "输入甲");
+            Require(alarmService.Alarms.Single(alarm => alarm.Definition.Code == "STOP_GUIDE").ConditionActive,
+                "停机报警的其他条件仍有效时错误允许复位。");
+            bool resetRejected = false;
+            try { alarmService.ResetStopAlarms(); }
+            catch (InvalidOperationException) { resetRejected = true; }
+            Require(resetRejected, "仍有停机条件有效时没有拒绝复位。");
+            alarmService.ReportConditionGroup(new[] { stop }, "压装", false, "乙已结束", "乙", "输入乙");
+            alarmService.ResetStopAlarms();
+            Require(!alarmService.Alarms.Any(alarm => alarm.Definition.Code == "STOP_GUIDE"), "全部停机条件结束后无法复位。");
+            snapshot.Alarms.Clear();
+            snapshot.Alarms.Add(new MachineAlarmRecord(stop, "压装", "", true, now, now));
+            snapshot.Alarms.Add(new MachineAlarmRecord(notice, "下料", "", true, now, now));
+            view.RefreshDisplay();
+            grid.SelectedItem = grid.Items.Cast<AlarmDisplayRow>().Single(row => row.Alarm.Definition.Code == "STOP_GUIDE");
             // 超时事件结束并不证明被等待的传感器已触发。
             snapshot.Alarms[0] = new MachineAlarmRecord(stop, "压装", "DI 仍未触发", false, now, now.AddSeconds(1));
             view.RefreshDisplay();

@@ -36,13 +36,15 @@ namespace MotionControl.OperatorPages.Checks
             int failures = 0;
             Check("未知状态、真实Runtime来源和无硬件调用", RuntimeSource, ref failures);
             Check("暂停覆盖、任意数量工位和预览来源", OverviewStates, ref failures);
+            Check("整机启动拦截原因跨页面一致", StartReadinessConsistency, ref failures);
             Check("报警恢复待复位、搜索和稳定选择", AlarmConditions, ref failures);
             Check("报警状态与报警库恢复指导同时可见", AlarmGuidanceChecks.Run, ref failures);
             Check("IO 监控区分通道范围和当前读取失败", IoMonitorReadFailureChecks.Run, ref failures);
             Check("Host导航和返回原页面", HostNavigation, ref failures);
+            Check("暂停和停止的现场恢复提示", MachineCommandGuidance, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("四个工作区内部检查：8 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("四个工作区内部检查：10 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }
@@ -51,7 +53,7 @@ namespace MotionControl.OperatorPages.Checks
         { try { action(); Console.WriteLine("[通过] " + name); } catch (Exception error) { failures++; Console.Error.WriteLine("[失败] " + name + "\n" + error); } }
         /// <summary>失败必须中止当前组，不能只打印提示。</summary>
         private static void Assert(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
-        /// <summary>只读页面可接真实 Runtime 对象，但绝不能调用卡的连接或动作入口。</summary>
+        /// <summary>确认真实设备状态来源显示为操作员用语，页面不调用卡的连接或动作入口。</summary>
         private static void RuntimeSource()
         {
             var overview = new EquipmentOverviewView(); var alarms = new CurrentAlarmsView();
@@ -76,25 +78,69 @@ namespace MotionControl.OperatorPages.Checks
         {
             var snapshot = FourWorkspacesPreviewWindow.CreateExampleSnapshot(); snapshot.State = MachineRunState.Paused;
             for (int i = 3; i < 12; i++) snapshot.Stations.Add(new StationOverviewData { Name = "附加工位" + i, CurrentStep = "保留当前动作" });
+            DateTime now = DateTime.UtcNow;
+            snapshot.Alarms = new List<MachineAlarmRecord>
+            {
+                new MachineAlarmRecord(new MachineAlarmDefinition("STOP_LOAD", "上料等待超时", MachineAlarmKind.StopMachine), "上料定位", "DI等待超时", false, now, now),
+                new MachineAlarmRecord(new MachineAlarmDefinition("STOP_PRESS", "压装压力异常", MachineAlarmKind.StopMachine), "压装", "压力未建立", true, now, now),
+                new MachineAlarmRecord(new MachineAlarmDefinition("NOTICE_VISION", "视觉结果待确认", MachineAlarmKind.NonStop), "视觉检测", "结果待确认", true, now, now),
+                new MachineAlarmRecord(new MachineAlarmDefinition("NOTICE_UNLOAD", "下料料框将满", MachineAlarmKind.NonStop), "下料", "料框余量低", true, now, now)
+            };
             var view = new EquipmentOverviewView(); view.SetPreview(snapshot);
             Assert(((ItemsControl)view.FindName("StationCards")).Items.Count == 12, "卡片数量被固定为三工位。");
+            string alarmSummary = ((TextBlock)view.FindName("AlertText")).Text;
+            Assert(alarmSummary.Contains("当前报警 4 条（停机 2，非停机 2）")
+                && alarmSummary.Contains("另有 1 条报警"), "多工位总览隐藏了报警总数或停机/提醒分类。");
+            Render(view, "overview-multi-alarm-1200", 1200, 780);
             Assert(((TextBlock)view.FindName("MachineStateText")).Text == "设备已暂停", "整机暂停标签错误。");
             Assert(!FindControls<TextBlock>(view).Any(text => text.Text == "整机状态 · 设备运行中"), "暂停后卡片仍标为运行。");
+            Assert(FindControls<TextBlock>(view).Any(text => text.Text == "暂停保留步骤"), "暂停卡片没有说明当前步骤已保留。");
             Assert(FindControls<TextBlock>(view).Any(text => text.Text.Contains("40 XY")), "暂停丢失原动作文字。");
+            snapshot.State = MachineRunState.ResetRequired;
+            view.RefreshDisplay();
+            Assert(FindControls<TextBlock>(view).Any(text => text.Text == "待启动步骤"), "等待复位时仍把待执行步骤显示为正在动作。");
+            snapshot.State = MachineRunState.Paused;
+            view.RefreshDisplay();
             view.SetLanguage("en-US"); Assert(((TextBlock)view.FindName("SourceText")).Text == "Offline UI example", "英文来源标签未切换。");
+            Assert(FindControls<TextBlock>(view).Any(text => text.Text == "Step retained during pause"), "English paused-step label did not localize.");
             bool rejected = false; try { view.SetPreview(new OperationSnapshot()); } catch (ArgumentException) { rejected = true; }
             Assert(rejected, "未标记的快照可伪装成预览。");
+        }
+        /// <summary>验证顶部启动拦截和整机状态在总览卡片与流程状态页中保持一致。</summary>
+        private static void StartReadinessConsistency()
+        {
+            const string reason = "逻辑轴 'Unload_X' 尚未回零；工位 '下料工位' 启动前需要先完成回零。";
+            var snapshot = FourWorkspacesPreviewWindow.CreateExampleSnapshot();
+            snapshot.State = MachineRunState.Ready;
+            var overview = new EquipmentOverviewView();
+            overview.SetPreview(snapshot);
+            overview.SetAutomaticStartReadiness(reason, false);
+            Assert(((TextBlock)overview.FindName("MachineStateText")).Text == "启动条件未满足", "总览状态没有显示启动拦截。");
+            Assert(((TextBlock)overview.FindName("NextActionText")).Text == reason, "总览没有显示准确的启动拦截原因。");
+            Assert(FindControls<TextBlock>(overview).Any(text => text.Text == "整机状态 · 启动条件未满足"), "工位卡片仍显示整机已就绪。");
+
+            var runtime = CreateRuntime(new GuardCard(), new MachineAlarmService());
+            var flowStatus = new FlowStatusView(runtime);
+            flowStatus.SetAutomaticStartReadiness(reason, false);
+            Assert(((TextBlock)flowStatus.FindName("MachineStateText")).Text == "整机状态：启动条件未满足", "流程页状态与总览不同步。");
+            Assert(((TextBlock)flowStatus.FindName("StartReadinessText")).Text == reason, "流程页未显示启动拦截原因。");
+            flowStatus.SetAutomaticStartReadiness(null, true);
+            Assert(((TextBlock)flowStatus.FindName("MachineStateText")).Text == "整机状态：检查启动条件", "流程页没有显示启动条件检查中状态。");
         }
         /// <summary>界面只观察报警服务，刷新不清除锁存，状态变化仍选择同一次报警。</summary>
         private static void AlarmConditions()
         {
             var service = new MachineAlarmService();
             var stop = new MachineAlarmDefinition("STOP", "测试停机报警", MachineAlarmKind.StopMachine);
+            var notice = new MachineAlarmDefinition("NOTICE", "测试非停机提醒", MachineAlarmKind.NonStop);
             service.ReportCondition(stop, "测试工位", true, "先检查测试输入");
+            service.ReportCondition(notice, "另一个工位", true, "等待人工复核");
             var snapshot = new OperationSnapshot { IsPreview = true, HasRuntime = true, State = MachineRunState.Alarmed, SampledAt = DateTime.Now, Alarms = service.Alarms.ToList() };
             snapshot.Stations.Add(new StationOverviewData { Name = "测试工位", CurrentStep = "20 等待输入" });
+            snapshot.Stations.Add(new StationOverviewData { Name = "另一个工位", CurrentStep = "30 等待复核" });
             var view = new CurrentAlarmsView(); view.SetPreview(snapshot);
             var grid = (DataGrid)view.FindName("AlarmGrid"); var first = (AlarmDisplayRow)grid.SelectedItem;
+            Assert(((TextBlock)view.FindName("CountText")).Text == "当前报警 2 条（停机 1，非停机 1）", "报警页没有区分停机报警和非停机提醒数量。");
             service.ReportCondition(stop, "测试工位", false, null); snapshot.Alarms = service.Alarms.ToList(); view.RefreshDisplay();
             var recovered = (AlarmDisplayRow)grid.SelectedItem;
             Assert(first.Key == recovered.Key && recovered.ConditionText.Contains("等待复位"), "条件恢复后丢失选择或不显示待复位。");
@@ -113,7 +159,16 @@ namespace MotionControl.OperatorPages.Checks
         /// <summary>验证 Host 导航不重复 IO 监控入口，并保留原内容区导航。</summary>
         private static void HostNavigation()
         {
-            var card = new GuardCard(); var runtime = CreateRuntime(card, new MachineAlarmService());
+            var card = new GuardCard();
+            var alarmService = new MachineAlarmService();
+            var flow = new ReadOnlyInputFlow();
+            var alarm = new MachineAlarmDefinition("CLAMP_TIMEOUT", "等待夹紧到位超时", MachineAlarmKind.StopMachine,
+                "检查夹紧机构和到位传感器。", "输入恢复后，按设备安全规程整机复位再启动。");
+            alarmService.ReportCondition(alarm, flow.StationName, true, "当前步骤等待输入：" + flow.WaitingInputName);
+            var visionFlow = new ReadOnlyFlow("视觉检测工位");
+            var notice = new MachineAlarmDefinition("VISION_REVIEW", "视觉结果待复核", MachineAlarmKind.NonStop);
+            alarmService.ReportCondition(notice, visionFlow.StationName, true, "视觉结果等待操作员复核");
+            var runtime = CreateRuntime(card, alarmService, flow, visionFlow);
             var window = new MainWindow();
             try
             {
@@ -130,7 +185,14 @@ namespace MotionControl.OperatorPages.Checks
                     .Single(button => Equals(button.Tag, "Home"));
                 homeButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
 
-                window.SetFlowStatusPage(new FlowStatusView(runtime)); window.SetMachineRuntime(runtime);
+                var flowStatus = new FlowStatusView(runtime);
+                string crossPageAlarmSummary = "当前报警 2 条（停机 1，非停机 1）";
+                Assert(((TextBlock)flowStatus.FindName("AlarmText")).Text.StartsWith(crossPageAlarmSummary),
+                    "流程状态没有展示停机与提醒的分类汇总。");
+                var ioMonitor = new UserControl();
+                window.SetFlowStatusPage(flowStatus);
+                window.SetIoMonitorPage(ioMonitor);
+                window.SetMachineRuntime(runtime);
                 var content = (ContentControl)window.FindName("ManualDebugContent");
                 var original = content.Content as EquipmentOverviewView;
                 Assert(original != null, "首页仍是占位。");
@@ -139,16 +201,106 @@ namespace MotionControl.OperatorPages.Checks
                 ((Button)window.FindName("OperationReturnButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Assert(ReferenceEquals(content.Content, original), "返回重建了原总览。");
                 FindButton(original, "查看当前报警").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                Assert(content.Content is CurrentAlarmsView && card.Calls == 0, "报警导航失败或触发了控制卡操作。");
+                var alarms = content.Content as CurrentAlarmsView;
+                Assert(alarms != null && card.Calls == 0, "报警导航失败或触发了控制卡操作。");
+                Assert(((TextBlock)alarms.FindName("CountText")).Text == crossPageAlarmSummary,
+                    "从总览进入当前报警后，报警分类数量与流程状态页不一致。");
+
+                var alarmGrid = (DataGrid)alarms.FindName("AlarmGrid");
+                string selectedAlarmKey = ((AlarmDisplayRow)alarmGrid.SelectedItem).Key;
+                var locateFlow = FindButton(alarms, "定位工位流程");
+                Assert(locateFlow.IsEnabled, "工位报警未提供定位对应流程的入口。");
+                locateFlow.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert(ReferenceEquals(content.Content, flowStatus), "当前报警没有打开共享的流程状态页面。");
+                var rows = (StackPanel)flowStatus.FindName("StationRowsPanel");
+                var stationRow = (StackPanel)rows.Children[0];
+                var stepText = stationRow.Children.OfType<TextBlock>().Last();
+                Assert(((SolidColorBrush)stepText.Background).Color == Color.FromRgb(230, 241, 255),
+                    "报警导航没有高亮来源工位。");
+
+                ((Button)window.FindName("OperationReturnButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert(ReferenceEquals(content.Content, alarms)
+                    && ((AlarmDisplayRow)alarmGrid.SelectedItem).Key == selectedAlarmKey,
+                    "从流程返回后没有恢复同一报警选择。");
+                locateFlow.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert(ReferenceEquals(content.Content, flowStatus), "再次从报警定位工位流程失败。");
+
+                OperatorNavigationEventArgs inputNavigation = null;
+                flowStatus.NavigationRequested += (sender, args) => inputNavigation = args;
+                FindButton(flowStatus, "核对输入").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert(ReferenceEquals(content.Content, ioMonitor)
+                    && inputNavigation != null
+                    && inputNavigation.Page == "IO监控"
+                    && inputNavigation.StationName == flow.StationName
+                    && inputNavigation.IoPointName == flow.WaitingInputName,
+                    "工位输入入口没有带着报警来源工位和逻辑 DI 进入 IO 监控。");
+                ((Button)window.FindName("OperationReturnButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert(ReferenceEquals(content.Content, flowStatus), "从 IO 监控没有返回原工位流程。");
+                FindButton(flowStatus, "查看当前报警").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert(ReferenceEquals(content.Content, alarms)
+                    && ((AlarmDisplayRow)alarmGrid.SelectedItem).Key == selectedAlarmKey
+                    && card.Calls == 0,
+                    "处理路径没有保留报警选择，或导航过程调用了控制卡。");
+
+                var taskConfiguration = new UserControl();
+                window.SetTaskConfigurationPage(taskConfiguration);
+                var settingsButton = primaryNavigation.Children.OfType<ToggleButton>()
+                    .Single(button => Equals(button.Tag, "Settings"));
+                settingsButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                var taskConfigurationButton = sidebar.Children.OfType<ToggleButton>()
+                    .Single(button => Equals(button.Tag, "任务配置"));
+                taskConfigurationButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                Assert(ReferenceEquals(content.Content, taskConfiguration), "任务配置导航没有显示当前任务页。");
+                window.ShowFlowStatus();
+                Assert(ReferenceEquals(content.Content, flowStatus)
+                    && ((Button)window.FindName("OperationReturnButton")).Visibility == Visibility.Visible,
+                    "从任务配置查看流程后没有显示返回入口。");
+                ((Button)window.FindName("OperationReturnButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert(ReferenceEquals(content.Content, taskConfiguration)
+                    && Equals(((TextBlock)window.FindName("PageTitle")).Text, "任务配置")
+                    && ((Button)window.FindName("OperationReturnButton")).Visibility == Visibility.Collapsed,
+                    "从流程状态没有返回原任务配置页，或遗留了过期返回入口。");
+                homeButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                Assert(((Button)window.FindName("OperationReturnButton")).Visibility == Visibility.Collapsed,
+                    "普通主导航没有清除上一次操作路径的返回入口。");
             }
             finally { window.Close(); }
+        }
+        /// <summary>检查暂停和停止的提示准确说明当前受控暂停及复位恢复顺序。</summary>
+        private static void MachineCommandGuidance()
+        {
+            var chinese = new ResourceDictionary { Source = new Uri("/MotionControl.Host.Wpf;component/Localization/Strings.zh-CN.xaml", UriKind.Relative) };
+            var pause = (string)chinese["自动暂停提示"];
+            var stop = (string)chinese["自动停止提示"];
+            Assert(pause.Contains("受控暂停") && pause.Contains("保留当前工步")
+                && pause.Contains("整机复位") && pause.Contains("启动"), "中文暂停提示没有说明保留工步和恢复顺序。");
+            Assert(stop.Contains("也会受控暂停") && stop.Contains("保留当前工步")
+                && stop.Contains("现场确认安全") && stop.Contains("整机复位"), "中文停止提示没有说明当前处理方式和现场确认步骤。");
+
+            var english = new ResourceDictionary { Source = new Uri("/MotionControl.Host.Wpf;component/Localization/Strings.en-US.xaml", UriKind.Relative) };
+            var englishPause = (string)english["自动暂停提示"];
+            var englishStop = (string)english["自动停止提示"];
+            Assert(englishPause.Contains("controlled manner") && englishPause.Contains("retain")
+                && englishPause.Contains("Reset the machine") && englishPause.Contains("Start"), "English pause guidance omits step retention or recovery order.");
+            Assert(englishStop.Contains("Stop also pauses") && englishStop.Contains("retains")
+                && englishStop.Contains("Confirm the equipment is safe") && englishStop.Contains("reset the machine"), "English stop guidance omits the current behavior or equipment check.");
         }
         /// <summary>版本与草稿来自实际文件，多轴表只显示选中轴参数，切换后逐轴保存。</summary>
         private static void EditorIntegration()
         {
             using (var test = new PreviewFiles())
             {
-                var page = new TaskConfigurationView(test.Configuration, "TaskEditorPreview", () => null);
+                var page = new TaskConfigurationView(test.Configuration, "TaskEditorPreview", () => null,
+                    () => "等待复位", () => new[] { "正式上料定位工位", "正式压装工位" }, () => "逻辑轴 Load_X 尚未回零。");
+                string runtimeStations = ((TextBlock)page.FindName("RuntimeStationsText")).Text;
+                string draftStations = ((TextBlock)page.FindName("TaskDraftStationsText")).Text;
+                string draftBoundary = ((TextBlock)page.FindName("TaskDraftBoundaryText")).Text;
+                Assert(runtimeStations.Contains("正式上料定位工位") && runtimeStations.Contains("正式压装工位"), "任务配置页没有显示正式 Runtime 工位清单。 ");
+                Assert(draftStations.Contains("参与 3/3 个") && draftStations.Contains("上料工位 → 上料任务")
+                    && draftStations.Contains("搬运工位 → 搬运任务") && draftStations.Contains("检测工位 → 检测任务"),
+                    "任务草稿的工位、任务分配或参与数量没有显示完整。");
+                Assert(draftBoundary.Contains("尚未接入正式设备流程") && draftBoundary.Contains("不会改变当前 Runtime 工位"),
+                    "任务草稿与正式设备流程的运行边界没有说明清楚。");
                 var library = (DataGrid)page.FindName("TasksGrid");
                 Assert(library.Items.Cast<TaskLibraryRow>().All(row => row.AppliedVersion == "R1" && row.DraftState == "无修改"), "文件版本或无修改状态错误。");
                 Render(page, "station-row-navigation", 1200, 780);
@@ -184,6 +336,22 @@ namespace MotionControl.OperatorPages.Checks
                 machineDetails.Children.OfType<TextBox>().First().Text += " 修改";
                 Assert(library.Items.Cast<TaskLibraryRow>().All(item => item.DraftState != "任务检查通过"), "修改后仍保留旧检查通过状态。");
             }
+            using (var test = new PreviewFiles())
+            {
+                var draft = test.Store.Load("TaskEditorPreview");
+                var entry = draft.Tasks.First(item => AllNodes(item.Definition.Root).OfType<WaitInputNode>().Any());
+                var wait = AllNodes(entry.Definition.Root).OfType<WaitInputNode>().First();
+                entry.Definition.Root.TimeoutMs = wait.TimeoutMs;
+                test.Store.SaveDraft(draft);
+                var page = new TaskConfigurationView(test.Configuration, "TaskEditorPreview", () => null);
+                FindButton(page, "保存并检查").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                var library = (DataGrid)page.FindName("TasksGrid");
+                var affected = library.Items.Cast<TaskLibraryRow>().Single(row => row.Definition.TaskId == entry.Definition.TaskId);
+                Assert(affected.DraftState == "任务检查有提醒", "任务存在等待超时提醒时仍显示检查通过。");
+                var issues = (DataGrid)page.FindName("IssuesGrid");
+                Assert(issues.Visibility == Visibility.Visible && issues.Items.Count > 0,
+                    "任务配置页没有展示可定位的检查提醒。");
+            }
         }
         /// <summary>只按工程字段标签找到当前轴的速度框，不反射读取私有状态。</summary>
         private static TextBox SpeedBox(Expander expander)
@@ -202,7 +370,12 @@ namespace MotionControl.OperatorPages.Checks
                 {
                     var overview = new EquipmentOverviewView(); overview.SetPreview(FourWorkspacesPreviewWindow.CreateExampleSnapshot()); overview.SetLanguage(language);
                     var alarms = new CurrentAlarmsView(); alarms.SetPreview(FourWorkspacesPreviewWindow.CreateExampleSnapshot()); alarms.SetLanguage(language);
-                    var configuration = new TaskConfigurationView(test.Configuration, "TaskEditorPreview", () => null); configuration.SetLanguage(language);
+                    var configuration = new TaskConfigurationView(test.Configuration, "TaskEditorPreview", () => null,
+                        () => "等待复位", () => new[] { "正式上料定位工位", "正式压装工位" }, () => "逻辑轴 Load_X 尚未回零。"); configuration.SetLanguage(language);
+                    string draftStations = ((TextBlock)configuration.FindName("TaskDraftStationsText")).Text;
+                    string draftBoundary = ((TextBlock)configuration.FindName("TaskDraftBoundaryText")).Text;
+                    Assert(draftStations.Contains(language == "zh-CN" ? "参与 3/3 个" : "Enabled 3/3"), "任务配置页工位汇总没有随语言切换。");
+                    Assert(draftBoundary.Contains(language == "zh-CN" ? "正式设备流程" : "equipment runtime"), "任务配置页运行边界没有随语言切换。");
                     foreach (int width in new[] { 1200, 824 })
                     {
                         int height = width == 1200 ? 780 : 550;
@@ -255,7 +428,10 @@ namespace MotionControl.OperatorPages.Checks
         }
         /// <summary>Runtime 仅供观察，卡和安全入口都带调用保护。</summary>
         private static MachineRuntime CreateRuntime(GuardCard card, MachineAlarmService service)
-        { return new MachineRuntime(new MotionCardGroup(new IMotionCard[] { card }), new IStationFlow[] { new ReadOnlyFlow() }, service, new GuardSafety()); }
+        { return CreateRuntime(card, service, new ReadOnlyFlow()); }
+        /// <summary>只读页面检查可以注入指定工位，以验证报警来源与 IO 定位链。</summary>
+        private static MachineRuntime CreateRuntime(GuardCard card, MachineAlarmService service, params IStationFlow[] flows)
+        { return new MachineRuntime(new MotionCardGroup(new IMotionCard[] { card }), flows, service, new GuardSafety()); }
     }
 
     /// <summary>测试观察页不能访问的卡入口；任何调用都会失败并计数。</summary>
@@ -283,13 +459,31 @@ namespace MotionControl.OperatorPages.Checks
     /// <summary>有明确名称和当前动作，但绝不执行的测试工位。</summary>
     internal sealed class ReadOnlyFlow : IStationFlow
     {
+        /// <summary>用于本次多工位检查或默认测试流程的稳定名称。</summary>
+        private readonly string _stationName;
+        /// <summary>支持在同一个 Runtime 中建立多个不同名称的只读工位。</summary>
+        internal ReadOnlyFlow(string stationName = "测试工位") { _stationName = stationName; }
         /// <summary>用于报警和导航的稳定名称。</summary>
-        public string StationName { get { return "测试工位"; } }
+        public string StationName { get { return _stationName; } }
         /// <summary>当前动作原文。</summary>
         public string CurrentStepName { get { return "20 等待测试输入"; } }
         /// <summary>页面禁止运行流程。</summary>
         public Task ExecuteCurrentStepAsync(CancellationToken token) { throw new InvalidOperationException("页面不应执行流程。"); }
         /// <summary>页面禁止复位流程。</summary>
+        public Task ResetAsync(CancellationToken token) { throw new InvalidOperationException("页面不应复位流程。"); }
+    }
+    /// <summary>提供稳定工位名和等待 DI 的只读工位，供报警到信号定位路径检查。</summary>
+    internal sealed class ReadOnlyInputFlow : IStationFlow, IStationInputWaitState
+    {
+        /// <summary>报警来源和总览、流程状态列表共同使用的工位名称。</summary>
+        public string StationName { get { return "测试工位"; } }
+        /// <summary>明确显示当前正在等待夹紧输入。</summary>
+        public string CurrentStepName { get { return "20 - 等待夹紧到位"; } }
+        /// <summary>供流程状态页直接定位的逻辑 DI 名称。</summary>
+        public string WaitingInputName { get { return "夹紧到位"; } }
+        /// <summary>只读导航测试不得运行工艺步骤。</summary>
+        public Task ExecuteCurrentStepAsync(CancellationToken token) { throw new InvalidOperationException("页面不应执行流程。"); }
+        /// <summary>只读导航测试不得复位工艺步骤。</summary>
         public Task ResetAsync(CancellationToken token) { throw new InvalidOperationException("页面不应复位流程。"); }
     }
     /// <summary>本轮检查使用独立临时配置目录。</summary>

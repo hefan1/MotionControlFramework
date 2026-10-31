@@ -198,8 +198,12 @@ namespace MotionControl.ZMotionSimulatorCheck
                 hostWindow.SetManualIoDebugPage(ioPage);
                 VerifyMotionCardConnectionStatus(hostWindow, englishResources, chineseResources);
                 hostWindow.SetMachineRuntime(runtime);
+                var readinessMethod = typeof(MainWindow).GetMethod("RefreshAutomaticStartReadinessAsync",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                Ensure(readinessMethod != null, "Host 没有找到自动启动条件检查入口。");
+                ((Task)readinessMethod.Invoke(hostWindow, null)).GetAwaiter().GetResult();
                 Ensure(((Button)hostWindow.FindName("MachineStartButton")).IsEnabled,
-                    "已配置工位且 Runtime 就绪时，顶部启动按钮仍不可用。");
+                    "启动条件检查通过后，顶部启动按钮仍不可用。");
                 VerifyAxisMappingDisconnectProtection();
                 VerifyAxisMappingStartupConnection(application, englishResources, chineseResources);
                 VerifyIoCapabilityDiagnosticDisplay(application, englishResources, chineseResources);
@@ -739,6 +743,36 @@ namespace MotionControl.ZMotionSimulatorCheck
                     configurationStatusText.Text.Contains("检查通过"),
                     "可映射数量为 4096 时，DI/DO 的首末合法通道没有通过校验。");
 
+                string mappingFile = Path.Combine(configurationStore.GetMachineDirectory(machineId), "HardwareConfig", "IoMapping.json");
+                page.ApplyConnectedConfigurationAsync = (change, reconnect, token) =>
+                    Task.FromException(new InvalidOperationException("工位仍在运行"));
+                var saveButton = (Button)page.FindName("SaveConfigurationButton");
+                saveButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, saveButton));
+                Ensure(!File.Exists(mappingFile) && connection.IoMappingApplyCount == 0
+                    && configurationStatusText.Text.Contains("工位仍在运行"),
+                    "运行保护拒绝 IO 保存时仍写入文件、应用映射或没有显示原因。");
+                page.ApplyConnectedConfigurationAsync = (change, reconnect, token) => change();
+                saveButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, saveButton));
+                Ensure(File.Exists(mappingFile) && connection.IoMappingApplyCount == 1,
+                    "允许配置时未保存并应用 IO 映射。");
+                string savedMapping = File.ReadAllText(mappingFile);
+                lastOutput.Channel = 4094;
+                connection.IoMappingApplyError = new InvalidOperationException("原输出 'LastOutput' 当前有效");
+                saveButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, saveButton));
+                Ensure(File.ReadAllText(mappingFile) == savedMapping && configurationStatusText.Text.Contains("当前有效"),
+                    "输出有效导致映射下发失败时，没有恢复原文件或保留处理原因。");
+                connection.IoMappingApplyError = null;
+                lastOutput.Channel = 4095;
+                page.ApplyConnectedConfigurationAsync = async (change, reconnect, token) =>
+                {
+                    await change();
+                    throw new InvalidOperationException("按钮监控恢复失败");
+                };
+                saveButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, saveButton));
+                Ensure(connection.IoMappingApplyCount == 3 && configurationStatusText.Text.Contains("按钮监控恢复失败")
+                    && !configurationStatusText.Text.Contains("保存成功"),
+                    "映射已下发但后续监控恢复失败时，页面错误显示保存成功。");
+
                 lastInput.Channel = 4096;
                 checkMappingButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, checkMappingButton));
                 Ensure(
@@ -776,6 +810,12 @@ namespace MotionControl.ZMotionSimulatorCheck
 
             /// <summary>记录测试页面读取 I/O 能力的次数，确认语言刷新不会重复调用适配器。</summary>
             public int IoCapabilityReadCount { get; private set; }
+
+            /// <summary>记录页面提交的 IO 映射次数，验证运行保护不会提前写入。</summary>
+            public int IoMappingApplyCount { get; private set; }
+
+            /// <summary>指定时模拟映射下发失败，供页面验证保留原文件。</summary>
+            public Exception IoMappingApplyError { get; set; }
 
             /// <summary>返回内存测试卡提供的卡型及轴数量选项。</summary>
             public IReadOnlyList<MotionCardSelectionOption> SupportedMotionCards
@@ -924,6 +964,8 @@ namespace MotionControl.ZMotionSimulatorCheck
                 IReadOnlyList<DigitalIoHardwareDefinition> digitalOutputs,
                 CancellationToken cancellationToken)
             {
+                IoMappingApplyCount++;
+                if (IoMappingApplyError != null) return Task.FromException(IoMappingApplyError);
                 return Task.CompletedTask;
             }
 

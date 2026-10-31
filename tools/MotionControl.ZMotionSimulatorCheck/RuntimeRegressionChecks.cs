@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Adapter.MotionCard.ZMotion;
@@ -39,8 +41,10 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("轴组整体占用并在等待取消时归还已申请轴", AxisGroupResourcesReleaseAfterCancellationAsync, failures);
             await RunCheckAsync("多卡断开先检查所有轴，不留下半连接状态", MovingAxisPreventsPartialCardDisconnectAsync, failures);
             await RunCheckAsync("必须复位后启动，暂停后保留当前步骤", ResetAndPauseKeepCurrentStepAsync, failures);
+            await RunCheckAsync("在线映射与整机命令互斥", OnlineMappingRespectsMachineCommandsAsync, failures);
             await RunCheckAsync("有效或不可读的输出不能被更换映射", OutputMappingSafetyChecks.RunAsync, failures);
             await RunCheckAsync("停机报警暂停流程并要求复位", StopAlarmPausesMachineUntilResetAsync, failures);
+            await RunCheckAsync("多报警原子发布且订阅者读取完整快照", BatchedAlarmUpdatesPublishCompleteSnapshotAsync, failures);
             await RunCheckAsync("非停机报警在条件恢复后自动清除", NonStopAlarmClearsWhenRecoveredAsync, failures);
             await RunCheckAsync("工位流程异常使整机进入报警", StationFailureAlarmsMachineAsync, failures);
             await RunCheckAsync("未配置软件急停 DI 不阻止手动调试但禁止自动启动", UnconfiguredEmergencyStopAllowsManualDebugOnlyAsync, failures);
@@ -48,6 +52,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("急停有效时禁止复位和启动，运行期间触发会暂停流程", EmergencyStopBlocksAndStopsMachineAsync, failures);
             await RunCheckAsync("轴仍在运动时拒绝整机复位", ResetIsRejectedWhileAxisIsMovingAsync, failures);
             await RunCheckAsync("急停状态通过配置的逻辑 DI 读取", EmergencyStopStatusUsesConfiguredInputAsync, failures);
+            await RunCheckAsync("现场按钮按上升沿执行复位、启动、暂停并在 DI 故障恢复后要求复位", PhysicalButtonInputsFollowSafeSequenceAsync, failures);
             await RunCheckAsync("设备硬件配置关联和急停输入校验", HardwareConfigurationValidationAsync, failures);
             await RunCheckAsync("通用框架程序集不引用厂商适配器或原生 API", SharedFrameworkAssembliesDoNotReferenceVendorAdaptersAsync, failures);
             await RunCheckAsync("正运动轴号超出控制器范围时在连接前被拒绝", ZMotionAxisNumberOutsideControllerRangeIsRejectedAsync, failures);
@@ -608,6 +613,64 @@ namespace MotionControl.ZMotionSimulatorCheck
             Ensure(!firstCard.IsConnected && !secondCard.IsConnected, "确认所有轴停稳后，运动卡组没有全部断开。");
         }
 
+        /// <summary>工位等待时拒绝修改映射，映射更新期间启动命令必须等待更新结束。</summary>
+        private static async Task OnlineMappingRespectsMachineCommandsAsync()
+        {
+            var flow = new WaitingStationFlow("送料工位", "等待取料到位");
+            var runtime = CreateRuntime(flow, new MachineAlarmService());
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            var manualEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var manualRelease = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Task<ManualOperationBlockReason> manual = runtime.RunManualRecoveryOperationAsync(async () =>
+            {
+                manualEntered.TrySetResult(true);
+                await manualRelease.Task.ConfigureAwait(false);
+            }, CancellationToken.None);
+            try
+            {
+                Ensure(await Task.WhenAny(manualEntered.Task, Task.Delay(3000)).ConfigureAwait(false) == manualEntered.Task,
+                    "手动操作未进入测试状态。");
+                bool applied = false;
+                await ExpectExceptionAsync<InvalidOperationException>(() => runtime.RunConnectedConfigurationChangeAsync(
+                    () => { applied = true; return Task.CompletedTask; }, CancellationToken.None)).ConfigureAwait(false);
+                Ensure(!applied, "手动操作尚未结束时仍应用了映射。");
+            }
+            finally { manualRelease.TrySetResult(true); }
+            await manual.ConfigureAwait(false);
+            await ExpectExceptionAsync<InvalidOperationException>(() => runtime.RunConnectedConfigurationChangeAsync(
+                () => Task.FromException(new InvalidOperationException("测试配置失败")), CancellationToken.None)).ConfigureAwait(false);
+            Ensure(runtime.State == MachineRunState.Alarmed, "在线映射失败后没有禁止直接启动。");
+            await ExpectExceptionAsync<InvalidOperationException>(() => runtime.StartAsync(CancellationToken.None)).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Task changing = runtime.RunConnectedConfigurationChangeAsync(async () =>
+            {
+                entered.TrySetResult(true);
+                await release.Task.ConfigureAwait(false);
+            }, CancellationToken.None);
+            try
+            {
+                Ensure(await Task.WhenAny(entered.Task, Task.Delay(3000)).ConfigureAwait(false) == entered.Task,
+                    "在线映射没有进入保护区域。");
+                Task start = runtime.StartAsync(CancellationToken.None);
+                Ensure(!start.IsCompleted, "映射尚未完成时启动命令没有等待。");
+                release.TrySetResult(true);
+                await changing.ConfigureAwait(false);
+                await start.ConfigureAwait(false);
+                await flow.WaitUntilStartedAsync().ConfigureAwait(false);
+                bool wrote = false;
+                await ExpectExceptionAsync<InvalidOperationException>(() => runtime.RunConnectedConfigurationChangeAsync(
+                    () => { wrote = true; return Task.CompletedTask; }, CancellationToken.None)).ConfigureAwait(false);
+                Ensure(!wrote && runtime.State == MachineRunState.Running,
+                    "工位等待输入期间仍执行了映射更新，或改变了设备状态。");
+                await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+                await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            finally { release.TrySetResult(true); }
+        }
+
         /// <summary>确认启动前必须复位，暂停和复位后保留相同的工位步骤。</summary>
         private static async Task ResetAndPauseKeepCurrentStepAsync()
         {
@@ -685,6 +748,61 @@ namespace MotionControl.ZMotionSimulatorCheck
             Ensure(alarms.Alarms.Count == 1, "非停机报警触发后没有显示。");
             alarms.ReportCondition(alarm, "视觉工位", false, "条件恢复");
             Ensure(alarms.Alarms.Count == 0, "非停机报警恢复后仍留在报警列表。");
+            return Task.CompletedTask;
+        }
+
+        /// <summary>同一条件触发多条报警时只发布完整快照，并在条件恢复时保留停机锁存。</summary>
+        private static Task BatchedAlarmUpdatesPublishCompleteSnapshotAsync()
+        {
+            var alarms = new MachineAlarmService();
+            var stop = new MachineAlarmDefinition("BATCH_STOP", "批量更新停机报警", MachineAlarmKind.StopMachine);
+            var notice = new MachineAlarmDefinition("BATCH_NOTICE", "批量更新非停机报警", MachineAlarmKind.NonStop);
+            int changedNotifications = 0;
+            int stopNotifications = 0;
+            bool subscribersSawWholeBatch = true;
+            alarms.StopAlarmRaised += (sender, args) =>
+            {
+                stopNotifications++;
+                MachineAlarmRecord[] snapshot = alarms.Alarms.ToArray();
+                subscribersSawWholeBatch &= snapshot.Length == 2
+                    && snapshot.Any(item => item.Definition.Code == stop.Code)
+                    && snapshot.Any(item => item.Definition.Code == notice.Code);
+            };
+            alarms.AlarmsChanged += (sender, args) =>
+            {
+                changedNotifications++;
+                MachineAlarmRecord[] snapshot = alarms.Alarms.ToArray();
+                subscribersSawWholeBatch &= snapshot.Length == 2
+                    && snapshot.Any(item => item.Definition.Code == stop.Code)
+                    && snapshot.Any(item => item.Definition.Code == notice.Code);
+            };
+
+            alarms.ReportConditions(new[] { stop, notice }, "上料工位", true, "等待 DI 超时");
+            Ensure(alarms.Alarms.Count == 2, "批量触发后报警集合没有同时包含全部报警。");
+            Ensure(changedNotifications == 1, "批量触发通知了多次，界面可能刷新出部分报警集合。");
+            Ensure(stopNotifications == 1, "新的停机报警没有通知整机 Runtime。");
+            Ensure(subscribersSawWholeBatch, "报警订阅者读取到的不是完整批量快照。");
+
+            bool conflictRejected = false;
+            try
+            {
+                alarms.ReportConditions(new[]
+                {
+                    new MachineAlarmDefinition("BATCH_NEW", "不应部分写入", MachineAlarmKind.NonStop),
+                    new MachineAlarmDefinition("BATCH_STOP", "冲突定义", MachineAlarmKind.StopMachine)
+                }, "上料工位", true, "定义冲突");
+            }
+            catch (InvalidOperationException)
+            {
+                conflictRejected = true;
+            }
+            Ensure(conflictRejected && alarms.Alarms.Count == 2 && changedNotifications == 1,
+                "报警定义冲突时批量集合发生了部分写入。");
+
+            alarms.ReportConditions(new[] { notice }, "上料工位", false, "DI 已恢复");
+            Ensure(alarms.Alarms.Count == 1 && alarms.Alarms.Single().Definition.Code == stop.Code,
+                "恢复非停机条件时错误清除了停机锁存。");
+            Ensure(changedNotifications == 2, "非停机报警恢复没有仅发布一次完整列表变化。");
             return Task.CompletedTask;
         }
 
@@ -869,6 +987,118 @@ namespace MotionControl.ZMotionSimulatorCheck
             var active = await safetyStatus.ReadEmergencyStopActiveAsync(CancellationToken.None).ConfigureAwait(false);
             Ensure(active, "急停逻辑输入有效时，安全状态读取器返回了 false。");
             Ensure(logicalIo.LastReadInputName == "EmergencyStop", "安全状态读取器没有使用配置的急停 DI 名称。");
+        }
+
+        /// <summary>模拟现场按钮 DI，验证上升沿、复位后启动、停止暂停和读取故障恢复。</summary>
+        private static async Task PhysicalButtonInputsFollowSafeSequenceAsync()
+        {
+            var logicalIo = new FakeLogicalIo();
+            logicalIo.SetInput("现场启动", false);
+            logicalIo.SetInput("现场停止", false);
+            logicalIo.SetInput("现场复位", true);
+            var flow = new WaitingStationFlow("按钮测试工位", "等待按钮测试完成");
+            var alarms = new MachineAlarmService();
+            var card = new FakeMotionCard("ButtonTestCard", new FakeAxis("ButtonTestAxis"));
+            var runtime = new MachineRuntime(
+                new MotionCardGroup(new IMotionCard[] { card }),
+                new IStationFlow[] { flow },
+                alarms,
+                new FakeSafetyStatus(),
+                pauseTimeout: TimeSpan.FromSeconds(2),
+                safetyPollInterval: TimeSpan.FromMilliseconds(10),
+                controlInputIo: logicalIo,
+                startInputName: "现场启动",
+                pauseInputName: "现场停止",
+                resetInputName: "现场复位");
+
+            try
+            {
+                await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+                await Task.Delay(60).ConfigureAwait(false);
+                Ensure(runtime.State == MachineRunState.ResetRequired,
+                    "连接时已为有效电平的复位 DI 被误当成新按键，设备自动复位了。");
+
+                logicalIo.SetInput("现场复位", false);
+                await Task.Delay(60).ConfigureAwait(false);
+                logicalIo.SetInput("现场启动", true);
+                await Task.Delay(60).ConfigureAwait(false);
+                Ensure(runtime.State == MachineRunState.ResetRequired,
+                    "设备尚未复位时，现场启动按钮不应启动整机。");
+
+                logicalIo.SetInput("现场启动", false);
+                await Task.Delay(60).ConfigureAwait(false);
+                logicalIo.SetInput("现场复位", true);
+                await WaitForStateAsync(runtime, MachineRunState.Ready).ConfigureAwait(false);
+                await runtime.RunConnectedConfigurationChangeAsync(() =>
+                {
+                    logicalIo.SetInput("现场启动", true);
+                    return Task.CompletedTask;
+                }, CancellationToken.None).ConfigureAwait(false);
+                await Task.Delay(60).ConfigureAwait(false);
+                Ensure(runtime.State == MachineRunState.Ready,
+                    "映射切换期间输入由无效变有效，监控重启后错误地自动启动。");
+                logicalIo.SetInput("现场启动", false);
+                await Task.Delay(60).ConfigureAwait(false);
+                logicalIo.SetInput("现场启动", true);
+                await WaitForStateAsync(runtime, MachineRunState.Running).ConfigureAwait(false);
+                await flow.WaitUntilStartedAsync().ConfigureAwait(false);
+
+                logicalIo.SetInput("现场停止", true);
+                await WaitForStateAsync(runtime, MachineRunState.Paused).ConfigureAwait(false);
+                Ensure(flow.CurrentStepName == "等待按钮测试完成", "现场停止按钮改变了工位当前步骤。");
+
+                logicalIo.SetInput("现场启动", false);
+                await Task.Delay(60).ConfigureAwait(false);
+                logicalIo.SetInput("现场启动", true);
+                await Task.Delay(60).ConfigureAwait(false);
+                Ensure(runtime.State == MachineRunState.Paused,
+                    "暂停后未复位时，现场启动按钮不应继续运行。");
+
+                logicalIo.SetInput("现场启动", false);
+                logicalIo.SetInput("现场复位", false);
+                await Task.Delay(60).ConfigureAwait(false);
+                logicalIo.SetInput("现场复位", true);
+                await WaitForStateAsync(runtime, MachineRunState.Ready).ConfigureAwait(false);
+                logicalIo.SetInput("现场启动", true);
+                await WaitForStateAsync(runtime, MachineRunState.Running).ConfigureAwait(false);
+                await WaitForStartCountAsync(flow, 2).ConfigureAwait(false);
+
+                logicalIo.SetInput("现场启动", false);
+                logicalIo.SetInput("现场复位", false);
+                logicalIo.SetInput("现场停止", false);
+                await Task.Delay(60).ConfigureAwait(false);
+                logicalIo.ReadError = new IOException("模拟 DI 通讯中断");
+                await WaitForStateAsync(runtime, MachineRunState.Alarmed).ConfigureAwait(false);
+                logicalIo.ReadError = null;
+
+                DateTime recoveryDeadline = DateTime.UtcNow.AddSeconds(3);
+                while (alarms.Alarms.Any(alarm => alarm.ConditionActive)
+                    && DateTime.UtcNow < recoveryDeadline)
+                {
+                    await Task.Delay(10).ConfigureAwait(false);
+                }
+
+                Ensure(alarms.HasLatchedStopAlarm,
+                    "按钮 DI 读取恢复后，停机报警不应自行解除，必须等待人工复位。");
+                Ensure(alarms.Alarms.All(alarm => !alarm.ConditionActive),
+                    "按钮 DI 通讯恢复后仍有报警条件被标记为有效。");
+
+                logicalIo.SetInput("现场复位", true);
+                await WaitForStateAsync(runtime, MachineRunState.Ready).ConfigureAwait(false);
+                Ensure(!alarms.HasLatchedStopAlarm, "DI 故障恢复并按复位后，停机报警仍未清除。");
+            }
+            finally
+            {
+                if (runtime.State == MachineRunState.Running || runtime.State == MachineRunState.Pausing)
+                {
+                    await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+                }
+
+                if (runtime.State != MachineRunState.Disconnected)
+                {
+                    await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+                }
+            }
         }
 
         /// <summary>确认有效配置可通过校验，并逐项检查无效控制卡、轴、IO 和急停映射会被拒绝。</summary>
@@ -1290,21 +1520,46 @@ namespace MotionControl.ZMotionSimulatorCheck
         private sealed class FakeLogicalIo : ILogicalIo
         {
             private readonly Dictionary<string, bool> _inputs = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            private readonly object _sync = new object();
+            private Exception _readError;
 
             public string LastReadInputName { get; private set; }
+
+            /// <summary>为 DI 读取注入通讯异常，验证监控报警和恢复逻辑。</summary>
+            public Exception ReadError
+            {
+                get { lock (_sync) { return _readError; } }
+                set { lock (_sync) { _readError = value; } }
+            }
 
             /// <summary>设置一个测试逻辑 DI 的有效状态。</summary>
             public void SetInput(string inputName, bool value)
             {
-                _inputs[inputName] = value;
+                lock (_sync)
+                {
+                    _inputs[inputName] = value;
+                }
             }
 
             /// <summary>读取测试逻辑 DI，并保存本次读取的名称。</summary>
             public Task<bool> ReadInputAsync(string inputName, CancellationToken cancellationToken)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                LastReadInputName = inputName;
-                return Task.FromResult(_inputs[inputName]);
+                bool inputValue;
+                Exception readError;
+                lock (_sync)
+                {
+                    LastReadInputName = inputName;
+                    readError = _readError;
+                    inputValue = _inputs[inputName];
+                }
+
+                if (readError != null)
+                {
+                    throw readError;
+                }
+
+                return Task.FromResult(inputValue);
             }
 
             /// <summary>返回测试 DO 的固定关闭状态。</summary>

@@ -73,6 +73,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 if (options.RuntimeRegressionOnly)
                 {
                     var failures = await RuntimeRegressionChecks.RunAsync().ConfigureAwait(false);
+                    failures = failures.Concat(await StationAxisReadinessChecks.RunAsync().ConfigureAwait(false)).ToList();
                     if (failures.Count > 0)
                     {
                         throw new InvalidOperationException("Runtime 回归检查失败：" + string.Join("；", failures));

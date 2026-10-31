@@ -30,7 +30,7 @@ namespace MotionControl.TaskEngine.Checks
             var device = Device();
             TaskRun run = Start(TaskFixtures.Task(Group(GroupTarget("X", "5", 100), GroupTarget("Y", "20", 20)), Output()), device);
             await Until(() => !device.ReadAxis("X").IsBusy && device.ReadAxis("X").Position == 5
-                && device.ReadAxis("Y").IsBusy, "没有观察到快轴先到、慢轴仍运动。");
+                && device.ReadAxis("Y").IsBusy && HasNode(run, "group", TaskNodeState.Moving), "没有观察到快轴先到、慢轴仍运动。");
             CheckAssert.True(!run.Completion.IsCompleted && device.ReadOutput("Vacuum") == null, "快轴完成就提前执行后续节点。");
             var detail = run.GetSnapshot().Nodes.Single(node => node.NodeId == "group").Detail;
             CheckAssert.True(detail.Contains("X") && detail.Contains("已到位") && detail.Contains("Y"), "等待诊断没有区分各轴进度。");

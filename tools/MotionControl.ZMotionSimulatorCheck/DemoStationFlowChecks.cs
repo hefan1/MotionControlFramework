@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Equipment.Demo;
+using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.IO;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Contracts.Safety;
@@ -15,14 +16,151 @@ namespace MotionControl.ZMotionSimulatorCheck
     /// <summary>用同一 Runtime 和逻辑 IO 替身验证示例工位的正常、超时与取消路径。</summary>
     internal static class DemoStationFlowChecks
     {
-        /// <summary>依次执行闭环检查；仅在内存中模拟轴和 IO，不发送厂商 SDK 指令。</summary>
+        /// <summary>依次执行单工位和多工位闭环；只在内存中模拟轴和 IO。</summary>
         public static async Task RunAsync()
         {
+            SharedInputCanBeReadByMultipleStations();
             await SuccessfulCycleUsesMappedResourcesAsync().ConfigureAwait(false);
+            await FourStationsRunConcurrentCyclesAsync().ConfigureAwait(false);
             await PausingPartialCycleKeepsLastCompletedDurationAsync().ConfigureAwait(false);
             await TimeoutRaisesAlarmAndCanRetryAsync().ConfigureAwait(false);
+            await TimeoutReportsMultipleLinkedAlarmsAsync().ConfigureAwait(false);
             await PausingOutputTurnsItOffAsync().ConfigureAwait(false);
             await RestartRestoresCompletedStepWithoutRepeatingMoveAsync().ConfigureAwait(false);
+        }
+
+        /// <summary>共享只读 DI 合法；运动轴和写入 DO 仍必须按并行工位独占。</summary>
+        private static void SharedInputCanBeReadByMultipleStations()
+        {
+            var first = CreateStationSettings("上料定位工位", "Load_X", "公共工件到位", "夹具夹紧");
+            var second = CreateStationSettings("视觉检测工位", "Camera_X", "公共工件到位", "相机触发");
+            var set = new DemoStationSetSettings
+            {
+                Enabled = true,
+                Stations = new List<DemoStationSettings> { first, second }
+            };
+
+            set.Validate();
+            Console.WriteLine("[工位配置通过] 多个工位可读取同一逻辑 DI。");
+
+            second.AxisName = first.AxisName;
+            Ensure(RejectedFor(set, "同一逻辑轴"), "共享运动轴没有被拒绝。");
+            second.AxisName = "Camera_X";
+            second.OutputName = first.OutputName;
+            Ensure(RejectedFor(set, "同一逻辑 DO"), "共享写入 DO 没有被拒绝。");
+        }
+
+        /// <summary>验证整个工位组仍拒绝会造成控制争用的配置。</summary>
+        private static bool RejectedFor(DemoStationSetSettings settings, string reason)
+        {
+            try { settings.Validate(); return false; }
+            catch (InvalidOperationException error)
+            { return error.Message.IndexOf(reason, StringComparison.OrdinalIgnoreCase) >= 0; }
+        }
+
+        /// <summary>验证四个独立工位同时定位、分别等待各自 DI，并连续完成三个生产循环。</summary>
+        private static async Task FourStationsRunConcurrentCyclesAsync()
+        {
+            var axes = new[]
+            {
+                new DemoAxis("Load_X"),
+                new DemoAxis("Press_Z"),
+                new DemoAxis("Camera_X"),
+                new DemoAxis("Unload_X")
+            };
+            var settings = new[]
+            {
+                CreateStationSettings("上料定位工位", "Load_X", "上料到位", "夹具夹紧"),
+                CreateStationSettings("压装工位", "Press_Z", "压装完成", "压头动作"),
+                CreateStationSettings("视觉检测工位", "Camera_X", "检测完成", "相机触发"),
+                CreateStationSettings("下料工位", "Unload_X", "下料到位", "下料电磁阀")
+            };
+            var io = new MultiDemoIo(
+                settings.Select(station => station.SensorInputName),
+                settings.Select(station => station.OutputName));
+            var alarms = new MachineAlarmService();
+            var flows = settings.Select(station => new DemoStationFlow(
+                axes.Single(axis => string.Equals(axis.Name, station.AxisName, StringComparison.OrdinalIgnoreCase)),
+                io,
+                alarms,
+                station)).ToArray();
+            for (int index = 0; index < flows.Length; index++)
+            {
+                Ensure(flows[index].CurrentStepName.Contains(settings[index].AxisName),
+                    settings[index].StationName + " 的待启动步骤没有显示对应逻辑轴。");
+            }
+            Ensure(flows.Select(flow => flow.CurrentStepName).Distinct().Count() == flows.Length,
+                "四工位的待启动步骤仍使用相同文字，操作员无法区分当前轴动作。");
+            var runtime = new MachineRuntime(
+                new MotionCardGroup(new IMotionCard[] { new DemoCard(axes) }),
+                flows,
+                alarms,
+                new DemoSafetyStatus(),
+                TimeSpan.FromSeconds(2),
+                TimeSpan.FromMilliseconds(10));
+
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+
+            for (int cycle = 1; cycle <= 3; cycle++)
+            {
+                await WaitUntilAsync(() => flows.All(flow => flow.CompletedCycles == cycle - 1)
+                    && flows.All(flow => flow.CurrentStepName.Contains("等待传感器"))
+                    && axes.All(axis => axis.MoveCount >= cycle),
+                    "四工位同时到达第 " + cycle + " 轮传感器等待").ConfigureAwait(false);
+
+                foreach (DemoStationSettings station in settings)
+                    io.SetInput(station.SensorInputName, true);
+
+                await WaitUntilAsync(() => settings.All(station =>
+                    io.ReadOutputHistory(station.OutputName).Count >= cycle * 2),
+                    "四工位第 " + cycle + " 轮输出脉冲完成").ConfigureAwait(false);
+
+                foreach (DemoStationSettings station in settings)
+                    io.SetInput(station.SensorInputName, false);
+
+                await WaitUntilAsync(() => flows.All(flow => flow.CompletedCycles >= cycle),
+                    "四工位第 " + cycle + " 个完整周期").ConfigureAwait(false);
+            }
+
+            Ensure(runtime.AlarmService.Alarms.Count == 0, "正常连续生产期间出现了意外报警。");
+            foreach (DemoStationSettings station in settings)
+            {
+                IReadOnlyList<bool> outputHistory = io.ReadOutputHistory(station.OutputName);
+                Ensure(outputHistory.Count >= 6 && outputHistory.Take(6).SequenceEqual(
+                    new[] { true, false, true, false, true, false }),
+                    station.StationName + " 的三次输出没有按开、关顺序完成。");
+            }
+
+            await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(runtime.State == MachineRunState.Paused, "四工位连续生产后整机未按暂停命令收尾。");
+            Ensure(flows.All(flow => flow.CompletedCycles == 3), "整机暂停时四工位的完整周期计数不一致。");
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        /// <summary>为一个独立并行工位生成短周期的内存检查参数。</summary>
+        private static DemoStationSettings CreateStationSettings(
+            string stationName,
+            string axisName,
+            string inputName,
+            string outputName)
+        {
+            return new DemoStationSettings
+            {
+                Enabled = true,
+                StationName = stationName,
+                AxisName = axisName,
+                SensorInputName = inputName,
+                OutputName = outputName,
+                TargetPosition = 1,
+                Speed = 1,
+                Acceleration = 10,
+                Deceleration = 10,
+                SensorTimeoutMilliseconds = 3000,
+                SensorPollMilliseconds = 10,
+                OutputPulseMilliseconds = 20
+            };
         }
 
         /// <summary>确认轴目标、传感器 DI、输出 DO 和手动联锁都使用同一运行时。</summary>
@@ -116,8 +254,84 @@ namespace MotionControl.ZMotionSimulatorCheck
                 "复位后从传感器等待步骤继续输出").ConfigureAwait(false);
             Ensure(context.Axis.MoveCount == 1, "超时复位后错误地重新执行了已完成定位。");
 
+            context.Io.SensorActive = false;
+            await WaitUntilAsync(() => context.Flow.CompletedCycles == 1,
+                "恢复步骤完成后计入一个循环").ConfigureAwait(false);
+            Ensure(!context.Flow.LastCycleDuration.HasValue,
+                "传感器超时后恢复的半周期错误保留了超时前的计时。");
+
+            await WaitUntilAsync(() => context.Axis.MoveCount >= 2
+                && context.Flow.CurrentStepName.Contains("等待传感器"),
+                "完成恢复周期后开始下一轮定位").ConfigureAwait(false);
+            context.Io.SensorActive = true;
+            await WaitUntilAsync(() => context.Io.OutputValues.Count >= 4,
+                "下一轮传感器有效后执行输出脉冲").ConfigureAwait(false);
+            context.Io.SensorActive = false;
+            await WaitUntilAsync(() => context.Flow.CompletedCycles == 2,
+                "下一轮传感器复位后完成循环").ConfigureAwait(false);
+            Ensure(context.Flow.LastCycleDuration.HasValue && context.Flow.LastCycleDuration.Value > TimeSpan.Zero,
+                "恢复后的新完整周期没有从定位步骤重新计时。");
+
             await context.Runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
             await context.Runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        /// <summary>验证一次超时可同时报告停机与非停机报警，且非停机报警随 DI 恢复清除。</summary>
+        private static async Task TimeoutReportsMultipleLinkedAlarmsAsync()
+        {
+            var axis = new DemoAxis("AxisX");
+            var io = new DemoIo();
+            var alarms = new MachineAlarmService();
+            DemoStationSettings settings = CreateStationSettings("流程验证工位", "AxisX", "PartReady", "ActionOutput");
+            settings.SensorTimeoutMilliseconds = 70;
+            settings.SensorPollMilliseconds = 10;
+            settings.TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT", "LOAD_MATERIAL_MISSING" };
+            var definitions = new[]
+            {
+                new MachineAlarmDefinition("DEMO_SENSOR_TIMEOUT", "等待传感器超时", MachineAlarmKind.StopMachine),
+                new MachineAlarmDefinition("LOAD_MATERIAL_MISSING", "上料缺少物料", MachineAlarmKind.NonStop)
+            };
+            var flow = new DemoStationFlow(axis, io, alarms, settings, definitions);
+            var runtime = new MachineRuntime(
+                new MotionCardGroup(new IMotionCard[] { new DemoCard(axis) }),
+                new[] { flow },
+                alarms,
+                new DemoSafetyStatus(),
+                TimeSpan.FromSeconds(2),
+                TimeSpan.FromMilliseconds(10));
+
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await WaitUntilAsync(() => runtime.State == MachineRunState.Alarmed,
+                "关联停机报警后整机进入报警状态").ConfigureAwait(false);
+
+            IReadOnlyList<MachineAlarmRecord> raised = alarms.Alarms.ToList();
+            Ensure(raised.Count == 2, "一次超时没有同时报告全部已关联报警。");
+            Ensure(raised.All(alarm => alarm.RelatedInputName == "PartReady"), "关联报警没有保留引发超时的逻辑输入。");
+            var stopAlarm = raised.SingleOrDefault(alarm => alarm.Definition.Code == "DEMO_SENSOR_TIMEOUT");
+            var nonStopAlarm = raised.SingleOrDefault(alarm => alarm.Definition.Code == "LOAD_MATERIAL_MISSING");
+            Ensure(stopAlarm != null && stopAlarm.Definition.Kind == MachineAlarmKind.StopMachine
+                && !stopAlarm.ConditionActive, "停机报警未保留为可复位的已恢复锁存记录。");
+            Ensure(nonStopAlarm != null && nonStopAlarm.Definition.Kind == MachineAlarmKind.NonStop
+                && nonStopAlarm.ConditionActive, "非停机报警未保持活动状态等待 DI 恢复。");
+            Ensure(io.OutputValues.Count == 0, "关联报警触发期间仍写入了 DO。");
+
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(alarms.Alarms.Count == 1 && alarms.Alarms.Single().Definition.Code == "LOAD_MATERIAL_MISSING",
+                "整机复位未只清除已恢复的停机报警，或错误清除了非停机报警。");
+
+            io.SensorActive = true;
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await WaitUntilAsync(() => io.OutputValues.Count >= 2,
+                "DI 恢复后清除非停机报警并完成输出").ConfigureAwait(false);
+            Ensure(alarms.Alarms.Count == 0, "DI 恢复后非停机报警仍留在当前报警列表。");
+            io.SensorActive = false;
+            await WaitUntilAsync(() => flow.CompletedCycles == 1,
+                "多报警恢复后完成一个生产周期").ConfigureAwait(false);
+
+            await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
         /// <summary>确认输出保持期间暂停会先关闭 DO，当前输出步骤留待复位后重试。</summary>
@@ -363,11 +577,97 @@ namespace MotionControl.ZMotionSimulatorCheck
             }
         }
 
+        /// <summary>按逻辑名称隔离多个并行工位的 DI 状态和 DO 历史。</summary>
+        private sealed class MultiDemoIo : ILogicalIo
+        {
+            /// <summary>保护并行工位共享的内存 IO 状态。</summary>
+            private readonly object _sync = new object();
+
+            /// <summary>每个逻辑 DI 当前的有效状态。</summary>
+            private readonly Dictionary<string, bool> _inputValues;
+
+            /// <summary>每个逻辑 DO 已写入的状态历史。</summary>
+            private readonly Dictionary<string, List<bool>> _outputValues;
+
+            /// <summary>建立彼此独立的逻辑 DI/DO 通道。</summary>
+            public MultiDemoIo(IEnumerable<string> inputNames, IEnumerable<string> outputNames)
+            {
+                _inputValues = inputNames.ToDictionary(name => name, name => false, StringComparer.OrdinalIgnoreCase);
+                _outputValues = outputNames.ToDictionary(name => name, name => new List<bool>(), StringComparer.OrdinalIgnoreCase);
+            }
+
+            /// <summary>切换指定工位的逻辑输入，不影响其他工位信号。</summary>
+            public void SetInput(string inputName, bool active)
+            {
+                lock (_sync)
+                {
+                    if (!_inputValues.ContainsKey(inputName))
+                        throw new InvalidOperationException("未知逻辑 DI：" + inputName);
+                    _inputValues[inputName] = active;
+                }
+            }
+
+            /// <summary>返回指定工位输出的不可变写入历史。</summary>
+            public IReadOnlyList<bool> ReadOutputHistory(string outputName)
+            {
+                lock (_sync)
+                {
+                    List<bool> history;
+                    if (!_outputValues.TryGetValue(outputName, out history))
+                        throw new InvalidOperationException("未知逻辑 DO：" + outputName);
+                    return history.ToArray();
+                }
+            }
+
+            /// <summary>读取指定逻辑 DI 的当前状态。</summary>
+            public Task<bool> ReadInputAsync(string inputName, CancellationToken cancellationToken)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                lock (_sync)
+                {
+                    bool active;
+                    if (!_inputValues.TryGetValue(inputName, out active))
+                        throw new InvalidOperationException("未知逻辑 DI：" + inputName);
+                    return Task.FromResult(active);
+                }
+            }
+
+            /// <summary>读取指定逻辑 DO 最近写入的状态。</summary>
+            public Task<bool> ReadOutputAsync(string outputName, CancellationToken cancellationToken)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                lock (_sync)
+                {
+                    List<bool> history;
+                    if (!_outputValues.TryGetValue(outputName, out history))
+                        throw new InvalidOperationException("未知逻辑 DO：" + outputName);
+                    return Task.FromResult(history.Count > 0 && history[history.Count - 1]);
+                }
+            }
+
+            /// <summary>记录指定逻辑 DO 状态，供每个工位单独核对脉冲顺序。</summary>
+            public Task WriteOutputAsync(string outputName, bool value, CancellationToken cancellationToken)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                lock (_sync)
+                {
+                    List<bool> history;
+                    if (!_outputValues.TryGetValue(outputName, out history))
+                        throw new InvalidOperationException("未知逻辑 DO：" + outputName);
+                    history.Add(value);
+                }
+                return Task.CompletedTask;
+            }
+        }
+
         /// <summary>保存单根测试轴的内存运动卡。</summary>
         private sealed class DemoCard : IMotionCard
         {
             /// <summary>创建仅含一根逻辑轴的卡。</summary>
-            public DemoCard(IAxis axis) { Axes = new[] { axis }; }
+            public DemoCard(IAxis axis) : this(new[] { axis }) { }
+
+            /// <summary>创建含多根独立逻辑轴的内存卡。</summary>
+            public DemoCard(IEnumerable<IAxis> axes) { Axes = axes.ToArray(); }
 
             /// <summary>内存卡的稳定控制器标识。</summary>
             public string ControllerId { get { return "DemoCard"; } }

@@ -143,6 +143,23 @@ namespace MotionControl.TaskEngine.Checks
             conditionWait.TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" };
             CheckAssert.NoErrors(Validate(conditionWait));
 
+            var nestedWait = new WaitInputNode { Id = "nested-wait", Name = "等待上料到位", InputName = "PartReady",
+                Expected = true, TimeoutMs = 30000, TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" } };
+            var sequence = new SequenceNode { Id = "load-sequence", Name = "上料顺序段", TimeoutMs = 30000,
+                Children = new List<TaskNode> { TaskFixtures.Delay("settle"), nestedWait } };
+            TaskDefinition nestedTask = TaskFixtures.Task(sequence);
+            nestedTask.Root.TimeoutMs = 90000;
+            var warnings = new TaskDefinitionValidator().Validate(nestedTask, TaskFixtures.Catalog());
+            CheckAssert.True(warnings.Any(issue => issue.Severity == TaskIssueSeverity.Warning
+                && issue.NodeId == nestedWait.Id && issue.Field.EndsWith(".timeoutMs")
+                && issue.Message.Contains("上料顺序段") && issue.Message.Contains("报警不触发")),
+                "父级超时先于等待报警时，没有定位到具体等待步骤并说明原因。");
+            sequence.TimeoutMs = 60000;
+            nestedTask.Root.TimeoutMs = 60000;
+            warnings = new TaskDefinitionValidator().Validate(nestedTask, TaskFixtures.Catalog());
+            CheckAssert.True(!warnings.Any(issue => issue.NodeId == nestedWait.Id && issue.Message.Contains("上层步骤")),
+                "父级时限明显更长时错误报告了同一条确定性冲突。");
+
             var branch = new ConditionBranchNode {
                 Id = "branch", Name = "正常条件分支", Condition = TaskFixtures.Condition(),
                 WhenTrue = new SequenceNode { Id = "yes", Name = "满足" },
