@@ -6,7 +6,7 @@ using MotionControl.Framework.Contracts.Alarms;
 namespace MotionControl.Framework.Runtime.Alarms
 {
     /// <summary>按设备报警规则保存当前报警，并处理条件恢复和人工复位。</summary>
-    public sealed class MachineAlarmService : IMachineAlarmService
+    public sealed class MachineAlarmService : IMachineAlarmService, IMachineAlarmBatchService, IMachineAlarmConditionContextService
     {
         /// <summary>保护报警集合，避免流程线程与界面线程同时读写。</summary>
         private readonly object _sync = new object();
@@ -14,6 +14,13 @@ namespace MotionControl.Framework.Runtime.Alarms
         /// <summary>按报警来源和报警代码保存当前报警记录。</summary>
         private readonly Dictionary<string, Dictionary<string, MachineAlarmRecord>> _alarmsBySource =
             new Dictionary<string, Dictionary<string, MachineAlarmRecord>>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>每条报警当前仍有效的条件标识；旧接口使用独立的保留标识。</summary>
+        private readonly Dictionary<string, Dictionary<string, Dictionary<string, string>>> _conditionsBySource =
+            new Dictionary<string, Dictionary<string, Dictionary<string, string>>>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>旧报警接口没有条件身份，其多次上报按同一个条件处理。</summary>
+        private const string LegacyConditionKey = "legacy";
 
         /// <summary>新停机报警首次出现时触发，供整机运行时立即暂停流程。</summary>
         public event EventHandler<MachineAlarmRaisedEventArgs> StopAlarmRaised;
@@ -64,82 +71,175 @@ namespace MotionControl.Framework.Runtime.Alarms
                 throw new ArgumentNullException(nameof(definition));
             }
 
+            ReportConditions(new[] { definition }, sourceName, conditionActive, detail);
+        }
+
+        /// <summary>原子更新一组报警，避免界面或停机订阅者只看到同一故障的一部分。</summary>
+        public void ReportConditions(
+            IEnumerable<MachineAlarmDefinition> definitions,
+            string sourceName,
+            bool conditionActive,
+            string detail)
+        {
+            UpdateConditions(definitions, sourceName, conditionActive, detail, LegacyConditionKey, null);
+        }
+
+        /// <summary>独立报告一个条件，避免其他条件恢复时误清该报警。</summary>
+        public void ReportConditionGroup(IEnumerable<MachineAlarmDefinition> definitions, string sourceName,
+            bool conditionActive, string detail, string conditionKey, string inputName)
+        {
+            if (string.IsNullOrWhiteSpace(conditionKey))
+                throw new ArgumentException("报警条件标识不能为空。", nameof(conditionKey));
+            UpdateConditions(definitions, sourceName, conditionActive, detail,
+                "context:" + conditionKey.Trim(), string.IsNullOrWhiteSpace(inputName) ? null : inputName.Trim());
+        }
+
+        /// <summary>验证并原子更新报警记录；同一记录涉及多个输入时取消单点定位。</summary>
+        private void UpdateConditions(IEnumerable<MachineAlarmDefinition> definitions, string sourceName,
+            bool conditionActive, string detail, string conditionKey, string inputName)
+        {
+            if (definitions == null)
+            {
+                throw new ArgumentNullException(nameof(definitions));
+            }
+
             if (string.IsNullOrWhiteSpace(sourceName))
             {
                 throw new ArgumentException("报警来源不能为空，例如工位名称或整机名称。", nameof(sourceName));
             }
 
             sourceName = sourceName.Trim();
+            var definitionList = definitions.ToList();
+            if (definitionList.Count == 0)
+            {
+                throw new ArgumentException("至少需要一条报警定义。", nameof(definitions));
+            }
 
-            MachineAlarmRecord changedAlarm = null;
+            var seenCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (MachineAlarmDefinition definition in definitionList)
+            {
+                if (definition == null)
+                {
+                    throw new ArgumentException("报警定义列表不能包含空项。", nameof(definitions));
+                }
+                if (!seenCodes.Add(definition.Code))
+                {
+                    throw new ArgumentException("同一批报警代码不能重复：" + definition.Code + "。", nameof(definitions));
+                }
+            }
+
+            var newStopAlarms = new List<MachineAlarmRecord>();
             var alarmsChanged = false;
-            var newStopAlarm = false;
 
             lock (_sync)
             {
                 Dictionary<string, MachineAlarmRecord> sourceAlarms;
-                if (!_alarmsBySource.TryGetValue(sourceName, out sourceAlarms))
-                {
-                    if (!conditionActive)
-                    {
-                        return;
-                    }
+                bool sourceExists = _alarmsBySource.TryGetValue(sourceName, out sourceAlarms);
 
+                // 先完整验证定义一致性，再改集合，避免一批更新一半后因定义冲突抛错。
+                if (sourceExists)
+                {
+                    foreach (MachineAlarmDefinition definition in definitionList)
+                    {
+                        MachineAlarmRecord existingAlarm;
+                        if (sourceAlarms.TryGetValue(definition.Code, out existingAlarm))
+                        {
+                            EnsureSameDefinition(existingAlarm.Definition, definition, sourceName);
+                        }
+                    }
+                }
+
+                if (!sourceExists && conditionActive)
+                {
                     sourceAlarms = new Dictionary<string, MachineAlarmRecord>(StringComparer.OrdinalIgnoreCase);
                     _alarmsBySource.Add(sourceName, sourceAlarms);
+                    _conditionsBySource.Add(sourceName, new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase));
                 }
 
-                MachineAlarmRecord existingAlarm;
-                if (!sourceAlarms.TryGetValue(definition.Code, out existingAlarm))
+                if (sourceAlarms == null)
                 {
-                    if (!conditionActive)
-                    {
-                        return;
-                    }
-
-                    var now = DateTime.UtcNow;
-                    changedAlarm = new MachineAlarmRecord(
-                        definition,
-                        sourceName,
-                        detail,
-                        true,
-                        now,
-                        now);
-                    sourceAlarms.Add(definition.Code, changedAlarm);
-                    alarmsChanged = true;
-                    newStopAlarm = definition.Kind == MachineAlarmKind.StopMachine;
+                    return;
                 }
-                else
-                {
-                    EnsureSameDefinition(existingAlarm.Definition, definition, sourceName);
 
-                    if (!conditionActive && definition.Kind == MachineAlarmKind.NonStop)
+                foreach (MachineAlarmDefinition definition in definitionList)
+                {
+                    Dictionary<string, Dictionary<string, string>> sourceConditions = _conditionsBySource[sourceName];
+                    MachineAlarmRecord existingAlarm;
+                    if (!sourceAlarms.TryGetValue(definition.Code, out existingAlarm))
                     {
-                        sourceAlarms.Remove(definition.Code);
-                        if (sourceAlarms.Count == 0)
+                        if (!conditionActive)
                         {
-                            _alarmsBySource.Remove(sourceName);
+                            continue;
                         }
 
+                        var now = DateTime.UtcNow;
+                        var newAlarm = new MachineAlarmRecord(
+                            definition,
+                            sourceName,
+                            detail,
+                            true,
+                            now,
+                            now,
+                            inputName);
+                        sourceAlarms.Add(definition.Code, newAlarm);
+                        sourceConditions.Add(definition.Code, new Dictionary<string, string>(StringComparer.Ordinal) { { conditionKey, detail } });
                         alarmsChanged = true;
+                        if (definition.Kind == MachineAlarmKind.StopMachine)
+                        {
+                            newStopAlarms.Add(newAlarm);
+                        }
+                        continue;
                     }
-                    else if (existingAlarm.ConditionActive != conditionActive
-                        || (conditionActive && !string.Equals(existingAlarm.Detail, detail, StringComparison.Ordinal)))
+
+                    Dictionary<string, string> activeConditions = sourceConditions[definition.Code];
+                    if (conditionActive)
+                        activeConditions[conditionKey] = detail;
+                    else if (!activeConditions.Remove(conditionKey))
+                        continue;
+                    bool anyConditionActive = activeConditions.Count > 0;
+                    string currentDetail = conditionActive ? detail
+                        : anyConditionActive ? activeConditions.Values.First() : existingAlarm.Detail;
+
+                    if (!anyConditionActive && definition.Kind == MachineAlarmKind.NonStop)
                     {
-                        changedAlarm = new MachineAlarmRecord(
-                            existingAlarm.Definition,
-                            existingAlarm.SourceName,
-                            conditionActive ? detail : existingAlarm.Detail,
-                            conditionActive,
-                            existingAlarm.FirstRaisedAtUtc,
-                            DateTime.UtcNow);
-                        sourceAlarms[definition.Code] = changedAlarm;
+                        sourceAlarms.Remove(definition.Code);
+                        sourceConditions.Remove(definition.Code);
+
                         alarmsChanged = true;
                     }
+                    else
+                    {
+                        bool ambiguous = existingAlarm.InputAssociationAmbiguous
+                            || (conditionActive && existingAlarm.RelatedInputName != null
+                                && !string.Equals(existingAlarm.RelatedInputName, inputName, StringComparison.OrdinalIgnoreCase));
+                        string associatedInput = ambiguous ? null : existingAlarm.RelatedInputName;
+                        if (existingAlarm.ConditionActive != anyConditionActive
+                            || !string.Equals(existingAlarm.Detail, currentDetail, StringComparison.Ordinal)
+                            || ambiguous != existingAlarm.InputAssociationAmbiguous)
+                        {
+                            var changedAlarm = new MachineAlarmRecord(
+                                existingAlarm.Definition,
+                                existingAlarm.SourceName,
+                                currentDetail,
+                                anyConditionActive,
+                                existingAlarm.FirstRaisedAtUtc,
+                                DateTime.UtcNow,
+                                associatedInput,
+                                ambiguous);
+                            sourceAlarms[definition.Code] = changedAlarm;
+                            alarmsChanged = true;
+                        }
+                    }
+                }
+
+                if (sourceAlarms.Count == 0)
+                {
+                    _alarmsBySource.Remove(sourceName);
+                    _conditionsBySource.Remove(sourceName);
                 }
             }
 
-            NotifyChanges(newStopAlarm ? changedAlarm : null, alarmsChanged);
+            NotifyChanges(newStopAlarms, alarmsChanged);
         }
 
         /// <summary>停机报警条件全部恢复后，清除已锁存的停机报警。</summary>
@@ -160,16 +260,18 @@ namespace MotionControl.Framework.Runtime.Alarms
                 {
                     var sourceAlarms = _alarmsBySource[alarm.SourceName];
                     sourceAlarms.Remove(alarm.Definition.Code);
+                    _conditionsBySource[alarm.SourceName].Remove(alarm.Definition.Code);
                     if (sourceAlarms.Count == 0)
                     {
                         _alarmsBySource.Remove(alarm.SourceName);
+                        _conditionsBySource.Remove(alarm.SourceName);
                     }
                 }
 
                 alarmsChanged = recoveredStopAlarms.Count > 0;
             }
 
-            NotifyChanges(null, alarmsChanged);
+            NotifyChanges(new MachineAlarmRecord[0], alarmsChanged);
         }
 
         /// <summary>检查所有停机报警条件，仍有条件成立时拒绝复位。</summary>
@@ -217,18 +319,23 @@ namespace MotionControl.Framework.Runtime.Alarms
         }
 
         /// <summary>触发报警事件并汇总订阅者处理失败的信息。</summary>
-        private void NotifyChanges(MachineAlarmRecord newStopAlarm, bool alarmsChanged)
+        private void NotifyChanges(IReadOnlyCollection<MachineAlarmRecord> newStopAlarms, bool alarmsChanged)
         {
             var notificationErrors = new List<Exception>();
 
-            if (newStopAlarm != null)
+            EventHandler<MachineAlarmRaisedEventArgs> stopAlarmRaised = StopAlarmRaised;
+            foreach (MachineAlarmRecord newStopAlarm in newStopAlarms)
             {
-                var stopAlarmRaised = StopAlarmRaised;
-                if (stopAlarmRaised != null)
+                if (stopAlarmRaised == null)
+                {
+                    break;
+                }
+
+                foreach (EventHandler<MachineAlarmRaisedEventArgs> handler in stopAlarmRaised.GetInvocationList())
                 {
                     try
                     {
-                        stopAlarmRaised(this, new MachineAlarmRaisedEventArgs(newStopAlarm));
+                        handler(this, new MachineAlarmRaisedEventArgs(newStopAlarm));
                     }
                     catch (Exception error)
                     {
@@ -242,13 +349,16 @@ namespace MotionControl.Framework.Runtime.Alarms
                 var alarmsChangedHandler = AlarmsChanged;
                 if (alarmsChangedHandler != null)
                 {
-                    try
+                    foreach (EventHandler handler in alarmsChangedHandler.GetInvocationList())
                     {
-                        alarmsChangedHandler(this, EventArgs.Empty);
-                    }
-                    catch (Exception error)
-                    {
-                        notificationErrors.Add(error);
+                        try
+                        {
+                            handler(this, EventArgs.Empty);
+                        }
+                        catch (Exception error)
+                        {
+                            notificationErrors.Add(error);
+                        }
                     }
                 }
             }
