@@ -140,14 +140,12 @@ namespace MotionControl.Host.Wpf.Operation
         private void Io_Click(object sender, RoutedEventArgs e) { Navigate("IO监控"); }
         /// <summary>仅打开轴手动，页面本身不点动、不使能。</summary>
         private void Axis_Click(object sender, RoutedEventArgs e) { Navigate("轴手动"); }
-        /// <summary>统一发送明确页面名和报警工位上下文。</summary>
+        /// <summary>发送报警来源；报警未记录关联输入时不把工位当前等待输入当作报警原因。</summary>
         private void Navigate(string page)
         {
             if (!(AlarmGrid.SelectedItem is AlarmDisplayRow row)) return;
-            StationOverviewData station = _snapshot.Stations.FirstOrDefault(item =>
-                string.Equals(item.Name, row.Alarm.SourceName, StringComparison.OrdinalIgnoreCase));
             NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs(
-                page, row.Alarm.SourceName, page == "IO监控" ? station?.WaitingInputName : null));
+                page, row.Alarm.SourceName));
         }
         /// <summary>当前语言的中文资源键。</summary>
         private string T(string text) { return OperationUi.T(this, text); }

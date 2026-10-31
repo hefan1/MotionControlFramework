@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Windows;
 using System.Windows.Controls;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Host.Wpf.Operation;
@@ -18,6 +19,7 @@ namespace MotionControl.OperatorPages.Checks
             var notice = new MachineAlarmDefinition("NOTICE_GUIDE", "料框将满", MachineAlarmKind.NonStop,
                 recoveryGuidance: "更换料框。");
             var snapshot = new OperationSnapshot { IsPreview = true, HasRuntime = true };
+            snapshot.Stations.Add(new StationOverviewData { Name = "压装", WaitingInputName = "另一传感器" });
             snapshot.Alarms.Add(new MachineAlarmRecord(stop, "压装", "", true, now, now));
             snapshot.Alarms.Add(new MachineAlarmRecord(notice, "下料", "", true, now, now));
             var view = new CurrentAlarmsView();
@@ -26,6 +28,11 @@ namespace MotionControl.OperatorPages.Checks
             var after = (TextBlock)view.FindName("AfterText");
             grid.SelectedItem = grid.Items.Cast<AlarmDisplayRow>().Single(row => row.Alarm.Definition.Code == "STOP_GUIDE");
             Require(after.Text.Contains("条件仍有效") && after.Text.Contains("检查夹具后按设备流程处理。"), "有效停机条件或报警库指导被隐藏。");
+            OperatorNavigationEventArgs navigation = null;
+            view.NavigationRequested += (sender, args) => navigation = args;
+            ((Button)view.FindName("IoButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Require(navigation != null && navigation.Page == "IO监控" && navigation.StationName == "压装"
+                && navigation.IoPointName == null, "报警未记录关联输入时，不能把工位当前等待的其他输入当成报警信号。");
             // 超时事件结束并不证明被等待的传感器已触发。
             snapshot.Alarms[0] = new MachineAlarmRecord(stop, "压装", "DI 仍未触发", false, now, now.AddSeconds(1));
             view.RefreshDisplay();
