@@ -1,9 +1,9 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using MotionControl.Framework.Contracts.Variables;
 using MotionControl.TaskEngine.Catalog;
-using MotionControl.TaskEngine.Simulation;
+using MotionControl.TaskEngine.Device.InMemory;
 using Newtonsoft.Json.Linq;
 
 namespace MotionControl.TaskEngine.Checks
@@ -38,7 +38,7 @@ namespace MotionControl.TaskEngine.Checks
                 CheckAssert.True(catalog.Variables.ContainsKey("Counter") && catalog.Inputs.Contains("PartReady"), "变量或 IO 丢失。");
                 CheckAssert.True(catalog.VariableInitialValues["Counter"] == "5"
                     && catalog.VariableInitialValues["Vision.Request"] == "false", "变量配置初值没有进入只读目录。");
-                var device = new SimulatedTaskDevice(catalog);
+                var device = new InMemoryTaskDevice(catalog);
                 var counter = device.ReadVariables().Single(value => value.Name == "Counter");
                 var request = device.ReadVariables().Single(value => value.Name == "Vision.Request");
                 CheckAssert.True(counter.HasValue && counter.CurrentValue == "5", "内存仿真没有装入 UInt32 变量初值。");

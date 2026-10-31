@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using MotionControl.Framework.Contracts.Variables;
@@ -8,15 +8,15 @@ using MotionControl.TaskEngine.Device;
 using MotionControl.TaskEngine.Execution;
 using MotionControl.TaskEngine.Resources;
 
-namespace MotionControl.TaskEngine.Simulation
+namespace MotionControl.TaskEngine.Device.InMemory
 {
     /// <summary>任务引擎专用的独立内存设备；没有控制卡、网络或原生 DLL 入口。</summary>
-    public sealed partial class SimulatedTaskDevice : ITaskDevice
+    public sealed partial class InMemoryTaskDevice : ITaskDevice
     {
         /// <summary>保护内存设备状态；只在短小的读写期间持有。</summary>
         private readonly object _sync = new object();
         /// <summary>每根轴的独立运行状态。</summary>
-        private readonly Dictionary<string, SimulatedAxis> _axes = new Dictionary<string, SimulatedAxis>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, InMemoryAxis> _axes = new Dictionary<string, InMemoryAxis>(StringComparer.OrdinalIgnoreCase);
         /// <summary>输入默认未知；测试场景必须明确注入信号。</summary>
         private readonly Dictionary<string, bool?> _inputs = new Dictionary<string, bool?>(StringComparer.OrdinalIgnoreCase);
         /// <summary>仿真输出默认未知，只有执行写入后才有值。</summary>
@@ -29,11 +29,11 @@ namespace MotionControl.TaskEngine.Simulation
         public TaskResourceCoordinator Resources { get; }
 
         /// <summary>从目录建立隔离状态；轴默认未使能、未回零，变量使用配置初值。</summary>
-        public SimulatedTaskDevice(TaskResourceCatalog catalog)
+        public InMemoryTaskDevice(TaskResourceCatalog catalog)
         {
             Catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
             Resources = new TaskResourceCoordinator(catalog.Resources);
-            foreach (TaskAxisInfo axis in catalog.Axes.Values) _axes.Add(axis.Name, new SimulatedAxis());
+            foreach (TaskAxisInfo axis in catalog.Axes.Values) _axes.Add(axis.Name, new InMemoryAxis());
             foreach (string input in catalog.Inputs) _inputs.Add(input, null);
             foreach (string output in catalog.Outputs) _outputs.Add(output, null);
             _variables = new DeviceVariableStore(catalog.Variables.Select(variable => new DeviceVariableDefinition

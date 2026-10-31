@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -8,7 +8,7 @@ using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Execution;
 using MotionControl.TaskEngine.Machine;
-using MotionControl.TaskEngine.Simulation;
+using MotionControl.TaskEngine.Device.InMemory;
 
 namespace MotionControl.TaskEngine.Checks
 {
@@ -59,14 +59,14 @@ namespace MotionControl.TaskEngine.Checks
         }
 
         /// <summary>提供各工位交接及产品编号变量，复用原轴/IO/示教目录。</summary>
-        private static SimulatedTaskDevice Device()
+        private static InMemoryTaskDevice Device()
         {
             var source = TaskFixtures.Catalog();
             var variables = source.Variables.ToDictionary(pair => pair.Key, pair => pair.Value);
             foreach (string name in new[] { "Feed.Request", "Feed.Complete", "Inspect.Request", "Inspect.Complete", "Unload.Request", "Unload.Complete" })
                 variables.Add(name, DeviceVariableType.Boolean);
             foreach (string name in new[] { "Source.Id", "Load.Id", "Inspect.Id", "Unload.Id" }) variables.Add(name, DeviceVariableType.UInt32);
-            var device = new SimulatedTaskDevice(new TaskResourceCatalog(source.Axes.Values, source.Inputs, source.Outputs,
+            var device = new InMemoryTaskDevice(new TaskResourceCatalog(source.Axes.Values, source.Inputs, source.Outputs,
                 variables, source.TeachPoints, new[] { "Zone:Camera" },
                 alarmCodes: source.AlarmCodes, alarmDefinitions: source.AlarmDefinitions));
             foreach (string axis in device.Catalog.Axes.Keys) device.ConfigureAxis(axis, 0, true, true);
@@ -86,7 +86,7 @@ namespace MotionControl.TaskEngine.Checks
         }
 
         /// <summary>构造需要复位才能启动的设备控制器，并登记收尾。</summary>
-        private static TaskMachineController Machine(SimulatedTaskDevice device, IEnumerable<TaskDefinition> tasks,
+        private static TaskMachineController Machine(InMemoryTaskDevice device, IEnumerable<TaskDefinition> tasks,
             params StationTaskConfiguration[] stations)
         {
             var machine = new TaskMachineController(new TaskMachineConfiguration { MachineId = "Test01", Name = "内存检查设备",
@@ -120,13 +120,13 @@ namespace MotionControl.TaskEngine.Checks
         }
 
         /// <summary>按现有变量类型读取文本。</summary>
-        private static string Value(SimulatedTaskDevice device, string name)
+        private static string Value(InMemoryTaskDevice device, string name)
         {
             return device.ReadVariables().Single(value => value.Name == name).CurrentValue;
         }
 
         /// <summary>按 bool 语义核对交接，不把变量存储的 True/False 大小写当作逻辑差异。</summary>
-        private static bool? BooleanValue(SimulatedTaskDevice device, string name)
+        private static bool? BooleanValue(InMemoryTaskDevice device, string name)
         {
             var value = device.ReadVariables().Single(item => item.Name == name);
             return value.HasValue ? (bool?)bool.Parse(value.CurrentValue) : null;

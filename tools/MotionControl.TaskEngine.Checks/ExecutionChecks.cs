@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Variables;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Execution;
-using MotionControl.TaskEngine.Simulation;
+using MotionControl.TaskEngine.Device.InMemory;
 
 namespace MotionControl.TaskEngine.Checks
 {
@@ -98,15 +98,15 @@ namespace MotionControl.TaskEngine.Checks
         }
 
         /// <summary>创建明确就绪的内存轴；这些设置不调用伺服或真实卡。</summary>
-        private static SimulatedTaskDevice Device()
+        private static InMemoryTaskDevice Device()
         {
-            var device = new SimulatedTaskDevice(TaskFixtures.Catalog());
+            var device = new InMemoryTaskDevice(TaskFixtures.Catalog());
             foreach (string axis in device.Catalog.Axes.Keys) device.ConfigureAxis(axis, 0, true, true);
             return device;
         }
 
         /// <summary>登记运行以便失败时清理。</summary>
-        private static TaskRun Start(TaskDefinition definition, SimulatedTaskDevice device,
+        private static TaskRun Start(TaskDefinition definition, InMemoryTaskDevice device,
             IEnumerable<TaskDefinition> dependencies = null, CancellationToken token = default(CancellationToken))
         {
             TaskRun run = new TaskExecutionEngine().Start(definition, device, dependencies, token);
@@ -197,7 +197,7 @@ namespace MotionControl.TaskEngine.Checks
         }
 
         /// <summary>取得变量文本以核对执行结果。</summary>
-        private static string Value(SimulatedTaskDevice device, string name)
+        private static string Value(InMemoryTaskDevice device, string name)
         {
             return device.ReadVariables().Single(item => item.Name == name).CurrentValue;
         }

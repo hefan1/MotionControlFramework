@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Variables;
@@ -119,7 +119,7 @@ namespace MotionControl.TaskEngine.Checks
         }
 
         /// <summary>确认启动失败来自明确的能力错误，不接受任意异常作为通过。</summary>
-        private static void ExpectStartFailure(TaskDefinition definition, Simulation.SimulatedTaskDevice device, string expected)
+        private static void ExpectStartFailure(TaskDefinition definition, Device.InMemory.InMemoryTaskDevice device, string expected)
         {
             try { Start(definition, device); }
             catch (System.NotSupportedException error)

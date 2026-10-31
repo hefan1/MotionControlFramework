@@ -1,11 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using MotionControl.TaskEngine.Device;
 
-namespace MotionControl.TaskEngine.Simulation
+namespace MotionControl.TaskEngine.Device.InMemory
 {
     /// <summary>运行入口所有权：整机控制期间禁止另一控制器或独立入口绕过统一暂停。</summary>
-    public sealed partial class SimulatedTaskDevice
+    public sealed partial class InMemoryTaskDevice
     {
         /// <summary>当前持有整机控制权的具体对象，锁内读写。</summary>
         private object _machineOwner;

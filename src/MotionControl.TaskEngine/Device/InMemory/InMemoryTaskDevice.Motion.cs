@@ -1,19 +1,19 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.TaskEngine.Device;
 
-namespace MotionControl.TaskEngine.Simulation
+namespace MotionControl.TaskEngine.Device.InMemory
 {
     /// <summary>单轴匀速进度模型；不模拟伺服动力学、限位电路或厂商回零模式。</summary>
-    public sealed partial class SimulatedTaskDevice
+    public sealed partial class InMemoryTaskDevice
     {
         /// <summary>设置测试起始条件；禁止覆盖正在运行、已占用或待确认的轴。</summary>
         public void ConfigureAxis(string name, double position, bool enabled, bool homed)
         {
             lock (_sync)
             {
-                SimulatedAxis axis = FindAxis(name);
+                InMemoryAxis axis = FindAxis(name);
                 if (axis.Operation != null || Resources.IsReserved("Axis:" + name))
                     throw new InvalidOperationException("轴仍被占用或待确认：" + name);
                 CheckPosition(name, position);
@@ -34,7 +34,7 @@ namespace MotionControl.TaskEngine.Simulation
         {
             lock (_sync)
             {
-                SimulatedAxis axis = FindAxis(name);
+                InMemoryAxis axis = FindAxis(name);
                 return new TaskAxisState(name, axis.Position, axis.Enabled, axis.Homed,
                     axis.Operation != null, axis.Alarm, axis.AcceptedCommands);
             }
@@ -45,12 +45,12 @@ namespace MotionControl.TaskEngine.Simulation
         {
             lock (_sync)
             {
-                SimulatedAxis axis = FindAxis(name);
+                InMemoryAxis axis = FindAxis(name);
                 if (axis.Operation != null) throw new InvalidOperationException("轴被其他动作占用：" + name);
                 CheckReady(name, axis, home);
                 double end = home ? 0 : relative ? axis.Position + target : target;
                 CheckPosition(name, end);
-                var move = new SimulatedMove(name, axis.Position, end, home);
+                var move = new InMemoryAxisMove(name, axis.Position, end, home);
                 axis.Operation = move;
                 axis.AcceptedCommands++;
                 if (home) axis.Homed = false;
@@ -63,25 +63,25 @@ namespace MotionControl.TaskEngine.Simulation
         {
             lock (_sync)
             {
-                SimulatedMove simulated = RequireSimulatedMove(move);
-                SimulatedAxis axis = FindAxis(simulated.AxisName);
-                if (axis.Operation != simulated) throw new InvalidOperationException("轴占用凭证已失效：" + simulated.AxisName);
-                CheckReady(simulated.AxisName, axis, simulated.Home);
-                axis.Position = simulated.Start + (simulated.Target - simulated.Start) * Math.Min(1, Math.Max(0, progress));
+                InMemoryAxisMove memory = RequireInMemoryAxisMove(move);
+                InMemoryAxis axis = FindAxis(memory.AxisName);
+                if (axis.Operation != memory) throw new InvalidOperationException("轴占用凭证已失效：" + memory.AxisName);
+                CheckReady(memory.AxisName, axis, memory.Home);
+                axis.Position = memory.Start + (memory.Target - memory.Start) * Math.Min(1, Math.Max(0, progress));
             }
         }
 
         /// <summary>内存模型按进度判定到位；真实设备应按反馈位置和到位容差判定。</summary>
         public bool IsMoveComplete(ITaskAxisMove move, double progress)
         {
-            RequireSimulatedMove(move);
+            RequireInMemoryAxisMove(move);
             return progress >= 1;
         }
 
         /// <summary>动作成功或异常退出后都释放占用；取消保留中途位置，不伪造到位。</summary>
         public Task EndMoveAsync(ITaskAxisMove move, bool completed, CancellationToken cancellationToken)
         {
-            EndMoveCore(RequireSimulatedMove(move), completed);
+            EndMoveCore(RequireInMemoryAxisMove(move), completed);
             return Task.CompletedTask;
         }
 
@@ -95,11 +95,11 @@ namespace MotionControl.TaskEngine.Simulation
         }
 
         /// <summary>释放动作占用；completed 为真时把位置落到终点并标记回零结果。</summary>
-        private void EndMoveCore(SimulatedMove move, bool completed)
+        private void EndMoveCore(InMemoryAxisMove move, bool completed)
         {
             lock (_sync)
             {
-                SimulatedAxis axis = FindAxis(move.AxisName);
+                InMemoryAxis axis = FindAxis(move.AxisName);
                 if (axis.Operation != move) throw new InvalidOperationException("轴清理时占用不一致：" + move.AxisName);
                 if (completed)
                 {
@@ -111,23 +111,23 @@ namespace MotionControl.TaskEngine.Simulation
         }
 
         /// <summary>只接受本设备产生的动作凭证；其他实现的凭证属于接线错误。</summary>
-        private static SimulatedMove RequireSimulatedMove(ITaskAxisMove move)
+        private static InMemoryAxisMove RequireInMemoryAxisMove(ITaskAxisMove move)
         {
-            var simulated = move as SimulatedMove;
-            if (simulated == null) throw new ArgumentException("动作凭证不属于本内存设备。", nameof(move));
-            return simulated;
+            var memory = move as InMemoryAxisMove;
+            if (memory == null) throw new ArgumentException("动作凭证不属于本内存设备。", nameof(move));
+            return memory;
         }
 
         /// <summary>按逻辑名称找轴。</summary>
-        private SimulatedAxis FindAxis(string name)
+        private InMemoryAxis FindAxis(string name)
         {
-            SimulatedAxis axis;
+            InMemoryAxis axis;
             if (name == null || !_axes.TryGetValue(name, out axis)) throw new ArgumentException("轴未配置：" + name);
             return axis;
         }
 
         /// <summary>移动前和移动期间检查使能、位置参考及报警。</summary>
-        private static void CheckReady(string name, SimulatedAxis axis, bool home)
+        private static void CheckReady(string name, InMemoryAxis axis, bool home)
         {
             if (!axis.Enabled) throw new InvalidOperationException("轴未使能：" + name);
             if (!string.IsNullOrWhiteSpace(axis.Alarm)) throw new InvalidOperationException("轴报警：" + name + "，" + axis.Alarm);
@@ -144,7 +144,7 @@ namespace MotionControl.TaskEngine.Simulation
         }
 
         /// <summary>仅在设备锁内读写的单轴状态。</summary>
-        private sealed class SimulatedAxis
+        private sealed class InMemoryAxis
         {
             /// <summary>内存位置。</summary>
             internal double Position;
@@ -155,14 +155,14 @@ namespace MotionControl.TaskEngine.Simulation
             /// <summary>注入的报警文本。</summary>
             internal string Alarm;
             /// <summary>当前独占动作；为空表示未占用。</summary>
-            internal SimulatedMove Operation;
+            internal InMemoryAxisMove Operation;
             /// <summary>累计接受动作次数。</summary>
             internal int AcceptedCommands;
         }
     }
 
     /// <summary>一次内存轴动作锁定的起点、终点和回零意图。</summary>
-    internal sealed class SimulatedMove : ITaskAxisMove
+    internal sealed class InMemoryAxisMove : ITaskAxisMove
     {
         /// <summary>被占用的逻辑轴。</summary>
         internal string AxisName { get; }
@@ -173,7 +173,7 @@ namespace MotionControl.TaskEngine.Simulation
         /// <summary>是否模拟回零。</summary>
         internal bool Home { get; }
         /// <summary>保存一次操作的固定参数。</summary>
-        internal SimulatedMove(string axisName, double start, double target, bool home)
+        internal InMemoryAxisMove(string axisName, double start, double target, bool home)
         {
             AxisName = axisName; Start = start; Target = target; Home = home;
         }

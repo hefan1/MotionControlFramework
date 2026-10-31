@@ -2,10 +2,10 @@
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Execution;
 
-namespace MotionControl.TaskEngine.Simulation
+namespace MotionControl.TaskEngine.Device.InMemory
 {
     /// <summary>基于同一次内存设备状态检查显式互锁，不连接实际安全回路。</summary>
-    public sealed partial class SimulatedTaskDevice
+    public sealed partial class InMemoryTaskDevice
     {
         /// <summary>在设备锁内核对位置、输入和变量；未知或不满足都返回具体原因。</summary>
         public bool CheckInterlock(TaskInterlock interlock, TaskCondition legacyCondition, out string reason)
@@ -17,7 +17,7 @@ namespace MotionControl.TaskEngine.Simulation
                 {
                     foreach (TaskAxisInterlock item in interlock.Axes)
                     {
-                        SimulatedAxis axis = FindAxis(item.AxisName);
+                        InMemoryAxis axis = FindAxis(item.AxisName);
                         reason = "轴 " + item.AxisName + " 需要停止、使能、无报警"
                             + (item.RequireHomed ? "、已回零" : "") + "，位置范围 [" + item.MinimumPosition
                             + ", " + item.MaximumPosition + "]，当前位置=" + axis.Position;

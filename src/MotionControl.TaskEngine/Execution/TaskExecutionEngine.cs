@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.TaskEngine.Configuration;
 using MotionControl.TaskEngine.Definitions;
-using MotionControl.TaskEngine.Simulation;
 using MotionControl.TaskEngine.Device;
 using MotionControl.TaskEngine.Validation;
 using MotionControl.TaskEngine.Machine;

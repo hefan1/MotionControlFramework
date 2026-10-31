@@ -1,14 +1,14 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.TaskEngine.Device;
 
-namespace MotionControl.TaskEngine.Simulation
+namespace MotionControl.TaskEngine.Device.InMemory
 {
     /// <summary>轴组定位的内存状态操作；先整组检查，再接受，各轴按自身速度推进。</summary>
-    public sealed partial class SimulatedTaskDevice
+    public sealed partial class InMemoryTaskDevice
     {
         /// <summary>所有起始条件和终点均合法才接受任一动作，避免前面的轴先动、后面的轴才报错。</summary>
         public IReadOnlyList<ITaskAxisGroupMove> BeginGroupMove(IReadOnlyList<TaskAxisGroupTarget> targets)
@@ -17,13 +17,13 @@ namespace MotionControl.TaskEngine.Simulation
             {
                 if (targets == null || targets.Count < 2 || targets.Count > 64)
                     throw new InvalidOperationException("内存定位组需要 2 到 64 根轴。");
-                var moves = new List<SimulatedGroupAxisMove>();
+                var moves = new List<InMemoryGroupAxisMove>();
                 var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (TaskAxisGroupTarget target in targets)
                 {
                     if (target == null || !names.Add(target.AxisName ?? string.Empty))
                         throw new InvalidOperationException("内存定位组目标为空或逻辑轴重复。");
-                    SimulatedAxis axis = FindAxis(target.AxisName);
+                    InMemoryAxis axis = FindAxis(target.AxisName);
                     if (axis.Operation != null) throw new InvalidOperationException("轴被其他动作占用：" + target.AxisName);
                     CheckReady(target.AxisName, axis, false);
                     double end = target.Relative ? axis.Position + target.Target : target.Target;
@@ -32,12 +32,12 @@ namespace MotionControl.TaskEngine.Simulation
                     if (target.Speed <= 0 || double.IsInfinity(target.Speed) || double.IsNaN(target.Speed)
                         || double.IsInfinity(duration) || double.IsNaN(duration))
                         throw new InvalidOperationException("轴速度或运动时长超出有限范围：" + target.AxisName);
-                    moves.Add(new SimulatedGroupAxisMove(new SimulatedMove(target.AxisName, axis.Position, end, false), duration));
+                    moves.Add(new InMemoryGroupAxisMove(new InMemoryAxisMove(target.AxisName, axis.Position, end, false), duration));
                 }
                 // 前面的检查不改变设备状态，整组通过后才一次登记接受的命令。
-                foreach (SimulatedGroupAxisMove move in moves)
+                foreach (InMemoryGroupAxisMove move in moves)
                 {
-                    SimulatedAxis axis = FindAxis(move.Operation.AxisName);
+                    InMemoryAxis axis = FindAxis(move.Operation.AxisName);
                     axis.Operation = move.Operation;
                     axis.AcceptedCommands++;
                 }
@@ -50,11 +50,11 @@ namespace MotionControl.TaskEngine.Simulation
         {
             lock (_sync)
             {
-                List<SimulatedGroupAxisMove> group = RequireGroupMoves(moves);
-                foreach (SimulatedGroupAxisMove move in group)
+                List<InMemoryGroupAxisMove> group = RequireGroupMoves(moves);
+                foreach (InMemoryGroupAxisMove move in group)
                 {
                     string name = move.Operation.AxisName;
-                    SimulatedAxis axis = FindAxis(name);
+                    InMemoryAxis axis = FindAxis(name);
                     if (!move.Completed && axis.Operation != move.Operation)
                         throw new InvalidOperationException("轴组动作凭证失效：" + name);
                     // 已到位的轴也仍属于本组；它出现报警时不能让整组继续。
@@ -62,7 +62,7 @@ namespace MotionControl.TaskEngine.Simulation
                 }
                 bool completed = true;
                 var descriptions = new List<string>();
-                foreach (SimulatedGroupAxisMove move in group)
+                foreach (InMemoryGroupAxisMove move in group)
                 {
                     if (!move.Completed)
                     {
@@ -91,22 +91,22 @@ namespace MotionControl.TaskEngine.Simulation
         {
             lock (_sync)
             {
-                foreach (SimulatedGroupAxisMove move in RequireGroupMoves(moves))
+                foreach (InMemoryGroupAxisMove move in RequireGroupMoves(moves))
                     if (!move.Completed) EndMoveCore(move.Operation, false);
             }
             return Task.CompletedTask;
         }
 
         /// <summary>只接受本设备产生的组动作凭证；其他实现的凭证属于接线错误。</summary>
-        private static List<SimulatedGroupAxisMove> RequireGroupMoves(IReadOnlyList<ITaskAxisGroupMove> moves)
+        private static List<InMemoryGroupAxisMove> RequireGroupMoves(IReadOnlyList<ITaskAxisGroupMove> moves)
         {
             if (moves == null) throw new ArgumentNullException(nameof(moves));
-            var group = new List<SimulatedGroupAxisMove>(moves.Count);
+            var group = new List<InMemoryGroupAxisMove>(moves.Count);
             foreach (ITaskAxisGroupMove move in moves)
             {
-                var simulated = move as SimulatedGroupAxisMove;
-                if (simulated == null) throw new ArgumentException("轴组动作凭证不属于本内存设备。", nameof(moves));
-                group.Add(simulated);
+                var memory = move as InMemoryGroupAxisMove;
+                if (memory == null) throw new ArgumentException("轴组动作凭证不属于本内存设备。", nameof(moves));
+                group.Add(memory);
             }
             return group;
         }

@@ -1,11 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using MotionControl.TaskEngine.Resources;
 
-namespace MotionControl.TaskEngine.Simulation
+namespace MotionControl.TaskEngine.Device.InMemory
 {
     /// <summary>资源监控及异常后的显式恢复；不修改轴位置、输出，也不重启旧任务。</summary>
-    public sealed partial class SimulatedTaskDevice
+    public sealed partial class InMemoryTaskDevice
     {
         /// <summary>取得所有等待、占用、待确认记录的只读副本。</summary>
         public IReadOnlyList<TaskResourceSnapshot> ReadResources()
@@ -40,7 +40,7 @@ namespace MotionControl.TaskEngine.Simulation
                 {
                     if (!name.StartsWith("Axis:", StringComparison.OrdinalIgnoreCase)) continue;
                     string axisName = name.Substring(5);
-                    SimulatedAxis axis = FindAxis(axisName);
+                    InMemoryAxis axis = FindAxis(axisName);
                     if (axis.Operation != null || !string.IsNullOrWhiteSpace(axis.Alarm))
                     {
                         reason = "轴尚未停止或仍有报警：" + axisName;

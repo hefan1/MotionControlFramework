@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -6,7 +6,7 @@ using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Execution;
 using MotionControl.TaskEngine.Machine;
-using MotionControl.TaskEngine.Simulation;
+using MotionControl.TaskEngine.Device.InMemory;
 
 namespace MotionControl.TaskEngine.Checks
 {
@@ -16,7 +16,7 @@ namespace MotionControl.TaskEngine.Checks
         /// <summary>同一超时原子上报停机与非停机报警，复位后从等待节点继续。</summary>
         private static async Task LinkedTimeoutAlarms()
         {
-            SimulatedTaskDevice device = Device();
+            InMemoryTaskDevice device = Device();
             device.SetInput("PartReady", false);
             var wait = new WaitInputNode
             {
@@ -54,7 +54,7 @@ namespace MotionControl.TaskEngine.Checks
         /// <summary>仅关联非停机报警时，等待工位不锁死整机，其他工位仍可独立生产。</summary>
         private static async Task NonStopTimeoutContinuesProduction()
         {
-            SimulatedTaskDevice device = Device();
+            InMemoryTaskDevice device = Device();
             device.SetInput("PartReady", false);
             TaskDefinition load = TaskDefinition("Load", new WaitInputNode
             {
@@ -89,7 +89,7 @@ namespace MotionControl.TaskEngine.Checks
         /// <summary>同一工位两个并行等待共用报警时，一个条件恢复不能清除另一个条件。</summary>
         private static async Task ParallelConditionsShareAlarm()
         {
-            SimulatedTaskDevice device = Device();
+            InMemoryTaskDevice device = Device();
             device.SetInput("PartReady", null);
             var parallel = new ParallelGroupNode { Id = "parallel-wait", Name = "并行检查输入", Branches = new List<TaskNode> {
                 Sequence("branch-on", new WaitInputNode { Id = "wait-on", Name = "等待有效", InputName = "PartReady", Expected = true,

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -19,7 +19,7 @@ using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Execution;
 using MotionControl.TaskEngine.Machine;
-using MotionControl.TaskEngine.Simulation;
+using MotionControl.TaskEngine.Device.InMemory;
 using MotionControl.TaskEngine.Wpf.Monitoring;
 using MotionControl.TaskEngine.Wpf.Simulation;
 using MotionControl.TaskEngine.Wpf.Views;
@@ -527,7 +527,7 @@ namespace MotionControl.TaskMonitor.Checks
             var catalog = new TaskResourceCatalog(new TaskAxisInfo[0], new[] { "夹紧到位" }, new string[0],
                 new Dictionary<string, DeviceVariableType>(), new TaskTeachPoint[0],
                 alarmDefinitions: new[] { new TaskAlarmInfo("CLAMP_TIMEOUT", "夹紧等待超时", MachineAlarmKind.StopMachine) });
-            var device = new SimulatedTaskDevice(catalog);
+            var device = new InMemoryTaskDevice(catalog);
             device.SetInput("夹紧到位", false);
             var task = Definition("ClampRecovery", new WaitInputNode
             {
@@ -643,8 +643,8 @@ namespace MotionControl.TaskMonitor.Checks
         }
 
         /// <summary>创建没有硬件对象的空目录设备。</summary>
-        private static SimulatedTaskDevice Device()
-        { return new SimulatedTaskDevice(new TaskResourceCatalog(new TaskAxisInfo[0], new string[0], new string[0], new Dictionary<string, DeviceVariableType>(), new TaskTeachPoint[0])); }
+        private static InMemoryTaskDevice Device()
+        { return new InMemoryTaskDevice(new TaskResourceCatalog(new TaskAxisInfo[0], new string[0], new string[0], new Dictionary<string, DeviceVariableType>(), new TaskTeachPoint[0])); }
         /// <summary>创建合法任务根节点。</summary>
         private static TaskDefinition Definition(string id, params TaskNode[] nodes)
         { return new TaskDefinition { TaskId = id, Name = id, Root = Sequence(id + "Root", nodes) }; }

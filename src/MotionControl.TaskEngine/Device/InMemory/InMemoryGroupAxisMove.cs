@@ -1,19 +1,19 @@
-using MotionControl.TaskEngine.Device;
+﻿using MotionControl.TaskEngine.Device;
 
-namespace MotionControl.TaskEngine.Simulation
+namespace MotionControl.TaskEngine.Device.InMemory
 {
     /// <summary>轴组内一根轴已接受的动作；只在设备锁内修改到位标记。</summary>
-    internal sealed class SimulatedGroupAxisMove : ITaskAxisGroupMove
+    internal sealed class InMemoryGroupAxisMove : ITaskAxisGroupMove
     {
         /// <summary>本次动作固定的起点、终点与占用凭证。</summary>
-        internal SimulatedMove Operation { get; }
+        internal InMemoryAxisMove Operation { get; }
         /// <summary>匀速模型的独立运动时长，单位毫秒；零距离时为零。</summary>
         internal double DurationMilliseconds { get; }
         /// <summary>已经完成此轴到位；资源占用仍由整个组持有。</summary>
         internal bool Completed { get; set; }
 
         /// <summary>保存固定动作和有限时长。</summary>
-        internal SimulatedGroupAxisMove(SimulatedMove operation, double durationMilliseconds)
+        internal InMemoryGroupAxisMove(InMemoryAxisMove operation, double durationMilliseconds)
         {
             Operation = operation;
             DurationMilliseconds = durationMilliseconds;

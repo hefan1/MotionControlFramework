@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -9,7 +9,7 @@ using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Configuration;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Machine;
-using MotionControl.TaskEngine.Simulation;
+using MotionControl.TaskEngine.Device.InMemory;
 
 namespace MotionControl.TaskEngine.Wpf.Simulation
 {
@@ -19,7 +19,7 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
         /// <summary>本会话冻结的任务定义副本，页面不修改它们。</summary>
         public IReadOnlyDictionary<string, TaskDefinition> Library { get; }
         /// <summary>仅供内存仿真使用的设备。</summary>
-        public SimulatedTaskDevice Device { get; }
+        public InMemoryTaskDevice Device { get; }
         /// <summary>整机启停入口，页面不直接控制单个 TaskRun。</summary>
         public TaskMachineController Machine { get; }
         /// <summary>配置来源文字，便于区分示例与本机。</summary>
@@ -31,7 +31,7 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
 
         /// <summary>冻结显示库并建立控制器；不会启动或连接任何运动卡。</summary>
         public TaskMonitorSession(TaskMachineConfiguration configuration, IEnumerable<TaskDefinition> definitions,
-            SimulatedTaskDevice device, string source, bool isExample,
+            InMemoryTaskDevice device, string source, bool isExample,
             SafetyInterlockConfigurationDocument controlInputConfiguration = null)
         {
             var frozen = definitions.Select(item => TaskDefinitionJson.Deserialize(TaskDefinitionJson.Serialize(item)))
@@ -68,7 +68,7 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
                 }
             }
 
-            return new TaskMonitorSession(configuration, definitions, new SimulatedTaskDevice(catalog),
+            return new TaskMonitorSession(configuration, definitions, new InMemoryTaskDevice(catalog),
                 store.GetMachineDirectory(machineId), false, controlInputConfiguration);
         }
     }

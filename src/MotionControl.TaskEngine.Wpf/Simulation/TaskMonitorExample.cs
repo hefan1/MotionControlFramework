@@ -1,11 +1,11 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Wpf.Configuration;
 using MotionControl.Framework.Contracts.Variables;
 using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Machine;
-using MotionControl.TaskEngine.Simulation;
+using MotionControl.TaskEngine.Device.InMemory;
 
 namespace MotionControl.TaskEngine.Wpf.Simulation
 {
@@ -26,7 +26,7 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
                 new[] { new TaskTeachPoint("搬运X", "place", "放料位置", 120) }, new[] { "拍照区域" },
                 alarmDefinitions: new[] { new TaskAlarmInfo("DEMO_SENSOR_TIMEOUT", "等待传感器超时",
                     MachineAlarmKind.StopMachine, "检查传感器与 DI 映射。", "输入条件恢复后执行整机复位。") });
-            var device = new SimulatedTaskDevice(catalog);
+            var device = new InMemoryTaskDevice(catalog);
             foreach (string axis in catalog.Axes.Keys) device.ConfigureAxis(axis, 0, true, true);
             device.SetInput("产品到位", true); device.SetInput("上料机构安全位", true); device.SetInput("夹紧到位", false);
             device.SetInput("启动按钮", false); device.SetInput("停止按钮", false); device.SetInput("复位按钮", false);

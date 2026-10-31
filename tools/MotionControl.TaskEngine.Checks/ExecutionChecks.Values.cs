@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -6,7 +6,7 @@ using MotionControl.Framework.Contracts.Variables;
 using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Execution;
-using MotionControl.TaskEngine.Simulation;
+using MotionControl.TaskEngine.Device.InMemory;
 
 namespace MotionControl.TaskEngine.Checks
 {
@@ -73,7 +73,7 @@ namespace MotionControl.TaskEngine.Checks
             var catalog = new TaskResourceCatalog(new TaskAxisInfo[0], new string[0], new[] { "Vacuum" },
                 values.ToDictionary(item => item.Key.ToString(), item => item.Key), new TaskTeachPoint[0],
                 alarmCodes: new[] { "DEMO_SENSOR_TIMEOUT" });
-            var device = new SimulatedTaskDevice(catalog);
+            var device = new InMemoryTaskDevice(catalog);
             var nodes = new List<TaskNode>();
             foreach (var item in values)
             {

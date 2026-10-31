@@ -9,7 +9,6 @@ using MotionControl.TaskEngine.Configuration;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Device;
 using MotionControl.TaskEngine.Execution;
-using MotionControl.TaskEngine.Simulation;
 
 namespace MotionControl.TaskEngine.Machine
 {

@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Linq;
 
-namespace MotionControl.TaskEngine.Simulation
+namespace MotionControl.TaskEngine.Device.InMemory
 {
     /// <summary>交接信号使用已有变量存储，在同一设备锁内核对条件并提交完成值。</summary>
-    public sealed partial class SimulatedTaskDevice
+    public sealed partial class InMemoryTaskDevice
     {
         /// <summary>同一份快照读取请求和完成，保留未知数据。</summary>
         public void ReadHandshake(string requestName, string completedName, out bool? request, out bool? completed)

@@ -1,11 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Execution;
 using MotionControl.TaskEngine.Resources;
-using MotionControl.TaskEngine.Simulation;
+using MotionControl.TaskEngine.Device.InMemory;
 
 namespace MotionControl.TaskEngine.Checks
 {
@@ -20,13 +20,13 @@ namespace MotionControl.TaskEngine.Checks
         }
 
         /// <summary>定位一个运行的当前资源记录。</summary>
-        private static TaskResourceSnapshot ResourceFor(SimulatedTaskDevice device, TaskRun run)
+        private static TaskResourceSnapshot ResourceFor(InMemoryTaskDevice device, TaskRun run)
         {
             return device.ReadResources().FirstOrDefault(item => item.RunId == run.RunId);
         }
 
         /// <summary>等待指定资源状态，并核对拥有者字段可定位。</summary>
-        private static async Task WaitResource(SimulatedTaskDevice device, TaskRun run, TaskResourceState state)
+        private static async Task WaitResource(InMemoryTaskDevice device, TaskRun run, TaskResourceState state)
         {
             await Until(() => ResourceFor(device, run)?.State == state, "运行没有达到资源状态：" + state);
             var item = ResourceFor(device, run);
