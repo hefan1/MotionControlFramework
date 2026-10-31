@@ -18,5 +18,11 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>设备定义名称，必须在 Host 已登记的定义中选择；例如 "Demo"。</summary>
         public string Definition { get; set; }
+
+        /// <summary>
+        /// 本设备的执行入口："StationFlows" 表示 C# 工位流程，"TaskEngine" 表示图形化任务定义，
+        /// "None" 表示只能手动调试。留空时按是否配置工位流程自动判断。
+        /// </summary>
+        public string ExecutionOwner { get; set; }
     }
 }

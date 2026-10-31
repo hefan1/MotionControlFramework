@@ -503,7 +503,8 @@ namespace MotionControl.Host.Wpf
                     controlInputIo: connectedLogicalIo,
                     startInputName: controlInputConfiguration.StartInputName,
                     pauseInputName: controlInputConfiguration.PauseInputName,
-                    resetInputName: controlInputConfiguration.ResetInputName);
+                    resetInputName: controlInputConfiguration.ResetInputName,
+                    controlOwner: ResolveExecutionOwner());
                 createdRuntime.RequestInitializationRecovery(
                     _machineRecoveryCoordinator.HasCompletedInitializationCheckpoint);
                 await createdRuntime.ConnectAsync(CancellationToken.None);
@@ -715,16 +716,7 @@ namespace MotionControl.Host.Wpf
         /// </summary>
         private IEquipmentDefinition ResolveEquipmentDefinition()
         {
-            string fullPath = Path.Combine(
-                _configurationStore.GetMachineDirectory(MachineId),
-                EquipmentSelectionPath.Replace('/', Path.DirectorySeparatorChar));
-            if (!File.Exists(fullPath))
-            {
-                _configurationStore.SaveJson(MachineId, EquipmentSelectionPath, new EquipmentSelectionSettings());
-            }
-
-            EquipmentSelectionSettings settings =
-                _configurationStore.LoadJson<EquipmentSelectionSettings>(MachineId, EquipmentSelectionPath);
+            EquipmentSelectionSettings settings = LoadEquipmentSelection();
             string name = settings == null || settings.Definition == null
                 ? string.Empty
                 : settings.Definition.Trim();
@@ -741,6 +733,55 @@ namespace MotionControl.Host.Wpf
             throw new InvalidOperationException(
                 "设备定义配置 '" + EquipmentSelectionPath + "' 指定了未登记的设备定义：" + name
                 + "。当前版本支持：Demo。");
+        }
+
+        /// <summary>
+        /// 读取配置指定的执行入口。留空时返回 null，由 Runtime 按是否配置工位流程自动判断；
+        /// 写了未登记的值时拒绝启动，不静默退回默认入口。
+        /// </summary>
+        private MachineControlOwner? ResolveExecutionOwner()
+        {
+            EquipmentSelectionSettings settings = LoadEquipmentSelection();
+            string value = settings == null || settings.ExecutionOwner == null
+                ? string.Empty
+                : settings.ExecutionOwner.Trim();
+            if (value.Length == 0)
+            {
+                return null;
+            }
+
+            if (string.Equals(value, "StationFlows", StringComparison.OrdinalIgnoreCase))
+            {
+                return MachineControlOwner.StationFlows;
+            }
+
+            if (string.Equals(value, "TaskEngine", StringComparison.OrdinalIgnoreCase))
+            {
+                return MachineControlOwner.TaskEngine;
+            }
+
+            if (string.Equals(value, "None", StringComparison.OrdinalIgnoreCase))
+            {
+                return MachineControlOwner.None;
+            }
+
+            throw new InvalidOperationException(
+                "设备配置 '" + EquipmentSelectionPath + "' 的执行入口无法识别：" + value
+                + "。可填写 StationFlows、TaskEngine 或 None，留空表示按工位流程自动判断。");
+        }
+
+        /// <summary>读取设备定义选择配置，首次运行时写入默认文件。</summary>
+        private EquipmentSelectionSettings LoadEquipmentSelection()
+        {
+            string fullPath = Path.Combine(
+                _configurationStore.GetMachineDirectory(MachineId),
+                EquipmentSelectionPath.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(fullPath))
+            {
+                _configurationStore.SaveJson(MachineId, EquipmentSelectionPath, new EquipmentSelectionSettings());
+            }
+
+            return _configurationStore.LoadJson<EquipmentSelectionSettings>(MachineId, EquipmentSelectionPath);
         }
 
         /// <summary>为首次运行的设备目录按设备定义预置报警，框架不内置任何设备的报警代码。</summary>

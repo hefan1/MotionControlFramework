@@ -111,7 +111,8 @@ namespace MotionControl.Framework.Runtime.Machine
             ILogicalIo controlInputIo = null,
             string startInputName = null,
             string pauseInputName = null,
-            string resetInputName = null)
+            string resetInputName = null,
+            MachineControlOwner? controlOwner = null)
         {
             if (motionCards == null)
             {
@@ -148,9 +149,10 @@ namespace MotionControl.Framework.Runtime.Machine
                 motionCards,
                 stationFlows,
                 equipmentInitializationFlow);
-            _controlOwner = _flowScheduler.StationFlows.Count > 0
-                ? MachineControlOwner.StationFlows
-                : MachineControlOwner.None;
+            _controlOwner = controlOwner
+                ?? (_flowScheduler.StationFlows.Count > 0
+                    ? MachineControlOwner.StationFlows
+                    : MachineControlOwner.None);
             _alarmService = alarmService;
             _safetyStatus = safetyStatus;
             _controlInputIo = controlInputIo;

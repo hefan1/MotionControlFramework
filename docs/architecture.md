@@ -193,9 +193,10 @@ flowchart LR
 **影响：**
 
 - 切换执行入口是配置级动作，不是运行中热切换：需先让工位流程停下并确认轴已停稳，再由任务入口接管，避免运行中两套调度争抢同一批轴。
+- 执行入口写在设备配置 `Parameters/Equipment.json` 的 `executionOwner` 字段（`StationFlows`、`TaskEngine`、`None`）；留空时按"是否配置工位流程"自动判断，写错值时启动即报错，不静默退回默认入口。
 - 入口归属集中在 `MachineRuntime`，工位流程和任务执行器都不必各自判断"另一个入口是否在跑"，避免判断逻辑分散。
 - 手动调试不受入口影响：连接、伺服使能、点动、DO 手动仍按原规则可用。
-- 任务执行器通过 `ITaskDevice` 接入真实设备尚未实现，因此当前配置了工位流程的设备只能使用工位流程入口；该抽象完成后，接管路径才真正具备可用的设备侧实现。
+- 任务执行器通过 `ITaskDevice` 接入真实设备的设备侧实现已就绪（`MotionControl.TaskEngine.MachineDevice`），但 Host 尚未装配任务执行页面；在那之前，把 `executionOwner` 设为 `TaskEngine` 只会禁止工位流程启动，不会自动开始执行任务。
 
 ### 架构决策记录：设备定义边界
 

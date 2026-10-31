@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -36,6 +36,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("未配置自动流程时允许连接手动调试但禁止启动", ManualOnlyRuntimeConnectsButCannotStartAsync, failures);
             await RunCheckAsync("工位流程与任务执行入口互斥，同一时刻只有一个能启动", ControlOwnerExcludesTaskExecutionAsync, failures);
             await RunCheckAsync("设备定义按设备环境创建工位并拒绝越行程配置", EquipmentDefinitionCreatesStationsFromContextAsync, failures);
+            await RunCheckAsync("执行入口可由设备配置指定", ConfiguredControlOwnerIsHonoredAsync, failures);
             await RunCheckAsync("任一轴仍在运动时禁止启动自动流程", MovingAxisBlocksAutomaticStartAsync, failures);
             await RunCheckAsync("硬限位后未配置初始化流程时必须先回零", HomingRequiredAxisBlocksStartWithoutInitializationAsync, failures);
             await RunCheckAsync("可选初始化先于工位、暂停续跑且每个连接周期只执行一次", EquipmentInitializationRunsBeforeStationsAndResumesAsync, failures);
@@ -198,6 +199,28 @@ namespace MotionControl.ZMotionSimulatorCheck
                 () => taskRuntime.StartAsync(CancellationToken.None)).ConfigureAwait(false);
             Ensure(taskRuntime.State == MachineRunState.Ready, "任务入口接管时误启动改变了整机状态。");
             await taskRuntime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        /// <summary>确认执行入口可以由配置直接指定，不必依赖"是否配置了工位流程"来推断。</summary>
+        private static async Task ConfiguredControlOwnerIsHonoredAsync()
+        {
+            var card = new FakeMotionCard("ConfiguredOwnerCard", new FakeAxis("X"));
+            var runtime = new MachineRuntime(
+                new MotionCardGroup(new IMotionCard[] { card }),
+                new IStationFlow[] { new WaitingStationFlow("配置工位", "等待输入") },
+                new MachineAlarmService(),
+                new FakeSafetyStatus(),
+                controlOwner: MachineControlOwner.TaskEngine);
+
+            Ensure(
+                runtime.ControlOwner == MachineControlOwner.TaskEngine,
+                "配置指定的执行入口没有被采用，仍按工位流程推断。");
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await ExpectExceptionAsync<InvalidOperationException>(
+                () => runtime.StartAsync(CancellationToken.None)).ConfigureAwait(false);
+            Ensure(runtime.State == MachineRunState.Ready, "入口被拒绝时误启动改变了整机状态。");
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
         /// <summary>确认设备定义只通过设备环境创建工位，并按软限位拒绝越行程的工位配置。</summary>
