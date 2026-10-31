@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Threading;
+using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Wpf.ManualDebug;
 using MotionControl.Framework.Runtime.Machine;
 
@@ -807,18 +808,21 @@ namespace MotionControl.Host.Wpf
             MachineResetButton.IsEnabled = !_isResetting
                 && !_isMachineCommandRunning
                 && _machineRuntime != null
+                && !_machineRuntime.IsTaskEngineControlClaimed
                 && (state == MachineRunState.ResetRequired
                     || state == MachineRunState.Paused
                     || state == MachineRunState.Alarmed);
             MachineStartButton.IsEnabled = !_isResetting && !_isMachineCommandRunning
                 && _machineRuntime != null && _machineRuntime.StationFlows.Count > 0
+                && _machineRuntime.ControlOwner == MachineControlOwner.StationFlows
                 && state == MachineRunState.Ready
                 && _automaticStartReadinessKnown
                 && string.IsNullOrWhiteSpace(_automaticStartBlockReason);
             MachinePauseButton.IsEnabled = !_isMachineCommandRunning
-                && _machineRuntime != null && state == MachineRunState.Running;
+                && _machineRuntime != null && _machineRuntime.ControlOwner == MachineControlOwner.StationFlows
+                && state == MachineRunState.Running;
             MachineStopButton.IsEnabled = !_isMachineCommandRunning
-                && _machineRuntime != null
+                && _machineRuntime != null && _machineRuntime.ControlOwner == MachineControlOwner.StationFlows
                 && (state == MachineRunState.Running || state == MachineRunState.Pausing);
         }
 

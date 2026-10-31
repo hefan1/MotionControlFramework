@@ -6,10 +6,10 @@ using MotionControl.Framework.Runtime.Machine;
 
 namespace MotionControl.Host.Wpf
 {
-    /// <summary>任务监控的导航组合，不改变现有整机按钮所控制的 Runtime。</summary>
+    /// <summary>任务配置、任务运行页和 Host 导航的组合入口。</summary>
     public partial class MainWindow
     {
-        /// <summary>本机任务目录只读检查页，并提供当前工位运行状态导航。</summary>
+        /// <summary>正式任务运行页，并提供当前设备状态导航。</summary>
         private UserControl _taskMonitorPage;
         /// <summary>任务配置与草稿编辑页面，独立于运行监控。</summary>
         private UserControl _taskConfigurationPage;
@@ -56,6 +56,12 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>由 Host 显式接入任务模块。</summary>
         public void SetTaskMonitorPage(UserControl page) { _taskMonitorPage = page; UpdatePageContent(); }
+
+        /// <summary>任务会话接管或归还设备控制权后刷新顶部整机命令。</summary>
+        internal void RefreshMachineStateDisplay()
+        {
+            UpdateMachineStateDisplay();
+        }
 
         /// <summary>从任务接入状态页返回设备总览。</summary>
         internal void ShowEquipmentOverview()

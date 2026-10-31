@@ -198,6 +198,9 @@ namespace MotionControl.ZMotionSimulatorCheck
             await ExpectExceptionAsync<InvalidOperationException>(
                 () => taskRuntime.StartAsync(CancellationToken.None)).ConfigureAwait(false);
             Ensure(taskRuntime.State == MachineRunState.Ready, "任务入口接管时误启动改变了整机状态。");
+            await ExpectExceptionAsync<InvalidOperationException>(
+                () => taskRuntime.DisconnectAsync(CancellationToken.None)).ConfigureAwait(false);
+            taskRuntime.ReleaseTaskEngineControl();
             await taskRuntime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
         }
 

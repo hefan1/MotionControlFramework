@@ -29,7 +29,7 @@ namespace MotionControl.TaskEngine.Wpf.Views
             }
             else if (node is SetVariableNode assignment)
             {
-                parameters.Add(Field("变量", assignment.VariableName + " (" + VariableTypeName(_session.Device.Catalog.Variables[assignment.VariableName].ToString()) + ")"));
+                parameters.Add(Field("变量", assignment.VariableName + " (" + VariableTypeName(_session.TaskDevice.Catalog.Variables[assignment.VariableName].ToString()) + ")"));
                 parameters.Add(Field("值来源", BindingText(assignment.Value, references)));
                 references.Add(new TaskReferenceEventArgs("设备变量", assignment.VariableName));
             }

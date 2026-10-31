@@ -15,6 +15,7 @@ using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Device;
 using MotionControl.TaskEngine.MachineDevice;
+using MotionControl.TaskEngine.Machine;
 
 namespace MotionControl.MachineDevice.Checks
 {
@@ -32,8 +33,9 @@ namespace MotionControl.MachineDevice.Checks
             Run("IO 读取失败向上抛出", IoFailureIsReported, ref failures);
             Run("变量按目录类型写入", VariablesAreWrittenByType, ref failures);
             Run("工位流程空闲时接管并在归还后恢复入口", ClaimTakesOverWhenStationFlowsAreIdle, ref failures);
+            Run("任务复位拦截未回零的定位轴", TaskResetRequiresPositioningAxesHomed, ref failures);
 
-            Console.WriteLine("真机任务设备检查：共 7 组，失败 " + failures + "。未连接控制器。");
+            Console.WriteLine("真机任务设备检查：共 8 组，失败 " + failures + "。未连接控制器。");
             return failures == 0 ? 0 : 1;
         }
 
@@ -157,6 +159,72 @@ namespace MotionControl.MachineDevice.Checks
             device.UnregisterRun("active");
             device.ReleaseMachine(null);
             Ensure(runtime.ControlOwner == MachineControlOwner.StationFlows, "归还后执行入口没有回到工位流程。");
+        }
+
+        /// <summary>确认正式设备任务不会在定位轴未使能或未回零时进入就绪状态。</summary>
+        private static void TaskResetRequiresPositioningAxesHomed()
+        {
+            var axis = new FakeAxis("X") { Homed = false };
+            MachineRuntime runtime;
+            MachineTaskDevice device = CreateDevice(axis, new FakeLogicalIo(), out _, out runtime);
+            var task = new TaskDefinition
+            {
+                TaskId = "PositionTask",
+                Name = "定位检查",
+                Root = new SequenceNode
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    Name = "定位步骤",
+                    Children = new List<TaskNode>
+                    {
+                        new MoveAxisNode
+                        {
+                            Id = Guid.NewGuid().ToString("N"),
+                            Name = "定位到位",
+                            AxisName = "X",
+                            Mode = TaskMoveMode.Absolute,
+                            Target = new TaskValueBinding
+                            {
+                                Source = TaskValueSource.Constant,
+                                DataType = DeviceVariableType.Number,
+                                Constant = "1"
+                            },
+                            Profile = new TaskMotionProfile { Speed = 10, Acceleration = 100, Deceleration = 100 }
+                        }
+                    }
+                }
+            };
+            var configuration = new TaskMachineConfiguration
+            {
+                MachineId = "ReadinessCheck",
+                Name = "ReadinessCheck",
+                Stations = new List<StationTaskConfiguration>
+                {
+                    new StationTaskConfiguration
+                    {
+                        StationId = "PositionStation",
+                        Name = "定位工位",
+                        TaskId = task.TaskId,
+                        Enabled = true,
+                        Mode = StationTaskMode.Once
+                    }
+                }
+            };
+            var controller = new TaskMachineController(configuration, new[] { task }, device, runtime.AlarmService);
+            try
+            {
+                ExpectMessage(() => controller.ValidateResetPrerequisites(), "尚未回零");
+                Ensure(controller.GetSnapshot().State == TaskMachineState.NeedsReset,
+                    "复位预检查不应改变任务整机状态。");
+                ExpectMessage(() => controller.Reset(), "尚未回零");
+                Ensure(controller.GetSnapshot().State == TaskMachineState.NeedsReset,
+                    "回零前的复位拒绝后，任务整机错误进入就绪状态。");
+                Ensure(axis.MoveCalls == 0, "回零检查不应发出定位动作。");
+            }
+            finally
+            {
+                controller.CloseAsync().GetAwaiter().GetResult();
+            }
         }
 
         /// <summary>创建一套最小设备环境；可选加入一个工位流程用于验证互斥。</summary>

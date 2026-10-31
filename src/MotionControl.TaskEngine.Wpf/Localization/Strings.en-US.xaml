@@ -172,6 +172,7 @@
  <sys:String x:Key="任务监控.NeedsReset">Reset required</sys:String>
  <sys:String x:Key="任务监控.Ready">Ready</sys:String>
  <sys:String x:Key="任务监控.Running">Running</sys:String>
+ <sys:String x:Key="任务监控.Pausing">Stopping axes</sys:String>
  <sys:String x:Key="任务监控.Paused">Paused</sys:String>
  <sys:String x:Key="任务监控.Faulted">Fault paused</sys:String>
  <sys:String x:Key="任务监控.Stopped">Terminated</sys:String>

@@ -6,14 +6,14 @@
 
 | 项目 | 值 |
 |---|---|
-| HEAD | `04de8a1 执行入口改为设备配置显式指定` |
-| 工作区 | 干净，无未提交改动 |
-| 构建 | Host 与全部检查工程 0 警告 0 错误 |
-| 正式 Host | 进程运行中（启动时间见 `Get-Process MotionControl.Host.Wpf`），四工位、`控制卡 会话已建立`、等待复位、无报警 |
+| 基线提交 | `ffd587e`（本轮实现的提交前基线） |
+| 工作区 | 本轮包含任务执行接入、真实轴暂停/报警处理和复位预检查；精确状态以 `git status --short` 为准 |
+| 构建 | 正式 Host Release 0 警告、0 错误；四套基线检查全部通过：MachineDevice 8 组、TaskEngine 23/53/16 组、Runtime 35 项、OperatorPages 10 组 |
+| 正式 Host | 目标 Release exe 正在运行，`VPLC5xx-Simu` 会话已建立；设备等待复位。Load_X 停在 -90 mm、已停止、未回零；本轮任务会话已关闭 |
 | 配置根 | `C:\Users\ASUS\AppData\Local\MotionControlFramework\Configurations\Machine01` |
-| 执行入口 | `Parameters/Equipment.json` 的 `executionOwner` 当前为 `StationFlows` |
+| 执行入口 | `Parameters/Equipment.json` 的 `executionOwner` 当前为 `TaskEngine` |
 
-一句话：**任务执行已经能驱动设备，但正式 Host 还没装配任务执行页面**，所以现在把 `executionOwner` 改成 `TaskEngine` 只会禁止工位流程启动，任务不会自己跑。
+一句话：**Host 任务执行入口已装配，正式窗口也验证了未回零轴会被拦截；生产循环尚未端到端验证。** Load_X 配置为 DATUM 模式 3、原点 DI8，但回零搜索实际向负方向移动；DI8 目前未触发，且本轮屏幕操作未能切换该输入。方向和输入切换问题查清前，不再发回零或循环命令。
 
 ## 2. 本轮已完成的改动
 
@@ -47,15 +47,14 @@
 
 ## 4. 未完成（阶段 C 剩余）
 
-- **Host 任务执行页**：创建 `MachineTaskDevice`、加载任务、启动/暂停/停止、显示运行状态与报警。这是唯一挡住端到端验证的缺口。
-- **暂停语义统一**：`TaskRun.Pause()` 现在只是冻结时钟，真机必须改成"取消当前节点 → 受控停止 → 等停稳 → 保留节点与固定终点 → 恢复时重进"，复用 `AcceptedAxisTargets` 与 `ResetTimeBudgetAsync`。
-- **报警接线**：`TaskMachineController` 需注入 `MachineRuntime.AlarmService`，任务超时报警才会进"当前报警"页。
-- **互锁节点**：`MachineTaskDevice.CheckInterlock` 现在抛 `NotSupportedException`。互锁是框架级安全语义，长期必须支持。
+- **正式 Host 生产循环**：任务入口、任务装配、受控暂停/停止和共享报警接线已在当前工作区实现，软件回归通过；正式 Host 已验证任务复位会在 Runtime 复位前拦截未回零定位轴。仍未完成“任务 → 轴动 → DI 变化 → 报警进页面 → 连续循环”的端到端运行。
+- **Load_X 回零方向与 DI8 输入**：模式 3 按厂商手册应先正向快找，但 Host 实际观察到轴从 0 向负方向运行并在 -90 mm 受控停止；Host 与 ZDevelop 在线表都显示轴 1 停在 -90、DATUM_IN=8，DI8 未触发。ZSimu 画面切换 DI8 的屏幕操作没有产生可见变化。不要为了继续流程重复回零；先确认仿真输入切换是否生效及控制器轴方向来源。
+- **互锁节点**：`MachineTaskDevice.CheckInterlock` 仍抛 `NotSupportedException`，需要设计并实现框架级安全语义。
 
 ## 5. 已知坑（先读再动手）
 
 1. **端口是同步的，设备是异步的**。`MachineTaskDevice` 用 `Wait()`（`GetAwaiter().GetResult()`）桥接，根因是 `TaskRun.StepAsync` 在持锁状态下执行同步动作。这发生在执行器后台线程，**不要在 UI 线程调用这些同步方法**。彻底解决要把端口改异步并改运行锁，风险大，需单独立项。
-2. **轴未回零会被拒绝**：`BeginMove` 要求 `ServoEnabled` 且 `Homed`。当前 ZSimu 原点 DI（DI8–DI11）未触发，直接跑定位会报"轴尚未回零"。回零需要原点信号，涉及仿真输入，不能想当然。
+2. **轴未回零会被拒绝**：`BeginMove` 要求 `ServoEnabled` 且 `Homed`。正式 Host 当前 Load_X 未回零，DI8 未触发。已观察到 DATUM 模式 3 朝负方向搜索，与厂商手册描述不符；不允许继续回零或开始任务，直到方向和输入状态问题确认。
 3. **轴组/互锁是明确不支持**，不要在 Host 里把它们包装成能用。
 4. **git 不在 PATH**：用 `C:\Users\ASUS\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\git\cmd\git.exe`。
 5. **配置根有两处**：带包名的容器上下文解析到 `...\Packages\OpenAI.Codex_2p2nqsd0c76g0\LocalCache\Local\...`，普通会话解析到 `C:\Users\ASUS\AppData\Local\...`。真实现场配置已迁到后者，前者是历史残留。
@@ -68,7 +67,7 @@ $env:DOTNET_CLI_HOME='F:\Work\运动控制框架\.dotnet-cli-home'
 cd F:\Work\运动控制框架\MotionControlFramework
 $dotnet='C:\Program Files\dotnet\dotnet.exe'
 
-# 1) 真机任务设备检查：期望 7 组，失败 0
+# 1) 真机任务设备检查：期望 8 组，失败 0
 & $dotnet build tools/MotionControl.MachineDevice.Checks/MotionControl.MachineDevice.Checks.csproj -c Release -o tmp/check-md -v:q
 & .\tmp\check-md\MotionControl.MachineDevice.Checks.exe
 
@@ -89,18 +88,9 @@ $dotnet='C:\Program Files\dotnet\dotnet.exe'
 
 ## 7. 第一件事
 
-在正式 Host 里加任务执行入口：新建一个页面（或复用现有任务监视页），装配顺序是
+先解决 Load_X 回零方向与 DI8 输入的验证阻塞。厂商 RTBasic 手册说明 DATUM 模式 3 正向快找、反向慢速复找；本轮正式 Host 上观察到模式 3 朝负向运动。ZDevelop 在线轴表只读显示轴 1 的 `DPOS=-90`、`MPOS=-90`、`DATUM_IN=8`，ZSimu 当前输入仍未触发。先确认 DI8 能否在 ZSimu 中切换并映射到 Host 的 ORG 状态，再查清轴方向参数来源；在此之前保持 Load_X 停止，不运行回零和任务循环。
 
-```csharp
-// 1. 目录：Host 已有 TaskResourceCatalogLoader
-// 2. 设备：用已连接的 MotionCardGroup + ILogicalIo + DeviceVariableStore + MachineRuntime
-var device = new MachineTaskDevice(catalog, motionCards, logicalIo, _deviceVariableStore, _machineRuntime);
-// 3. 接管：device.ClaimMachine(owner) → 内部调用 MachineRuntime.AcquireTaskEngineControlAsync
-// 4. 运行：TaskExecutionEngine.Start(definition, device, ...)
-// 5. 收尾：device.ReleaseMachine(owner) → 入口自动回到 StationFlows
-```
-
-注意：`executionOwner` 要设成 `TaskEngine` 才符合"同一时刻一个入口"的语义；接管成功后工位流程的启动按钮应保持禁用并说明原因。
+阻塞排除后，再通过正式 Host 完成 Load_X 回零、任务复位、启动/暂停/恢复/停止和连续周期验证，并逐页核对 DI/DO 与共享报警。配置目录中的测试配置按项目规则保留；所有轴停止，测试输入输出恢复安全值。
 
 ## 8. 提交约定
 

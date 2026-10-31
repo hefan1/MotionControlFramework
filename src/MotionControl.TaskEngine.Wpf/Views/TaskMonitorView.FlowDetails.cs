@@ -54,7 +54,7 @@ namespace MotionControl.TaskEngine.Wpf.Views
             foreach (var axis in interlock.Axes)
             {
                 fields.Add(new TaskDetailField(label, axis.AxisName + " [" + axis.MinimumPosition + ", " + axis.MaximumPosition + "] "
-                    + _session.Device.Catalog.Axes[axis.AxisName].EngineeringUnit + " · " + T("停止且无报警") + (axis.RequireHomed ? " · " + T("已回零") : string.Empty)));
+                    + _session.TaskDevice.Catalog.Axes[axis.AxisName].EngineeringUnit + " · " + T("停止且无报警") + (axis.RequireHomed ? " · " + T("已回零") : string.Empty)));
                 AxisReferences(axis.AxisName, references);
             }
         }

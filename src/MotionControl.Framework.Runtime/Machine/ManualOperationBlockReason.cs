@@ -12,6 +12,9 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>整机自动流程正在运行或等待暂停。</summary>
         AutomaticFlowActive,
 
+        /// <summary>任务执行会话已占用设备，手动动作不能与任务并发。</summary>
+        TaskExecutionEntryClaimed,
+
         /// <summary>急停输入当前仍处于有效状态。</summary>
         EmergencyStopInputActive,
 

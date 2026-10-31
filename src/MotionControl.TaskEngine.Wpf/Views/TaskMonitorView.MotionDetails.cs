@@ -32,7 +32,7 @@ namespace MotionControl.TaskEngine.Wpf.Views
         private void AddAxis(string name, TaskMoveMode mode, TaskValueBinding target, TaskMotionProfile profile,
             List<TaskDetailField> parameters, List<TaskReferenceEventArgs> references)
         {
-            var axis = _session.Device.Catalog.Axes[name];
+            var axis = _session.TaskDevice.Catalog.Axes[name];
             string unit = axis.EngineeringUnit ?? T("单位未配置");
             parameters.Add(new TaskDetailField(name, T(mode == TaskMoveMode.Absolute ? "绝对定位" : "相对位移")));
             parameters.Add(Field("目标来源", BindingText(target, references) + " " + unit));
@@ -55,12 +55,12 @@ namespace MotionControl.TaskEngine.Wpf.Views
             if (binding.Source == TaskValueSource.Variable)
             {
                 references.Add(new TaskReferenceEventArgs("设备变量", binding.VariableName));
-                return binding.VariableName + " (" + VariableTypeName(_session.Device.Catalog.Variables[binding.VariableName].ToString()) + ")";
+                return binding.VariableName + " (" + VariableTypeName(_session.TaskDevice.Catalog.Variables[binding.VariableName].ToString()) + ")";
             }
             if (binding.Source == TaskValueSource.TeachPoint)
             {
                 AxisReferences(binding.AxisName, references);
-                var point = _session.Device.Catalog.FindTeachPoint(binding.AxisName, binding.PointId);
+                var point = _session.TaskDevice.Catalog.FindTeachPoint(binding.AxisName, binding.PointId);
                 return binding.AxisName + " / " + point.Name + " [" + point.PointId + "] = " + point.Position;
             }
             return binding.Constant;

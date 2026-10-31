@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace MotionControl.TaskEngine.Execution
 {
-    /// <summary>只控制一次内存仿真；暂停、计时和一次写值共用短锁，不锁住等待过程。</summary>
+    /// <summary>隔离一次任务运行；暂停、计时和动作提交共用短锁，不锁住等待过程。</summary>
     public sealed class TaskRun
     {
         /// <summary>保护控制状态和内存动作提交。</summary>
@@ -19,6 +20,12 @@ namespace MotionControl.TaskEngine.Execution
         internal CancellationToken Cancellation { get; }
         /// <summary>暂停期间等待恢复的异步信号。</summary>
         private TaskCompletionSource<bool> _resume;
+        /// <summary>当前运动在暂停时执行的受控停止动作。</summary>
+        private readonly List<Func<Task>> _pauseStopActions = new List<Func<Task>>();
+        /// <summary>本轮暂停的所有受控停止动作完成信号。</summary>
+        private TaskCompletionSource<bool> _pauseStopCompletion = NewSignal();
+        /// <summary>本轮暂停是否已开始执行停止动作。</summary>
+        private bool _pauseStopsStarted;
         /// <summary>终态结果；异步唤醒调用方，避免在运行锁内回调。</summary>
         private readonly TaskCompletionSource<TaskRunSnapshot> _completion =
             new TaskCompletionSource<TaskRunSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -46,6 +53,8 @@ namespace MotionControl.TaskEngine.Execution
         public Task<TaskRunSnapshot> Completion => _completion.Task;
         /// <summary>活动时间仅供本模块计算节点时限。</summary>
         internal double ActiveMilliseconds { get { lock (_sync) return _clock.Elapsed.TotalMilliseconds; } }
+        /// <summary>读取当前运行是否处于暂停门控内。</summary>
+        internal bool IsPaused { get { lock (_sync) return _state == TaskRunState.Paused; } }
 
         /// <summary>创建独立控制状态，不触碰设备。</summary>
         internal TaskRun(string taskId, int revision)
@@ -55,17 +64,70 @@ namespace MotionControl.TaskEngine.Execution
             Cancellation = _cancellation.Token;
         }
 
-        /// <summary>冻结内存动作和活动计时；返回后不会继续提交本次运行的仿真写值。</summary>
+        /// <summary>创建异步信号，避免在任务状态锁内执行等待方回调。</summary>
+        private static TaskCompletionSource<bool> NewSignal()
+        {
+            return new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        /// <summary>冻结当前任务步骤和活动计时，供内存运行及整机协调暂停使用。</summary>
         public bool Pause()
         {
             lock (_sync)
             {
                 if (_state != TaskRunState.Running) return false;
-                _state = TaskRunState.Paused;
-                _clock.Stop();
-                _resume = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                BeginPause();
                 return true;
             }
+        }
+
+        /// <summary>冻结运行时钟并等待本次运行中的真实轴全部受控停止。</summary>
+        internal Task PauseAsync()
+        {
+            Func<Task>[] actions = null;
+            Task completion;
+            lock (_sync)
+            {
+                if (_state == TaskRunState.Running) BeginPause();
+                if (_state != TaskRunState.Paused) return Task.CompletedTask;
+                completion = _pauseStopCompletion.Task;
+                if (!_pauseStopsStarted)
+                {
+                    _pauseStopsStarted = true;
+                    actions = _pauseStopActions.ToArray();
+                    if (actions.Length == 0) _pauseStopCompletion.TrySetResult(true);
+                }
+            }
+
+            if (actions != null && actions.Length > 0) _ = CompletePauseStopsAsync(actions);
+            return completion;
+        }
+
+        /// <summary>为当前轴动作登记暂停时的受控停止；节点离开动作后释放登记。</summary>
+        internal IDisposable RegisterPauseStopAction(Func<Task> stopAction)
+        {
+            if (stopAction == null) throw new ArgumentNullException(nameof(stopAction));
+            lock (_sync)
+            {
+                _pauseStopActions.Add(stopAction);
+                return new PauseStopRegistration(this, stopAction);
+            }
+        }
+
+        /// <summary>在受控停止完成后等待操作员恢复，期间任务活动时钟保持冻结。</summary>
+        internal async Task WaitForResumeAsync()
+        {
+            Task stopped;
+            Task resumed;
+            lock (_sync)
+            {
+                if (_state != TaskRunState.Paused) return;
+                stopped = _pauseStopCompletion.Task;
+                resumed = _resume.Task;
+            }
+
+            await stopped.ConfigureAwait(false);
+            await resumed.ConfigureAwait(false);
         }
 
         /// <summary>从冻结点继续，不重发已经接受的相对位移。</summary>
@@ -120,6 +182,80 @@ namespace MotionControl.TaskEngine.Execution
                 var cancelled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 using (token.Register(() => cancelled.TrySetCanceled()))
                     await Task.WhenAny(resume, cancelled.Task).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>开始一次暂停周期并停止任务活动计时。</summary>
+        private void BeginPause()
+        {
+            _state = TaskRunState.Paused;
+            _clock.Stop();
+            _resume = NewSignal();
+            _pauseStopCompletion = NewSignal();
+            _pauseStopsStarted = false;
+            if (_pauseStopActions.Count == 0)
+            {
+                _pauseStopsStarted = true;
+                _pauseStopCompletion.TrySetResult(true);
+            }
+        }
+
+        /// <summary>顺序执行当前动作的受控停止，并保留首个真实设备错误。</summary>
+        private async Task CompletePauseStopsAsync(Func<Task>[] actions)
+        {
+            try
+            {
+                var stops = new List<Task>();
+                foreach (Func<Task> action in actions)
+                {
+                    try
+                    {
+                        Task stop = action();
+                        if (stop != null) stops.Add(stop);
+                    }
+                    catch (Exception error)
+                    {
+                        stops.Add(Task.FromException(error));
+                    }
+                }
+
+                await Task.WhenAll(stops).ConfigureAwait(false);
+                _pauseStopCompletion.TrySetResult(true);
+            }
+            catch (Exception error)
+            {
+                _pauseStopCompletion.TrySetException(error);
+            }
+        }
+
+        /// <summary>解除一个轴动作的暂停停止登记，整机锁与运行锁互不嵌套等待。</summary>
+        private void UnregisterPauseStopAction(Func<Task> stopAction)
+        {
+            lock (_sync) _pauseStopActions.Remove(stopAction);
+        }
+
+        /// <summary>释放已完成轴动作的暂停停止登记。</summary>
+        private sealed class PauseStopRegistration : IDisposable
+        {
+            /// <summary>所属任务运行。</summary>
+            private readonly TaskRun _run;
+            /// <summary>需要移除的停止动作。</summary>
+            private readonly Func<Task> _stopAction;
+            /// <summary>防止重复解除登记。</summary>
+            private bool _disposed;
+
+            /// <summary>保存运行和对应停止动作。</summary>
+            internal PauseStopRegistration(TaskRun run, Func<Task> stopAction)
+            {
+                _run = run; _stopAction = stopAction;
+            }
+
+            /// <summary>安全解除当前运动的暂停停止登记。</summary>
+            public void Dispose()
+            {
+                if (_disposed) return;
+                _disposed = true;
+                _run.UnregisterPauseStopAction(_stopAction);
             }
         }
 

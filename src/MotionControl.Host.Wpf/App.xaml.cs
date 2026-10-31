@@ -406,6 +406,8 @@ namespace MotionControl.Host.Wpf
         private async Task DisconnectMachineBeforeCardAsync(CancellationToken cancellationToken)
         {
             MachineRuntime runtime = _machineRuntime;
+            if (_taskMonitorLauncher != null)
+                await _taskMonitorLauncher.CloseTaskSessionAsync().ConfigureAwait(true);
             if (runtime != null && runtime.State != MachineRunState.Disconnected)
                 await runtime.DisconnectAsync(cancellationToken).ConfigureAwait(true);
         }
@@ -428,6 +430,18 @@ namespace MotionControl.Host.Wpf
                 _axisMappingPage.CardConnectionStatusMessage);
             if (!_cardConnection.IsConnected)
             {
+                if (_taskMonitorLauncher != null)
+                {
+                    try
+                    {
+                        await _taskMonitorLauncher.SetMachineContextAsync(null, null, null, null);
+                    }
+                    catch (Exception taskSessionError)
+                    {
+                        Trace.TraceError("控制卡断开后关闭任务会话失败：" + taskSessionError);
+                    }
+                }
+
                 if (_machineRuntime != null)
                 {
                     _machineRuntime.StatusChanged -= MachineRuntime_RecoveryStatusChanged;
@@ -516,6 +530,8 @@ namespace MotionControl.Host.Wpf
                 _flowStatusPage = new FlowStatusView(createdRuntime);
                 _mainWindow.SetFlowStatusPage(_flowStatusPage);
                 RefreshManualDebugPages(createdRuntime, motionCards, connectedLogicalIo);
+                await _taskMonitorLauncher.SetMachineContextAsync(
+                    createdRuntime, motionCards, connectedLogicalIo, _deviceVariableStore);
             }
             catch (Exception error)
             {
@@ -1017,6 +1033,18 @@ namespace MotionControl.Host.Wpf
         /// <summary>应用退出时断开已连接的控制卡，并报告句柄释放失败。</summary>
         protected override void OnExit(ExitEventArgs e)
         {
+            if (_taskMonitorLauncher != null)
+            {
+                try
+                {
+                    _taskMonitorLauncher.CloseTaskSessionAsync().GetAwaiter().GetResult();
+                }
+                catch (Exception taskCloseError)
+                {
+                    Trace.TraceWarning("应用退出时关闭任务执行会话失败：" + taskCloseError.Message);
+                }
+            }
+
             if (_machineRuntime != null)
             {
                 try

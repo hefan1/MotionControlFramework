@@ -40,7 +40,8 @@ namespace MotionControl.TaskEngine.Machine
                 {
                     var error = new TaskExecutionException(station.Configuration.TaskId, "__handshake", null,
                         "交接请求在完成前被撤销或无效：" + station.Configuration.RequestVariable + "。请恢复请求后复位启动；不会重做已完成动作。");
-                    await StationExecutionControl.WaitSignalAsync(ReportNodeFault(station, error), token).ConfigureAwait(false);
+                    Task permit = await ReportNodeFaultAsync(station, error).ConfigureAwait(false);
+                    await StationExecutionControl.WaitSignalAsync(permit, token).ConfigureAwait(false);
                 }
             }
             bool cleared = false;

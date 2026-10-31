@@ -24,7 +24,7 @@ namespace MotionControl.TaskEngine.Machine
                 }, token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { /* 统一终止会等待运行收尾。 */ }
-            catch (Exception error) { ReportWorkerFailure(_initialization, error); }
+            catch (Exception error) { await ReportWorkerFailureAsync(_initialization, error).ConfigureAwait(false); }
         }
 
         /// <summary>工位独立循环；请求等待在周期外进行，不套用动作时限。</summary>
@@ -49,7 +49,7 @@ namespace MotionControl.TaskEngine.Machine
                 }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { /* 统一终止会等待运行收尾。 */ }
-            catch (Exception error) { ReportWorkerFailure(station, error); }
+            catch (Exception error) { await ReportWorkerFailureAsync(station, error).ConfigureAwait(false); }
         }
 
         /// <summary>在整机许可内发布一个先暂停的周期，登记完成后才允许执行器推进。</summary>
@@ -96,8 +96,9 @@ namespace MotionControl.TaskEngine.Machine
         }
 
         /// <summary>未预期的执行器退出不能用复位重放，锁存诊断并暂停其他工位。</summary>
-        private void ReportWorkerFailure(StationExecutionControl station, Exception error)
+        private async Task ReportWorkerFailureAsync(StationExecutionControl station, Exception error)
         {
+            TaskRun[] runs;
             lock (_sync)
             {
                 if (_lifetime.IsCancellationRequested) return;
@@ -105,7 +106,22 @@ namespace MotionControl.TaskEngine.Machine
                 station.State = StationTaskState.WaitingReset;
                 station.Detail = error.ToString();
                 AddFault(new TaskMachineFault(station.Configuration.StationId, error.Message, error.InnerException as TaskExecutionException));
-                PauseAll(TaskMachineState.Faulted);
+                runs = PauseAll(TaskMachineState.Pausing);
+            }
+
+            try
+            {
+                await StopPausedRunsAsync(runs).ConfigureAwait(false);
+                lock (_sync)
+                    if (_state == TaskMachineState.Pausing) _state = TaskMachineState.Faulted;
+            }
+            catch (Exception stopError)
+            {
+                lock (_sync)
+                {
+                    _state = TaskMachineState.Faulted;
+                    AddFault(new TaskMachineFault("WORKER_STOP_FAILED", "工位故障后等待轴受控停止失败：" + stopError.Message, null));
+                }
             }
         }
 

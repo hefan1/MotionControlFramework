@@ -172,6 +172,7 @@
  <sys:String x:Key="任务监控.NeedsReset">等待复位</sys:String>
  <sys:String x:Key="任务监控.Ready">就绪</sys:String>
  <sys:String x:Key="任务监控.Running">运行中</sys:String>
+ <sys:String x:Key="任务监控.Pausing">正在受控停止</sys:String>
  <sys:String x:Key="任务监控.Paused">已暂停</sys:String>
  <sys:String x:Key="任务监控.Faulted">故障暂停</sys:String>
  <sys:String x:Key="任务监控.Stopped">已终止</sys:String>

@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using MotionControl.Framework.Contracts.Alarms;
+using MotionControl.Framework.Contracts.Flow;
 
 namespace MotionControl.Framework.Runtime.Machine
 {
@@ -60,6 +61,7 @@ namespace MotionControl.Framework.Runtime.Machine
 
             var alarmError = CreateStopAlarmError(eventArgs.Alarm, null);
             var shouldPauseFlows = false;
+            bool taskEngineOwnsDevice = ControlOwner == MachineControlOwner.TaskEngine;
 
             lock (_statusLock)
             {
@@ -68,7 +70,12 @@ namespace MotionControl.Framework.Runtime.Machine
                     return;
                 }
 
-                if (_state == MachineRunState.Running || _state == MachineRunState.Pausing)
+                if (taskEngineOwnsDevice)
+                {
+                    _state = MachineRunState.Alarmed;
+                    _lastError = alarmError;
+                }
+                else if (_state == MachineRunState.Running || _state == MachineRunState.Pausing)
                 {
                     _state = MachineRunState.Pausing;
                     shouldPauseFlows = true;
@@ -101,6 +108,11 @@ namespace MotionControl.Framework.Runtime.Machine
             }
 
             RaiseStatusChanged();
+
+            if (taskEngineOwnsDevice)
+            {
+                return;
+            }
 
             if (shouldPauseFlows)
             {

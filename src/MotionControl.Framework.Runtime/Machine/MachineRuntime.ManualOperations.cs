@@ -165,6 +165,11 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>根据整机状态返回当前是否允许手动轴或 IO 操作。</summary>
         private ManualOperationBlockReason GetManualOperationStateBlockReason()
         {
+            if (IsTaskEngineControlClaimed)
+            {
+                return ManualOperationBlockReason.TaskExecutionEntryClaimed;
+            }
+
             MachineRunState state = State;
             if (state == MachineRunState.Disconnected)
             {

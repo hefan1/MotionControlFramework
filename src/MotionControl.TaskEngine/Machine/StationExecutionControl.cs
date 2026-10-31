@@ -38,7 +38,7 @@ namespace MotionControl.TaskEngine.Machine
         internal async Task RecoverAsync(TaskExecutionScope scope, TaskExecutionException error)
         {
             scope.Token.ThrowIfCancellationRequested();
-            Task permit = Machine.ReportNodeFault(this, error);
+            Task permit = await Machine.ReportNodeFaultAsync(this, error).ConfigureAwait(false);
             await WaitSignalAsync(permit, scope.Token).ConfigureAwait(false);
             await scope.ResetTimeBudgetAsync().ConfigureAwait(false);
         }

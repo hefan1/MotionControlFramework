@@ -262,3 +262,12 @@
 - 在正式窗口执行“保存并检查”：状态提示“草稿已保存；检查完成，双击问题定位”，检查结果表出现 2 条“提醒”，动作步骤分别为“等待上料到位”和“等待上料信号复位”，说明为“上层步骤‘上料定位并夹紧’的时限（30000 ms）不大于本等待时限（30000 ms），上层可能先超时，导致本步骤关联的等待超时报警不触发”。切换“任务库”后，“上料定位与夹紧”的草稿状态显示“任务检查有提醒”。这确认了本次新增的检查等级与三态显示在正式 Host 中生效。
 - 本次操作改动了任务草稿：按“保存并检查”保存了草稿并更新检查状态；未执行“更新任务文件”（控制卡会话仍连接，按钮保持禁用），未应用任务文件，未复位、未启动、未回零、未发运动命令、未写 IO。配置路径为 `C:\Users\ASUS\AppData\Local\MotionControlFramework\Configurations\Machine01`，正式 Host 保持“等待复位”。
 - 覆盖限制：本轮未制造活动报警，因此“报警时工位步骤”这一新标签只在源码资源中确认，尚未在正式 Host 报警状态屏幕上复核；四工位并行生产循环、任务草稿到 Runtime 的执行接入仍未验证。
+
+## 正式 Host 任务复位预检查与 Load_X 回零诊断（2026-10-31）
+
+- 按 `HANDOFF.md` 第 6 节重跑四组基线：MachineDevice 8 组、TaskEngine 23/53/16 组、Runtime 35 项、OperatorPages 10 组均通过；Release 构建 0 警告、0 错误。正式 Release Host 构建成功并从指定 exe 路径打开，窗口标题为“运动控制上位机”。
+- 在正式 Host 的任务执行入口读取 `Machine01` 上料定位任务后执行任务复位。界面明确提示 `Load_X` 尚未回零，且启动保持禁用；任务整机与 Runtime 均保持“等待复位”，证明任务复位预检查没有先清除 Runtime 状态。任务会话之后通过“停止并关闭”安全收尾。
+- `Machine01/HardwareConfig/AxisParameters.json` 显示 `Load_X` 为物理轴 1、DATUM 模式 3、原点输入 DI8、搜索速度 5、慢速 1、软限位 [-100, 100] mm。厂商 [RTBasic 编程手册 V1.1.2](https://www.zmotion.com.cn/upload/RTBasic%E7%BC%96%E7%A8%8B%E6%89%8B%E5%86%8CV1.1.2.pdf) 说明模式 3 先正向快找原点开关、反向慢速复找。
+- 经正式 Host 发起一次 Load_X 回零后，Host 实时观察到位置由 0 向负方向变化，达到 -90 mm 时通过 Host “受控停止”停稳；DI8 未触发，回零以 `HOMESTATUS=0` 报失败，没有触发软限位或移动其他轴。随后对已打开的 ZDevelop 作一次只读核对：轴 1 的 `DPOS=-90`、`MPOS=-90`、`DATUM_IN=8`、`AXIS_STOPREASON=0x800`。该运动方向与模式 3 手册描述不一致，原因仍未确定，因此不再发起回零或生产循环。
+- ZSimu 截图显示输入 DI0–DI63 均未选中。对 DI8 的屏幕点击没有让 Host 的 Load_X ORG 指示产生可见变化，故输入切换记为未验证；没有修改任何 DO，输入输出均保持安全值。Load_X 当前停在 -90 mm、未回零，其他轴停止，当前无活动报警。
+- Machine01 测试配置按项目规则保留，路径为 `C:\Users\ASUS\AppData\Local\MotionControlFramework\Configurations\Machine01`；`Parameters/Equipment.json` 的 `executionOwner` 为 `TaskEngine`。本轮没有完成“任务 → 轴动 → DI 变化 → 报警进页面 → 连续循环”的端到端验证。下一步先核实 DI8 屏幕切换与 Host 原点指示映射，并查清轴方向来源；两项确认前不回零、不启动任务。

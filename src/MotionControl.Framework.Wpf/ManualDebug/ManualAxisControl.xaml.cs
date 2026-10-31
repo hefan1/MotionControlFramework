@@ -361,7 +361,8 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         private void UpdateAxisActionAvailability()
         {
             bool controllerAvailableForRecovery = _manualOperationBlockReason != ManualOperationBlockReason.MotionCardDisconnected
-                && _manualOperationBlockReason != ManualOperationBlockReason.AutomaticFlowActive;
+                && _manualOperationBlockReason != ManualOperationBlockReason.AutomaticFlowActive
+                && _manualOperationBlockReason != ManualOperationBlockReason.TaskExecutionEntryClaimed;
             bool axisStoppedAndReadable = _axisStatusAvailable && !_axisMoving;
 
             CanRunManualOperations = _manualOperationAllowed && _axisStatusAvailable;
@@ -1770,6 +1771,8 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                     return GetText("运动卡未连接操作被拒绝");
                 case ManualOperationBlockReason.AutomaticFlowActive:
                     return GetText("自动流程期间禁止手动操作");
+                case ManualOperationBlockReason.TaskExecutionEntryClaimed:
+                    return GetText("任务执行期间禁止手动操作");
                 case ManualOperationBlockReason.EmergencyStopInputActive:
                     return GetText("急停输入有效禁止手动操作");
                 case ManualOperationBlockReason.EmergencyStopAlarmNotReset:

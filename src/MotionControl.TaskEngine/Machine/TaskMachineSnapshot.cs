@@ -14,6 +14,8 @@ namespace MotionControl.TaskEngine.Machine
         Ready,
         /// <summary>自动运行许可有效，各工位独立推进或等待请求。</summary>
         Running,
+        /// <summary>暂停请求已发出，正在等待真实轴受控停止。</summary>
+        Pausing,
         /// <summary>操作员暂停，保存各工位当前进度。</summary>
         Paused,
         /// <summary>停机故障已锁存，全部工位等待条件恢复和复位。</summary>

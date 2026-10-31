@@ -13,6 +13,7 @@
     <ProjectReference Include="..\MotionControl.Framework.Contracts\MotionControl.Framework.Contracts.csproj" />
     <ProjectReference Include="..\MotionControl.Framework.Runtime\MotionControl.Framework.Runtime.csproj" />
     <ProjectReference Include="..\MotionControl.Framework.Wpf\MotionControl.Framework.Wpf.csproj" />
+    <ProjectReference Include="..\MotionControl.TaskEngine.MachineDevice\MotionControl.TaskEngine.MachineDevice.csproj" />
     <ProjectReference Include="..\Adapters\MotionCards\ZMotion\Adapter\MotionControl.Adapter.MotionCard.ZMotion.csproj" />
   </ItemGroup>
 </Project>

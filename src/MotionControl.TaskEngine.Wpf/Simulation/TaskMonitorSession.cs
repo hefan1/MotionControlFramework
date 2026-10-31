@@ -9,6 +9,8 @@ using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Configuration;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Machine;
+using MotionControl.TaskEngine.Device;
+using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.TaskEngine.Device.InMemory;
 
 namespace MotionControl.TaskEngine.Wpf.Simulation
@@ -18,8 +20,10 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
     {
         /// <summary>本会话冻结的任务定义副本，页面不修改它们。</summary>
         public IReadOnlyDictionary<string, TaskDefinition> Library { get; }
-        /// <summary>仅供内存仿真使用的设备。</summary>
+        /// <summary>仅供独立内存工作台修改输入和变量；设备会话中为空。</summary>
         public InMemoryTaskDevice Device { get; }
+        /// <summary>本会话监控和执行使用的设备端口。</summary>
+        public ITaskDevice TaskDevice { get; }
         /// <summary>整机启停入口，页面不直接控制单个 TaskRun。</summary>
         public TaskMachineController Machine { get; }
         /// <summary>配置来源文字，便于区分示例与本机。</summary>
@@ -33,17 +37,33 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
         public TaskMonitorSession(TaskMachineConfiguration configuration, IEnumerable<TaskDefinition> definitions,
             InMemoryTaskDevice device, string source, bool isExample,
             SafetyInterlockConfigurationDocument controlInputConfiguration = null)
+            : this(configuration, definitions, (ITaskDevice)device, source, isExample, null, controlInputConfiguration)
+        {
+        }
+
+        /// <summary>冻结任务定义并连接指定设备与报警服务；构造不启动任务或运动。</summary>
+        public TaskMonitorSession(TaskMachineConfiguration configuration, IEnumerable<TaskDefinition> definitions,
+            ITaskDevice device, string source, bool isExample, IMachineAlarmService alarmService,
+            SafetyInterlockConfigurationDocument controlInputConfiguration = null)
         {
             var frozen = definitions.Select(item => TaskDefinitionJson.Deserialize(TaskDefinitionJson.Serialize(item)))
                 .ToDictionary(item => item.TaskId, StringComparer.OrdinalIgnoreCase);
-            Machine = new TaskMachineController(configuration, frozen.Values, device);
+            TaskDevice = device ?? throw new ArgumentNullException(nameof(device));
+            Machine = new TaskMachineController(configuration, frozen.Values, device, alarmService);
             Library = new ReadOnlyDictionary<string, TaskDefinition>(frozen);
-            Device = device; Source = source; IsExample = isExample;
+            Device = device as InMemoryTaskDevice; Source = source; IsExample = isExample;
             ControlInputConfiguration = controlInputConfiguration ?? new SafetyInterlockConfigurationDocument();
         }
 
         /// <summary>只读本机任务及已有轴、IO、变量、示教点文件，不创建另一份映射清单。</summary>
         public static TaskMonitorSession LoadMachine(MachineConfigurationStore store, string machineId)
+        {
+            return LoadMachine(store, machineId, null, null);
+        }
+
+        /// <summary>用正式设备和 Runtime 报警服务装载现有本机任务，不生成另一份配置。</summary>
+        public static TaskMonitorSession LoadMachine(MachineConfigurationStore store, string machineId,
+            ITaskDevice device, IMachineAlarmService alarmService)
         {
             new MotionControl.TaskEngine.Editing.TaskWorkspaceStore(store).RequireNoPendingApply(machineId);
             string taskFolder = Path.Combine(store.GetMachineDirectory(machineId), "Tasks");
@@ -68,8 +88,9 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
                 }
             }
 
-            return new TaskMonitorSession(configuration, definitions, new InMemoryTaskDevice(catalog),
-                store.GetMachineDirectory(machineId), false, controlInputConfiguration);
+            ITaskDevice selectedDevice = device ?? new InMemoryTaskDevice(catalog);
+            return new TaskMonitorSession(configuration, definitions, selectedDevice,
+                store.GetMachineDirectory(machineId), false, alarmService, controlInputConfiguration);
         }
     }
 }

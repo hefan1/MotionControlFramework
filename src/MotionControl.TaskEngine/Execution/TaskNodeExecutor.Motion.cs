@@ -8,7 +8,7 @@ using MotionControl.TaskEngine.Resources;
 
 namespace MotionControl.TaskEngine.Execution
 {
-    /// <summary>内存单轴动作；多轴插补及真实回零模式在后续阶段接入。</summary>
+    /// <summary>执行设备单轴定位和回零动作；轴组动作由专用节点处理。</summary>
     internal sealed partial class TaskNodeExecutor
     {
         /// <summary>在动作接受时读取目标，随后固定绝对终点，恢复不会再读变量或叠加相对距离。</summary>
@@ -40,59 +40,103 @@ namespace MotionControl.TaskEngine.Execution
         /// <summary>按活动时间推进动作，finally 确保失败与取消均停止轴并释放本次轴占用。</summary>
         private async Task RunMotionAsync(TaskExecutionScope scope, string axisName, MoveAxisNode node, bool home)
         {
-            ITaskAxisMove operation = null;
             TaskResourceRequest acquired = null;
-            double started = 0;
-            double duration = 0;
             try
             {
                 acquired = await AcquireActionAsync(scope, "Axis:" + axisName).ConfigureAwait(false);
-                await scope.StepAsync(() =>
+                while (true)
                 {
-                    double target = 0;
-                    bool acceptedBefore = !home && scope.AcceptedAxisTargets.TryGetValue(axisName, out target);
-                    if (!home && !acceptedBefore) target = TaskRuntimeValues.Number(ReadRequired(node.Target));
-                    operation = _device.BeginMove(axisName, target, !home && !acceptedBefore && node.Mode == TaskMoveMode.Relative, home, home ? null : ToAxisProfile(node.Profile));
-                    if (!home) scope.AcceptedAxisTargets[axisName] = operation.Target;
-                    started = _run.ActiveMilliseconds;
-                    // 回零只验证流程生命周期；100ms 是内存模型时间，不是硬件回零参数。
-                    duration = home ? 100 : Math.Abs(operation.Target - operation.Start) / node.Profile.Speed * 1000;
-                    if (double.IsInfinity(duration) || double.IsNaN(duration)) throw new InvalidOperationException("运动时长超出有限范围。");
-                }).ConfigureAwait(false);
-                while (operation != null)
-                {
-                    bool completed = false;
-                    await scope.StepAsync(() =>
+                    ITaskAxisMove operation = null;
+                    IDisposable pauseStopRegistration = null;
+                    bool restartAfterPause = false;
+                    int stoppedForPause = 0;
+                    double started = 0;
+                    double duration = 0;
+                    try
                     {
-                        double progress = duration == 0 ? 1 : (_run.ActiveMilliseconds - started) / duration;
-                        _device.AdvanceMove(operation, progress);
-                        if (!home) ObserveAxes(scope, scope.AcceptedAxisTargets);
-                        else scope.Diagnostics = new TaskStepDiagnostics(progress >= 1
-                            ? "内存回零结束，位置参考已建立；未模拟厂商原点与限位信号。"
-                            : "正在执行内存回零；未模拟厂商回零模式。");
-                        _run.Report(scope, TaskNodeState.Moving, "运动中：等待轴 " + axisName + " 到位；目标=" + operation.Target);
-                        completed = _device.IsMoveComplete(operation, progress);
-                    }).ConfigureAwait(false);
+                        await scope.StepAsync(() =>
+                        {
+                            double target = 0;
+                            bool acceptedBefore = !home && scope.AcceptedAxisTargets.TryGetValue(axisName, out target);
+                            if (!home && !acceptedBefore) target = TaskRuntimeValues.Number(ReadRequired(node.Target));
+                            operation = _device.BeginMove(axisName, target, !home && !acceptedBefore && node.Mode == TaskMoveMode.Relative, home, home ? null : ToAxisProfile(node.Profile));
+                            if (!home) scope.AcceptedAxisTargets[axisName] = operation.Target;
+                            started = _run.ActiveMilliseconds;
+                            // 回零只验证流程生命周期；100ms 是内存模型时间，不是硬件回零参数。
+                            duration = home ? 100 : Math.Abs(operation.Target - operation.Start) / node.Profile.Speed * 1000;
+                            if (double.IsInfinity(duration) || double.IsNaN(duration)) throw new InvalidOperationException("运动时长超出有限范围。");
+                            pauseStopRegistration = _run.RegisterPauseStopAction(() =>
+                            {
+                                ITaskAxisMove activeMove = operation;
+                                if (activeMove == null) return Task.CompletedTask;
+                                Interlocked.Exchange(ref stoppedForPause, 1);
+                                return _device.EndMoveAsync(activeMove, false, CancellationToken.None);
+                            });
+                        }).ConfigureAwait(false);
 
-                    if (completed)
+                        while (operation != null)
+                        {
+                            bool completed = false;
+                            await scope.StepAsync(() =>
+                            {
+                                if (Interlocked.CompareExchange(ref stoppedForPause, 0, 0) != 0)
+                                {
+                                    restartAfterPause = true;
+                                    return;
+                                }
+
+                                double progress = duration == 0 ? 1 : (_run.ActiveMilliseconds - started) / duration;
+                                _device.AdvanceMove(operation, progress);
+                                if (!home) ObserveAxes(scope, scope.AcceptedAxisTargets);
+                                else scope.Diagnostics = new TaskStepDiagnostics(progress >= 1
+                                    ? "内存回零结束，位置参考已建立；未模拟厂商原点与限位信号。"
+                                    : "正在执行内存回零；未模拟厂商回零模式。");
+                                _run.Report(scope, TaskNodeState.Moving, "运动中：等待轴 " + axisName + " 到位；目标=" + operation.Target);
+                                completed = _device.IsMoveComplete(operation, progress);
+                                if (completed)
+                                {
+                                    pauseStopRegistration.Dispose();
+                                    pauseStopRegistration = null;
+                                }
+                            }).ConfigureAwait(false);
+
+                            if (restartAfterPause)
+                            {
+                                await _run.WaitForResumeAsync().ConfigureAwait(false);
+                                operation = null;
+                                break;
+                            }
+
+                            if (completed)
+                            {
+                                ITaskAxisMove finished = operation;
+                                operation = null;
+                                await _device.EndMoveAsync(finished, true, scope.Token).ConfigureAwait(false);
+                                break;
+                            }
+
+                            await scope.NextPollAsync().ConfigureAwait(false);
+                        }
+                    }
+                    catch (OperationCanceledException) when (_run.IsPaused && !scope.Token.IsCancellationRequested)
                     {
-                        ITaskAxisMove finished = operation;
+                        // 真实轴在暂停回调中已受控停稳；恢复后按原固定绝对终点重新接受动作。
+                        await _run.WaitForResumeAsync().ConfigureAwait(false);
                         operation = null;
-                        await _device.EndMoveAsync(finished, true, scope.Token).ConfigureAwait(false);
-                        break;
+                    }
+                    finally
+                    {
+                        pauseStopRegistration?.Dispose();
+                        if (operation != null)
+                            await _device.EndMoveAsync(operation, false, CancellationToken.None).ConfigureAwait(false);
                     }
 
-                    await scope.NextPollAsync().ConfigureAwait(false);
+                    if (!restartAfterPause) break;
                 }
             }
             finally
             {
-                // 清理不等待恢复许可：暂停期间收到取消也必须立即停下并释放本次动作。
-                if (operation != null)
-                {
-                    await _device.EndMoveAsync(operation, false, CancellationToken.None).ConfigureAwait(false);
-                }
-
+                // 暂停期间保留轴资源，防止其他工位在该轴中途位置插入动作。
                 if (acquired != null) _device.Resources.Release(acquired);
             }
         }

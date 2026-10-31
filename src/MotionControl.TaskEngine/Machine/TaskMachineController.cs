@@ -12,12 +12,12 @@ using MotionControl.TaskEngine.Execution;
 
 namespace MotionControl.TaskEngine.Machine
 {
-    /// <summary>一台内存设备的多工位生产入口；统一许可，各工位独立推进，不接实际运动卡。</summary>
+    /// <summary>一台设备的多工位任务入口；统一运行许可，各工位按任务定义独立执行。</summary>
     public sealed partial class TaskMachineController
     {
         /// <summary>保护整机状态和工位记录，锁内不等待任务完成。</summary>
         private readonly object _sync = new object();
-        /// <summary>本会话独占的内存设备。</summary>
+        /// <summary>本会话独占的任务设备，可连接内存设备或已接入的运动控制卡。</summary>
         private readonly ITaskDevice _device;
         /// <summary>当前设备报警服务；可由 Host 注入正式 Runtime 共用的实例。</summary>
         public IMachineAlarmService AlarmService { get; }
@@ -29,7 +29,7 @@ namespace MotionControl.TaskEngine.Machine
         private readonly List<StationExecutionControl> _stations;
         /// <summary>可选初始化运行记录。</summary>
         private readonly StationExecutionControl _initialization;
-        /// <summary>只在显式终止时取消，普通暂停不取消动作。</summary>
+        /// <summary>只在显式终止时取消任务；普通暂停单独受控停止当前运动并保留步骤。</summary>
         private readonly CancellationTokenSource _lifetime = new CancellationTokenSource();
         /// <summary>启动时创建的工位后台任务。</summary>
         private readonly List<Task> _workers = new List<Task>();
@@ -77,6 +77,7 @@ namespace MotionControl.TaskEngine.Machine
                     StationId = "__initialization", Name = "设备初始化", TaskId = _configuration.InitializationTaskId, Mode = StationTaskMode.Once });
             else { _initialized = true; _initializationPermit.TrySetResult(true); }
             _device.ClaimMachine(this);
+            AlarmService.StopAlarmRaised += AlarmService_StopAlarmRaised;
         }
 
         /// <summary>整机、工位及资源快照；不把可变运行句柄交给 UI。</summary>

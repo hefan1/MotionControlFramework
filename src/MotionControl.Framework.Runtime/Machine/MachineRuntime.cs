@@ -222,6 +222,15 @@ namespace MotionControl.Framework.Runtime.Machine
             }
         }
 
+        /// <summary>返回是否有任务会话实际接管设备，不受配置中的默认入口名称影响。</summary>
+        public bool IsTaskEngineControlClaimed
+        {
+            get
+            {
+                lock (_controlOwnerLock) return _taskEngineOwner != null;
+            }
+        }
+
         /// <summary>返回本设备使用的报警服务。</summary>
         public IMachineAlarmService AlarmService
         {
@@ -335,6 +344,12 @@ namespace MotionControl.Framework.Runtime.Machine
                 if (State == MachineRunState.Running || State == MachineRunState.Pausing || _flowScheduler.IsRunning)
                 {
                     throw new InvalidOperationException("工位流程仍在运行或等待停止，不能断开控制卡。");
+                }
+
+                lock (_controlOwnerLock)
+                {
+                    if (_taskEngineOwner != null)
+                        throw new InvalidOperationException("任务执行会话仍占用设备；请先在任务运行页停止并关闭会话，再断开控制卡。");
                 }
 
                 EnsureNoManualOperationsInProgress("断开运动控制卡");
