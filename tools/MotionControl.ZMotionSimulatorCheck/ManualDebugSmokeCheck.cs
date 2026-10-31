@@ -384,7 +384,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             Ensure(
                 headerMessage.Text.Contains(chineseResources["状态未连接"] as string),
                 "控制卡连接状态变化时，Host 顶部整机状态不应离开未连接状态。");
-            Ensure(footerStatus.Text.Contains("控制卡 已连接"), "Host 底栏没有显示控制卡已连接。");
+            Ensure(footerStatus.Text.Contains("控制卡 会话已建立"), "Host 底栏没有显示控制卡会话已建立。");
 
             MethodInfo applyLanguageMethod = typeof(MainWindow).GetMethod(
                 "ApplyLanguage",
@@ -394,7 +394,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             Ensure(
                 headerMessage.Text.Contains(englishResources["状态未连接"] as string),
                 "Host 顶部未连接状态没有切换为英文。");
-            Ensure(footerStatus.Text.Contains("Motion card: connected"), "Host 底栏连接状态没有切换为英文。");
+            Ensure(footerStatus.Text.Contains("Motion card: session established"), "Host 底栏会话状态没有切换为英文。");
 
             hostWindow.SetMotionCardConnectionStatus(false);
             Ensure(

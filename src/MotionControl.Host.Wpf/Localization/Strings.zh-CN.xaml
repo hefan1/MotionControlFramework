@@ -89,7 +89,9 @@
     <sys:String x:Key="具体页面与内容后续逐项开发并接入此区域">具体页面与内容后续逐项开发并接入此区域。</sys:String>
     <sys:String x:Key="未登录">未登录</sys:String>
     <sys:String x:Key="控制卡未连接">控制卡 未连接</sys:String>
-    <sys:String x:Key="控制卡已连接">控制卡 已连接</sys:String>
+    <sys:String x:Key="控制卡已连接">控制卡 会话已建立</sys:String>
+    <sys:String x:Key="控制卡会话IO读取异常格式">控制卡 会话已建立 · {0}最近可见通道读取异常</sys:String>
+    <sys:String x:Key="控制卡会话状态说明">会话状态不代表控制器当前读写正常。IO 异常依据监控页最近一次可见通道采样；请查看 IO、轴状态和当前报警。</sys:String>
     <sys:String x:Key="通讯未连接">通讯 未连接</sys:String>
     <sys:String x:Key="数据库未接入">数据库 未接入</sys:String>
     <sys:String x:Key="MES未配置">MES 未配置</sys:String>

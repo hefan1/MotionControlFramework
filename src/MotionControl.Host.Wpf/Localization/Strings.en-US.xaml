@@ -82,7 +82,9 @@
     <sys:String x:Key="具体页面与内容后续逐项开发并接入此区域">Specific pages and content will be added here later.</sys:String>
     <sys:String x:Key="未登录">Not logged in</sys:String>
     <sys:String x:Key="控制卡未连接">Motion card: not connected</sys:String>
-    <sys:String x:Key="控制卡已连接">Motion card: connected</sys:String>
+    <sys:String x:Key="控制卡已连接">Motion card: session established</sys:String>
+    <sys:String x:Key="控制卡会话IO读取异常格式">Motion card: session established · last visible {0} read failed</sys:String>
+    <sys:String x:Key="控制卡会话状态说明">A session does not guarantee current communication. I/O errors reflect the last visible-channel sample; check I/O, axis status, and current alarms.</sys:String>
     <sys:String x:Key="通讯未连接">Communication: not connected</sys:String>
     <sys:String x:Key="数据库未接入">Database: not connected</sys:String>
     <sys:String x:Key="MES未配置">MES: not configured</sys:String>

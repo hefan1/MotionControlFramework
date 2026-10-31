@@ -18,6 +18,9 @@ namespace MotionControl.Framework.Wpf.ManualDebug
     /// <summary>按物理 DI/DO 通道显示状态，并允许调试人员点击 DO 灯切换输出。</summary>
     public partial class IoMonitorView : UserControl
     {
+        /// <summary>仅报告最近一轮可见 DI 或 DO 采样是否有失败，不代表所有物理通道状态。</summary>
+        public event Action<bool, bool> VisibleReadStatusChanged;
+
         /// <summary>通道行的固定显示高度，用于计算每列可容纳的通道数。</summary>
         private const double ChannelRowHeight = 30.0;
 
@@ -429,6 +432,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                     _visibleReadCount = visibleChannels.Count;
                     _visibleReadFailureCount = visibleChannels.Count(channel => channel.HasReadFailure);
                     _visibleReadFirstError = visibleChannels.FirstOrDefault(channel => channel.HasReadFailure)?.ReadError;
+                    VisibleReadStatusChanged?.Invoke(isInput, _visibleReadFailureCount > 0);
                 }
                 UpdateMonitorStatusText();
             }

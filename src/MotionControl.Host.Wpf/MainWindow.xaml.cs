@@ -4,6 +4,7 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Media;
 using System.Windows.Threading;
 using MotionControl.Framework.Wpf.ManualDebug;
 using MotionControl.Framework.Runtime.Machine;
@@ -59,6 +60,16 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>由组合根注入显示全部物理 DI/DO 状态的 IO 监控页面。</summary>
         private UserControl _ioMonitorPage;
+
+        /// <summary>连接会话标志，不代表控制器当前读写一定正常。</summary>
+        private bool _motionCardSessionConnected;
+
+        /// <summary>IO 监控最近一次可见 DI 采样是否失败；空值表示尚未采样。</summary>
+        private bool? _latestVisibleDiReadFailed;
+
+        /// <summary>IO 监控最近一次可见 DO 采样是否失败；空值表示尚未采样。</summary>
+        private bool? _latestVisibleDoReadFailed;
+
 
         /// <summary>由 Host 注入按已映射逻辑轴读取状态的只读监控页面。</summary>
         private UserControl _axisMonitorPage;
@@ -266,8 +277,24 @@ namespace MotionControl.Host.Wpf
         /// <summary>由 Host 组合根注入当前控制卡对应的物理 IO 监控页面。</summary>
         public void SetIoMonitorPage(UserControl ioMonitorPage)
         {
+            if (_ioMonitorPage is IoMonitorView oldMonitor)
+                oldMonitor.VisibleReadStatusChanged -= IoMonitorVisibleReadStatusChanged;
             _ioMonitorPage = ioMonitorPage;
+            _latestVisibleDiReadFailed = null;
+            _latestVisibleDoReadFailed = null;
+            if (_ioMonitorPage is IoMonitorView newMonitor)
+                newMonitor.VisibleReadStatusChanged += IoMonitorVisibleReadStatusChanged;
+            UpdateMotionCardFooter();
             UpdatePageContent();
+        }
+
+        /// <summary>分别保留 DI 和 DO 最近一次可见范围的读回结果，不推断整卡断线。</summary>
+        private void IoMonitorVisibleReadStatusChanged(bool isInput, bool failed)
+        {
+            if (!_motionCardSessionConnected) return;
+            if (isInput) _latestVisibleDiReadFailed = failed;
+            else _latestVisibleDoReadFailed = failed;
+            UpdateMotionCardFooter();
         }
 
         /// <summary>由 Host 组合根注入当前设备的只读轴状态监控页面。</summary>
@@ -354,9 +381,25 @@ namespace MotionControl.Host.Wpf
         /// <summary>由 Host 组合根按运行时连接结果更新底栏的控制卡状态。</summary>
         public void SetMotionCardConnectionStatus(bool isConnected)
         {
-            string footerResourceKey = isConnected ? "控制卡已连接" : "控制卡未连接";
+            _motionCardSessionConnected = isConnected;
+            if (!isConnected) { _latestVisibleDiReadFailed = null; _latestVisibleDoReadFailed = null; }
+            UpdateMotionCardFooter();
+        }
 
-            MotionCardConnectionStatus.SetResourceReference(TextBlock.TextProperty, footerResourceKey);
+        /// <summary>显示会话和最近可见 IO 读取异常；无采样不能当作通信正常。</summary>
+        private void UpdateMotionCardFooter()
+        {
+            if (MotionCardConnectionStatus == null) return;
+            bool diFailed = _motionCardSessionConnected && _latestVisibleDiReadFailed == true;
+            bool doFailed = _motionCardSessionConnected && _latestVisibleDoReadFailed == true;
+            if (diFailed || doFailed)
+                MotionCardConnectionStatus.Text = string.Format(GetLocalizedText("控制卡会话IO读取异常格式"),
+                    diFailed && doFailed ? "DI/DO" : diFailed ? "DI" : "DO");
+            else
+                MotionCardConnectionStatus.SetResourceReference(TextBlock.TextProperty,
+                    _motionCardSessionConnected ? "控制卡已连接" : "控制卡未连接");
+            MotionCardConnectionStatus.Foreground = diFailed || doFailed ? Brushes.Firebrick : new SolidColorBrush(Color.FromRgb(94, 102, 107));
+            MotionCardConnectionStatus.SetResourceReference(FrameworkElement.ToolTipProperty, "控制卡会话状态说明");
         }
 
         /// <summary>将导航目标放入原内容区，已接入页优先显示，其余页面保留占位。</summary>
@@ -554,6 +597,7 @@ namespace MotionControl.Host.Wpf
             };
 
             ReplaceLanguageResources(languageResources);
+            UpdateMotionCardFooter();
             _equipmentOverviewPage.SetLanguage(languageCode);
             _currentAlarmsPage.SetLanguage(languageCode);
             UpdateWindowTitle();
