@@ -440,6 +440,8 @@ namespace MotionControl.Host.Wpf
                 }
             }
 
+            await IoOutputMappingSafety.EnsureChangedOutputsInactiveAsync(
+                _card, _digitalOutputs, mappings.AxisDigitalOutputs, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             _card.UpdateIoMappings(mappings.DigitalInputs, mappings.DigitalOutputs);
             _digitalInputs = mappings.AxisDigitalInputs.AsReadOnly();
