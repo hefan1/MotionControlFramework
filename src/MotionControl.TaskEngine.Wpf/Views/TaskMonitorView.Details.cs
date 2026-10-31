@@ -43,7 +43,8 @@ namespace MotionControl.TaskEngine.Wpf.Views
             DetailKind.Text = KindName(node);
             string detail = (row.Snapshot?.State == TaskNodeState.Failed ? row.Detail : diagnostic?.Summary ?? row.Detail) ?? string.Empty;
             if (_snapshot != null && _snapshot.State != TaskMachineState.Running)
-                detail = detail.Replace("（运动中）", "（设备未运行，目标未到位）");
+                detail = detail.Replace("（运动中）", "（设备未运行，目标未到位）")
+                    .Replace("运动中：", "设备未运行，目标未到位：");
             DetailSummary.Text = row.StateText == T("已暂停") ? T("已暂停") + " · " + detail : detail;
             RecordNote.Text = diagnostic == null ? T("尚无执行采样") : T("最后执行采样") + " "
                 + diagnostic.CapturedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")

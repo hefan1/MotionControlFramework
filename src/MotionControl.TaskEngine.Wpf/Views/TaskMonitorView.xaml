@@ -29,15 +29,19 @@
    <DockPanel><TextBlock x:Name="RefreshStatus" DockPanel.Dock="Right" Foreground="#596B7D" Margin="15,0,0,0"/>
     <TextBlock x:Name="SourceText" TextWrapping="Wrap" Foreground="#40536A"/></DockPanel>
   </Border>
-  <DataGrid x:Name="StationsGrid" Grid.Row="1" SelectionChanged="Station_Selected" IsReadOnly="True" AutoGenerateColumns="False">
+  <DataGrid x:Name="StationsGrid" Grid.Row="1" SelectionChanged="Station_Selected" IsReadOnly="True" AutoGenerateColumns="False" HeadersVisibility="Column" ColumnHeaderHeight="34">
    <DataGrid.Columns>
     <DataGridTextColumn Header="{DynamicResource 任务监控.任务名称}" Binding="{Binding Name}" Width="1.1*"/>
     <DataGridTextColumn Header="{DynamicResource 任务监控.方式}" Binding="{Binding Mode}" Width="80"/>
     <DataGridTextColumn Header="{DynamicResource 任务监控.状态}" Binding="{Binding State}" Width="88">
      <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{Binding Color}"/><Setter Property="VerticalAlignment" Value="Center"/></Style></DataGridTextColumn.ElementStyle>
     </DataGridTextColumn>
-    <DataGridTextColumn Header="{DynamicResource 任务监控.当前动作}" Binding="{Binding Action}" Width="1.6*"/>
-    <DataGridTextColumn Header="{DynamicResource 任务监控.等待或异常说明}" Binding="{Binding Detail}" Width="2*"/>
+    <DataGridTextColumn Header="{DynamicResource 任务监控.当前动作}" Binding="{Binding Action}" Width="1.6*">
+     <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextTrimming" Value="CharacterEllipsis"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="ToolTip" Value="{Binding Action}"/></Style></DataGridTextColumn.ElementStyle>
+    </DataGridTextColumn>
+    <DataGridTextColumn Header="{DynamicResource 任务监控.等待或异常说明}" Binding="{Binding Detail}" Width="2*">
+     <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextTrimming" Value="CharacterEllipsis"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="ToolTip" Value="{Binding Detail}"/></Style></DataGridTextColumn.ElementStyle>
+    </DataGridTextColumn>
     <DataGridTextColumn Header="{DynamicResource 任务监控.完成次数}" Binding="{Binding Cycles}" Width="85"/>
    </DataGrid.Columns>
   </DataGrid>
@@ -71,6 +75,7 @@
        <TextBlock x:Name="DetailSummary" TextWrapping="Wrap" Foreground="#176BD0"/>
       </Border>
       <TextBlock x:Name="RecordNote" Foreground="#596B7D" TextWrapping="Wrap" Margin="0,8"/>
+      <TextBlock x:Name="DetailNotice" TextWrapping="Wrap" Foreground="#596B7D" Margin="0,8"/>
       <DataGrid x:Name="ObservationTable" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" MinHeight="50" MaxHeight="230">
        <DataGrid.Columns><DataGridTextColumn x:Name="ItemColumn" Binding="{Binding Name}" Width="*"/>
         <DataGridTextColumn x:Name="ExpectedColumn" Binding="{Binding Expected}" Width="*"/>
@@ -90,7 +95,6 @@
       </Expander>
       <TextBlock Text="{DynamicResource 任务监控.关联配置}" Foreground="#596B7D" Margin="0,8,0,3"/>
       <WrapPanel x:Name="ReferencesPanel"/>
-      <TextBlock x:Name="DetailNotice" TextWrapping="Wrap" Foreground="#596B7D" Margin="0,8"/>
      </StackPanel>
     </ScrollViewer>
    </Border>

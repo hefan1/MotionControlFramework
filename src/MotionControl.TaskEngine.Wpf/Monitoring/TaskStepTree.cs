@@ -78,6 +78,10 @@ namespace MotionControl.TaskEngine.Wpf.Monitoring
                     case TaskNodeState.Completed: state = "已完成"; color = "#16824B"; break;
                     case TaskNodeState.Failed: state = "故障"; color = "#B42318"; break;
                     case TaskNodeState.Cancelled: state = "已终止"; break;
+                    case TaskNodeState.Moving:
+                        state = machineState == TaskMachineState.Running ? "运动中" : machineState.ToString();
+                        if (machineState == TaskMachineState.Running) color = "#176BD0";
+                        break;
                     default:
                         if (machineState == TaskMachineState.Faulted || machineState == TaskMachineState.NeedsReset)
                         {
@@ -90,15 +94,18 @@ namespace MotionControl.TaskEngine.Wpf.Monitoring
                         }
                         else
                         {
-                            state = snapshot.State == TaskNodeState.Waiting ? "等待" : "运行";
+                            state = snapshot.State == TaskNodeState.Waiting
+                                ? TaskOperatorText.WaitingState(snapshot, text) : "运行";
                             color = "#176BD0";
                         }
                         break;
                 }
             }
-            string detail = snapshot?.Detail ?? text(notSelected ? "本次未选择此分支" : "尚未进入本步骤");
+            string detail = snapshot == null ? text(notSelected ? "本次未选择此分支" : "尚未进入本步骤")
+                : TaskOperatorText.Detail(snapshot, text);
             if (snapshot != null && machineState != TaskMachineState.Running)
-                detail = detail.Replace("（运动中）", "（设备未运行，目标未到位）");
+                detail = detail.Replace("（运动中）", "（设备未运行，目标未到位）")
+                    .Replace("运动中：", "设备未运行，目标未到位：");
             row.Update(snapshot, notSelected, text(state), detail, color);
             foreach (var child in row.Children)
             {

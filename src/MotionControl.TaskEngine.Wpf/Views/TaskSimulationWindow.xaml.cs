@@ -475,7 +475,7 @@ namespace MotionControl.TaskEngine.Wpf.Views
         private void OpenReference(object sender, TaskReferenceEventArgs e)
         {
             if (!_session.IsExample && ReferenceRequested != null) { ReferenceRequested(this, e); return; }
-            var window = new TaskCatalogReferenceWindow(_session.Device.Catalog, e.Page, e.Name, _monitor.T) { Owner = this };
+            var window = new TaskCatalogReferenceWindow(_session.Device.Catalog, e.Page, e.Name, e.Direction, _monitor.T) { Owner = this };
             window.Show();
         }
 

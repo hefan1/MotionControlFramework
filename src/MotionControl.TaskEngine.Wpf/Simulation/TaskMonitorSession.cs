@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using MotionControl.Framework.Runtime.Configuration;
+using MotionControl.Framework.Wpf.Configuration;
 using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Configuration;
 using MotionControl.TaskEngine.Definitions;
@@ -25,16 +26,20 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
         public string Source { get; }
         /// <summary>示例数据不允许跳转为真实配置中的同名对象。</summary>
         public bool IsExample { get; }
+        /// <summary>本机会话加载的现场启动、停止、复位按钮映射；示例会话保持空映射。</summary>
+        public SafetyInterlockConfigurationDocument ControlInputConfiguration { get; }
 
         /// <summary>冻结显示库并建立控制器；不会启动或连接任何运动卡。</summary>
         public TaskMonitorSession(TaskMachineConfiguration configuration, IEnumerable<TaskDefinition> definitions,
-            SimulatedTaskDevice device, string source, bool isExample)
+            SimulatedTaskDevice device, string source, bool isExample,
+            SafetyInterlockConfigurationDocument controlInputConfiguration = null)
         {
             var frozen = definitions.Select(item => TaskDefinitionJson.Deserialize(TaskDefinitionJson.Serialize(item)))
                 .ToDictionary(item => item.TaskId, StringComparer.OrdinalIgnoreCase);
             Machine = new TaskMachineController(configuration, frozen.Values, device);
             Library = new ReadOnlyDictionary<string, TaskDefinition>(frozen);
             Device = device; Source = source; IsExample = isExample;
+            ControlInputConfiguration = controlInputConfiguration ?? new SafetyInterlockConfigurationDocument();
         }
 
         /// <summary>只读本机任务及已有轴、IO、变量、示教点文件，不创建另一份映射清单。</summary>
@@ -50,8 +55,21 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
             var namedResources = machineStore.LoadNamedResources(machineId);
             var catalog = new TaskResourceCatalogLoader(store).Load(machineId, namedResources);
             var configuration = machineStore.Load(machineId, definitions, catalog);
+            string controlInputPath = Path.Combine(store.GetMachineDirectory(machineId), "HardwareConfig", "SafetyInterlock.json");
+            var controlInputConfiguration = new SafetyInterlockConfigurationDocument();
+            if (File.Exists(controlInputPath))
+            {
+                controlInputConfiguration = store.LoadJson<SafetyInterlockConfigurationDocument>(
+                    machineId,
+                    "HardwareConfig/SafetyInterlock.json");
+                if (controlInputConfiguration == null || controlInputConfiguration.SchemaVersion != 1)
+                {
+                    throw new InvalidOperationException("SafetyInterlock.json 格式无效，只支持 schemaVersion 为 1。");
+                }
+            }
+
             return new TaskMonitorSession(configuration, definitions, new SimulatedTaskDevice(catalog),
-                store.GetMachineDirectory(machineId), false);
+                store.GetMachineDirectory(machineId), false, controlInputConfiguration);
         }
     }
 }

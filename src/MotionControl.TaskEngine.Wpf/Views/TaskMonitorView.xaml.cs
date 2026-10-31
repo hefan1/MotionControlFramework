@@ -47,6 +47,7 @@ namespace MotionControl.TaskEngine.Wpf.Views
         {
             _session = session ?? throw new ArgumentNullException(nameof(session));
             InitializeComponent();
+            RefreshStationColumnHeaders();
             StationsGrid.ItemsSource = _stations;
             _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
             _timer.Tick += RefreshTick;
@@ -77,7 +78,8 @@ namespace MotionControl.TaskEngine.Wpf.Views
                     else row.Update(station, _snapshot.State, T);
                 }
                 if (StationsGrid.SelectedItem == null && _stations.Count > 0) StationsGrid.SelectedIndex = 0;
-                SourceText.Text = T("内存仿真来源") + "：" + _session.Source;
+                var source = _session.IsExample ? T("内置示例来源") : _session.Source;
+                SourceText.Text = string.Format(T("流程数据来源格式"), source);
                 RefreshStatus.Text = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
                 _refreshFailed = false;
                 if (_followAfterFaultRecovery && _snapshot.State == TaskMachineState.Running)
@@ -91,8 +93,8 @@ namespace MotionControl.TaskEngine.Wpf.Views
             catch (Exception error)
             {
                 _refreshFailed = true;
-                RefreshStatus.Text = T("刷新失败，以下为旧数据");
                 LocateCurrentCauseButton.IsEnabled = false;
+                RefreshStatus.Text = T("刷新失败，以下为旧数据");
                 DetailSummary.Text = error.Message;
                 System.Diagnostics.Trace.TraceError("任务监控刷新失败：" + error);
                 _timer.Stop();
@@ -121,7 +123,8 @@ namespace MotionControl.TaskEngine.Wpf.Views
             {
                 var flat = TaskStepTree.Flatten(_steps).ToList();
                 var active = flat.Where(row => row.Snapshot != null &&
-                    (row.Snapshot.State == TaskNodeState.Running || row.Snapshot.State == TaskNodeState.Waiting)).ToList();
+                    (row.Snapshot.State == TaskNodeState.Running || row.Snapshot.State == TaskNodeState.Waiting
+                        || row.Snapshot.State == TaskNodeState.Moving)).ToList();
                 var target = flat.FirstOrDefault(row => row.Snapshot?.State == TaskNodeState.Failed)
                     ?? active.FirstOrDefault(row => !active.Any(child => child.Parent == row));
                 if (target != null && target != _selected) SelectFollowing(target);
@@ -245,8 +248,9 @@ namespace MotionControl.TaskEngine.Wpf.Views
         private TaskStationRow FindWaitingStation()
         {
             var selected = StationsGrid.SelectedItem as TaskStationRow;
-            if (HasActiveWaitingStep(selected)) return selected;
-            return _stations.FirstOrDefault(HasActiveWaitingStep);
+            if (HasActionableWaitingStep(selected)) return selected;
+            return _stations.FirstOrDefault(HasActionableWaitingStep)
+                ?? (HasActiveWaitingStep(selected) ? selected : _stations.FirstOrDefault(HasActiveWaitingStep));
         }
 
         /// <summary>判断工位是否存在等待中的执行节点。</summary>
@@ -255,14 +259,30 @@ namespace MotionControl.TaskEngine.Wpf.Views
             return station?.Snapshot?.Run?.Nodes?.Any(node => node.State == TaskNodeState.Waiting) == true;
         }
 
+        /// <summary>普通工艺延时属于正常节拍；定位原因时优先查看需要排查的等待条件。</summary>
+        private bool HasActionableWaitingStep(TaskStationRow station)
+        {
+            var waiting = FindWaitingLeaf(station?.Snapshot?.Run);
+            return waiting != null && !IsNormalProcessDelay(waiting);
+        }
+
+        /// <summary>识别无需操作员介入的节拍延时。</summary>
+        private bool IsNormalProcessDelay(TaskNodeSnapshot node)
+        {
+            return node?.Detail?.StartsWith("等待工艺延时", StringComparison.Ordinal) == true;
+        }
+
         /// <summary>优先返回最深层等待节点，使步骤树定位到具体等待动作。</summary>
         private TaskNodeSnapshot FindWaitingLeaf(TaskRunSnapshot run)
         {
             var nodes = run?.Nodes;
             if (nodes == null) return null;
-            return nodes.FirstOrDefault(node => node.State == TaskNodeState.Waiting
+            var waitingLeaves = nodes.Where(node => node.State == TaskNodeState.Waiting
                 && !nodes.Any(child => string.Equals(child.ParentExecutionId, node.ExecutionId, StringComparison.OrdinalIgnoreCase)
-                    && (child.State == TaskNodeState.Running || child.State == TaskNodeState.Waiting || child.State == TaskNodeState.Moving)))
+                    && (child.State == TaskNodeState.Running || child.State == TaskNodeState.Waiting || child.State == TaskNodeState.Moving))).ToList();
+            return waitingLeaves.FirstOrDefault(node => !IsNormalProcessDelay(node))
+                ?? waitingLeaves.FirstOrDefault()
+                ?? nodes.FirstOrDefault(node => node.State == TaskNodeState.Waiting && !IsNormalProcessDelay(node))
                 ?? nodes.FirstOrDefault(node => node.State == TaskNodeState.Waiting);
         }
 
@@ -275,12 +295,21 @@ namespace MotionControl.TaskEngine.Wpf.Views
         /// <summary>按中文资源键读取文字，方便开发者从页面搜索到代码。</summary>
         public string T(string key) { return TryFindResource("任务监控." + key) as string ?? key; }
 
+        /// <summary>显式写入本地化工位表头，确保 DataGridColumn 脱离可视树时仍显示资源文字。</summary>
+        private void RefreshStationColumnHeaders()
+        {
+            string[] keys = { "任务名称", "方式", "状态", "当前动作", "等待或异常说明", "完成次数" };
+            for (int index = 0; index < keys.Length && index < StationsGrid.Columns.Count; index++)
+                StationsGrid.Columns[index].Header = T(keys[index]);
+        }
+
         /// <summary>切换静态标签与动态状态文字；设备自定义名称保留原文。</summary>
         public void SetLanguage(string language)
         {
             var dictionaries = Resources.MergedDictionaries;
             dictionaries[1] = new ResourceDictionary { Source = new Uri("/MotionControl.TaskEngine.Wpf;component/Localization/Strings."
                 + (language == "en-US" ? "en-US" : "zh-CN") + ".xaml", UriKind.Relative) };
+            RefreshStationColumnHeaders();
             if (StationsGrid.SelectedItem is TaskStationRow station)
                 StepsTitle.Text = station.Name + " · " + T("运行步骤");
             Refresh();
