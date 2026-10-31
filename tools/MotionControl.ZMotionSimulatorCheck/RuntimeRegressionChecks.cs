@@ -32,6 +32,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("重复逻辑轴名称被拒绝", DuplicateAxisNameIsRejectedAsync, failures);
             await RunCheckAsync("当前正运动 Host 拒绝多卡配置", ZMotionHostRejectsMultipleCardsAsync, failures);
             await RunCheckAsync("未配置自动流程时允许连接手动调试但禁止启动", ManualOnlyRuntimeConnectsButCannotStartAsync, failures);
+            await RunCheckAsync("工位流程与任务执行入口互斥，同一时刻只有一个能启动", ControlOwnerExcludesTaskExecutionAsync, failures);
             await RunCheckAsync("任一轴仍在运动时禁止启动自动流程", MovingAxisBlocksAutomaticStartAsync, failures);
             await RunCheckAsync("硬限位后未配置初始化流程时必须先回零", HomingRequiredAxisBlocksStartWithoutInitializationAsync, failures);
             await RunCheckAsync("可选初始化先于工位、暂停续跑且每个连接周期只执行一次", EquipmentInitializationRunsBeforeStationsAndResumesAsync, failures);
@@ -142,6 +143,47 @@ namespace MotionControl.ZMotionSimulatorCheck
                 failures.Add(name + "：" + error.Message);
                 Console.WriteLine("[Runtime失败] " + name + "：" + error.Message);
             }
+        }
+
+        /// <summary>确认工位流程入口与任务执行入口互斥，同一时刻只有一个能启动设备。</summary>
+        private static async Task ControlOwnerExcludesTaskExecutionAsync()
+        {
+            var stationCard = new FakeMotionCard("OwnerStationCard", new FakeAxis("X"));
+            var stationRuntime = new MachineRuntime(
+                new MotionCardGroup(new IMotionCard[] { stationCard }),
+                new IStationFlow[] { new WaitingStationFlow("上料工位", "等待上料到位") },
+                new MachineAlarmService(),
+                new FakeSafetyStatus());
+
+            Ensure(
+                stationRuntime.ControlOwner == MachineControlOwner.StationFlows,
+                "配置工位流程后执行入口不是工位流程。");
+            await stationRuntime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await ExpectExceptionAsync<InvalidOperationException>(
+                () => stationRuntime.AcquireTaskEngineControlAsync(CancellationToken.None)).ConfigureAwait(false);
+            Ensure(
+                stationRuntime.ControlOwner == MachineControlOwner.StationFlows,
+                "任务入口被拒绝后执行入口仍被改成了任务定义。");
+            await stationRuntime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+
+            var taskCard = new FakeMotionCard("OwnerTaskCard", new FakeAxis("X"));
+            var taskRuntime = new MachineRuntime(
+                new MotionCardGroup(new IMotionCard[] { taskCard }),
+                new IStationFlow[0],
+                new MachineAlarmService(),
+                new FakeSafetyStatus());
+
+            Ensure(taskRuntime.ControlOwner == MachineControlOwner.None, "未配置工位流程时执行入口不是空。");
+            await taskRuntime.AcquireTaskEngineControlAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(
+                taskRuntime.ControlOwner == MachineControlOwner.TaskEngine,
+                "任务执行入口接管后执行入口未更新。");
+            await taskRuntime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await taskRuntime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await ExpectExceptionAsync<InvalidOperationException>(
+                () => taskRuntime.StartAsync(CancellationToken.None)).ConfigureAwait(false);
+            Ensure(taskRuntime.State == MachineRunState.Ready, "任务入口接管时误启动改变了整机状态。");
+            await taskRuntime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
         /// <summary>确认第二张卡连接失败时，第一张卡会被连接组回收。</summary>

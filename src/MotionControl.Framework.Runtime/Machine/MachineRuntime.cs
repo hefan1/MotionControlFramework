@@ -75,6 +75,12 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>当前仍在执行的手动轴或 IO 操作数量，防止其间启动、复位或断卡。</summary>
         private int _activeManualOperationCount;
 
+        /// <summary>保护当前执行入口，供界面线程和命令线程安全读取。</summary>
+        private readonly object _controlOwnerLock = new object();
+
+        /// <summary>当前独占设备命令权的执行入口；同一时刻只允许一个入口启动设备。</summary>
+        private MachineControlOwner _controlOwner;
+
         /// <summary>保护整机状态及最近错误，供不同线程安全读取和更新。</summary>
         private readonly object _statusLock = new object();
 
@@ -142,6 +148,9 @@ namespace MotionControl.Framework.Runtime.Machine
                 motionCards,
                 stationFlows,
                 equipmentInitializationFlow);
+            _controlOwner = _flowScheduler.StationFlows.Count > 0
+                ? MachineControlOwner.StationFlows
+                : MachineControlOwner.None;
             _alarmService = alarmService;
             _safetyStatus = safetyStatus;
             _controlInputIo = controlInputIo;
@@ -188,6 +197,21 @@ namespace MotionControl.Framework.Runtime.Machine
         public MotionCardGroup MotionCards
         {
             get { return _motionCards; }
+        }
+
+        /// <summary>
+        /// 返回当前独占设备命令权的执行入口。配置了 C# 工位流程时由工位流程独占；
+        /// 没有工位流程时为空，可交给任务执行入口。
+        /// </summary>
+        public MachineControlOwner ControlOwner
+        {
+            get
+            {
+                lock (_controlOwnerLock)
+                {
+                    return _controlOwner;
+                }
+            }
         }
 
         /// <summary>返回本设备使用的报警服务。</summary>
@@ -438,12 +462,59 @@ namespace MotionControl.Framework.Runtime.Machine
             }
         }
 
+        /// <summary>
+        /// 请求由图形化任务定义入口接管设备命令权。只有未配置 C# 工位流程且设备不在运行时允许；
+        /// 已配置工位流程的设备必须先停用这些流程，避免两套入口同时控制同一批轴。
+        /// </summary>
+        public async Task AcquireTaskEngineControlAsync(CancellationToken cancellationToken)
+        {
+            await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                lock (_controlOwnerLock)
+                {
+                    if (_controlOwner == MachineControlOwner.TaskEngine)
+                    {
+                        return;
+                    }
+
+                    int stationCount = _flowScheduler.StationFlows.Count;
+                    if (stationCount > 0)
+                    {
+                        throw new InvalidOperationException(
+                            "设备已配置 " + stationCount + " 个 C# 工位流程，任务执行入口不能同时启动；"
+                            + "请先在任务配置中停用这些工位，再切换到任务执行入口。");
+                    }
+
+                    var currentState = State;
+                    if (currentState == MachineRunState.Running || currentState == MachineRunState.Pausing)
+                    {
+                        throw new InvalidOperationException(
+                            "设备正在运行，不能切换执行入口；请先暂停并确认所有轴已停止。当前状态："
+                            + currentState + "。");
+                    }
+
+                    _controlOwner = MachineControlOwner.TaskEngine;
+                }
+            }
+            finally
+            {
+                _commandLock.Release();
+            }
+        }
+
         /// <summary>执行可选设备初始化后，从各工位保留的当前步骤启动设备流程。</summary>
         public async Task StartAsync(CancellationToken cancellationToken)
         {
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                if (ControlOwner != MachineControlOwner.StationFlows)
+                {
+                    throw new InvalidOperationException(
+                        "当前设备的执行入口是 " + ControlOwner + "，不能通过工位流程启动；同一时刻只允许一个入口控制设备。");
+                }
+
                 if (_flowScheduler.StationFlows.Count == 0)
                 {
                     throw new InvalidOperationException("尚未配置工位流程，不能启动自动运行。");
