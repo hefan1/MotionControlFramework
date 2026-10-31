@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -7,6 +7,7 @@ using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.TaskEngine.Configuration;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Simulation;
+using MotionControl.TaskEngine.Device;
 using MotionControl.TaskEngine.Validation;
 using MotionControl.TaskEngine.Machine;
 
@@ -16,14 +17,14 @@ namespace MotionControl.TaskEngine.Execution
     public sealed class TaskExecutionEngine
     {
         /// <summary>先校验并冻结定义，再后台执行；返回值可暂停、恢复、取消和读取诊断。</summary>
-        public TaskRun Start(TaskDefinition definition, SimulatedTaskDevice device,
+        public TaskRun Start(TaskDefinition definition, ITaskDevice device,
             IEnumerable<TaskDefinition> dependencies = null, CancellationToken cancellationToken = default(CancellationToken))
         {
             return StartCore(definition, device, dependencies, null, cancellationToken, null);
         }
 
         /// <summary>整机控制器专用入口，先暂停再发布，确保全机启动许可生效前不接受动作。</summary>
-        internal TaskRun StartManaged(TaskDefinition definition, SimulatedTaskDevice device,
+        internal TaskRun StartManaged(TaskDefinition definition, ITaskDevice device,
             IEnumerable<TaskDefinition> dependencies, StationExecutionControl station, CancellationToken token,
             IMachineAlarmService alarmService)
         {
@@ -31,7 +32,7 @@ namespace MotionControl.TaskEngine.Execution
         }
 
         /// <summary>统一校验和冻结；设备所有权登记成功后才安排后台执行。</summary>
-        private TaskRun StartCore(TaskDefinition definition, SimulatedTaskDevice device,
+        private TaskRun StartCore(TaskDefinition definition, ITaskDevice device,
             IEnumerable<TaskDefinition> dependencies, StationExecutionControl station, CancellationToken cancellationToken,
             IMachineAlarmService alarmService)
         {
@@ -61,7 +62,7 @@ namespace MotionControl.TaskEngine.Execution
         }
 
         /// <summary>等待执行器和全部分支退出，最后只发布一次终态。</summary>
-        private static async Task ExecuteAsync(TaskRun run, TaskDefinition definition, SimulatedTaskDevice device,
+        private static async Task ExecuteAsync(TaskRun run, TaskDefinition definition, ITaskDevice device,
             Dictionary<string, TaskDefinition> library, StationExecutionControl station,
             CancellationToken externalCancellation, IMachineAlarmService alarmService)
         {
@@ -87,7 +88,7 @@ namespace MotionControl.TaskEngine.Execution
         }
 
         /// <summary>复用阶段 1 的完整定义校验，任何错误都在动作开始前拒绝。</summary>
-        private static void RequireValid(TaskDefinition definition, SimulatedTaskDevice device, List<TaskDefinition> dependencies)
+        private static void RequireValid(TaskDefinition definition, ITaskDevice device, List<TaskDefinition> dependencies)
         {
             var errors = new TaskDefinitionValidator().Validate(definition, device.Catalog, dependencies)
                 .Where(issue => issue.Severity == TaskIssueSeverity.Error).ToList();

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -7,6 +7,7 @@ using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.TaskEngine.Configuration;
 using MotionControl.TaskEngine.Definitions;
+using MotionControl.TaskEngine.Device;
 using MotionControl.TaskEngine.Execution;
 using MotionControl.TaskEngine.Simulation;
 
@@ -18,7 +19,7 @@ namespace MotionControl.TaskEngine.Machine
         /// <summary>保护整机状态和工位记录，锁内不等待任务完成。</summary>
         private readonly object _sync = new object();
         /// <summary>本会话独占的内存设备。</summary>
-        private readonly SimulatedTaskDevice _device;
+        private readonly ITaskDevice _device;
         /// <summary>当前设备报警服务；可由 Host 注入正式 Runtime 共用的实例。</summary>
         public IMachineAlarmService AlarmService { get; }
         /// <summary>冻结的设备清单。</summary>
@@ -54,7 +55,7 @@ namespace MotionControl.TaskEngine.Machine
 
         /// <summary>先校验并冻结清单和任务库，再取得设备控制权；构造不会运行任务或修改场景值。</summary>
         public TaskMachineController(TaskMachineConfiguration configuration, IEnumerable<TaskDefinition> definitions,
-            SimulatedTaskDevice device, IMachineAlarmService alarmService = null)
+            ITaskDevice device, IMachineAlarmService alarmService = null)
         {
             _device = device ?? throw new ArgumentNullException(nameof(device));
             AlarmService = alarmService ?? new MachineAlarmService();

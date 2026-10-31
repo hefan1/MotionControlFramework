@@ -4,13 +4,14 @@ using System.Linq;
 using MotionControl.Framework.Contracts.Variables;
 using MotionControl.Framework.Runtime.Variables;
 using MotionControl.TaskEngine.Catalog;
+using MotionControl.TaskEngine.Device;
 using MotionControl.TaskEngine.Execution;
 using MotionControl.TaskEngine.Resources;
 
 namespace MotionControl.TaskEngine.Simulation
 {
     /// <summary>任务引擎专用的独立内存设备；没有控制卡、网络或原生 DLL 入口。</summary>
-    public sealed partial class SimulatedTaskDevice
+    public sealed partial class SimulatedTaskDevice : ITaskDevice
     {
         /// <summary>保护内存设备状态；只在短小的读写期间持有。</summary>
         private readonly object _sync = new object();
@@ -25,7 +26,7 @@ namespace MotionControl.TaskEngine.Simulation
         /// <summary>与本内存设备对应的只读配置目录。</summary>
         public TaskResourceCatalog Catalog { get; }
         /// <summary>本内存设备共用的协调器；不影响其他设备实例或旧工位运行器。</summary>
-        internal TaskResourceCoordinator Resources { get; }
+        public TaskResourceCoordinator Resources { get; }
 
         /// <summary>从目录建立隔离状态；轴默认未使能、未回零，变量使用配置初值。</summary>
         public SimulatedTaskDevice(TaskResourceCatalog catalog)
@@ -86,13 +87,13 @@ namespace MotionControl.TaskEngine.Simulation
         }
 
         /// <summary>只写本内存设备的输出；由执行器在运行许可内调用。</summary>
-        internal void WriteOutput(string name, bool value)
+        public void WriteOutput(string name, bool value)
         {
             lock (_sync) { RequireIo(_outputs, name, "DO"); _outputs[name] = value; }
         }
 
         /// <summary>按现有类型规则写入流程值；现场手动权限不等于流程赋值权限。</summary>
-        internal void WriteVariable(string name, object value)
+        public void WriteVariable(string name, object value)
         {
             lock (_sync) TaskRuntimeValues.Write(_variables, name, Catalog.Variables[name], value);
         }

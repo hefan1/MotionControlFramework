@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Execution;
 
@@ -8,7 +8,7 @@ namespace MotionControl.TaskEngine.Simulation
     public sealed partial class SimulatedTaskDevice
     {
         /// <summary>在设备锁内核对位置、输入和变量；未知或不满足都返回具体原因。</summary>
-        internal bool CheckInterlock(TaskInterlock interlock, TaskCondition legacyCondition, out string reason)
+        public bool CheckInterlock(TaskInterlock interlock, TaskCondition legacyCondition, out string reason)
         {
             lock (_sync)
             {

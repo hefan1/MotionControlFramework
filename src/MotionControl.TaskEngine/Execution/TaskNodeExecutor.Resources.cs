@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using MotionControl.TaskEngine.Definitions;
@@ -56,7 +56,7 @@ namespace MotionControl.TaskEngine.Execution
                     await scope.StepAsync(() =>
                     {
                         string reason;
-                        acquired = _device.TryAcquireResources(request, out reason);
+                        acquired = _device.Resources.TryAcquire(request, out reason);
                         scope.WaitDetail = acquired ? null : reason;
                         _run.Report(scope, acquired ? TaskNodeState.Running : TaskNodeState.Waiting, reason);
                     }).ConfigureAwait(false);

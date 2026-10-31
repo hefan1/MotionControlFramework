@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using MotionControl.TaskEngine.Definitions;
@@ -6,7 +6,7 @@ using MotionControl.TaskEngine.Definitions;
 namespace MotionControl.TaskEngine.Resources
 {
     /// <summary>一个内存设备共用的资源队列；整组取得，冲突排队，独立组可同时运行。</summary>
-    internal sealed class TaskResourceCoordinator
+    public sealed class TaskResourceCoordinator
     {
         /// <summary>只保护短小的队列操作；锁内不等待，不调用设备或运行对象。</summary>
         private readonly object _sync = new object();

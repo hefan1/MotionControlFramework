@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 
 namespace MotionControl.TaskEngine.Simulation
@@ -7,7 +7,7 @@ namespace MotionControl.TaskEngine.Simulation
     public sealed partial class SimulatedTaskDevice
     {
         /// <summary>同一份快照读取请求和完成，保留未知数据。</summary>
-        internal void ReadHandshake(string requestName, string completedName, out bool? request, out bool? completed)
+        public void ReadHandshake(string requestName, string completedName, out bool? request, out bool? completed)
         {
             lock (_sync)
             {
@@ -20,7 +20,7 @@ namespace MotionControl.TaskEngine.Simulation
         }
 
         /// <summary>请求仍保持 true 才发布完成，避免动作已结束后把过期请求当作有效。</summary>
-        internal bool TryPublishCompletion(string requestName, string completedName)
+        public bool TryPublishCompletion(string requestName, string completedName)
         {
             lock (_sync)
             {
@@ -33,7 +33,7 @@ namespace MotionControl.TaskEngine.Simulation
         }
 
         /// <summary>请求方先清请求，完成方才清完成；未知状态不能放行下一周期。</summary>
-        internal bool TryClearCompletion(string requestName, string completedName)
+        public bool TryClearCompletion(string requestName, string completedName)
         {
             lock (_sync)
             {

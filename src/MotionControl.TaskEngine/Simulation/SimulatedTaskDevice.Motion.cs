@@ -1,4 +1,7 @@
 using System;
+using System.Threading;
+using System.Threading.Tasks;
+using MotionControl.TaskEngine.Device;
 
 namespace MotionControl.TaskEngine.Simulation
 {
@@ -27,18 +30,18 @@ namespace MotionControl.TaskEngine.Simulation
         }
 
         /// <summary>读取轴状态快照，不暴露内部占用凭证。</summary>
-        public SimulatedAxisSnapshot ReadAxis(string name)
+        public TaskAxisState ReadAxis(string name)
         {
             lock (_sync)
             {
                 SimulatedAxis axis = FindAxis(name);
-                return new SimulatedAxisSnapshot(name, axis.Position, axis.Enabled, axis.Homed,
+                return new TaskAxisState(name, axis.Position, axis.Enabled, axis.Homed,
                     axis.Operation != null, axis.Alarm, axis.AcceptedCommands);
             }
         }
 
         /// <summary>接受单轴操作并锁定终点；执行器先排队取得资源，这里再防止重复占用。</summary>
-        internal SimulatedMove BeginMove(string name, double target, bool relative, bool home)
+        public ITaskAxisMove BeginMove(string name, double target, bool relative, bool home)
         {
             lock (_sync)
             {
@@ -55,20 +58,44 @@ namespace MotionControl.TaskEngine.Simulation
             }
         }
 
-        /// <summary>更新匀速模型的位置；真实运动完成检测由未来设备接入层承担。</summary>
-        internal void AdvanceMove(SimulatedMove move, double progress)
+        /// <summary>更新匀速模型的位置；进度由执行器按活动时间计算。</summary>
+        public void AdvanceMove(ITaskAxisMove move, double progress)
         {
             lock (_sync)
             {
-                SimulatedAxis axis = FindAxis(move.AxisName);
-                if (axis.Operation != move) throw new InvalidOperationException("轴占用凭证已失效：" + move.AxisName);
-                CheckReady(move.AxisName, axis, move.Home);
-                axis.Position = move.Start + (move.Target - move.Start) * Math.Min(1, Math.Max(0, progress));
+                SimulatedMove simulated = RequireSimulatedMove(move);
+                SimulatedAxis axis = FindAxis(simulated.AxisName);
+                if (axis.Operation != simulated) throw new InvalidOperationException("轴占用凭证已失效：" + simulated.AxisName);
+                CheckReady(simulated.AxisName, axis, simulated.Home);
+                axis.Position = simulated.Start + (simulated.Target - simulated.Start) * Math.Min(1, Math.Max(0, progress));
             }
         }
 
+        /// <summary>内存模型按进度判定到位；真实设备应按反馈位置和到位容差判定。</summary>
+        public bool IsMoveComplete(ITaskAxisMove move, double progress)
+        {
+            RequireSimulatedMove(move);
+            return progress >= 1;
+        }
+
         /// <summary>动作成功或异常退出后都释放占用；取消保留中途位置，不伪造到位。</summary>
-        internal void EndMove(SimulatedMove move, bool completed)
+        public Task EndMoveAsync(ITaskAxisMove move, bool completed, CancellationToken cancellationToken)
+        {
+            EndMoveCore(RequireSimulatedMove(move), completed);
+            return Task.CompletedTask;
+        }
+
+        /// <summary>停止节点仅确认闲置轴；不能跨分支夺走其他动作的控制权。</summary>
+        public Task ConfirmStoppedAsync(string name, CancellationToken cancellationToken)
+        {
+            lock (_sync)
+                if (FindAxis(name).Operation != null)
+                    throw new InvalidOperationException("轴被其他动作占用；请取消所属运行并等待完成：" + name);
+            return Task.CompletedTask;
+        }
+
+        /// <summary>释放动作占用；completed 为真时把位置落到终点并标记回零结果。</summary>
+        private void EndMoveCore(SimulatedMove move, bool completed)
         {
             lock (_sync)
             {
@@ -83,12 +110,12 @@ namespace MotionControl.TaskEngine.Simulation
             }
         }
 
-        /// <summary>停止节点仅确认闲置轴；不能跨分支夺走其他动作的控制权。</summary>
-        internal void ConfirmStopped(string name)
+        /// <summary>只接受本设备产生的动作凭证；其他实现的凭证属于接线错误。</summary>
+        private static SimulatedMove RequireSimulatedMove(ITaskAxisMove move)
         {
-            lock (_sync)
-                if (FindAxis(name).Operation != null)
-                    throw new InvalidOperationException("轴被其他动作占用；请取消所属运行并等待完成：" + name);
+            var simulated = move as SimulatedMove;
+            if (simulated == null) throw new ArgumentException("动作凭证不属于本内存设备。", nameof(move));
+            return simulated;
         }
 
         /// <summary>按逻辑名称找轴。</summary>
@@ -135,7 +162,7 @@ namespace MotionControl.TaskEngine.Simulation
     }
 
     /// <summary>一次内存轴动作锁定的起点、终点和回零意图。</summary>
-    internal sealed class SimulatedMove
+    internal sealed class SimulatedMove : ITaskAxisMove
     {
         /// <summary>被占用的逻辑轴。</summary>
         internal string AxisName { get; }
@@ -149,6 +176,30 @@ namespace MotionControl.TaskEngine.Simulation
         internal SimulatedMove(string axisName, double start, double target, bool home)
         {
             AxisName = axisName; Start = start; Target = target; Home = home;
+        }
+
+        /// <summary>对执行器暴露的逻辑轴名称。</summary>
+        string ITaskAxisMove.AxisName
+        {
+            get { return AxisName; }
+        }
+
+        /// <summary>对执行器暴露的接受命令位置。</summary>
+        double ITaskAxisMove.Start
+        {
+            get { return Start; }
+        }
+
+        /// <summary>对执行器暴露的绝对终点。</summary>
+        double ITaskAxisMove.Target
+        {
+            get { return Target; }
+        }
+
+        /// <summary>对执行器暴露的回零标记。</summary>
+        bool ITaskAxisMove.IsHome
+        {
+            get { return Home; }
         }
     }
 }

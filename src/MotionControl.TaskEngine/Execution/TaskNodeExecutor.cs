@@ -4,7 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.TaskEngine.Definitions;
-using MotionControl.TaskEngine.Simulation;
+using MotionControl.TaskEngine.Device;
 using MotionControl.TaskEngine.Machine;
 
 namespace MotionControl.TaskEngine.Execution
@@ -14,8 +14,8 @@ namespace MotionControl.TaskEngine.Execution
     {
         /// <summary>本次运行的控制器。</summary>
         private readonly TaskRun _run;
-        /// <summary>只可能是内存设备，不接受硬件替身注入。</summary>
-        private readonly SimulatedTaskDevice _device;
+        /// <summary>本次运行驱动的设备端口；可以是内存设备，也可以是真实控制卡设备。</summary>
+        private readonly ITaskDevice _device;
         /// <summary>启动时冻结的任务库。</summary>
         private readonly Dictionary<string, TaskDefinition> _library;
         /// <summary>可选受控工位；独立单次执行时为空，保留原来的失败终态行为。</summary>
@@ -24,7 +24,7 @@ namespace MotionControl.TaskEngine.Execution
         private readonly IMachineAlarmService _alarmService;
 
         /// <summary>保存本次运行依赖，不读取全局服务。</summary>
-        internal TaskNodeExecutor(TaskRun run, SimulatedTaskDevice device, Dictionary<string, TaskDefinition> library,
+        internal TaskNodeExecutor(TaskRun run, ITaskDevice device, Dictionary<string, TaskDefinition> library,
             StationExecutionControl station = null, IMachineAlarmService alarmService = null)
         {
             _run = run; _device = device; _library = library; _station = station; _alarmService = alarmService;

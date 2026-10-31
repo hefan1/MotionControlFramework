@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.TaskEngine.Definitions;
+using MotionControl.TaskEngine.Device;
 using MotionControl.TaskEngine.Resources;
-using MotionControl.TaskEngine.Simulation;
 
 namespace MotionControl.TaskEngine.Execution
 {
@@ -14,7 +15,7 @@ namespace MotionControl.TaskEngine.Execution
         private async Task MoveAxisGroupAsync(TaskExecutionScope scope, MoveAxisGroupNode node)
         {
             TaskResourceRequest acquired = null;
-            List<SimulatedGroupAxisMove> moves = null;
+            IReadOnlyList<ITaskAxisGroupMove> moves = null;
             var names = new List<string>();
             foreach (AxisPositionTarget target in node.Targets) names.Add("Axis:" + target.AxisName);
             double started = 0;
@@ -31,8 +32,8 @@ namespace MotionControl.TaskEngine.Execution
                 await scope.StepAsync(() =>
                 {
                     moves = _device.BeginGroupMove(ReadGroupTargets(scope, node));
-                    foreach (SimulatedGroupAxisMove move in moves)
-                        scope.AcceptedAxisTargets[move.Operation.AxisName] = move.Operation.Target;
+                    foreach (ITaskAxisGroupMove move in moves)
+                        scope.AcceptedAxisTargets[move.AxisName] = move.Target;
                     started = _run.ActiveMilliseconds;
                 }).ConfigureAwait(false);
                 bool completed = false;
@@ -52,29 +53,33 @@ namespace MotionControl.TaskEngine.Execution
             finally
             {
                 // 清理不等待恢复许可，暂停期间也能取消并停下本组的剩余动作。
-                if (moves != null) _device.EndGroupMove(moves);
+                if (moves != null)
+                {
+                    await _device.EndGroupMoveAsync(moves, CancellationToken.None).ConfigureAwait(false);
+                }
+
                 if (acquired != null) _device.Resources.Release(acquired);
             }
         }
 
         /// <summary>全部目标使用同一份变量快照；任何目标无效时不发出组内任一动作。</summary>
-        private List<SimulatedAxisGroupTarget> ReadGroupTargets(TaskExecutionScope scope, MoveAxisGroupNode node)
+        private List<TaskAxisGroupTarget> ReadGroupTargets(TaskExecutionScope scope, MoveAxisGroupNode node)
         {
             var variables = _device.ReadVariables();
-            var targets = new List<SimulatedAxisGroupTarget>();
+            var targets = new List<TaskAxisGroupTarget>();
             foreach (AxisPositionTarget target in node.Targets)
             {
                 double accepted;
                 if (scope.AcceptedAxisTargets.TryGetValue(target.AxisName, out accepted))
                 {
-                    targets.Add(new SimulatedAxisGroupTarget(target.AxisName, accepted, false, target.Profile.Speed));
+                    targets.Add(new TaskAxisGroupTarget(target.AxisName, accepted, false, target.Profile.Speed));
                     continue;
                 }
                 object value;
                 string reason;
                 if (!TaskRuntimeValues.TryRead(target.Target, _device.Catalog, variables, out value, out reason))
                     throw new InvalidOperationException("轴组目标无效：轴=" + target.AxisName + "。" + reason);
-                targets.Add(new SimulatedAxisGroupTarget(target.AxisName, TaskRuntimeValues.Number(value),
+                targets.Add(new TaskAxisGroupTarget(target.AxisName, TaskRuntimeValues.Number(value),
                     target.Mode == TaskMoveMode.Relative, target.Profile.Speed));
             }
             return targets;

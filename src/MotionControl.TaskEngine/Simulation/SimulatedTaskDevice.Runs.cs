@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using MotionControl.TaskEngine.Device;
 
 namespace MotionControl.TaskEngine.Simulation
 {
@@ -47,6 +48,30 @@ namespace MotionControl.TaskEngine.Simulation
         internal void UnregisterRun(string runId)
         {
             lock (_sync) _activeRuns.Remove(runId);
+        }
+
+        /// <summary>设备端口声明：取得内存设备控制权，语义与其他设备实现一致。</summary>
+        void ITaskDevice.ClaimMachine(object owner)
+        {
+            ClaimMachine(owner);
+        }
+
+        /// <summary>设备端口声明：归还内存设备控制权。</summary>
+        void ITaskDevice.ReleaseMachine(object owner)
+        {
+            ReleaseMachine(owner);
+        }
+
+        /// <summary>设备端口声明：登记即将开始的运行。</summary>
+        void ITaskDevice.RegisterRun(string runId, object owner)
+        {
+            RegisterRun(runId, owner);
+        }
+
+        /// <summary>设备端口声明：移除已收尾的运行登记。</summary>
+        void ITaskDevice.UnregisterRun(string runId)
+        {
+            UnregisterRun(runId);
         }
     }
 }

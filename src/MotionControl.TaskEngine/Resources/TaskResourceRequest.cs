@@ -1,11 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using MotionControl.TaskEngine.Definitions;
 
 namespace MotionControl.TaskEngine.Resources
 {
     /// <summary>仅供协调器和执行器使用的占用凭证，不持有 TaskRun 或整个任务正文。</summary>
-    internal sealed class TaskResourceRequest
+    public sealed class TaskResourceRequest
     {
         /// <summary>每次申请唯一编号，防止旧恢复操作作用到新申请。</summary>
         internal string Id { get; } = Guid.NewGuid().ToString("N");

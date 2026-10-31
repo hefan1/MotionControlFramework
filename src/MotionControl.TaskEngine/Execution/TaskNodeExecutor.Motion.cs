@@ -1,7 +1,8 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.TaskEngine.Definitions;
-using MotionControl.TaskEngine.Simulation;
+using MotionControl.TaskEngine.Device;
 using MotionControl.TaskEngine.Resources;
 
 namespace MotionControl.TaskEngine.Execution
@@ -15,18 +16,24 @@ namespace MotionControl.TaskEngine.Execution
             return RunMotionAsync(scope, node.AxisName, node, false);
         }
 
-        /// <summary>模拟回零或确认停止；这里不会发出任何厂商指令。</summary>
+        /// <summary>回零或确认停止；具体指令由设备实现发出。</summary>
         private async Task AxisCommandAsync(TaskExecutionScope scope, AxisCommandNode node)
         {
             if (node.Command == TaskAxisCommand.Home)
+            {
                 await RunMotionAsync(scope, node.AxisName, null, true).ConfigureAwait(false);
-            else await scope.StepAsync(() => _device.ConfirmStopped(node.AxisName)).ConfigureAwait(false);
+                return;
+            }
+
+            // 先经过运行门控（暂停与时限），再向设备确认轴已闲置；确认可能需要读取真实轴状态。
+            await scope.StepAsync(() => { }).ConfigureAwait(false);
+            await _device.ConfirmStoppedAsync(node.AxisName, scope.Token).ConfigureAwait(false);
         }
 
-        /// <summary>按活动时间推进内存位置，finally 确保失败与取消均释放本次轴占用。</summary>
+        /// <summary>按活动时间推进动作，finally 确保失败与取消均停止轴并释放本次轴占用。</summary>
         private async Task RunMotionAsync(TaskExecutionScope scope, string axisName, MoveAxisNode node, bool home)
         {
-            SimulatedMove operation = null;
+            ITaskAxisMove operation = null;
             TaskResourceRequest acquired = null;
             double started = 0;
             double duration = 0;
@@ -47,6 +54,7 @@ namespace MotionControl.TaskEngine.Execution
                 }).ConfigureAwait(false);
                 while (operation != null)
                 {
+                    bool completed = false;
                     await scope.StepAsync(() =>
                     {
                         double progress = duration == 0 ? 1 : (_run.ActiveMilliseconds - started) / duration;
@@ -56,19 +64,28 @@ namespace MotionControl.TaskEngine.Execution
                             ? "内存回零结束，位置参考已建立；未模拟厂商原点与限位信号。"
                             : "正在执行内存回零；未模拟厂商回零模式。");
                         _run.Report(scope, TaskNodeState.Moving, "运动中：等待轴 " + axisName + " 到位；目标=" + operation.Target);
-                        if (progress >= 1)
-                        {
-                            _device.EndMove(operation, true);
-                            operation = null;
-                        }
+                        completed = _device.IsMoveComplete(operation, progress);
                     }).ConfigureAwait(false);
-                    if (operation != null) await scope.NextPollAsync().ConfigureAwait(false);
+
+                    if (completed)
+                    {
+                        ITaskAxisMove finished = operation;
+                        operation = null;
+                        await _device.EndMoveAsync(finished, true, scope.Token).ConfigureAwait(false);
+                        break;
+                    }
+
+                    await scope.NextPollAsync().ConfigureAwait(false);
                 }
             }
             finally
             {
-                // 清理不等待恢复许可：暂停期间收到取消也必须立即释放自己的内存动作。
-                if (operation != null) _device.EndMove(operation, false);
+                // 清理不等待恢复许可：暂停期间收到取消也必须立即停下并释放本次动作。
+                if (operation != null)
+                {
+                    await _device.EndMoveAsync(operation, false, CancellationToken.None).ConfigureAwait(false);
+                }
+
                 if (acquired != null) _device.Resources.Release(acquired);
             }
         }
