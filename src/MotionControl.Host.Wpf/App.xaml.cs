@@ -11,6 +11,7 @@ using System.Windows;
 using MotionControl.Adapter.MotionCard.ZMotion;
 using MotionControl.Equipment.Demo;
 using MotionControl.Framework.Contracts.Alarms;
+using MotionControl.Framework.Contracts.Equipment;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.IO;
 using MotionControl.Framework.Contracts.Motion;
@@ -32,6 +33,9 @@ namespace MotionControl.Host.Wpf
     {
         /// <summary>当前 Host 示例所使用设备的稳定编号。</summary>
         private const string MachineId = "Machine01";
+
+        /// <summary>设备定义选择配置的相对路径；Host 按其中的名称选择设备工程。</summary>
+        private const string EquipmentSelectionPath = "Parameters/Equipment.json";
 
         /// <summary>限制同一 Windows 登录会话只运行一个 Host，避免多个实例争用控制卡。</summary>
         private const string SingleInstanceMutexName = @"Local\MotionControl.Host.Wpf.Machine01";
@@ -473,16 +477,16 @@ namespace MotionControl.Host.Wpf
                 IStationFlow[] stationFlows;
                 try
                 {
-                    stationFlows = CreateDemoStationFlows(
+                    stationFlows = CreateEquipmentStationFlows(
                         motionCards, connectedLogicalIo, alarmService);
                 }
                 catch (Exception error)
                 {
                     stationFlows = new IStationFlow[0];
                     MessageBox.Show(
-                        "示例工位配置无法启用，自动流程已关闭；轴手动和 IO 手动仍可使用。\n"
+                        "设备工位配置无法启用，自动流程已关闭；轴手动和 IO 手动仍可使用。\n"
                         + error.Message,
-                        "示例工位配置",
+                        "设备工位配置",
                         MessageBoxButton.OK,
                         MessageBoxImage.Warning);
                 }
@@ -683,119 +687,58 @@ namespace MotionControl.Host.Wpf
             }
         }
 
-        /// <summary>只有设备目录显式启用示例配置时才创建工位，并核对轴范围及逻辑 IO 映射。</summary>
-        private IStationFlow[] CreateDemoStationFlows(
+        /// <summary>按设备配置选择设备定义，并创建本设备的工位流程。</summary>
+        private IStationFlow[] CreateEquipmentStationFlows(
             MotionCardGroup motionCards,
             ILogicalIo logicalIo,
             IMachineAlarmService alarmService)
         {
-            const string stationSetPath = "Parameters/DemoStations.json";
-            string stationSetFile = Path.Combine(
-                _configurationStore.GetMachineDirectory(MachineId),
-                stationSetPath.Replace('/', Path.DirectorySeparatorChar));
-            if (File.Exists(stationSetFile))
-            {
-                DemoStationSetSettings stationSet = _configurationStore.LoadJson<DemoStationSetSettings>(MachineId, stationSetPath);
-                if (stationSet == null || !stationSet.Enabled)
-                    return new IStationFlow[0];
+            IEquipmentDefinition equipment = ResolveEquipmentDefinition();
+            var context = new HostEquipmentContext(
+                _configurationStore,
+                MachineId,
+                _alarmCatalogStore.Load(MachineId),
+                _cardConnection.AxisHardwareDefinitions,
+                _cardConnection.DigitalInputs,
+                _cardConnection.DigitalOutputs,
+                motionCards,
+                logicalIo,
+                alarmService);
+            return equipment.CreateStationFlows(context).ToArray();
+        }
 
-                stationSet.Validate();
-                MachineAlarmCatalogDocument alarmCatalog = _alarmCatalogStore.Load(MachineId);
-                return stationSet.Stations
-                    .Where(station => station != null && station.Enabled)
-                    .Select(station => CreateDemoStationFlow(
-                        motionCards, logicalIo, alarmService, station,
-                        LoadDemoStationTimeoutAlarms(alarmCatalog, station.TimeoutAlarmCodes)))
-                    .ToArray();
-            }
-
-            const string relativePath = "Parameters/DemoStation.json";
+        /// <summary>
+        /// 读取设备配置中的设备定义名称并返回对应定义；未配置时默认示例设备。
+        /// 新增设备时在此显式登记，不使用反射扫描或运行时加载。
+        /// </summary>
+        private IEquipmentDefinition ResolveEquipmentDefinition()
+        {
             string fullPath = Path.Combine(
                 _configurationStore.GetMachineDirectory(MachineId),
-                relativePath.Replace('/', Path.DirectorySeparatorChar));
+                EquipmentSelectionPath.Replace('/', Path.DirectorySeparatorChar));
             if (!File.Exists(fullPath))
             {
-                return new IStationFlow[0];
+                _configurationStore.SaveJson(MachineId, EquipmentSelectionPath, new EquipmentSelectionSettings());
             }
 
-            DemoStationSettings settings = _configurationStore.LoadJson<DemoStationSettings>(MachineId, relativePath);
-            if (settings == null || !settings.Enabled)
+            EquipmentSelectionSettings settings =
+                _configurationStore.LoadJson<EquipmentSelectionSettings>(MachineId, EquipmentSelectionPath);
+            string name = settings == null || settings.Definition == null
+                ? string.Empty
+                : settings.Definition.Trim();
+            if (name.Length == 0)
             {
-                return new IStationFlow[0];
+                name = "Demo";
             }
 
-            settings.Validate();
-            MachineAlarmCatalogDocument legacyAlarmCatalog = _alarmCatalogStore.Load(MachineId);
-            return new IStationFlow[]
+            if (string.Equals(name, "Demo", StringComparison.OrdinalIgnoreCase))
             {
-                CreateDemoStationFlow(
-                    motionCards, logicalIo, alarmService, settings,
-                    LoadDemoStationTimeoutAlarms(legacyAlarmCatalog, settings.TimeoutAlarmCodes))
-            };
-        }
-
-        /// <summary>核对一个工位的逻辑硬件映射与行程后创建真实 Runtime 工位流程。</summary>
-        private IStationFlow CreateDemoStationFlow(
-            MotionCardGroup motionCards,
-            ILogicalIo logicalIo,
-            IMachineAlarmService alarmService,
-            DemoStationSettings settings,
-            IEnumerable<MachineAlarmDefinition> timeoutAlarms)
-        {
-            var axisDefinition = _cardConnection.AxisHardwareDefinitions.SingleOrDefault(
-                axis => string.Equals(axis.Name, settings.AxisName, StringComparison.OrdinalIgnoreCase));
-            if (axisDefinition == null)
-            {
-                throw new InvalidOperationException("示例工位找不到已映射逻辑轴：" + settings.AxisName + "。");
+                return new DemoEquipmentDefinition();
             }
 
-            if (settings.TargetPosition < axisDefinition.MinimumPosition
-                || settings.TargetPosition > axisDefinition.MaximumPosition)
-            {
-                throw new InvalidOperationException(
-                    "示例工位目标位置 " + settings.TargetPosition + " 超出逻辑轴 '"
-                    + settings.AxisName + "' 的配置行程 [" + axisDefinition.MinimumPosition
-                    + ", " + axisDefinition.MaximumPosition + "]。");
-            }
-
-            if (!_cardConnection.DigitalInputs.Any(
-                point => string.Equals(point.Name, settings.SensorInputName, StringComparison.OrdinalIgnoreCase)))
-            {
-                throw new InvalidOperationException("示例工位找不到已映射逻辑 DI：" + settings.SensorInputName + "。");
-            }
-
-            if (!_cardConnection.DigitalOutputs.Any(
-                point => string.Equals(point.Name, settings.OutputName, StringComparison.OrdinalIgnoreCase)))
-            {
-                throw new InvalidOperationException("示例工位找不到已映射逻辑 DO：" + settings.OutputName + "。");
-            }
-
-            return new DemoStationFlow(motionCards.GetAxis(settings.AxisName), logicalIo, alarmService, settings, timeoutAlarms);
-        }
-
-        /// <summary>按工位显式配置的代码，从设备报警库读取一条或多条超时报警。</summary>
-        private static IReadOnlyList<MachineAlarmDefinition> LoadDemoStationTimeoutAlarms(
-            MachineAlarmCatalogDocument alarmCatalog,
-            IEnumerable<string> alarmCodes)
-        {
-            if (alarmCatalog == null) throw new ArgumentNullException(nameof(alarmCatalog));
-            if (alarmCodes == null) throw new ArgumentNullException(nameof(alarmCodes));
-
-            var definitionsByCode = alarmCatalog.Alarms.ToDictionary(
-                alarm => alarm.Code,
-                alarm => alarm,
-                StringComparer.OrdinalIgnoreCase);
-            var definitions = new List<MachineAlarmDefinition>();
-            foreach (string code in alarmCodes)
-            {
-                MachineAlarmCatalogEntry entry;
-                if (!definitionsByCode.TryGetValue(code, out entry))
-                {
-                    throw new InvalidOperationException("设备报警库缺少工位已关联的报警代码：" + code + "。");
-                }
-                definitions.Add(entry.ToDefinition());
-            }
-            return definitions.AsReadOnly();
+            throw new InvalidOperationException(
+                "设备定义配置 '" + EquipmentSelectionPath + "' 指定了未登记的设备定义：" + name
+                + "。当前版本支持：Demo。");
         }
 
         /// <summary>为首次运行的设备目录建立与示例工艺对应的一条可编辑报警定义。</summary>

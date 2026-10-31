@@ -5,8 +5,10 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Adapter.MotionCard.ZMotion;
+using MotionControl.Equipment.Demo;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Configuration;
+using MotionControl.Framework.Contracts.Equipment;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Contracts.IO;
@@ -33,6 +35,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("当前正运动 Host 拒绝多卡配置", ZMotionHostRejectsMultipleCardsAsync, failures);
             await RunCheckAsync("未配置自动流程时允许连接手动调试但禁止启动", ManualOnlyRuntimeConnectsButCannotStartAsync, failures);
             await RunCheckAsync("工位流程与任务执行入口互斥，同一时刻只有一个能启动", ControlOwnerExcludesTaskExecutionAsync, failures);
+            await RunCheckAsync("设备定义按设备环境创建工位并拒绝越行程配置", EquipmentDefinitionCreatesStationsFromContextAsync, failures);
             await RunCheckAsync("任一轴仍在运动时禁止启动自动流程", MovingAxisBlocksAutomaticStartAsync, failures);
             await RunCheckAsync("硬限位后未配置初始化流程时必须先回零", HomingRequiredAxisBlocksStartWithoutInitializationAsync, failures);
             await RunCheckAsync("可选初始化先于工位、暂停续跑且每个连接周期只执行一次", EquipmentInitializationRunsBeforeStationsAndResumesAsync, failures);
@@ -184,6 +187,78 @@ namespace MotionControl.ZMotionSimulatorCheck
                 () => taskRuntime.StartAsync(CancellationToken.None)).ConfigureAwait(false);
             Ensure(taskRuntime.State == MachineRunState.Ready, "任务入口接管时误启动改变了整机状态。");
             await taskRuntime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        /// <summary>确认设备定义只通过设备环境创建工位，并按软限位拒绝越行程的工位配置。</summary>
+        private static Task EquipmentDefinitionCreatesStationsFromContextAsync()
+        {
+            var stationSet = new DemoStationSetSettings { SchemaVersion = 1, Enabled = true };
+            stationSet.Stations.Add(new DemoStationSettings
+            {
+                Enabled = true,
+                StationName = "上料工位",
+                AxisName = "Load_X",
+                SensorInputName = "上料到位",
+                OutputName = "夹紧",
+                TargetPosition = 10
+            });
+            stationSet.Stations.Add(new DemoStationSettings
+            {
+                Enabled = true,
+                StationName = "下料工位",
+                AxisName = "Unload_X",
+                SensorInputName = "下料到位",
+                OutputName = "松开",
+                TargetPosition = 20
+            });
+
+            FakeEquipmentContext context = CreateEquipmentContext(stationSet);
+            IReadOnlyList<IStationFlow> flows = new DemoEquipmentDefinition().CreateStationFlows(context);
+            Ensure(flows.Count == 2, "设备定义没有按启用的工位创建两条流程。");
+            Ensure(
+                flows.Any(flow => flow.StationName == "上料工位") && flows.Any(flow => flow.StationName == "下料工位"),
+                "设备定义创建的工位名称与配置不一致。");
+
+            stationSet.Stations[0].TargetPosition = 500;
+            try
+            {
+                new DemoEquipmentDefinition().CreateStationFlows(CreateEquipmentContext(stationSet));
+            }
+            catch (InvalidOperationException error)
+            {
+                Ensure(
+                    error.Message.Contains("超出逻辑轴"),
+                    "越行程工位失败信息没有指出超出逻辑轴行程。 " + error.Message);
+                return Task.CompletedTask;
+            }
+
+            throw new InvalidOperationException("工位目标位置超出软限位时设备定义没有拒绝创建。");
+        }
+
+        /// <summary>按固定硬件映射创建一套设备环境，供设备定义检查复用。</summary>
+        private static FakeEquipmentContext CreateEquipmentContext(DemoStationSetSettings stationSet)
+        {
+            return new FakeEquipmentContext(
+                stationSet,
+                new[]
+                {
+                    new AxisHardwareDefinition { Name = "Load_X", MinimumPosition = -100, MaximumPosition = 100 },
+                    new AxisHardwareDefinition { Name = "Unload_X", MinimumPosition = -100, MaximumPosition = 100 }
+                },
+                new[]
+                {
+                    new DigitalIoHardwareDefinition { Name = "上料到位" },
+                    new DigitalIoHardwareDefinition { Name = "下料到位" }
+                },
+                new[]
+                {
+                    new DigitalIoHardwareDefinition { Name = "夹紧" },
+                    new DigitalIoHardwareDefinition { Name = "松开" }
+                },
+                new[]
+                {
+                    new MachineAlarmDefinition("DEMO_SENSOR_TIMEOUT", "等待传感器超时", MachineAlarmKind.StopMachine)
+                });
         }
 
         /// <summary>确认第二张卡连接失败时，第一张卡会被连接组回收。</summary>
@@ -1559,6 +1634,119 @@ namespace MotionControl.ZMotionSimulatorCheck
         }
 
         /// <summary>保存测试 DI 状态，并记录最近一次读取的逻辑名称。</summary>
+        /// <summary>用内存配置替代设备目录，供设备定义检查读取工位配置和硬件映射。</summary>
+        private sealed class FakeEquipmentContext : IEquipmentContext
+        {
+            /// <summary>本次检查使用的工位配置。</summary>
+            private readonly DemoStationSetSettings _stationSet;
+
+            /// <summary>本次检查可用的逻辑轴定义。</summary>
+            private readonly IReadOnlyList<AxisHardwareDefinition> _axes;
+
+            /// <summary>本次检查可用的逻辑 DI 定义。</summary>
+            private readonly IReadOnlyList<DigitalIoHardwareDefinition> _inputs;
+
+            /// <summary>本次检查可用的逻辑 DO 定义。</summary>
+            private readonly IReadOnlyList<DigitalIoHardwareDefinition> _outputs;
+
+            /// <summary>本次检查可用的报警定义。</summary>
+            private readonly IReadOnlyList<MachineAlarmDefinition> _alarms;
+
+            /// <summary>本次检查使用的逻辑 IO 替身。</summary>
+            private readonly FakeLogicalIo _logicalIo = new FakeLogicalIo();
+
+            /// <summary>本次检查使用的报警服务。</summary>
+            private readonly MachineAlarmService _alarmService = new MachineAlarmService();
+
+            /// <summary>创建只服务本次检查的设备环境，不读写真实配置文件。</summary>
+            internal FakeEquipmentContext(
+                DemoStationSetSettings stationSet,
+                IReadOnlyList<AxisHardwareDefinition> axes,
+                IReadOnlyList<DigitalIoHardwareDefinition> inputs,
+                IReadOnlyList<DigitalIoHardwareDefinition> outputs,
+                IReadOnlyList<MachineAlarmDefinition> alarms)
+            {
+                _stationSet = stationSet;
+                _axes = axes;
+                _inputs = inputs;
+                _outputs = outputs;
+                _alarms = alarms;
+            }
+
+            /// <summary>检查用设备标识。</summary>
+            public string EquipmentId
+            {
+                get { return "EquipmentDefinitionCheck"; }
+            }
+
+            /// <summary>检查可用的逻辑轴定义。</summary>
+            public IReadOnlyList<AxisHardwareDefinition> AxisDefinitions
+            {
+                get { return _axes; }
+            }
+
+            /// <summary>检查可用的逻辑 DI 定义。</summary>
+            public IReadOnlyList<DigitalIoHardwareDefinition> InputDefinitions
+            {
+                get { return _inputs; }
+            }
+
+            /// <summary>检查可用的逻辑 DO 定义。</summary>
+            public IReadOnlyList<DigitalIoHardwareDefinition> OutputDefinitions
+            {
+                get { return _outputs; }
+            }
+
+            /// <summary>检查使用的逻辑 IO 替身。</summary>
+            public ILogicalIo LogicalIo
+            {
+                get { return _logicalIo; }
+            }
+
+            /// <summary>检查使用的报警服务。</summary>
+            public IMachineAlarmService AlarmService
+            {
+                get { return _alarmService; }
+            }
+
+            /// <summary>只有并行工位清单算作存在，用于验证设备定义的路径选择。</summary>
+            public bool FileExists(string relativePath)
+            {
+                return string.Equals(relativePath, DemoEquipmentDefinition.StationSetPath, StringComparison.OrdinalIgnoreCase);
+            }
+
+            /// <summary>返回本次检查准备的工位配置；其他类型视为检查未准备。</summary>
+            public T LoadJson<T>(string relativePath) where T : class
+            {
+                var document = _stationSet as T;
+                if (document == null)
+                {
+                    throw new InvalidOperationException("检查未准备该设备配置：" + relativePath);
+                }
+
+                return document;
+            }
+
+            /// <summary>按代码返回检查准备的报警定义。</summary>
+            public MachineAlarmDefinition ResolveAlarm(string alarmCode)
+            {
+                MachineAlarmDefinition match = _alarms.FirstOrDefault(
+                    alarm => string.Equals(alarm.Code, alarmCode, StringComparison.OrdinalIgnoreCase));
+                if (match == null)
+                {
+                    throw new InvalidOperationException("检查报警库缺少代码：" + alarmCode);
+                }
+
+                return match;
+            }
+
+            /// <summary>按名称返回一个新的轴替身，检查不关心轴的真实行为。</summary>
+            public IAxis GetAxis(string axisName)
+            {
+                return new FakeAxis(axisName);
+            }
+        }
+
         private sealed class FakeLogicalIo : ILogicalIo
         {
             private readonly Dictionary<string, bool> _inputs = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
