@@ -126,7 +126,7 @@ namespace MotionControl.Host.Wpf.Operation
                     : catalogGuidance;
 
             // 报警库的固定指导不能覆盖当前条件状态，否则现场人员可能误以为可以立即复位。
-            AfterText.Text = T(alarm.RequiresReset ? alarm.ConditionActive ? "条件仍有效，先处理原因，不能通过确认或刷新清除" : "条件已恢复，使用顶部复位后再启动，回零按设备规则检查"
+            AfterText.Text = T(alarm.RequiresReset ? alarm.ConditionActive ? "条件仍有效，先处理原因，不能通过确认或刷新清除" : "停机报警待复位处理提示"
                 : "非停机提醒随条件恢复自动消失，不用人工清除");
             if (!string.IsNullOrWhiteSpace(alarm.Definition.RecoveryGuidance))
                 AfterText.Text += "\n" + alarm.Definition.RecoveryGuidance;
@@ -172,7 +172,7 @@ namespace MotionControl.Host.Wpf.Operation
             Alarm = alarm; Key = alarm.SourceName + "\u001f" + alarm.Definition.Code + "\u001f" + alarm.FirstRaisedAtUtc.Ticks;
             KindText = translate(alarm.RequiresReset ? "停机" : "提醒");
             OccurredAt = alarm.FirstRaisedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
-            ConditionText = translate(alarm.RequiresReset ? alarm.ConditionActive ? "条件仍有效" : "条件恢复，等待复位" : "非停机提醒");
+            ConditionText = translate(alarm.RequiresReset ? alarm.ConditionActive ? "条件仍有效" : "报警等待复位" : "非停机提醒");
         }
     }
 }

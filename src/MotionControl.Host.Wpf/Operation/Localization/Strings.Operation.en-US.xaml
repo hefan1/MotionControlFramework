@@ -69,7 +69,7 @@
  <sys:String x:Key="操作页.请选择一条报警">Select an alarm</sys:String>
  <sys:String x:Key="操作页.按报警内容检查相关机构和信号，具体处理要求由设备项目提供">Check the related mechanism and signals according to the alarm. Equipment-specific instructions are required.</sys:String>
  <sys:String x:Key="操作页.条件仍有效，先处理原因，不能通过确认或刷新清除">The condition is still active. Resolve the cause; refreshing cannot clear it.</sys:String>
- <sys:String x:Key="操作页.条件已恢复，使用顶部复位后再启动，回零按设备规则检查">The condition has recovered. Reset above, then start. Homing is checked by the equipment rules.</sys:String>
+ <sys:String x:Key="操作页.停机报警待复位处理提示">The alarm is latched. Check the cause and related signals, then reset and restart according to equipment procedures.</sys:String>
  <sys:String x:Key="操作页.非停机提醒随条件恢复自动消失，不用人工清除">A non-stop notice disappears automatically when its condition recovers.</sys:String>
  <sys:String x:Key="操作页.报警代码">Alarm code</sys:String>
  <sys:String x:Key="操作页.首次发生">First raised</sys:String>
@@ -79,7 +79,7 @@
  <sys:String x:Key="操作页.停机">Stop</sys:String>
  <sys:String x:Key="操作页.提醒">Notice</sys:String>
  <sys:String x:Key="操作页.条件仍有效">Condition active</sys:String>
- <sys:String x:Key="操作页.条件恢复，等待复位">Recovered; reset required</sys:String>
+ <sys:String x:Key="操作页.报警等待复位">Awaiting reset</sys:String>
  <sys:String x:Key="操作页.非停机提醒">Non-stop notice</sys:String>
  <sys:String x:Key="操作页.搜索">Search</sys:String>
  <sys:String x:Key="操作页.2 当前提醒条件">2  Current notice condition</sys:String>

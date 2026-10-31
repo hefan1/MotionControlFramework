@@ -69,7 +69,7 @@
  <sys:String x:Key="操作页.请选择一条报警">请选择一条报警</sys:String>
  <sys:String x:Key="操作页.按报警内容检查相关机构和信号，具体处理要求由设备项目提供">按报警内容检查相关机构和信号，具体处理要求由设备项目提供</sys:String>
  <sys:String x:Key="操作页.条件仍有效，先处理原因，不能通过确认或刷新清除">条件仍有效，先处理原因，不能通过确认或刷新清除</sys:String>
- <sys:String x:Key="操作页.条件已恢复，使用顶部复位后再启动，回零按设备规则检查">条件已恢复，使用顶部复位后再启动，回零按设备规则检查</sys:String>
+ <sys:String x:Key="操作页.停机报警待复位处理提示">报警已锁存，请检查故障原因和相关信号；确认后按设备规则复位并重新启动。</sys:String>
  <sys:String x:Key="操作页.非停机提醒随条件恢复自动消失，不用人工清除">非停机提醒随条件恢复自动消失，不用人工清除</sys:String>
  <sys:String x:Key="操作页.报警代码">报警代码</sys:String>
  <sys:String x:Key="操作页.首次发生">首次发生</sys:String>
@@ -79,7 +79,7 @@
  <sys:String x:Key="操作页.停机">停机</sys:String>
  <sys:String x:Key="操作页.提醒">提醒</sys:String>
  <sys:String x:Key="操作页.条件仍有效">条件仍有效</sys:String>
- <sys:String x:Key="操作页.条件恢复，等待复位">条件恢复，等待复位</sys:String>
+ <sys:String x:Key="操作页.报警等待复位">等待复位</sys:String>
  <sys:String x:Key="操作页.非停机提醒">非停机提醒</sys:String>
  <sys:String x:Key="操作页.搜索">搜索</sys:String>
  <sys:String x:Key="操作页.2 当前提醒条件">2 当前提醒条件</sys:String>

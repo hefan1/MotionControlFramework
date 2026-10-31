@@ -26,9 +26,16 @@ namespace MotionControl.OperatorPages.Checks
             var after = (TextBlock)view.FindName("AfterText");
             grid.SelectedItem = grid.Items.Cast<AlarmDisplayRow>().Single(row => row.Alarm.Definition.Code == "STOP_GUIDE");
             Require(after.Text.Contains("条件仍有效") && after.Text.Contains("检查夹具后按设备流程处理。"), "有效停机条件或报警库指导被隐藏。");
-            snapshot.Alarms[0] = new MachineAlarmRecord(stop, "压装", "", false, now, now.AddSeconds(1));
+            // 超时事件结束并不证明被等待的传感器已触发。
+            snapshot.Alarms[0] = new MachineAlarmRecord(stop, "压装", "DI 仍未触发", false, now, now.AddSeconds(1));
             view.RefreshDisplay();
-            Require(after.Text.Contains("条件已恢复") && after.Text.Contains("检查夹具后按设备流程处理。"), "待复位状态或报警库指导被隐藏。");
+            Require(after.Text.Contains("检查故障原因和相关信号") && !after.Text.Contains("条件已恢复")
+                && after.Text.Contains("检查夹具后按设备流程处理。"), "待复位处理提示错误声称传感器已恢复，或隐藏了报警库指导。");
+            Require(((AlarmDisplayRow)grid.SelectedItem).ConditionText == "等待复位", "超时事件被误显示为现场条件已恢复。");
+            view.SetLanguage("en-US");
+            Require(after.Text.Contains("related signals") && !after.Text.Contains("has recovered")
+                && ((AlarmDisplayRow)grid.SelectedItem).ConditionText == "Awaiting reset", "英文待复位提示误称现场条件已恢复。");
+            view.SetLanguage("zh-CN");
             grid.SelectedItem = grid.Items.Cast<AlarmDisplayRow>().Single(row => row.Alarm.Definition.Code == "NOTICE_GUIDE");
             Require(after.Text.Contains("非停机提醒") && after.Text.Contains("更换料框。"), "非停机状态或报警库指导被隐藏。");
             view.SetLanguage("en-US");
