@@ -177,7 +177,9 @@ namespace MotionControl.Host.Wpf
             _alarmCatalogStore = new MachineAlarmCatalogStore(_configurationStore);
             try
             {
-                _alarmCatalogStore.LoadOrCreate(MachineId, CreateDefaultAlarmCatalog());
+                _alarmCatalogStore.LoadOrCreate(
+                    MachineId,
+                    CreateDefaultAlarmCatalog(ResolveEquipmentDefinition().CreateDefaultAlarms()));
             }
             catch (Exception error)
             {
@@ -741,18 +743,23 @@ namespace MotionControl.Host.Wpf
                 + "。当前版本支持：Demo。");
         }
 
-        /// <summary>为首次运行的设备目录建立与示例工艺对应的一条可编辑报警定义。</summary>
-        private static MachineAlarmCatalogDocument CreateDefaultAlarmCatalog()
+        /// <summary>为首次运行的设备目录按设备定义预置报警，框架不内置任何设备的报警代码。</summary>
+        private static MachineAlarmCatalogDocument CreateDefaultAlarmCatalog(
+            IReadOnlyList<MachineAlarmDefinition> definitions)
         {
             var document = new MachineAlarmCatalogDocument();
-            document.Alarms.Add(new MachineAlarmCatalogEntry
+            foreach (MachineAlarmDefinition definition in definitions ?? new MachineAlarmDefinition[0])
             {
-                Code = DemoStationFlow.SensorTimeoutAlarmCode,
-                Message = "等待传感器超时",
-                Kind = MachineAlarmKind.StopMachine,
-                CheckGuidance = "检查传感器安装、工件到位状态和逻辑 DI 映射，再核对当前输入状态。",
-                RecoveryGuidance = "条件恢复后，确认机构无碰撞风险并执行整机复位；流程从等待步骤重新开始。"
-            });
+                document.Alarms.Add(new MachineAlarmCatalogEntry
+                {
+                    Code = definition.Code,
+                    Message = definition.Message,
+                    Kind = definition.Kind,
+                    CheckGuidance = definition.CheckGuidance,
+                    RecoveryGuidance = definition.RecoveryGuidance
+                });
+            }
+
             return document;
         }
 

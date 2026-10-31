@@ -27,6 +27,23 @@ namespace MotionControl.Equipment.Demo
         }
 
         /// <summary>
+        /// 示例设备首次生成报警库时预置的传感器超时报警。只有本设备会得到这条定义，
+        /// 其他设备按自己的工艺提供各自的默认报警，框架不内置任何设备的报警代码。
+        /// </summary>
+        public IReadOnlyList<MachineAlarmDefinition> CreateDefaultAlarms()
+        {
+            return new[]
+            {
+                new MachineAlarmDefinition(
+                    DemoStationFlow.SensorTimeoutAlarmCode,
+                    "等待传感器超时",
+                    MachineAlarmKind.StopMachine,
+                    "检查传感器安装、工件到位状态和逻辑 DI 映射，再核对当前输入状态。",
+                    "条件恢复后，确认机构无碰撞风险并执行整机复位；流程从等待步骤重新开始。")
+            };
+        }
+
+        /// <summary>
         /// 读取工位配置并创建工位流程。存在工位清单时按清单创建（清单关闭则不创建任何工位）；
         /// 没有清单时回退到旧版单工位配置。
         /// </summary>

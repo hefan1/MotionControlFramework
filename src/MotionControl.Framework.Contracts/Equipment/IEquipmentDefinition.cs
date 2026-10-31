@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Flow;
 
 namespace MotionControl.Framework.Contracts.Equipment
@@ -11,6 +12,12 @@ namespace MotionControl.Framework.Contracts.Equipment
     {
         /// <summary>设备定义名称，用于设备配置中显式选择，例如 "Demo"。</summary>
         string EquipmentName { get; }
+
+        /// <summary>
+        /// 本设备首次生成报警库时使用的默认报警定义。框架不内置任何设备的报警代码，
+        /// 新设备目录由这里得到初始条目；返回空列表表示该设备不预置报警。
+        /// </summary>
+        IReadOnlyList<MachineAlarmDefinition> CreateDefaultAlarms();
 
         /// <summary>
         /// 按当前设备配置和已连接的控制卡创建工位流程。没有启用任何工位时返回空列表，
