@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Alarms;
@@ -10,10 +13,11 @@ using MotionControl.Framework.Contracts.Motion;
 namespace MotionControl.Equipment.Demo
 {
     /// <summary>按逻辑轴、逻辑 DI 和逻辑 DO 执行一次运动、检测及输出，再等待传感器复位。</summary>
-    public sealed class DemoStationFlow : IStationFlow, IRecoverableStationFlow, IStationCycleStatistics
+    public sealed class DemoStationFlow : IStationFlow, IRecoverableStationFlow, IStationCycleStatistics,
+        IStationInputWaitState, IStationAxisRequirements
     {
-        /// <summary>示例工位传感器等待超时报警在设备报警库中的固定引用代码。</summary>
-        public const string SensorTimeoutAlarmCode = "DEMO_SENSOR_TIMEOUT";
+        /// <summary>示例工位兼容旧配置时使用的默认超时报警代码。</summary>
+        public const string SensorTimeoutAlarmCode = DemoStationSettings.DefaultTimeoutAlarmCode;
 
         /// <summary>未接入设备报警库的直接构造仍使用的默认停机报警。</summary>
         private static readonly MachineAlarmDefinition DefaultSensorTimeoutAlarm = new MachineAlarmDefinition(
@@ -28,8 +32,8 @@ namespace MotionControl.Equipment.Demo
         /// <summary>向 Runtime 报告可复位的工位超时报警。</summary>
         private readonly IMachineAlarmService _alarms;
 
-        /// <summary>本设备配置的传感器超时报警定义。</summary>
-        private readonly MachineAlarmDefinition _sensorTimeoutAlarm;
+        /// <summary>本设备配置的传感器超时报警定义，按设置中的代码顺序保存。</summary>
+        private readonly IReadOnlyList<MachineAlarmDefinition> _sensorTimeoutAlarms;
 
         /// <summary>本工位在当前设备连接周期内使用的参数。</summary>
         private readonly DemoStationSettings _settings;
@@ -69,23 +73,64 @@ namespace MotionControl.Equipment.Demo
             IMachineAlarmService alarms,
             DemoStationSettings settings,
             MachineAlarmDefinition sensorTimeoutAlarm)
+            : this(axis, io, alarms, settings, new[] { sensorTimeoutAlarm })
+        {
+        }
+
+        /// <summary>使用设备报警库中的一条或多条定义创建示例工位流程。</summary>
+        public DemoStationFlow(
+            IAxis axis,
+            ILogicalIo io,
+            IMachineAlarmService alarms,
+            DemoStationSettings settings,
+            IEnumerable<MachineAlarmDefinition> sensorTimeoutAlarms)
         {
             _axis = axis ?? throw new ArgumentNullException(nameof(axis));
             _io = io ?? throw new ArgumentNullException(nameof(io));
             _alarms = alarms ?? throw new ArgumentNullException(nameof(alarms));
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-            _sensorTimeoutAlarm = sensorTimeoutAlarm ?? throw new ArgumentNullException(nameof(sensorTimeoutAlarm));
-            if (!string.Equals(_sensorTimeoutAlarm.Code, SensorTimeoutAlarmCode, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException("示例工位传感器超时报警代码必须是 " + SensorTimeoutAlarmCode + "。");
-            }
             _settings.Validate();
+            if (sensorTimeoutAlarms == null)
+            {
+                throw new ArgumentNullException(nameof(sensorTimeoutAlarms));
+            }
+
+            var definitionsByCode = new Dictionary<string, MachineAlarmDefinition>(StringComparer.OrdinalIgnoreCase);
+            foreach (MachineAlarmDefinition definition in sensorTimeoutAlarms)
+            {
+                if (definition == null)
+                {
+                    throw new InvalidOperationException("示例工位超时报警定义不能包含空项。");
+                }
+                if (definitionsByCode.ContainsKey(definition.Code))
+                {
+                    throw new InvalidOperationException("示例工位超时报警定义重复：" + definition.Code + "。");
+                }
+                definitionsByCode.Add(definition.Code, definition);
+            }
+
+            var orderedDefinitions = new List<MachineAlarmDefinition>();
+            foreach (string code in _settings.TimeoutAlarmCodes)
+            {
+                MachineAlarmDefinition definition;
+                if (!definitionsByCode.TryGetValue(code, out definition))
+                {
+                    throw new InvalidOperationException("示例工位缺少已关联的报警定义：" + code + "。");
+                }
+                orderedDefinitions.Add(definition);
+            }
+            if (definitionsByCode.Count != orderedDefinitions.Count)
+            {
+                throw new InvalidOperationException("传入的示例工位报警定义与配置关联代码不一致。");
+            }
+            _sensorTimeoutAlarms = orderedDefinitions.AsReadOnly();
+
             if (!string.Equals(_axis.Name, _settings.AxisName, StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException("示例工位逻辑轴与配置不一致：" + _settings.AxisName + "。");
             }
 
-            SetStep(10, "轴定位到 " + _settings.TargetPosition);
+            SetStep(10, GetAxisPositionDescription());
         }
 
         /// <summary>返回该设备中的示例工位名称。</summary>
@@ -113,6 +158,24 @@ namespace MotionControl.Equipment.Demo
                     return _step + " - " + _stepInfo;
                 }
             }
+        }
+
+        /// <summary>返回当前等待的逻辑 DI，供操作员从流程步骤直接定位到物理输入。</summary>
+        public string WaitingInputName
+        {
+            get
+            {
+                lock (_stepSync)
+                {
+                    return _step == 20 || _step == 40 ? _settings.SensorInputName : null;
+                }
+            }
+        }
+
+        /// <summary>绝对定位工位启动前必须完成回零的逻辑轴。</summary>
+        public IReadOnlyCollection<string> RequiredHomedAxes
+        {
+            get { return new[] { _settings.AxisName }; }
         }
 
         /// <summary>返回最近一个完整流程步骤边界的编号。</summary>
@@ -149,7 +212,7 @@ namespace MotionControl.Equipment.Demo
             switch (stepNumber)
             {
                 case 10:
-                    SetStep(10, "轴定位到 " + _settings.TargetPosition);
+                    SetStep(10, GetAxisPositionDescription());
                     break;
                 case 20:
                     SetStep(20, "等待传感器 " + _settings.SensorInputName);
@@ -223,7 +286,7 @@ namespace MotionControl.Equipment.Demo
             SetStep(20, "等待传感器 " + _settings.SensorInputName);
         }
 
-        /// <summary>在当前启动周期内等待 DI 有效；超时报警锁存，当前步骤留待复位后重试。</summary>
+        /// <summary>等待 DI 有效；超时报警后响应整机暂停，清除未完成周期计时并保留当前步骤。</summary>
         private async Task WaitForSensorAsync(CancellationToken cancellationToken)
         {
             var elapsed = Stopwatch.StartNew();
@@ -233,6 +296,7 @@ namespace MotionControl.Equipment.Demo
                 if (await _io.ReadInputAsync(_settings.SensorInputName, cancellationToken).ConfigureAwait(false))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    ClearRecoveredNonStopAlarms();
                     SetStep(30, "触发输出 " + _settings.OutputName);
                     return;
                 }
@@ -244,14 +308,102 @@ namespace MotionControl.Equipment.Demo
             string detail = "逻辑轴 '" + _settings.AxisName + "' 定位后，等待逻辑 DI '"
                 + _settings.SensorInputName + "' 超过 " + _settings.SensorTimeoutMilliseconds
                 + " 毫秒；请检查传感器及 IO 映射，复位后可从本步骤重试。";
+            ReportTimeoutAlarms(detail);
+
+            // 停机报警会同步请求整机暂停；把取消传回流程入口以清除未完成周期计时。
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        /// <summary>同时报告所有关联报警；停机报警作为一次性超时事件锁存，非停机报警等待 DI 恢复。</summary>
+        private void ReportTimeoutAlarms(string detail)
+        {
+            var errors = new List<Exception>();
             try
             {
-                _alarms.ReportCondition(_sensorTimeoutAlarm, StationName, true, detail);
+                ReportConditions(_sensorTimeoutAlarms, true, detail);
             }
-            finally
+            catch (Exception error)
             {
-                // 超时是一次性事件；记录继续锁存，条件结束后允许操作员复位重试。
-                _alarms.ReportCondition(_sensorTimeoutAlarm, StationName, false, detail);
+                errors.Add(error);
+            }
+
+            MachineAlarmDefinition[] stopAlarms = _sensorTimeoutAlarms
+                .Where(alarm => alarm.Kind == MachineAlarmKind.StopMachine)
+                .ToArray();
+            if (stopAlarms.Length > 0)
+            {
+                try
+                {
+                    // 停机超时保留为已恢复的锁存记录，允许操作员复位并从当前等待步骤重试。
+                    ReportConditions(stopAlarms, false, detail);
+                }
+                catch (Exception error)
+                {
+                    errors.Add(error);
+                }
+            }
+
+            ThrowAlarmReportingErrors(errors);
+        }
+
+        /// <summary>输入满足等待条件后自动清除仍活动的非停机超时报警。</summary>
+        private void ClearRecoveredNonStopAlarms()
+        {
+            string detail = "逻辑 DI '" + _settings.SensorInputName + "' 已恢复为有效状态。";
+            MachineAlarmDefinition[] nonStopAlarms = _sensorTimeoutAlarms
+                .Where(alarm => alarm.Kind == MachineAlarmKind.NonStop)
+                .ToArray();
+            if (nonStopAlarms.Length > 0)
+            {
+                ReportConditions(nonStopAlarms, false, detail);
+            }
+        }
+
+        /// <summary>优先使用批量服务原子更新；兼容旧报警服务时仍尝试报告整组代码。</summary>
+        private void ReportConditions(
+            IEnumerable<MachineAlarmDefinition> alarms,
+            bool conditionActive,
+            string detail)
+        {
+            var inputContextService = _alarms as IMachineAlarmConditionContextService;
+            if (inputContextService != null)
+            {
+                inputContextService.ReportConditionGroup(alarms, StationName, conditionActive, detail,
+                    "sensor-timeout:" + _settings.SensorInputName, _settings.SensorInputName);
+                return;
+            }
+            IMachineAlarmBatchService batchService = _alarms as IMachineAlarmBatchService;
+            if (batchService != null)
+            {
+                batchService.ReportConditions(alarms, StationName, conditionActive, detail);
+                return;
+            }
+
+            var errors = new List<Exception>();
+            foreach (MachineAlarmDefinition alarm in alarms)
+            {
+                try
+                {
+                    _alarms.ReportCondition(alarm, StationName, conditionActive, detail);
+                }
+                catch (Exception error)
+                {
+                    errors.Add(error);
+                }
+            }
+            ThrowAlarmReportingErrors(errors);
+        }
+
+        /// <summary>确保某条报警通知异常不会阻止报告其余关联报警。</summary>
+        private static void ThrowAlarmReportingErrors(IList<Exception> errors)
+        {
+            if (errors.Count == 1)
+            {
+                throw new InvalidOperationException("更新工位关联报警时发生错误。", errors[0]);
+            }
+            if (errors.Count > 1)
+            {
+                throw new AggregateException("更新多条工位关联报警时发生错误。", errors);
             }
         }
 
@@ -289,7 +441,7 @@ namespace MotionControl.Equipment.Demo
                     _completedCycles++;
                 }
 
-                SetStep(10, "轴定位到 " + _settings.TargetPosition);
+                SetStep(10, GetAxisPositionDescription());
                 return;
             }
 
@@ -314,6 +466,13 @@ namespace MotionControl.Equipment.Demo
                 _step = step;
                 _stepInfo = info;
             }
+        }
+
+        /// <summary>明确显示本工位使用的逻辑轴和目标位置，避免多工位步骤文字相同。</summary>
+        private string GetAxisPositionDescription()
+        {
+            string targetPosition = _settings.TargetPosition.ToString("0.###", CultureInfo.InvariantCulture);
+            return "逻辑轴 " + _settings.AxisName + " 定位到 " + targetPosition;
         }
 
         /// <summary>清理本工位的可复位状态；保留当前工艺步骤供暂停或报警后续跑。</summary>

@@ -1,10 +1,15 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace MotionControl.Equipment.Demo
 {
     /// <summary>显式启用的单工位验证参数；逻辑名称和运动值均由设备配置提供。</summary>
     public sealed class DemoStationSettings
     {
+        /// <summary>旧版设备配置未写报警关联时使用的默认超时报警。</summary>
+        public const string DefaultTimeoutAlarmCode = "DEMO_SENSOR_TIMEOUT";
+
         /// <summary>创建默认关闭的示例工位设置，避免安装后自动获得运动入口。</summary>
         public DemoStationSettings()
         {
@@ -16,6 +21,7 @@ namespace MotionControl.Equipment.Demo
             SensorTimeoutMilliseconds = 3000;
             SensorPollMilliseconds = 50;
             OutputPulseMilliseconds = 1000;
+            TimeoutAlarmCodes = new List<string> { DefaultTimeoutAlarmCode };
         }
 
         /// <summary>配置格式版本，当前只接受 1。</summary>
@@ -57,6 +63,9 @@ namespace MotionControl.Equipment.Demo
         /// <summary>输出保持有效的时间，单位为毫秒；取消时仍请求关闭输出。</summary>
         public int OutputPulseMilliseconds { get; set; }
 
+        /// <summary>等待传感器超时时同时报告的设备报警代码；旧配置默认关联停机超时报警。</summary>
+        public List<string> TimeoutAlarmCodes { get; set; }
+
         /// <summary>在创建工位前检查逻辑名称、运动曲线和等待时间。</summary>
         public void Validate()
         {
@@ -83,6 +92,13 @@ namespace MotionControl.Equipment.Demo
                 || SensorPollMilliseconds > SensorTimeoutMilliseconds || OutputPulseMilliseconds <= 0)
             {
                 throw new InvalidOperationException("示例工位的传感器超时、轮询间隔和输出保持时间必须大于 0，且轮询间隔不得超过超时。");
+            }
+
+            if (TimeoutAlarmCodes == null || TimeoutAlarmCodes.Count == 0 || TimeoutAlarmCodes.Count > 32
+                || TimeoutAlarmCodes.Any(string.IsNullOrWhiteSpace)
+                || TimeoutAlarmCodes.Distinct(StringComparer.OrdinalIgnoreCase).Count() != TimeoutAlarmCodes.Count)
+            {
+                throw new InvalidOperationException("示例工位超时必须关联 1 到 32 条非空且不重复的报警代码。");
             }
         }
 

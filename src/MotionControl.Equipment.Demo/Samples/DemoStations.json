@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "enabled": false,
+  "stations": [
+    {"schemaVersion":1,"enabled":true,"stationName":"上料定位工位","axisName":"Load_X","sensorInputName":"上料到位","outputName":"夹具夹紧","targetPosition":1.0,"speed":1.0,"acceleration":10.0,"deceleration":10.0,"sensorTimeoutMilliseconds":60000,"sensorPollMilliseconds":50,"outputPulseMilliseconds":300,"timeoutAlarmCodes":["DEMO_SENSOR_TIMEOUT"]},
+    {"schemaVersion":1,"enabled":true,"stationName":"压装工位","axisName":"Press_Z","sensorInputName":"压装完成","outputName":"压头动作","targetPosition":1.0,"speed":1.0,"acceleration":10.0,"deceleration":10.0,"sensorTimeoutMilliseconds":60000,"sensorPollMilliseconds":50,"outputPulseMilliseconds":300,"timeoutAlarmCodes":["DEMO_SENSOR_TIMEOUT"]},
+    {"schemaVersion":1,"enabled":true,"stationName":"视觉检测工位","axisName":"Camera_X","sensorInputName":"检测完成","outputName":"相机触发","targetPosition":1.0,"speed":1.0,"acceleration":10.0,"deceleration":10.0,"sensorTimeoutMilliseconds":60000,"sensorPollMilliseconds":50,"outputPulseMilliseconds":300,"timeoutAlarmCodes":["DEMO_SENSOR_TIMEOUT"]},
+    {"schemaVersion":1,"enabled":true,"stationName":"下料工位","axisName":"Unload_X","sensorInputName":"下料到位","outputName":"下料电磁阀","targetPosition":1.0,"speed":1.0,"acceleration":10.0,"deceleration":10.0,"sensorTimeoutMilliseconds":60000,"sensorPollMilliseconds":50,"outputPulseMilliseconds":300,"timeoutAlarmCodes":["DEMO_SENSOR_TIMEOUT"]}
+  ]
+}
