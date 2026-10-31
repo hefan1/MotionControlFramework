@@ -478,12 +478,12 @@ namespace MotionControl.Framework.Runtime.Machine
                         return;
                     }
 
-                    int stationCount = _flowScheduler.StationFlows.Count;
-                    if (stationCount > 0)
+                    // 互斥看的是"谁正在控制设备"，不是"配置了哪种入口"。
+                    // 工位流程定义了但没在跑时允许切换，切换后 StartAsync 会因入口不是工位流程而拒绝。
+                    if (_flowScheduler.IsRunning)
                     {
                         throw new InvalidOperationException(
-                            "设备已配置 " + stationCount + " 个 C# 工位流程，任务执行入口不能同时启动；"
-                            + "请先在任务配置中停用这些工位，再切换到任务执行入口。");
+                            "C# 工位流程正在运行，任务执行入口不能同时启动；请先暂停并确认所有轴已停止。");
                     }
 
                     var currentState = State;

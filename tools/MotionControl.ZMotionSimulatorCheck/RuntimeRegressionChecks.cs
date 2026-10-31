@@ -162,11 +162,22 @@ namespace MotionControl.ZMotionSimulatorCheck
                 stationRuntime.ControlOwner == MachineControlOwner.StationFlows,
                 "配置工位流程后执行入口不是工位流程。");
             await stationRuntime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+
+            // 工位流程定义了但没在运行：允许切到任务入口；切换后工位流程不能再启动设备。
+            await stationRuntime.AcquireTaskEngineControlAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(
+                stationRuntime.ControlOwner == MachineControlOwner.TaskEngine,
+                "空闲设备没有切换成任务执行入口。");
+            await stationRuntime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
             await ExpectExceptionAsync<InvalidOperationException>(
-                () => stationRuntime.AcquireTaskEngineControlAsync(CancellationToken.None)).ConfigureAwait(false);
+                () => stationRuntime.StartAsync(CancellationToken.None)).ConfigureAwait(false);
+            Ensure(
+                stationRuntime.ControlOwner == MachineControlOwner.TaskEngine,
+                "工位流程启动被拒后执行入口被改掉了。");
+            stationRuntime.ReleaseTaskEngineControl();
             Ensure(
                 stationRuntime.ControlOwner == MachineControlOwner.StationFlows,
-                "任务入口被拒绝后执行入口仍被改成了任务定义。");
+                "归还任务入口后没有回到工位流程入口。");
             await stationRuntime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
 
             var taskCard = new FakeMotionCard("OwnerTaskCard", new FakeAxis("X"));

@@ -31,7 +31,7 @@ namespace MotionControl.MachineDevice.Checks
             Run("轴组插补明确拒绝", GroupMoveIsRejected, ref failures);
             Run("IO 读取失败向上抛出", IoFailureIsReported, ref failures);
             Run("变量按目录类型写入", VariablesAreWrittenByType, ref failures);
-            Run("接管被已配置工位流程拒绝", ClaimIsRejectedWhenStationFlowsExist, ref failures);
+            Run("工位流程空闲时接管并在归还后恢复入口", ClaimTakesOverWhenStationFlowsAreIdle, ref failures);
 
             Console.WriteLine("真机任务设备检查：共 7 组，失败 " + failures + "。未连接控制器。");
             return failures == 0 ? 0 : 1;
@@ -56,7 +56,7 @@ namespace MotionControl.MachineDevice.Checks
         private static void MotionCompletesFromFeedback()
         {
             var axis = new FakeAxis("X");
-            MachineTaskDevice device = CreateDevice(axis, new FakeLogicalIo(), out _);
+            MachineTaskDevice device = CreateDevice(axis, new FakeLogicalIo(), out _, out _);
             ITaskAxisMove move = device.BeginMove("X", 10, false, false, Profile());
             Ensure(!device.IsMoveComplete(move, 0.5), "轴还没到位就报告已完成。");
             Ensure(axis.MoveCalls == 1, "BeginMove 没有启动真实轴动作。");
@@ -72,7 +72,7 @@ namespace MotionControl.MachineDevice.Checks
         private static void CancelStopsAxis()
         {
             var axis = new FakeAxis("X") { IgnoresCancellation = true };
-            MachineTaskDevice device = CreateDevice(axis, new FakeLogicalIo(), out _);
+            MachineTaskDevice device = CreateDevice(axis, new FakeLogicalIo(), out _, out _);
             ITaskAxisMove move = device.BeginMove("X", 10, false, false, Profile());
             Ensure(axis.Moving, "动作接受后轴没有进入运动状态。");
 
@@ -86,15 +86,15 @@ namespace MotionControl.MachineDevice.Checks
         private static void MotionPreconditionsAreRejected()
         {
             var disabled = new FakeAxis("X") { ServoEnabled = false };
-            MachineTaskDevice disabledDevice = CreateDevice(disabled, new FakeLogicalIo(), out _);
+            MachineTaskDevice disabledDevice = CreateDevice(disabled, new FakeLogicalIo(), out _, out _);
             ExpectMessage(() => disabledDevice.BeginMove("X", 1, false, false, Profile()), "未使能");
 
             var notHomed = new FakeAxis("X") { Homed = false };
-            MachineTaskDevice notHomedDevice = CreateDevice(notHomed, new FakeLogicalIo(), out _);
+            MachineTaskDevice notHomedDevice = CreateDevice(notHomed, new FakeLogicalIo(), out _, out _);
             ExpectMessage(() => notHomedDevice.BeginMove("X", 1, false, false, Profile()), "尚未回零");
 
             var axis = new FakeAxis("X");
-            MachineTaskDevice device = CreateDevice(axis, new FakeLogicalIo(), out _);
+            MachineTaskDevice device = CreateDevice(axis, new FakeLogicalIo(), out _, out _);
             ExpectMessage(() => device.BeginMove("X", 500, false, false, Profile()), "超出配置行程");
             Ensure(axis.MoveCalls == 0, "前置检查失败后仍向轴发出了运动命令。");
         }
@@ -103,7 +103,7 @@ namespace MotionControl.MachineDevice.Checks
         private static void GroupMoveIsRejected()
         {
             var axis = new FakeAxis("X");
-            MachineTaskDevice device = CreateDevice(axis, new FakeLogicalIo(), out _);
+            MachineTaskDevice device = CreateDevice(axis, new FakeLogicalIo(), out _, out _);
             var targets = new List<TaskAxisGroupTarget>
             {
                 new TaskAxisGroupTarget("X", 5, false, 10)
@@ -116,7 +116,7 @@ namespace MotionControl.MachineDevice.Checks
         {
             var io = new FakeLogicalIo { ReadError = new InvalidOperationException("DI 读取失败：Sensor") };
             var axis = new FakeAxis("X");
-            MachineTaskDevice device = CreateDevice(axis, io, out _);
+            MachineTaskDevice device = CreateDevice(axis, io, out _, out _);
             try
             {
                 device.ReadInput("Sensor");
@@ -134,27 +134,23 @@ namespace MotionControl.MachineDevice.Checks
         private static void VariablesAreWrittenByType()
         {
             var axis = new FakeAxis("X");
-            MachineTaskDevice device = CreateDevice(axis, new FakeLogicalIo(), out DeviceVariableStore store);
+            MachineTaskDevice device = CreateDevice(axis, new FakeLogicalIo(), out DeviceVariableStore store, out _);
             device.WriteVariable("Ready", true);
             Ensure(store.GetBoolean("Ready"), "布尔变量没有写入存储。");
         }
 
-        /// <summary>确认配置了 C# 工位流程的设备拒绝任务入口接管。</summary>
-        private static void ClaimIsRejectedWhenStationFlowsExist()
+        /// <summary>确认工位流程空闲时任务入口可以接管，归还后执行入口回到工位流程。</summary>
+        private static void ClaimTakesOverWhenStationFlowsAreIdle()
         {
             var axis = new FakeAxis("X");
-            MachineTaskDevice device = CreateDevice(axis, new FakeLogicalIo(), out _, withStationFlow: true);
-            try
-            {
-                device.ClaimMachine(null);
-            }
-            catch (InvalidOperationException error)
-            {
-                Ensure(error.Message.Contains("工位流程"), "接管被拒但没有说明工位流程占用。" + error.Message);
-                return;
-            }
+            MachineTaskDevice device = CreateDevice(
+                axis, new FakeLogicalIo(), out _, out MachineRuntime runtime, withStationFlow: true);
 
-            throw new InvalidOperationException("配置了工位流程的设备仍允许任务入口接管。");
+            device.ClaimMachine(null);
+            Ensure(runtime.ControlOwner == MachineControlOwner.TaskEngine, "接管后运行时执行入口不是任务入口。");
+
+            device.ReleaseMachine(null);
+            Ensure(runtime.ControlOwner == MachineControlOwner.StationFlows, "归还后执行入口没有回到工位流程。");
         }
 
         /// <summary>创建一套最小设备环境；可选加入一个工位流程用于验证互斥。</summary>
@@ -162,6 +158,7 @@ namespace MotionControl.MachineDevice.Checks
             FakeAxis axis,
             FakeLogicalIo io,
             out DeviceVariableStore variables,
+            out MachineRuntime runtime,
             bool withStationFlow = false)
         {
             TaskResourceCatalog catalog = new TaskResourceCatalog(
@@ -190,7 +187,7 @@ namespace MotionControl.MachineDevice.Checks
             var flows = withStationFlow
                 ? new IStationFlow[] { new WaitingStationFlow() }
                 : new IStationFlow[0];
-            var runtime = new MachineRuntime(group, flows, new MachineAlarmService(), new FakeSafetyStatus());
+            runtime = new MachineRuntime(group, flows, new MachineAlarmService(), new FakeSafetyStatus());
             return new MachineTaskDevice(catalog, group, io, variables, runtime);
         }
 
