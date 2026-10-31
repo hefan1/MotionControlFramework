@@ -38,10 +38,11 @@ namespace MotionControl.OperatorPages.Checks
             Check("暂停覆盖、任意数量工位和预览来源", OverviewStates, ref failures);
             Check("报警恢复待复位、搜索和稳定选择", AlarmConditions, ref failures);
             Check("报警状态与报警库恢复指导同时可见", AlarmGuidanceChecks.Run, ref failures);
+            Check("IO 监控区分通道范围和当前读取失败", IoMonitorReadFailureChecks.Run, ref failures);
             Check("Host导航和返回原页面", HostNavigation, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("四个工作区内部检查：7 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("四个工作区内部检查：8 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }

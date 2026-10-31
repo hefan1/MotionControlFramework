@@ -79,6 +79,21 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>每列显示的通道行数；页面高度变化时重新计算。</summary>
         private int _rowsPerColumn;
 
+        /// <summary>最近一轮可见通道读取的总数；零表示尚未取得可显示的结果。</summary>
+        private int _visibleReadCount;
+
+        /// <summary>最近一轮可见通道读取失败的数量。</summary>
+        private int _visibleReadFailureCount;
+
+        /// <summary>最近一轮失败中的第一条诊断信息。</summary>
+        private string _visibleReadFirstError;
+
+        /// <summary>最近一轮读取所属标签页；true 为 DI，false 为 DO。</summary>
+        private bool _visibleReadIsInput;
+
+        /// <summary>当前视口的版本；读取期间切换标签或滚动时不能把旧结果称为当前显示结果。</summary>
+        private int _visibleViewportVersion;
+
         /// <summary>创建物理 IO 监控页；此页面只使用现有连接，不创建或重连控制卡。</summary>
         public IoMonitorView(
             bool isCardConnected,
@@ -189,6 +204,9 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 return;
             }
 
+            _visibleViewportVersion++;
+            _visibleReadCount = 0;
+            UpdateMonitorStatusText();
             UpdateDisplayedRangeText();
             await RefreshVisibleChannelsAsync().ConfigureAwait(true);
         }
@@ -208,8 +226,11 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
 
             _rowsPerColumn = rowsPerColumn;
+            _visibleViewportVersion++;
+            _visibleReadCount = 0;
             RebuildChannelColumns(_inputChannels, _inputColumns, _rowsPerColumn);
             RebuildChannelColumns(_outputChannels, _outputColumns, _rowsPerColumn);
+            UpdateMonitorStatusText();
             UpdateDisplayedRangeText();
         }
 
@@ -218,6 +239,9 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         {
             if (e.HorizontalChange != 0)
             {
+                _visibleViewportVersion++;
+                _visibleReadCount = 0;
+                UpdateMonitorStatusText();
                 UpdateDisplayedRangeText();
             }
         }
@@ -351,10 +375,12 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             try
             {
                 bool isInput = MonitorTabs.SelectedIndex == 0;
+                int viewportVersion = _visibleViewportVersion;
                 ListBox channelList = isInput ? DigitalInputList : DigitalOutputList;
                 List<IoMonitorChannel> visibleChannels = GetVisibleChannels(channelList);
                 if (visibleChannels.Count == 0)
                 {
+                    _visibleReadCount = 0;
                     UpdateMonitorStatusText();
                     return;
                 }
@@ -396,6 +422,14 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                         .ConfigureAwait(true);
                 }
 
+                if (viewportVersion == _visibleViewportVersion
+                    && isInput == (MonitorTabs.SelectedIndex == 0))
+                {
+                    _visibleReadIsInput = isInput;
+                    _visibleReadCount = visibleChannels.Count;
+                    _visibleReadFailureCount = visibleChannels.Count(channel => channel.HasReadFailure);
+                    _visibleReadFirstError = visibleChannels.FirstOrDefault(channel => channel.HasReadFailure)?.ReadError;
+                }
                 UpdateMonitorStatusText();
             }
             finally
@@ -693,9 +727,10 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 GetText("IO读取失败"));
         }
 
-        /// <summary>更新顶部连接状态及当前已探测的 DI/DO 路数。</summary>
+        /// <summary>区分已探测通道范围和当前可见通道的实际读取结果。</summary>
         private void UpdateMonitorStatusText()
         {
+            MonitorStatusText.Foreground = new SolidColorBrush(Color.FromRgb(49, 95, 140));
             if (!_isCardConnected)
             {
                 MonitorStatusText.Text = GetText("控制卡未连接");
@@ -724,6 +759,17 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 GetText("IO监控通道数量格式"),
                 _inputChannelCount,
                 _outputChannelCount);
+            if (_visibleReadCount > 0 && _visibleReadFailureCount > 0
+                && _visibleReadIsInput == (MonitorTabs.SelectedIndex == 0))
+            {
+                MonitorStatusText.Foreground = new SolidColorBrush(Color.FromRgb(163, 59, 53));
+                MonitorStatusText.Text += "\n" + string.Format(
+                    GetText("IO监控可见通道读取失败格式"),
+                    _visibleReadIsInput ? "DI" : "DO",
+                    _visibleReadFailureCount,
+                    _visibleReadCount,
+                    _visibleReadFirstError ?? string.Empty);
+            }
         }
 
         /// <summary>读取当前页面语言资源，资源缺失时返回资源键以便定位。</summary>

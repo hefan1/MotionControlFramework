@@ -336,7 +336,8 @@
     <sys:String x:Key="IO监控通道范围未提供">The adapter did not report the readable {0} channel range.</sys:String>
     <sys:String x:Key="IO监控通道范围无效">The adapter reported an invalid readable {0} channel count: {1}.</sys:String>
     <sys:String x:Key="IO监控能力读取失败">Failed to read I/O channel ranges: {0}</sys:String>
-    <sys:String x:Key="IO监控通道数量格式">Readable channels: DI {0}, DO {1}. Scroll horizontally to inspect other channels.</sys:String>
+    <sys:String x:Key="IO监控通道数量格式">Detected channel ranges: DI {0}, DO {1}. Check each channel for its current read status.</sys:String>
+    <sys:String x:Key="IO监控可见通道读取失败格式">Visible {0} channels failed to read: {1}/{2}. Check the controller connection and channel configuration. First error: {3}</sys:String>
     <sys:String x:Key="IO监控当前显示范围格式">Showing {0}{1}–{0}{2}</sys:String>
     <sys:String x:Key="IO监控没有可读通道">No readable physical channels are currently available.</sys:String>
     <sys:String x:Key="IO监控DO切换成功">{0} changed to {1}; readback confirmed.</sys:String>

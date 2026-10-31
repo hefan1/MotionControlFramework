@@ -89,6 +89,12 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
+        /// <summary>最近一次轮询是否读取失败；尚未读取时为 false。</summary>
+        public bool HasReadFailure { get; private set; }
+
+        /// <summary>最近一次读取失败的诊断文字；读取成功后为空。</summary>
+        public string ReadError { get { return _readError; } }
+
         /// <summary>映射通道显示逻辑有效状态，未映射通道显示物理高电平状态。</summary>
         public bool IsOn
         {
@@ -148,6 +154,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         public void SetReadSuccess(bool physicalHigh, string activeText, string inactiveText, string highText, string lowText)
         {
             _readError = null;
+            HasReadFailure = false;
             PhysicalHigh = physicalHigh;
             UpdateStatePresentation(activeText, inactiveText, highText, lowText);
         }
@@ -156,6 +163,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         public void SetReadFailure(string error, string readFailedFormat)
         {
             _readError = error;
+            HasReadFailure = true;
             PhysicalHigh = null;
             IndicatorBrush = new SolidColorBrush(Color.FromRgb(184, 58, 50));
             StateText = string.Format(readFailedFormat, error);
