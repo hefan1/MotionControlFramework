@@ -125,11 +125,11 @@ namespace MotionControl.Host.Wpf.Operation
                     ? string.IsNullOrWhiteSpace(runtimeDetail) ? T("按报警内容检查相关机构和信号，具体处理要求由设备项目提供") : runtimeDetail
                     : catalogGuidance;
 
+            // 报警库的固定指导不能覆盖当前条件状态，否则现场人员可能误以为可以立即复位。
+            AfterText.Text = T(alarm.RequiresReset ? alarm.ConditionActive ? "条件仍有效，先处理原因，不能通过确认或刷新清除" : "条件已恢复，使用顶部复位后再启动，回零按设备规则检查"
+                : "非停机提醒随条件恢复自动消失，不用人工清除");
             if (!string.IsNullOrWhiteSpace(alarm.Definition.RecoveryGuidance))
-                AfterText.Text = alarm.Definition.RecoveryGuidance;
-            else
-                AfterText.Text = T(alarm.RequiresReset ? alarm.ConditionActive ? "条件仍有效，先处理原因，不能通过确认或刷新清除" : "条件已恢复，使用顶部复位后再启动，回零按设备规则检查"
-                    : "非停机提醒随条件恢复自动消失，不用人工清除");
+                AfterText.Text += "\n" + alarm.Definition.RecoveryGuidance;
             DiagnosticText.Text = T("报警代码") + "：" + alarm.Definition.Code + "\n" + T("首次发生") + "：" + row.OccurredAt
                 + "\n" + T("最近变化") + "：" + alarm.LastChangedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
                 + "\n\n" + T("最近整机异常，不一定属于此报警") + "\n" + (_snapshot.LastError ?? T("未提供"));
