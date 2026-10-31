@@ -16,7 +16,7 @@ namespace MotionControl.TaskEngine.Resources
         private readonly List<TaskResourceRequest> _requests = new List<TaskResourceRequest>();
 
         /// <summary>复制设备目录，不使用静态共享队列。</summary>
-        internal TaskResourceCoordinator(IEnumerable<string> names)
+        public TaskResourceCoordinator(IEnumerable<string> names)
         {
             _known = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
         }
@@ -72,7 +72,7 @@ namespace MotionControl.TaskEngine.Resources
         }
 
         /// <summary>读取副本，等待原因根据当前队列重新计算。</summary>
-        internal IReadOnlyList<TaskResourceSnapshot> Read()
+        public IReadOnlyList<TaskResourceSnapshot> Read()
         {
             lock (_sync)
                 return _requests.Select(request => new TaskResourceSnapshot(request,
@@ -99,13 +99,13 @@ namespace MotionControl.TaskEngine.Resources
         }
 
         /// <summary>查找待确认记录；它只保存身份和冻结的退出条件。</summary>
-        internal TaskResourceRequest FindBlocked(string id)
+        public TaskResourceRequest FindBlocked(string id)
         {
             lock (_sync) return _requests.FirstOrDefault(request => request.Id == id && request.State == TaskResourceState.Blocked);
         }
 
         /// <summary>设备完成退出条件复核后移除同一条记录，旧凭证不能释放新申请。</summary>
-        internal bool Recover(TaskResourceRequest request)
+        public bool Recover(TaskResourceRequest request)
         {
             lock (_sync) return request.State == TaskResourceState.Blocked && _requests.Remove(request);
         }

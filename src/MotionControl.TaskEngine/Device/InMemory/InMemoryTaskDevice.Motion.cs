@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using MotionControl.Framework.Contracts.Motion;
 using MotionControl.TaskEngine.Device;
 
 namespace MotionControl.TaskEngine.Device.InMemory
@@ -40,8 +41,8 @@ namespace MotionControl.TaskEngine.Device.InMemory
             }
         }
 
-        /// <summary>接受单轴操作并锁定终点；执行器先排队取得资源，这里再防止重复占用。</summary>
-        public ITaskAxisMove BeginMove(string name, double target, bool relative, bool home)
+        /// <summary>接受单轴操作并锁定终点；内存模型不区分速度曲线，profile 只用于保持端口语义一致。</summary>
+        public ITaskAxisMove BeginMove(string name, double target, bool relative, bool home, AxisMotionProfile profile)
         {
             lock (_sync)
             {

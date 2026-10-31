@@ -503,6 +503,33 @@ namespace MotionControl.Framework.Runtime.Machine
             }
         }
 
+        /// <summary>
+        /// 归还任务执行入口。配置了 C# 工位流程的设备回到工位流程入口，否则回到无入口；
+        /// 运行中的设备拒绝归还，避免任务执行器在轴仍在运动时被替换。
+        /// </summary>
+        public void ReleaseTaskEngineControl()
+        {
+            lock (_controlOwnerLock)
+            {
+                if (_controlOwner != MachineControlOwner.TaskEngine)
+                {
+                    return;
+                }
+
+                var currentState = State;
+                if (currentState == MachineRunState.Running || currentState == MachineRunState.Pausing)
+                {
+                    throw new InvalidOperationException(
+                        "设备正在运行，不能归还任务执行入口；请先停止任务并确认所有轴已停止。当前状态："
+                        + currentState + "。");
+                }
+
+                _controlOwner = _flowScheduler.StationFlows.Count > 0
+                    ? MachineControlOwner.StationFlows
+                    : MachineControlOwner.None;
+            }
+        }
+
         /// <summary>执行可选设备初始化后，从各工位保留的当前步骤启动设备流程。</summary>
         public async Task StartAsync(CancellationToken cancellationToken)
         {

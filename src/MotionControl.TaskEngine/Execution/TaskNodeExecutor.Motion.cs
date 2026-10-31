@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using MotionControl.Framework.Contracts.Motion;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Device;
 using MotionControl.TaskEngine.Resources;
@@ -30,6 +31,12 @@ namespace MotionControl.TaskEngine.Execution
             await _device.ConfirmStoppedAsync(node.AxisName, scope.Token).ConfigureAwait(false);
         }
 
+        /// <summary>把任务定义的速度曲线转换为设备端可用的运动曲线，单位沿用工程单位。</summary>
+        private static AxisMotionProfile ToAxisProfile(TaskMotionProfile profile)
+        {
+            return new AxisMotionProfile(profile.Speed, profile.Acceleration, profile.Deceleration);
+        }
+
         /// <summary>按活动时间推进动作，finally 确保失败与取消均停止轴并释放本次轴占用。</summary>
         private async Task RunMotionAsync(TaskExecutionScope scope, string axisName, MoveAxisNode node, bool home)
         {
@@ -45,7 +52,7 @@ namespace MotionControl.TaskEngine.Execution
                     double target = 0;
                     bool acceptedBefore = !home && scope.AcceptedAxisTargets.TryGetValue(axisName, out target);
                     if (!home && !acceptedBefore) target = TaskRuntimeValues.Number(ReadRequired(node.Target));
-                    operation = _device.BeginMove(axisName, target, !home && !acceptedBefore && node.Mode == TaskMoveMode.Relative, home);
+                    operation = _device.BeginMove(axisName, target, !home && !acceptedBefore && node.Mode == TaskMoveMode.Relative, home, home ? null : ToAxisProfile(node.Profile));
                     if (!home) scope.AcceptedAxisTargets[axisName] = operation.Target;
                     started = _run.ActiveMilliseconds;
                     // 回零只验证流程生命周期；100ms 是内存模型时间，不是硬件回零参数。

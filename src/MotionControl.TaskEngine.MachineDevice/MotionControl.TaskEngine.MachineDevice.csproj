@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>MotionControl.TaskEngine.MachineDevice</AssemblyName>
+    <RootNamespace>MotionControl.TaskEngine.MachineDevice</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MotionControl.Framework.Contracts\MotionControl.Framework.Contracts.csproj" />
+    <ProjectReference Include="..\MotionControl.Framework.Runtime\MotionControl.Framework.Runtime.csproj" />
+    <ProjectReference Include="..\MotionControl.TaskEngine\MotionControl.TaskEngine.csproj" />
+  </ItemGroup>
+</Project>

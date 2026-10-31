@@ -1,6 +1,7 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Contracts.Variables;
 using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Definitions;
@@ -49,10 +50,10 @@ namespace MotionControl.TaskEngine.Device
         bool TryRecoverResources(string requestId, string confirmation, out string reason);
 
         /// <summary>
-        /// 接受一次单轴动作并锁定绝对终点。设备必须在此完成前置条件检查；
+        /// 接受一次单轴动作并锁定绝对终点。profile 给出速度与加减速度，回零时可为空。设备必须在此完成前置条件检查；
         /// 检查不通过时抛出异常，不产生任何动作。
         /// </summary>
-        ITaskAxisMove BeginMove(string name, double target, bool relative, bool home);
+        ITaskAxisMove BeginMove(string name, double target, bool relative, bool home, AxisMotionProfile profile);
 
         /// <summary>按进度推进本次动作；真实设备可以忽略进度，以反馈位置为准。</summary>
         void AdvanceMove(ITaskAxisMove move, double progress);

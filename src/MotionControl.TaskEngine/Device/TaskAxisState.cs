@@ -1,4 +1,4 @@
-namespace MotionControl.TaskEngine.Device
+﻿namespace MotionControl.TaskEngine.Device
 {
     /// <summary>
     /// 任务执行时一根逻辑轴的状态快照。位置和速度使用该轴配置的工程单位；
@@ -22,7 +22,7 @@ namespace MotionControl.TaskEngine.Device
         public int AcceptedCommands { get; }
 
         /// <summary>创建不可变快照，避免外部修改正在执行的动作。</summary>
-        internal TaskAxisState(string name, double position, bool enabled, bool homed,
+        public TaskAxisState(string name, double position, bool enabled, bool homed,
             bool busy, string alarm, int acceptedCommands)
         {
             Name = name;
