@@ -116,6 +116,20 @@ namespace MotionControl.Framework.Wpf.Configuration
                 {
                     errors.Add(string.Format((string)FindResource("轴回零模式无效格式"), axisName));
                 }
+
+                var datumCapability = _cardConnection as IAxisMappingDatumInputChannelCapability;
+                if (datumCapability != null
+                    && datumCapability.SupportsDatumInputChannel(selectedMotionCard)
+                    && axis.DatumInputChannel.HasValue
+                    && axis.DatumInputChannel.Value != -1
+                    && (axis.DatumInputChannel.Value < 0
+                        || axis.DatumInputChannel.Value > datumCapability.MaximumDatumInputChannel))
+                {
+                    errors.Add(string.Format(
+                        (string)FindResource("轴DATUM原点通道无效格式"),
+                        axisName,
+                        datumCapability.MaximumDatumInputChannel));
+                }
             }
 
             return errors;
@@ -138,7 +152,8 @@ namespace MotionControl.Framework.Wpf.Configuration
                 || axis.HomeSearchSpeed.HasValue
                 || axis.HomeCreepSpeed.HasValue
                 || axis.HomeAcceleration.HasValue
-                || axis.HomeDeceleration.HasValue;
+                || axis.HomeDeceleration.HasValue
+                || axis.DatumInputChannel.HasValue;
         }
 
         /// <summary>从下拉框已选项目读取用于保存的中文配置值。</summary>

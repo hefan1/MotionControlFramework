@@ -45,10 +45,19 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>当前选择的急停 DI 逻辑名称。</summary>
         private string _emergencyStopInputName = string.Empty;
 
+        /// <summary>当前选择的现场启动按钮 DI 逻辑名称。</summary>
+        private string _startInputName = string.Empty;
+
+        /// <summary>当前选择的现场停止按钮 DI 逻辑名称；运行时按暂停处理。</summary>
+        private string _pauseInputName = string.Empty;
+
+        /// <summary>当前选择的现场复位按钮 DI 逻辑名称。</summary>
+        private string _resetInputName = string.Empty;
+
         /// <summary>页面文字或配置状态变化时通知 WPF 更新绑定。</summary>
         public event PropertyChangedEventHandler PropertyChanged;
 
-        /// <summary>配置文件保存后通知 Host 更新当前运行时的联锁输入。</summary>
+        /// <summary>配置文件保存后通知 Host 更新当前运行时的急停和整机按钮输入。</summary>
         public event EventHandler ConfigurationSaved;
 
         /// <summary>从 IO 映射文件读取出的 DI 逻辑名称候选项。</summary>
@@ -72,7 +81,28 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
         }
 
-        /// <summary>读取现有安全设置和 DI 候选项，并显示安全配置文件位置。</summary>
+        /// <summary>获取或设置现场启动按钮对应的逻辑 DI 名称。</summary>
+        public string StartInputName
+        {
+            get { return _startInputName; }
+            set { SetInputName(ref _startInputName, value, nameof(StartInputName)); }
+        }
+
+        /// <summary>获取或设置现场停止按钮对应的逻辑 DI 名称。</summary>
+        public string PauseInputName
+        {
+            get { return _pauseInputName; }
+            set { SetInputName(ref _pauseInputName, value, nameof(PauseInputName)); }
+        }
+
+        /// <summary>获取或设置现场复位按钮对应的逻辑 DI 名称。</summary>
+        public string ResetInputName
+        {
+            get { return _resetInputName; }
+            set { SetInputName(ref _resetInputName, value, nameof(ResetInputName)); }
+        }
+
+        /// <summary>读取现有按钮和安全设置、DI 候选项，并显示配置文件位置。</summary>
         public SafetyInterlockConfigurationView(MachineConfigurationStore configurationStore, string machineId)
         {
             if (configurationStore == null)
@@ -94,11 +124,14 @@ namespace MotionControl.Framework.Wpf.Configuration
             LoadConfiguration();
         }
 
-        /// <summary>读取安全联锁设置和当前可选 DI；缺少设置文件表示尚未配置。</summary>
+        /// <summary>读取整机按钮与安全联锁设置；缺少设置文件表示尚未配置。</summary>
         private void LoadConfiguration()
         {
             _configurationCanBeSaved = true;
             EmergencyStopInputName = string.Empty;
+            StartInputName = string.Empty;
+            PauseInputName = string.Empty;
+            ResetInputName = string.Empty;
 
             try
             {
@@ -115,6 +148,9 @@ namespace MotionControl.Framework.Wpf.Configuration
                     }
 
                     EmergencyStopInputName = configuration.EmergencyStopInputName ?? string.Empty;
+                    StartInputName = configuration.StartInputName ?? string.Empty;
+                    PauseInputName = configuration.PauseInputName ?? string.Empty;
+                    ResetInputName = configuration.ResetInputName ?? string.Empty;
                 }
 
                 UpdateLoadedConfigurationStatus("安全联锁读取完成");
@@ -171,15 +207,21 @@ namespace MotionControl.Framework.Wpf.Configuration
             RefreshDigitalInputNames();
         }
 
-        /// <summary>重新读取 IO 映射中的 DI 名称，并保留当前急停输入编辑值。</summary>
+        /// <summary>重新读取 IO 映射中的 DI 名称，并保留当前按钮和急停输入编辑值。</summary>
         public void RefreshDigitalInputNames()
         {
-            string selectedName = EmergencyStopInputName;
+            string emergencyStopName = EmergencyStopInputName;
+            string startName = StartInputName;
+            string pauseName = PauseInputName;
+            string resetName = ResetInputName;
             try
             {
                 _configurationCanBeSaved = true;
                 LoadDigitalInputNames();
-                EmergencyStopInputName = selectedName;
+                EmergencyStopInputName = emergencyStopName;
+                StartInputName = startName;
+                PauseInputName = pauseName;
+                ResetInputName = resetName;
                 UpdateLoadedConfigurationStatus("安全联锁DI刷新完成");
             }
             catch (Exception error)
@@ -189,33 +231,45 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
         }
 
-        /// <summary>提示配置已读取或提示当前急停 DI 已从 IO 映射中移除。</summary>
+        /// <summary>提示配置读取状态，并检查各按钮或急停 DI 是否仍有映射。</summary>
         private void UpdateLoadedConfigurationStatus(string successResourceKey)
         {
-            string inputName = (EmergencyStopInputName ?? string.Empty).Trim();
-            if (inputName.Length > 0 && !_mappedInputNames.Contains(inputName))
+            string[] configuredNames =
             {
-                SetStatus("安全联锁输入未映射", inputName);
-                return;
+                StartInputName,
+                PauseInputName,
+                ResetInputName,
+                EmergencyStopInputName
+            };
+
+            foreach (string configuredName in configuredNames)
+            {
+                string inputName = (configuredName ?? string.Empty).Trim();
+                if (inputName.Length > 0 && !_mappedInputNames.Contains(inputName))
+                {
+                    SetStatus("安全联锁输入未映射", inputName);
+                    return;
+                }
             }
 
-            if (string.IsNullOrWhiteSpace(inputName))
+            if (configuredNames.All(string.IsNullOrWhiteSpace))
             {
                 SetStatus("安全联锁未配置");
                 return;
             }
 
+            string emergencyStopName = (EmergencyStopInputName ?? string.Empty).Trim();
             string inputAddress;
-            if (_mappedInputAddresses.TryGetValue(inputName, out inputAddress))
+            if (emergencyStopName.Length > 0 && _mappedInputAddresses.TryGetValue(emergencyStopName, out inputAddress))
             {
-                SetStatus("安全联锁输入映射有效", inputName, inputAddress);
+                SetStatus("安全联锁输入映射有效", emergencyStopName, inputAddress);
                 return;
             }
 
             SetStatus(successResourceKey);
         }
 
-        /// <summary>校验已选择的急停名称必须来自当前 DI 映射。</summary>
+        /// <summary>校验已选择的按钮和急停名称必须来自当前 DI 映射且互不重复。</summary>
         private bool TryValidateConfiguration(out string errorMessage)
         {
             if (!_configurationCanBeSaved)
@@ -224,10 +278,26 @@ namespace MotionControl.Framework.Wpf.Configuration
                 return false;
             }
 
-            string inputName = (EmergencyStopInputName ?? string.Empty).Trim();
-            if (inputName.Length > 0 && !_mappedInputNames.Contains(inputName))
+            var selectedNames = new[]
             {
-                errorMessage = (string)FindResource("安全联锁输入必须来自DI映射");
+                StartInputName,
+                PauseInputName,
+                ResetInputName,
+                EmergencyStopInputName
+            }.Select(name => (name ?? string.Empty).Trim()).Where(name => name.Length > 0).ToList();
+
+            foreach (string inputName in selectedNames)
+            {
+                if (!_mappedInputNames.Contains(inputName))
+                {
+                    errorMessage = (string)FindResource("安全联锁输入必须来自DI映射");
+                    return false;
+                }
+            }
+
+            if (selectedNames.Distinct(StringComparer.OrdinalIgnoreCase).Count() != selectedNames.Count)
+            {
+                errorMessage = (string)FindResource("设备按钮DI不能重复");
                 return false;
             }
 
@@ -235,7 +305,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             return true;
         }
 
-        /// <summary>验证后单独保存安全联锁配置，不重连控制卡或改写 IO 映射。</summary>
+        /// <summary>验证后保存设备按钮和安全联锁配置，不重连控制卡或改写 IO 映射。</summary>
         private void SaveConfigurationButton_Click(object sender, RoutedEventArgs e)
         {
             string errorMessage;
@@ -247,7 +317,10 @@ namespace MotionControl.Framework.Wpf.Configuration
 
             var configuration = new SafetyInterlockConfigurationDocument
             {
-                EmergencyStopInputName = (EmergencyStopInputName ?? string.Empty).Trim()
+                EmergencyStopInputName = (EmergencyStopInputName ?? string.Empty).Trim(),
+                StartInputName = (StartInputName ?? string.Empty).Trim(),
+                PauseInputName = (PauseInputName ?? string.Empty).Trim(),
+                ResetInputName = (ResetInputName ?? string.Empty).Trim()
             };
 
             try
@@ -268,7 +341,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
         }
 
-        /// <summary>放弃当前编辑并从本地配置文件重新加载安全设置与 DI 名称。</summary>
+        /// <summary>放弃当前编辑并从本地配置文件重新加载按钮、安全设置与 DI 名称。</summary>
         private void CancelChangesButton_Click(object sender, RoutedEventArgs e)
         {
             LoadConfiguration();
@@ -326,6 +399,20 @@ namespace MotionControl.Framework.Wpf.Configuration
             {
                 handler(this, new PropertyChangedEventArgs(propertyName));
             }
+        }
+
+        /// <summary>更新一个 DI 名称属性并在变化时刷新页面绑定和配置状态。</summary>
+        private void SetInputName(ref string currentValue, string newValue, string propertyName)
+        {
+            string normalizedValue = newValue ?? string.Empty;
+            if (string.Equals(currentValue, normalizedValue, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            currentValue = normalizedValue;
+            OnPropertyChanged(propertyName);
+            UpdateLoadedConfigurationStatus("安全联锁读取完成");
         }
     }
 }

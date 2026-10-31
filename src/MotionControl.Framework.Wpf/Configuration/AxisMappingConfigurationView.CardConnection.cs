@@ -12,6 +12,12 @@ namespace MotionControl.Framework.Wpf.Configuration
     /// <summary>负责轴映射页面的控制卡连接、状态刷新和轴参数读回。</summary>
     public partial class AxisMappingConfigurationView
     {
+        /// <summary>供 Host 首页显示当前控制卡连接结果，包含失败时的具体原因。</summary>
+        public string CardConnectionStatusMessage
+        {
+            get { return CardConnectionStatusText == null ? string.Empty : CardConnectionStatusText.Text; }
+        }
+
         /// <summary>根据物理轴号选择当前编辑行。</summary>
         private async void AxisMappingGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -275,6 +281,20 @@ namespace MotionControl.Framework.Wpf.Configuration
                     value => axis.HomeDeceleration = value,
                     (string)FindResource("回零减速度"),
                     invalidValues);
+
+                var datumCapability = _cardConnection as IAxisMappingDatumInputChannelCapability;
+                if (datumCapability != null
+                    && datumCapability.SupportsDatumInputChannel(GetSelectedMotionCardOption()))
+                {
+                    if (parameters.DatumInputChannel.HasValue)
+                    {
+                        axis.DatumInputChannel = parameters.DatumInputChannel.Value;
+                    }
+                    else
+                    {
+                        invalidValues.Add((string)FindResource("DATUM原点输入通道"));
+                    }
+                }
 
                 if (invalidValues.Count == 0)
                 {

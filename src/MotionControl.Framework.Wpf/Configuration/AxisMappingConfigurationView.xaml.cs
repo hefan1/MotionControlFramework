@@ -72,11 +72,33 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>由 Host 注入整机断开流程；检查工位、手动动作和轴状态后才允许释放卡连接。</summary>
         public Func<CancellationToken, Task> PrepareCardDisconnectAsync { get; set; }
 
+        /// <summary>Host 提供在线配置保护；重连型更改由 Host 明确决定是否允许。</summary>
+        public Func<Func<Task>, bool, CancellationToken, Task> ApplyConnectedConfigurationAsync { get; set; }
+
+        /// <summary>正式 Host 不在旧 Runtime 仍持卡时重建连接；此类轴映射需先断卡。</summary>
+        public bool RequiresDisconnectedForAxisReconnect { get; set; }
+
         /// <summary>通知 Host 当前卡实例已在线应用轴映射，手动页需要刷新显示定义。</summary>
         public event EventHandler AxisMappingApplied;
 
         /// <summary>当前轴数量范围内显示的物理轴通道。</summary>
         public ObservableCollection<AxisMappingEntry> VisibleAxes { get; private set; }
+
+        /// <summary>当前轴数量范围内已填写设备轴名称的通道数量。</summary>
+        public int ConfiguredAxisCount
+        {
+            get
+            {
+                return _cardConfiguration == null ? 0
+                    : _allAxes.Count(axis => axis.AxisNumber < _cardConfiguration.AxisCount && axis.IsConfigured);
+            }
+        }
+
+        /// <summary>当前控制卡配置的物理轴通道总数。</summary>
+        public int ConfiguredAxisTotal
+        {
+            get { return _cardConfiguration == null ? 0 : _cardConfiguration.AxisCount; }
+        }
 
         /// <summary>当前正在右侧编辑的物理轴配置。</summary>
         public AxisMappingEntry SelectedAxis
@@ -286,6 +308,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             SelectComboBoxItem(EngineeringUnitComboBox, axis.EngineeringUnit);
             UpdateSoftLimitEnabledEditor(axis);
             UpdateHomeModeEditor(axis);
+            UpdateDatumInputChannelEditor(axis);
         }
 
         /// <summary>从任务步骤定位到指定逻辑轴，只选择并滚动页面，不读取或修改控制卡。</summary>
@@ -337,6 +360,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
 
             UpdateHomeModeEditor(SelectedAxis);
+            UpdateDatumInputChannelEditor(SelectedAxis);
             UpdateCardConnectionUiState();
         }
 
@@ -365,6 +389,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
 
             UpdateHomeModeEditor(SelectedAxis);
+            UpdateDatumInputChannelEditor(SelectedAxis);
             UpdateCardConnectionUiState();
         }
 
@@ -520,6 +545,11 @@ namespace MotionControl.Framework.Wpf.Configuration
                 && onlineApply != null
                 && onlineApply.CanApplyAxisMappingsWithoutReconnect(_cardConfiguration, configurationToSave);
             bool requiresReconnect = applyToConnectedCard && !canApplyWithoutReconnect;
+            if (requiresReconnect && RequiresDisconnectedForAxisReconnect)
+            {
+                SetConfigurationStatus("轴映射需先断卡");
+                return;
+            }
             if (requiresReconnect
                 && MessageBox.Show(
                     (string)FindResource("保存并应用轴映射确认内容"),
@@ -539,40 +569,47 @@ namespace MotionControl.Framework.Wpf.Configuration
             UpdateCardConnectionUiState();
             try
             {
-                _configurationStore.SaveJson(_machineId, MotionCardsFilePath, _cardConfiguration);
-                _configurationStore.SaveJson(_machineId, AxisParametersFilePath, _configuration);
-                configurationSaved = true;
-
-                if (applyToConnectedCard)
+                async Task SaveAndApplyAsync()
                 {
-                    if (canApplyWithoutReconnect)
+                    _configurationStore.SaveJson(_machineId, MotionCardsFilePath, _cardConfiguration);
+                    _configurationStore.SaveJson(_machineId, AxisParametersFilePath, _configuration);
+                    configurationSaved = true;
+
+                    if (applyToConnectedCard)
                     {
-                        SetConfigurationStatus("正在在线应用轴映射");
-                        axisMappingChanged = await onlineApply.ApplyAxisMappingsWithoutReconnectAsync(
-                            _cardConfiguration,
-                            configurationToSave,
-                            CancellationToken.None);
+                        if (canApplyWithoutReconnect)
+                        {
+                            SetConfigurationStatus("正在在线应用轴映射");
+                            axisMappingChanged = await onlineApply.ApplyAxisMappingsWithoutReconnectAsync(
+                                _cardConfiguration,
+                                configurationToSave,
+                                CancellationToken.None);
+                        }
+                        else
+                        {
+                            SetCardConnectionStatus("正在连接控制卡");
+                            await _cardConnection.ReconnectAsync(_cardConfiguration, CancellationToken.None);
+                            connectionChanged = true;
+                            SetCardConnectionStatus(
+                                "控制卡连接成功格式",
+                                _cardConnection.ActualControllerType,
+                                _cardConnection.ActualControllerVersion);
+                        }
+
+                        await ReadSelectedAxisParametersAsync(false);
+                        SetConfigurationStatus(canApplyWithoutReconnect
+                            ? "轴映射在线应用成功"
+                            : "轴映射保存成功");
                     }
                     else
                     {
-                        SetCardConnectionStatus("正在连接控制卡");
-                        await _cardConnection.ReconnectAsync(_cardConfiguration, CancellationToken.None);
-                        connectionChanged = true;
-                        SetCardConnectionStatus(
-                            "控制卡连接成功格式",
-                            _cardConnection.ActualControllerType,
-                            _cardConnection.ActualControllerVersion);
+                        SetConfigurationStatus("轴映射保存待下发");
                     }
-
-                    await ReadSelectedAxisParametersAsync(false);
-                    SetConfigurationStatus(canApplyWithoutReconnect
-                        ? "轴映射在线应用成功"
-                        : "轴映射保存成功");
                 }
+                if (applyToConnectedCard && ApplyConnectedConfigurationAsync != null)
+                    await ApplyConnectedConfigurationAsync(SaveAndApplyAsync, requiresReconnect, CancellationToken.None);
                 else
-                {
-                    SetConfigurationStatus("轴映射保存待下发");
-                }
+                    await SaveAndApplyAsync();
             }
             catch (Exception error)
             {

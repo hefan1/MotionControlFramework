@@ -307,6 +307,18 @@ namespace MotionControl.Framework.Wpf.Configuration
             }
         }
 
+        /// <summary>仅在当前卡型声明支持 DATUM 输入映射时显示该可选能力字段。</summary>
+        private void UpdateDatumInputChannelEditor(AxisMappingEntry axis)
+        {
+            var capability = _cardConnection as IAxisMappingDatumInputChannelCapability;
+            bool isSupported = axis != null
+                && capability != null
+                && capability.SupportsDatumInputChannel(GetSelectedMotionCardOption());
+            Visibility visibility = isSupported ? Visibility.Visible : Visibility.Collapsed;
+            DatumInputChannelLabelTextBlock.Visibility = visibility;
+            DatumInputChannelTextBox.Visibility = visibility;
+        }
+
         /// <summary>组合控制卡原始模式编号和当前语言的简明名称；缺少资源时保留原编号。</summary>
         private string GetHomeModeDisplayText(AxisHomeModeOption homeMode)
         {

@@ -116,15 +116,27 @@
         </Style>
         <DataTemplate x:Key="DigitalInputChannelTemplate">
             <Border Height="30"
-                    Background="#F7F9FC"
-                    BorderBrush="#E6EBF1"
                     BorderThickness="0,0,0,1"
                     ToolTip="{Binding StateText}">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="#F7F9FC" />
+                        <Setter Property="BorderBrush" Value="#E6EBF1" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsNavigationTarget}" Value="True">
+                                <Setter Property="Background" Value="#FFF5CC" />
+                                <Setter Property="BorderBrush" Value="#D6A52E" />
+                                <Setter Property="BorderThickness" Value="1" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
                 <Grid Margin="5,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="24" />
                         <ColumnDefinition Width="46" />
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="56" />
                     </Grid.ColumnDefinitions>
                     <Ellipse Grid.Column="0"
                              Width="14"
@@ -144,6 +156,15 @@
                                VerticalAlignment="Center"
                                TextTrimming="CharacterEllipsis"
                                ToolTip="{Binding DisplayName}" />
+                    <TextBlock Grid.Column="3"
+                               Text="{Binding StateText}"
+                               Foreground="{Binding IndicatorBrush}"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               TextAlignment="Right"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip="{Binding StateText}" />
                 </Grid>
             </Border>
         </DataTemplate>
@@ -159,6 +180,7 @@
                         <ColumnDefinition Width="24" />
                         <ColumnDefinition Width="46" />
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="56" />
                     </Grid.ColumnDefinitions>
                     <Button Grid.Column="0"
                             Tag="{Binding}"
@@ -186,6 +208,15 @@
                                VerticalAlignment="Center"
                                TextTrimming="CharacterEllipsis"
                                ToolTip="{Binding DisplayName}" />
+                    <TextBlock Grid.Column="3"
+                               Text="{Binding StateText}"
+                               Foreground="{Binding IndicatorBrush}"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               TextAlignment="Right"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip="{Binding StateText}" />
                 </Grid>
             </Border>
         </DataTemplate>

@@ -26,19 +26,67 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <StackPanel Margin="0,0,0,12">
-            <TextBlock Text="{DynamicResource 安全联锁标题}" FontSize="17" FontWeight="SemiBold"
+            <TextBlock Text="{DynamicResource 设备控制与安全联锁标题}" FontSize="17" FontWeight="SemiBold"
                        Foreground="#183B63" />
-            <TextBlock Text="{DynamicResource 安全联锁说明}" Margin="0,4,0,0" FontSize="11"
+            <TextBlock Text="{DynamicResource 设备控制与安全联锁说明}" Margin="0,4,0,0" FontSize="11"
                        Foreground="#667A91" TextWrapping="Wrap" />
         </StackPanel>
 
         <Border Grid.Row="1" Padding="14" Background="#F7F9FC"
                 BorderBrush="#D8E2EE" BorderThickness="1" CornerRadius="6">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock Text="{DynamicResource 整机操作按钮输入}" FontWeight="SemiBold"
+                           Foreground="#26384D" Margin="0,0,0,8" />
+                <Grid Grid.Row="1" Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{DynamicResource 现场启动按钮}" VerticalAlignment="Center" Foreground="#40536A" />
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding DigitalInputNames}"
+                              Text="{Binding StartInputName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              IsEditable="True" IsTextSearchEnabled="True"
+                              Style="{StaticResource SafetyInterlockComboBox}" />
+                </Grid>
+                <Grid Grid.Row="2" Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{DynamicResource 现场停止按钮}" VerticalAlignment="Center" Foreground="#40536A" />
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding DigitalInputNames}"
+                              Text="{Binding PauseInputName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              IsEditable="True" IsTextSearchEnabled="True"
+                              Style="{StaticResource SafetyInterlockComboBox}" />
+                </Grid>
+                <Grid Grid.Row="3">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{DynamicResource 现场复位按钮}" VerticalAlignment="Center" Foreground="#40536A" />
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding DigitalInputNames}"
+                              Text="{Binding ResetInputName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              IsEditable="True" IsTextSearchEnabled="True"
+                              Style="{StaticResource SafetyInterlockComboBox}" />
+                </Grid>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="2" Margin="0,10,0,0" Padding="12"
+                Background="#F7F9FC" BorderBrush="#D8E2EE" BorderThickness="1" CornerRadius="6">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="150" />
@@ -47,25 +95,23 @@
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="{DynamicResource 安全联锁输入名称}" VerticalAlignment="Center"
                            Foreground="#40536A" />
-                <ComboBox Grid.Column="1" x:Name="EmergencyStopInputComboBox"
-                          ItemsSource="{Binding DigitalInputNames}"
+                <ComboBox Grid.Column="1" ItemsSource="{Binding DigitalInputNames}"
                           Text="{Binding EmergencyStopInputName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                           IsEditable="True" IsTextSearchEnabled="True"
                           Style="{StaticResource SafetyInterlockComboBox}" />
                 <Button Grid.Column="2" Content="{DynamicResource 安全联锁刷新DI}"
-                        Click="RefreshInputNamesButton_Click"
-                        Style="{StaticResource SafetyInterlockButton}" />
+                        Click="RefreshInputNamesButton_Click" Style="{StaticResource SafetyInterlockButton}" />
             </Grid>
         </Border>
 
-        <Border Grid.Row="2" Margin="0,12,0,12" Padding="12"
+        <Border Grid.Row="3" Margin="0,10,0,10" Padding="12"
                 Background="#FFF8E8" BorderBrush="#F0D59A" BorderThickness="1" CornerRadius="5"
                 VerticalAlignment="Top">
-            <TextBlock Text="{DynamicResource 安全联锁注意事项}" FontSize="12"
+            <TextBlock Text="{DynamicResource 设备控制按钮注意事项}" FontSize="12"
                        Foreground="#765515" TextWrapping="Wrap" />
         </Border>
 
-        <Grid Grid.Row="3">
+        <Grid Grid.Row="4">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />

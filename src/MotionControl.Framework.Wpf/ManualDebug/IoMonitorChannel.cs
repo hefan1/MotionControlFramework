@@ -30,6 +30,9 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>输出写入期间暂存的读回状态。</summary>
         private bool _isWriting;
 
+        /// <summary>该 DI 是否为从当前工位流程定向跳转的目标信号。</summary>
+        private bool _isNavigationTarget;
+
         /// <summary>当前页面是否允许操作输出通道。</summary>
         private bool _outputControlAvailable;
 
@@ -116,6 +119,13 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>当前是否可以点击 DO 状态灯切换输出。</summary>
         public bool CanToggleOutput { get; private set; }
 
+        /// <summary>当前 DI 是否被流程状态页高亮定位。</summary>
+        public bool IsNavigationTarget
+        {
+            get { return _isNavigationTarget; }
+            private set { SetProperty(ref _isNavigationTarget, value, nameof(IsNavigationTarget)); }
+        }
+
         /// <summary>列表绑定属性变化时通知 WPF 刷新对应行。</summary>
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -181,6 +191,12 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         {
             _outputControlAvailable = available;
             UpdateToggleAvailability();
+        }
+
+        /// <summary>更新流程导航高亮，不改变 IO 状态或输出值。</summary>
+        public void SetNavigationTarget(bool isTarget)
+        {
+            IsNavigationTarget = isTarget;
         }
 
         /// <summary>按映射有效电平或未映射物理电平更新状态文字和指示灯颜色。</summary>

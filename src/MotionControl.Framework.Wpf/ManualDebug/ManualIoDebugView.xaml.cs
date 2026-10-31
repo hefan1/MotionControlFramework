@@ -16,6 +16,9 @@ namespace MotionControl.Framework.Wpf.ManualDebug
     /// <summary>集中显示已映射 DI 状态，并提供受控的逻辑 DO 手动操作。</summary>
     public partial class ManualIoDebugView : UserControl
     {
+        /// <summary>请求打开 IO 映射配置；仅导航，不会写入 IO 或保存配置。</summary>
+        public event EventHandler IoMappingRequested;
+
         /// <summary>提供设备连接、自动运行和急停报警状态。</summary>
         private readonly MachineRuntime _machineRuntime;
 
@@ -83,11 +86,20 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             BuildOutputRows();
             NoInputsText.Visibility = _inputNames.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             NoOutputsText.Visibility = _outputNames.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            NoMappedIoPanel.Visibility = _inputNames.Count == 0 || _outputNames.Count == 0
+                ? Visibility.Visible
+                : Visibility.Collapsed;
 
             _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
             _refreshTimer.Tick += RefreshTimer_Tick;
             Loaded += ManualIoDebugView_Loaded;
             Unloaded += ManualIoDebugView_Unloaded;
+        }
+
+        /// <summary>从 IO 手动空状态直接进入 IO 映射维护页。</summary>
+        private void OpenIoMappingButton_Click(object sender, RoutedEventArgs e)
+        {
+            IoMappingRequested?.Invoke(this, EventArgs.Empty);
         }
 
         /// <summary>按已映射名称建立只读 DI 状态行。</summary>

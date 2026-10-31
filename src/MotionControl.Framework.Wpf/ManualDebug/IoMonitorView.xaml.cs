@@ -73,6 +73,9 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>缓存最近一次通道范围读取错误，用于页面状态栏说明。</summary>
         private string _capabilityError;
 
+        /// <summary>页面尚未完成通道加载时暂存的流程目标 DI。</summary>
+        private string _pendingInputFocusName;
+
         /// <summary>当前适配器报告的 DI 可读通道数。</summary>
         private int _inputChannelCount;
 
@@ -134,6 +137,22 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             if (MonitorTabs.SelectedIndex != 0)
             {
                 MonitorTabs.SelectedIndex = 0;
+            }
+        }
+
+        /// <summary>选择 DI 页，滚动到指定逻辑输入并高亮，不读取或写入任何输出。</summary>
+        public void FocusDigitalInputByName(string logicalName)
+        {
+            if (string.IsNullOrWhiteSpace(logicalName))
+            {
+                return;
+            }
+
+            _pendingInputFocusName = logicalName.Trim();
+            SelectDigitalInputs();
+            if (_channelsInitialized)
+            {
+                TryFocusPendingDigitalInput();
             }
         }
 
@@ -298,7 +317,11 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 _capabilityError = null;
                 RefreshLocalizedText();
                 await Dispatcher.InvokeAsync(
-                    UpdateDisplayedRangeText,
+                    () =>
+                    {
+                        UpdateDisplayedRangeText();
+                        TryFocusPendingDigitalInput();
+                    },
                     DispatcherPriority.Loaded);
             }
             catch (Exception error)
@@ -590,6 +613,46 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 addressPrefix,
                 firstChannel,
                 lastChannel);
+        }
+
+        /// <summary>定位流程提供的逻辑 DI 名称；未映射时在页面提示操作员检查映射配置。</summary>
+        private void TryFocusPendingDigitalInput()
+        {
+            if (string.IsNullOrWhiteSpace(_pendingInputFocusName) || !_channelsInitialized)
+            {
+                return;
+            }
+
+            IoMonitorChannel target = _inputChannels.FirstOrDefault(channel =>
+                string.Equals(channel.DisplayName, _pendingInputFocusName, StringComparison.OrdinalIgnoreCase));
+            foreach (IoMonitorChannel channel in _inputChannels)
+            {
+                channel.SetNavigationTarget(ReferenceEquals(channel, target));
+            }
+
+            if (target == null)
+            {
+                OperationMessageText.Foreground = new SolidColorBrush(Color.FromRgb(163, 59, 53));
+                OperationMessageText.Text = string.Format(
+                    GetText("IO监控流程输入未找到"),
+                    _pendingInputFocusName);
+                return;
+            }
+
+            int columnIndex = _rowsPerColumn <= 0 ? -1 : target.Channel / _rowsPerColumn;
+            if (columnIndex < 0 || columnIndex >= _inputColumns.Count)
+            {
+                return;
+            }
+
+            DigitalInputList.ScrollIntoView(_inputColumns[columnIndex]);
+            DigitalInputList.UpdateLayout();
+            UpdateDisplayedRangeText();
+            OperationMessageText.Foreground = new SolidColorBrush(Color.FromRgb(39, 118, 77));
+            OperationMessageText.Text = string.Format(
+                GetText("IO监控流程输入已定位"),
+                _pendingInputFocusName,
+                "DI" + target.Channel.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
 
         /// <summary>把原始物理电平转换为映射有效状态或未映射的高低电平显示。</summary>

@@ -18,7 +18,8 @@ namespace MotionControl.Host.Wpf
         IMotionCardHostConnection,
         IMotionCardIoCapabilityProvider,
         IIoMappingCardConnection,
-        IAxisMappingCardOnlineApply
+        IAxisMappingCardOnlineApply,
+        IAxisMappingDatumInputChannelCapability
     {
         /// <summary>运动卡选择配置在单机配置目录中的相对路径。</summary>
         private const string MotionCardsFilePath = "HardwareConfig/MotionCards.json";
@@ -524,7 +525,8 @@ namespace MotionControl.Host.Wpf
                         HomeSearchSpeed = axis.HomeSearchSpeed.GetValueOrDefault(),
                         HomeCreepSpeed = axis.HomeCreepSpeed.GetValueOrDefault(),
                         HomeAcceleration = axis.HomeAcceleration.GetValueOrDefault(),
-                        HomeDeceleration = axis.HomeDeceleration.GetValueOrDefault()
+                        HomeDeceleration = axis.HomeDeceleration.GetValueOrDefault(),
+                        DatumInputChannel = axis.DatumInputChannel
                     });
                     result.AxisHardwareDefinitions.Add(new AxisHardwareDefinition
                     {
@@ -723,8 +725,22 @@ namespace MotionControl.Host.Wpf
                 Speed = currentParameters.Speed,
                 CreepSpeed = currentParameters.CreepSpeed,
                 Acceleration = currentParameters.Acceleration,
-                Deceleration = currentParameters.Deceleration
+                Deceleration = currentParameters.Deceleration,
+                DatumInputChannel = currentParameters.DatumInputChannel
             };
+        }
+
+        /// <summary>正运动卡支持为每根物理轴配置独立的 DATUM_IN 原点输入通道。</summary>
+        public bool SupportsDatumInputChannel(MotionCardSelectionOption motionCard)
+        {
+            return motionCard != null
+                && string.Equals(motionCard.AdapterType, ZMotionAdapterType, StringComparison.Ordinal);
+        }
+
+        /// <summary>返回正运动控制器映射页可配置的最大输入通道号。</summary>
+        public int MaximumDatumInputChannel
+        {
+            get { return 4095; }
         }
 
         /// <summary>按正运动适配器清单返回 DATUM 编号及中英文名称、动作说明的资源键。</summary>

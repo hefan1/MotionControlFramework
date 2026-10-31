@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using MotionControl.Framework.Contracts.Configuration;
@@ -45,6 +46,9 @@ namespace MotionControl.Framework.Wpf.Configuration
 
         /// <summary>IO 映射已热更新后通知 Host 刷新相关手动调试和安全配置页面。</summary>
         public event EventHandler IoMappingApplied;
+
+        /// <summary>Host 注入在线配置保护，确保自动流程或手动动作期间不替换 IO 映射。</summary>
+        public Func<Func<Task>, bool, CancellationToken, Task> ApplyConnectedConfigurationAsync { get; set; }
 
         /// <summary>保存检查通过后可以覆盖当前 IO 映射文件。</summary>
         private bool _configurationCanBeSaved = true;

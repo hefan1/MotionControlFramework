@@ -19,6 +19,9 @@ namespace MotionControl.Framework.Wpf.ManualDebug
     /// <summary>按已映射逻辑轴生成轴手动卡片，不在轴调试页混放 DI/DO 控件。</summary>
     public partial class ManualMotionDebugView : UserControl
     {
+        /// <summary>请求打开轴映射配置；仅导航，不会修改配置或发出运动命令。</summary>
+        public event EventHandler AxisMappingRequested;
+
         /// <summary>人工示教位置配置在单台设备目录中的相对路径。</summary>
         private const string ManualAxisPositionsFilePath = "Parameters/ManualAxisPositions.json";
 
@@ -339,7 +342,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 .ThenBy(axis => _axisConfigurationByName[axis.Name].AxisNumber)
                 .ToList();
 
-            NoMappedAxesText.Visibility = configuredAxes.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            NoMappedAxesPanel.Visibility = configuredAxes.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             foreach (IAxis axis in configuredAxes)
             {
                 AxisHardwareDefinition axisConfiguration = _axisConfigurationByName[axis.Name];
@@ -362,6 +365,12 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 _axisControls.Add(axisControl);
                 AxisCardsPanel.Children.Add(axisControl);
             }
+        }
+
+        /// <summary>从轴手动空状态直接进入轴映射维护页。</summary>
+        private void OpenAxisMappingButton_Click(object sender, RoutedEventArgs e)
+        {
+            AxisMappingRequested?.Invoke(this, EventArgs.Empty);
         }
 
         /// <summary>从任务步骤滚动到指定轴的手动卡片，不执行伺服、回零或移动指令。</summary>

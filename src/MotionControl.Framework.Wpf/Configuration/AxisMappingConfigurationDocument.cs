@@ -74,6 +74,9 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>保存回零减速度；未配置时为空。</summary>
         private double? _homeDeceleration;
 
+        /// <summary>保存控制卡 DATUM 原点输入物理通道；空值表示不修改现有控制器设置。</summary>
+        private int? _datumInputChannel;
+
         /// <summary>通知页面中绑定的轴参数已经变化。</summary>
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -213,6 +216,13 @@ namespace MotionControl.Framework.Wpf.Configuration
         {
             get { return _homeDeceleration; }
             set { SetValue(ref _homeDeceleration, value, "HomeDeceleration"); }
+        }
+
+        /// <summary>控制卡的 DATUM 原点输入物理通道；-1 表示清除设置，空值表示不写入控制器。</summary>
+        public int? DatumInputChannel
+        {
+            get { return _datumInputChannel; }
+            set { SetValue(ref _datumInputChannel, value, "DatumInputChannel"); }
         }
 
         /// <summary>判断当前物理通道是否填写了逻辑轴名称；不代表参数校验通过或已经保存。</summary>

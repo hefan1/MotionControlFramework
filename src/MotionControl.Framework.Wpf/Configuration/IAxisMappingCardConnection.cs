@@ -37,6 +37,16 @@ namespace MotionControl.Framework.Wpf.Configuration
             int axisNumber);
     }
 
+    /// <summary>声明控制卡映射页可编辑并校验 DATUM 原点输入物理通道的可选能力。</summary>
+    public interface IAxisMappingDatumInputChannelCapability
+    {
+        /// <summary>判断当前卡型是否支持逐轴配置 DATUM 原点输入通道。</summary>
+        bool SupportsDatumInputChannel(MotionCardSelectionOption motionCard);
+
+        /// <summary>返回该卡型可配置的最大 DATUM 输入物理通道号。</summary>
+        int MaximumDatumInputChannel { get; }
+    }
+
     /// <summary>可在不重新连接控制卡的情况下应用轴映射的适配器能力。</summary>
     public interface IAxisMappingCardOnlineApply
     {
@@ -90,5 +100,8 @@ namespace MotionControl.Framework.Wpf.Configuration
 
         /// <summary>控制卡当前读取到的减速度参数。</summary>
         public double Deceleration { get; set; }
+
+        /// <summary>控制卡当前配置的 DATUM 原点输入通道；-1 表示该轴尚未配置。</summary>
+        public int? DatumInputChannel { get; set; }
     }
 }

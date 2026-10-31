@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using MotionControl.Framework.Contracts.Configuration;
 using MotionControl.Framework.Runtime.Configuration;
@@ -78,19 +79,27 @@ namespace MotionControl.Framework.Wpf.Configuration
             bool configurationSaveAttempted = false;
             bool configurationSaved = false;
             bool mappingsApplied = false;
+            bool operationCompleted = false;
             _configurationApplyInProgress = true;
             UpdateConnectionState();
             try
             {
-                configurationSaveAttempted = true;
-                _configurationStore.SaveJson(_machineId, IoMappingFilePath, configuration);
-                configurationSaved = true;
-
-                await _ioMappingCardConnection.ApplyIoMappingsAsync(
-                    configuration.DigitalInputs,
-                    configuration.DigitalOutputs,
-                    CancellationToken.None);
-                mappingsApplied = true;
+                async Task SaveAndApplyAsync()
+                {
+                    configurationSaveAttempted = true;
+                    _configurationStore.SaveJson(_machineId, IoMappingFilePath, configuration);
+                    configurationSaved = true;
+                    await _ioMappingCardConnection.ApplyIoMappingsAsync(
+                        configuration.DigitalInputs,
+                        configuration.DigitalOutputs,
+                        CancellationToken.None);
+                    mappingsApplied = true;
+                }
+                if (ApplyConnectedConfigurationAsync != null)
+                    await ApplyConnectedConfigurationAsync(SaveAndApplyAsync, false, CancellationToken.None);
+                else
+                    await SaveAndApplyAsync();
+                operationCompleted = true;
             }
             catch (Exception error)
             {
@@ -135,7 +144,8 @@ namespace MotionControl.Framework.Wpf.Configuration
 
             if (mappingsApplied)
             {
-                SetConfigurationStatus("IO映射保存成功");
+                if (operationCompleted)
+                    SetConfigurationStatus("IO映射保存成功");
                 NotifyIoMappingApplied();
             }
         }

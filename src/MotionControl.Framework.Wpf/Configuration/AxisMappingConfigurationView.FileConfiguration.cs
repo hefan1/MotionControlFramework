@@ -114,6 +114,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             axis.HomeCreepSpeed = null;
             axis.HomeAcceleration = null;
             axis.HomeDeceleration = null;
+            axis.DatumInputChannel = null;
             axis.ControllerId = "MotionCard01";
         }
 
@@ -206,6 +207,7 @@ namespace MotionControl.Framework.Wpf.Configuration
                 visibleAxis.HomeCreepSpeed = configuredAxis.HomeCreepSpeed;
                 visibleAxis.HomeAcceleration = configuredAxis.HomeAcceleration;
                 visibleAxis.HomeDeceleration = configuredAxis.HomeDeceleration;
+                visibleAxis.DatumInputChannel = configuredAxis.DatumInputChannel;
             }
         }
 
