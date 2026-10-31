@@ -434,6 +434,7 @@
     <sys:String x:Key="正在连接控制卡">正在连接运动控制卡…</sys:String>
     <sys:String x:Key="控制卡连接成功格式">已连接：{0}，版本 {1}</sys:String>
     <sys:String x:Key="控制卡连接失败格式">连接失败：{0}</sys:String>
+    <sys:String x:Key="控制卡断开失败格式">断开失败：{0}</sys:String>
     <sys:String x:Key="控制卡连接已断开">运动控制卡已断开。</sys:String>
     <sys:String x:Key="控制卡连接状态格式">连接状态：{0}</sys:String>
     <sys:String x:Key="控制卡类型">卡类型</sys:String>

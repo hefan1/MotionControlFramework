@@ -619,6 +619,10 @@ namespace MotionControl.ZMotionSimulatorCheck
             await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
             await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
             await flow.WaitUntilStartedAsync().ConfigureAwait(false);
+            await ExpectExceptionAsync<InvalidOperationException>(
+                () => runtime.DisconnectAsync(CancellationToken.None)).ConfigureAwait(false);
+            Ensure(runtime.State == MachineRunState.Running && flow.CurrentStepName == "等待取料到位",
+                "工位等待输入时轴虽已停稳，但 Runtime 不应允许断开卡或改变流程状态。");
             await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
 
             Ensure(runtime.State == MachineRunState.Paused, "暂停后整机没有进入 Paused 状态。");

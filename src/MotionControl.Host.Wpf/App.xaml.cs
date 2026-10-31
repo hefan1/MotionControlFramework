@@ -194,6 +194,7 @@ namespace MotionControl.Host.Wpf
                 _configurationStore,
                 MachineId,
                 _cardConnection);
+            _axisMappingPage.PrepareCardDisconnectAsync = DisconnectMachineBeforeCardAsync;
             _axisMappingPage.CardConnectionChanged += AxisMappingPage_CardConnectionChanged;
             _axisMappingPage.AxisMappingApplied += AxisMappingPage_AxisMappingApplied;
             _ioMappingPage = new IoMappingConfigurationView(_configurationStore, MachineId, _cardConnection);
@@ -371,6 +372,14 @@ namespace MotionControl.Host.Wpf
             {
                 _deviceVariablePage.RefreshLocalizedText();
             }
+        }
+
+        /// <summary>轴映射页断卡前先通过 Runtime 的同一命令锁检查并断开整机。</summary>
+        private async Task DisconnectMachineBeforeCardAsync(CancellationToken cancellationToken)
+        {
+            MachineRuntime runtime = _machineRuntime;
+            if (runtime != null && runtime.State != MachineRunState.Disconnected)
+                await runtime.DisconnectAsync(cancellationToken).ConfigureAwait(true);
         }
 
         /// <summary>连接状态变化后同步整机运行时、连接状态和映射对应的手动调试页。</summary>

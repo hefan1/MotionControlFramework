@@ -200,6 +200,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 hostWindow.SetMachineRuntime(runtime);
                 Ensure(((Button)hostWindow.FindName("MachineStartButton")).IsEnabled,
                     "已配置工位且 Runtime 就绪时，顶部启动按钮仍不可用。");
+                VerifyAxisMappingDisconnectProtection();
                 VerifyAxisMappingStartupConnection(application, englishResources, chineseResources);
                 VerifyIoCapabilityDiagnosticDisplay(application, englishResources, chineseResources);
                 var primaryNavigation = (StackPanel)hostWindow.FindName("PrimaryNavigation");
@@ -248,6 +249,26 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Console.Error.WriteLine("[失败] 手动调试页离屏检查：" + error);
                 return 1;
             }
+        }
+
+        /// <summary>断卡保护拒绝时保留卡会话和 Runtime；允许时才真正断卡并通知 Host。</summary>
+        private static void VerifyAxisMappingDisconnectProtection()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "AxisDisconnectGuard_" + Guid.NewGuid().ToString("N"));
+            var connection = new SmokeAxisMappingCardConnection();
+            connection.ConnectAsync(null, CancellationToken.None).GetAwaiter().GetResult();
+            var view = new AxisMappingConfigurationView(new MachineConfigurationStore(root), "DisconnectGuard", connection);
+            int notices = 0;
+            view.CardConnectionChanged += (sender, args) => notices++;
+            view.PrepareCardDisconnectAsync = token => Task.FromException(new InvalidOperationException("工位仍在运行，不能断开控制卡。"));
+            var button = (Button)view.FindName("DisconnectCardButton");
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Ensure(connection.IsConnected && notices == 0, "运行保护拒绝后仍断卡或通知 Host 重建 Runtime。");
+            Ensure(((TextBlock)view.FindName("CardConnectionStatusText")).Text.Contains("工位仍在运行"),
+                "断卡被拦截时没有给操作员显示原因。");
+            view.PrepareCardDisconnectAsync = token => Task.CompletedTask;
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Ensure(!connection.IsConnected && notices == 1, "运行保护允许断卡后没有断开并通知 Host。");
         }
 
         /// <summary>确认位置输入框保留完整坐标精度，未修改时失焦不会触发配置保存。</summary>

@@ -42,19 +42,23 @@ namespace MotionControl.Framework.Wpf.Configuration
             UpdateCardConnectionUiState();
             try
             {
+                if (PrepareCardDisconnectAsync != null)
+                    await PrepareCardDisconnectAsync(CancellationToken.None);
                 await _cardConnection.DisconnectAsync(CancellationToken.None);
                 SetCardConnectionStatus("控制卡连接已断开");
                 ResetCardReadbackStatus();
             }
             catch (Exception error)
             {
-                SetCardConnectionStatus("控制卡连接失败格式", error.Message);
+                SetCardConnectionStatus("控制卡断开失败格式", error.Message);
             }
             finally
             {
                 _connectionInProgress = false;
                 UpdateCardConnectionUiState();
-                NotifyCardConnectionChanged();
+                // 拒绝断开时原会话仍在使用；不能通知 Host 按新连接重建 Runtime。
+                if (!_cardConnection.IsConnected)
+                    NotifyCardConnectionChanged();
             }
         }
 

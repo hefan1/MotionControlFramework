@@ -424,6 +424,7 @@
     <sys:String x:Key="正在连接控制卡">Connecting to motion card…</sys:String>
     <sys:String x:Key="控制卡连接成功格式">Connected: {0}, version {1}</sys:String>
     <sys:String x:Key="控制卡连接失败格式">Connection failed: {0}</sys:String>
+    <sys:String x:Key="控制卡断开失败格式">Disconnect failed: {0}</sys:String>
     <sys:String x:Key="控制卡连接已断开">Motion card disconnected.</sys:String>
     <sys:String x:Key="控制卡连接状态格式">Connection status: {0}</sys:String>
     <sys:String x:Key="控制卡类型">Card type</sys:String>

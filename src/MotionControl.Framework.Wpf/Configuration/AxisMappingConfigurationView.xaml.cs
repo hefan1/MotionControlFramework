@@ -69,6 +69,9 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>通知 Host 当前控制卡连接状态已经变化。</summary>
         public event EventHandler CardConnectionChanged;
 
+        /// <summary>由 Host 注入整机断开流程；检查工位、手动动作和轴状态后才允许释放卡连接。</summary>
+        public Func<CancellationToken, Task> PrepareCardDisconnectAsync { get; set; }
+
         /// <summary>通知 Host 当前卡实例已在线应用轴映射，手动页需要刷新显示定义。</summary>
         public event EventHandler AxisMappingApplied;
 
