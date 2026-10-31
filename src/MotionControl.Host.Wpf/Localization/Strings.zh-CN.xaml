@@ -3,7 +3,7 @@
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
     <!-- x:Key 保留中文界面原文，方便按画面文字在代码和资源中搜索。 -->
     <sys:String x:Key="运动控制上位机">运动控制上位机</sys:String>
-    <sys:String x:Key="仿真配置标识">隔离测试配置</sys:String>
+    <sys:String x:Key="隔离配置标识">隔离测试配置</sys:String>
     <sys:String x:Key="首页">首页</sys:String>
     <sys:String x:Key="统计">统计</sys:String>
     <sys:String x:Key="监控">监控</sys:String>
@@ -62,18 +62,25 @@
     <sys:String x:Key="暂停">Ⅱ 暂停</sys:String>
     <sys:String x:Key="停止">■ 停止</sys:String>
     <sys:String x:Key="自动启动提示">复位就绪后启动已配置的自动工位。</sys:String>
-    <sys:String x:Key="自动暂停提示">受控停止当前动作，并保留工位步骤。</sys:String>
-    <sys:String x:Key="自动停止提示">当前示例流程按受控暂停处理停止，复位后从保留步骤继续。</sys:String>
+    <sys:String x:Key="自动暂停提示">受控暂停全部自动工位并保留当前工步；继续运行前需整机复位，再按启动。</sys:String>
+    <sys:String x:Key="自动停止提示">停止也会受控暂停全部自动工位并保留当前工步；现场确认安全后，整机复位再按启动。</sys:String>
     <sys:String x:Key="自动流程命令失败标题">自动流程命令失败</sys:String>
     <sys:String x:Key="工位流程状态说明">自动工位与手动页面共用当前控制卡、逻辑轴和 IO 映射；运行时手动操作会被阻止。</sys:String>
-    <sys:String x:Key="工位当前步骤">工位当前步骤</sys:String>
+    <sys:String x:Key="流程页.待启动步骤">待启动步骤</sys:String>
+    <sys:String x:Key="流程页.正在执行步骤">正在执行步骤</sys:String>
+    <sys:String x:Key="流程页.暂停保留步骤">暂停保留步骤</sys:String>
+    <sys:String x:Key="流程页.报警停留步骤">报警时工位步骤</sys:String>
+    <sys:String x:Key="流程页.当前步骤">当前步骤</sys:String>
+    <sys:String x:Key="流程页.查看轴监控">查看轴监控</sys:String>
     <sys:String x:Key="流程页.打开IO监控">打开 IO 监控</sys:String>
     <sys:String x:Key="流程页.IO监控说明">进入 IO 监控并选中 DI 输入，按传感器名称核对当前状态。</sys:String>
+    <sys:String x:Key="流程页.核对输入">核对输入</sys:String>
+    <sys:String x:Key="流程页.核对输入说明">定位此工位当前等待的输入：{0}</sys:String>
     <sys:String x:Key="流程页.查看当前报警">查看当前报警</sys:String>
-    <sys:String x:Key="流程页.查看轴监控">查看轴监控</sys:String>
     <sys:String x:Key="整机当前状态">整机状态：</sys:String>
     <sys:String x:Key="未配置自动工位">未启用自动工位；可继续使用轴手动和 IO 手动页面。</sys:String>
     <sys:String x:Key="无当前报警">当前无报警。</sys:String>
+    <sys:String x:Key="报警数量摘要">当前报警 {0} 条（停机 {1}，非停机 {2}）</sys:String>
     <sys:String x:Key="报警待复位">（待复位）</sys:String>
     <sys:String x:Key="最近故障">最近故障：</sys:String>
     <sys:String x:Key="外壳预览启动命令未接入设备控制逻辑">外壳预览 · 启动命令尚未接入设备控制逻辑</sys:String>
@@ -110,6 +117,7 @@
     <sys:String x:Key="手动调试说明">轴手动与 IO 手动分开操作；自动流程运行时会拒绝手动命令。</sys:String>
     <sys:String x:Key="轴手动页面说明">每个已映射轴显示为独立调试卡片；支持连续点动、寸动、定位和示教位置。</sys:String>
     <sys:String x:Key="IO手动页面说明">按已映射的逻辑名称查看 DI 状态，并手动写入 DO；自动流程运行期间禁止操作。</sys:String>
+    <sys:String x:Key="IO手动未配置映射说明">未配置的 DI/DO 不会显示可操作的逻辑点。请为本机型实际使用的通道配置名称。</sys:String>
     <sys:String x:Key="IO手动标题">IO 手动</sys:String>
     <sys:String x:Key="逻辑轴">逻辑轴：</sys:String>
     <sys:String x:Key="伺服使能">伺服使能</sys:String>
@@ -172,11 +180,13 @@
     <sys:String x:Key="状态未连接">未连接</sys:String>
     <sys:String x:Key="状态等待复位">等待复位</sys:String>
     <sys:String x:Key="状态就绪">就绪</sys:String>
+    <sys:String x:Key="状态检查启动条件">检查启动条件</sys:String>
+    <sys:String x:Key="状态启动条件未满足">启动条件未满足</sys:String>
     <sys:String x:Key="状态运行中">运行中</sys:String>
     <sys:String x:Key="状态暂停中">暂停中</sys:String>
     <sys:String x:Key="状态已暂停">已暂停</sys:String>
     <sys:String x:Key="状态报警">报警</sys:String>
-    <sys:String x:Key="尚未配置轴">当前设备没有配置逻辑轴。</sys:String>
+    <sys:String x:Key="尚未配置轴">当前设备没有配置逻辑轴。完成轴映射后，本页会显示手动点动、回零和定位操作。</sys:String>
     <sys:String x:Key="当前位置">位置</sys:String>
     <sys:String x:Key="当前速度">速度</sys:String>
     <sys:String x:Key="伺服状态">伺服</sys:String>
@@ -349,6 +359,8 @@
     <sys:String x:Key="IO监控通道数量格式">已探测通道范围：DI {0} 路，DO {1} 路；实际状态以各通道读取结果为准。</sys:String>
     <sys:String x:Key="IO监控可见通道读取失败格式">当前显示的 {0} 通道读取失败 {1}/{2} 路，请检查控制卡连接和通道配置。首个错误：{3}</sys:String>
     <sys:String x:Key="IO监控当前显示范围格式">当前显示：{0}{1}–{0}{2}</sys:String>
+    <sys:String x:Key="IO监控流程输入已定位">已定位到等待输入“{0}”（{1}），请核对状态灯和有效电平。</sys:String>
+    <sys:String x:Key="IO监控流程输入未找到">没有找到流程等待输入“{0}”的 DI 映射，请检查 IO 映射配置。</sys:String>
     <sys:String x:Key="IO监控没有可读通道">当前没有可读取的物理通道。</sys:String>
     <sys:String x:Key="IO监控DO切换成功">{0} 已切换为{1}，读回确认成功。</sys:String>
     <sys:String x:Key="逻辑ON">逻辑 ON</sys:String>
@@ -408,16 +420,24 @@
     <sys:String x:Key="IO映射控制卡不支持热更新">当前控制卡连接不支持在线应用 IO 映射，已禁止保存。</sys:String>
 
     <!-- 安全联锁配置 -->
-    <sys:String x:Key="安全联锁页面说明">在此设置软件监控的急停逻辑输入，与 DI/DO 物理通道映射分开保存。</sys:String>
+    <sys:String x:Key="安全联锁页面说明">在此设置整机启动、停止、复位按钮和软件急停逻辑输入，与 DI/DO 物理通道映射分开保存。</sys:String>
     <sys:String x:Key="安全联锁标题">软件急停联锁</sys:String>
     <sys:String x:Key="安全联锁说明">选择一个已在 IO 映射中配置的 DI，供软件监控急停状态；留空时手动调试不受软件急停配置缺失影响。</sys:String>
+    <sys:String x:Key="设备控制与安全联锁标题">设备控制按钮与安全联锁</sys:String>
+    <sys:String x:Key="设备控制与安全联锁说明">为现场启动、停止和复位按钮选择逻辑 DI；停止按键按已确认的设备习惯作为暂停处理。</sys:String>
+    <sys:String x:Key="整机操作按钮输入">整机操作按钮输入</sys:String>
+    <sys:String x:Key="现场启动按钮">启动按钮 DI</sys:String>
+    <sys:String x:Key="现场停止按钮">停止按钮 DI（暂停）</sys:String>
+    <sys:String x:Key="现场复位按钮">复位按钮 DI</sys:String>
+    <sys:String x:Key="设备控制按钮注意事项">按钮映射使用 IO 映射中的逻辑 DI 名称。按键只在信号由无效变为有效时触发；启动必须先复位就绪，停止只暂停并保留步骤。急停仍须接入独立硬件安全回路，软件监控不能替代安全回路。</sys:String>
+    <sys:String x:Key="设备按钮DI不能重复">启动、停止、复位和急停不能映射到同一个 DI，请检查输入选择。</sys:String>
     <sys:String x:Key="安全联锁输入名称">急停状态 DI</sys:String>
     <sys:String x:Key="安全联锁注意事项">未配置时软件急停监控关闭，手动轴和 IO 调试不会因此被锁定；自动流程启动仍要求配置有效 DI。软件监控不代替硬件安全回路。</sys:String>
     <sys:String x:Key="安全联锁刷新DI">刷新 DI 列表</sys:String>
     <sys:String x:Key="安全联锁保存配置">保存配置</sys:String>
     <sys:String x:Key="安全联锁取消修改">取消修改</sys:String>
     <sys:String x:Key="安全联锁未配置">软件急停状态 DI 未配置；手动调试不受此项拦截，自动流程不能启动。</sys:String>
-    <sys:String x:Key="安全联锁输入未映射">当前急停 DI“{0}”已不在 IO 映射中，请重新选择。</sys:String>
+    <sys:String x:Key="安全联锁输入未映射">当前配置的 DI“{0}”已不在 IO 映射中，请重新选择。</sys:String>
     <sys:String x:Key="安全联锁输入映射有效">当前软件急停来源：{0} → {1}。</sys:String>
     <sys:String x:Key="安全联锁读取完成">安全联锁配置已读取。</sys:String>
     <sys:String x:Key="安全联锁DI刷新完成">DI 列表已刷新。</sys:String>
@@ -490,6 +510,8 @@
     <sys:String x:Key="手动调试速度">手动调试速度</sys:String>
     <sys:String x:Key="回零模式">回零模式</sys:String>
     <sys:String x:Key="回零模式手册提示">请选择当前适配器提供的回零方式，并核对控制器型号、固件和原点/限位输入映射。</sys:String>
+    <sys:String x:Key="DATUM原点输入通道">DATUM_IN 原点输入通道</sys:String>
+    <sys:String x:Key="DATUM原点输入通道说明">留空表示不修改控制器现有设置；输入 -1 清除映射；输入 0–4095 设置对应物理 DI 通道。保存后才会写入控制器。</sys:String>
     <sys:String x:Key="回零搜索速度">回零搜索速度</sys:String>
     <sys:String x:Key="回零爬行速度">回零爬行速度</sys:String>
     <sys:String x:Key="回零加速度">回零加速度</sys:String>
@@ -554,6 +576,7 @@
     <sys:String x:Key="正在在线应用轴映射">正在保存并在线应用轴映射，控制卡连接保持不变。</sys:String>
     <sys:String x:Key="轴映射在线应用成功">轴映射已保存并在线应用，控制卡连接保持不变。</sys:String>
     <sys:String x:Key="轴映射保存待下发">轴映射已保存；控制卡未连接，连接后自动应用参数。</sys:String>
+    <sys:String x:Key="轴映射需先断卡">此更改需要重新连接；请先停止设备并断开控制卡，再保存轴映射。</sys:String>
     <sys:String x:Key="轴映射保存下发失败">配置已保存，但控制卡未能应用参数：{0}</sys:String>
     <sys:String x:Key="轴映射保存失败">保存轴映射失败：{0}</sys:String>
     <sys:String x:Key="当前轴映射已清除">当前物理轴已清除映射。</sys:String>
@@ -567,6 +590,7 @@
     <sys:String x:Key="轴软限位启用未选择格式">{0} 尚未选择是否启用软限位。</sys:String>
     <sys:String x:Key="轴回零速度无效格式">{0} 的回零搜索速度和爬行速度必须是大于零的有效数值。</sys:String>
     <sys:String x:Key="轴回零模式无效格式">{0} 尚未配置当前适配器支持的回零模式，或编号属于其他适配器。请重新选择。</sys:String>
+    <sys:String x:Key="轴DATUM原点通道无效格式">{0} 的 DATUM_IN 通道只能填写 -1 或 0 到 {1}。</sys:String>
     <!-- 设备变量页面 -->
     <sys:String x:Key="设备变量">设备变量</sys:String>
     <sys:String x:Key="设备变量页面说明">查看和维护本机设备变量；变量定义按设备保存，运行值在本次运行期间更新。</sys:String>
@@ -616,15 +640,20 @@
     <sys:String x:Key="取消">取消</sys:String>
     <sys:String x:Key="保存">保存</sys:String>
     <sys:String x:Key="任务运行">任务运行</sys:String>
-    <sys:String x:Key="任务运行页面说明">查看任务运行接入状态和设备关联配置。</sys:String>
-    <sys:String x:Key="任务仿真入口说明">任务执行尚未接入当前设备，不能在此启动设备。可先检查轴、IO 和变量等关联配置；当前设备流程请在设备总览或流程状态中查看。</sys:String>
+    <sys:String x:Key="任务接入状态">任务接入状态</sys:String>
+    <sys:String x:Key="任务接入状态页面说明">检查任务执行接入状态和设备关联资源。</sys:String>
+    <sys:String x:Key="任务接入状态说明">任务执行尚未接入当前设备，本页只检查任务资源关联，不能在此启动设备。当前工位运行请在设备总览或流程状态中查看。</sys:String>
     <sys:String x:Key="刷新关联配置目录">刷新关联配置目录</sys:String>
     <sys:String x:Key="任务关联目录统计">关联目录：{0} 根轴、{1} 个 DI、{2} 个 DO、{3} 个变量、{4} 个示教点。</sys:String>
-    <sys:String x:Key="任务仿真错误详情">查看完整诊断信息</sys:String>
+    <sys:String x:Key="任务关联诊断详情">查看完整诊断信息</sys:String>
     <sys:String x:Key="任务目录读取失败">无法读取任务关联配置。</sys:String>
     <sys:String x:Key="任务配置文件不存在">找不到配置文件：{0}</sys:String>
     <sys:String x:Key="任务配置设备目录">设备配置目录：{0}</sys:String>
     <sys:String x:Key="任务配置检查建议">请检查对应配置文件；如尚未配置，请在设置中检查轴映射、IO 映射和任务配置。</sys:String>
+    <sys:String x:Key="打开轴映射配置">打开轴映射配置</sys:String>
+    <sys:String x:Key="打开IO映射配置">打开 IO 映射</sys:String>
+    <sys:String x:Key="打开任务配置">打开任务配置</sys:String>
+    <sys:String x:Key="打开设备变量">打开设备变量</sys:String>
     <sys:String x:Key="任务关联手动页不可用">控制卡尚未连接，轴手动页面未创建。本次只请求查看，没有发出运动指令。</sys:String>
     <sys:String x:Key="任务关联对象">关联对象</sys:String>
     <sys:String x:Key="任务关联定位成功">已定位到对应项目</sys:String>

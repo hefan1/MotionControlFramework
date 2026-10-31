@@ -16,12 +16,13 @@
                 <StackPanel>
                     <TextBlock x:Name="MachineStateText" FontSize="12" FontWeight="SemiBold" Foreground="#26384D" />
                     <TextBlock x:Name="ResetGuidanceText" Margin="0,5,0,0" TextWrapping="Wrap" FontSize="12" Foreground="#845B0A" Visibility="Collapsed" />
+                    <TextBlock x:Name="StartReadinessText" Margin="0,5,0,0" TextWrapping="Wrap" FontSize="12" Foreground="#845B0A" Visibility="Collapsed" />
                 </StackPanel>
             </Border>
             <Border Background="White" BorderBrush="#D9E0E8" BorderThickness="1"
                     CornerRadius="6" Padding="12" Margin="0,0,0,10">
                 <StackPanel>
-                    <TextBlock Text="{DynamicResource 工位当前步骤}" FontSize="13" FontWeight="SemiBold" Foreground="#26384D" />
+                    <TextBlock x:Name="StationStepHeadingText" FontSize="13" FontWeight="SemiBold" Foreground="#26384D" />
                     <StackPanel x:Name="StationRowsPanel" Margin="0,8,0,0" />
                     <WrapPanel Margin="0,8,0,0">
                         <Button Content="{DynamicResource 流程页.查看轴监控}" Click="OpenAxisMonitor_Click" Padding="10,4" Margin="0,0,8,0" />

@@ -6,14 +6,29 @@
  <Grid Margin="14,8,14,12"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <Border x:Name="StatusBanner" Background="#F0F7F4" BorderBrush="#B6DCC7" BorderThickness="1" CornerRadius="6" Padding="18,12">
    <DockPanel><StackPanel DockPanel.Dock="Right" Margin="15,0,0,0"><TextBlock x:Name="SourceText" Foreground="#596B7D"/><TextBlock x:Name="SampleText" FontSize="11" Foreground="#596B7D" Margin="0,5,0,0"/></StackPanel>
-    <StackPanel><TextBlock x:Name="MachineStateText" FontSize="25" FontWeight="SemiBold"/><TextBlock x:Name="NextActionText" TextWrapping="Wrap" Margin="0,7,0,0"/></StackPanel>
+    <StackPanel>
+     <TextBlock x:Name="MachineStateText" FontSize="25" FontWeight="SemiBold"/>
+     <DockPanel Margin="0,7,0,0">
+      <Button x:Name="AutomaticStartActionButton" DockPanel.Dock="Right" Content="{DynamicResource 操作页.打开轴手动}" Click="OpenAxisManual_Click" Margin="12,0,0,0" Padding="10,4" VerticalAlignment="Center" Visibility="Collapsed"/>
+      <TextBlock x:Name="NextActionText" TextWrapping="Wrap" VerticalAlignment="Center"/>
+     </DockPanel>
+     <Border x:Name="ConnectionStatusPanel" Background="#FFF7E7" BorderBrush="#E9CD91" BorderThickness="1" CornerRadius="4" Padding="10,7" Margin="0,8,0,0">
+      <DockPanel LastChildFill="True">
+       <Button DockPanel.Dock="Right" Content="{DynamicResource 操作页.打开轴映射}" Click="ConnectionSettings_Click" Margin="12,0,0,0" Padding="10,4" VerticalAlignment="Center"/>
+       <StackPanel>
+        <TextBlock x:Name="ConnectionStateText" FontWeight="SemiBold" Foreground="#845B0A"/>
+        <TextBlock x:Name="ConnectionDetailText" TextWrapping="Wrap" Margin="0,3,0,0" Foreground="#665A43"/>
+       </StackPanel>
+      </DockPanel>
+     </Border>
+    </StackPanel>
    </DockPanel>
   </Border>
   <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,12,0,10"><StackPanel>
    <TextBlock x:Name="EmptyText" Foreground="#596B7D" TextWrapping="Wrap" Margin="5,12"/>
    <ItemsControl x:Name="StationCards" SizeChanged="CardsSizeChanged"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl>
   </StackPanel></ScrollViewer>
-  <Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+  <Grid x:Name="AggregateMetrics" Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
    <Border Style="{StaticResource 内容边框}" Padding="16"><StackPanel><TextBlock Text="{DynamicResource 操作页.本次完成}" FontWeight="SemiBold"/><TextBlock x:Name="CompletedText" FontSize="30" Foreground="#2375D1" Margin="0,7,0,0"/></StackPanel></Border>
    <Border Grid.Column="2" Style="{StaticResource 内容边框}" Padding="16"><StackPanel><TextBlock Text="{DynamicResource 操作页.当前周期}" FontWeight="SemiBold"/><TextBlock x:Name="CycleText" FontSize="30" Foreground="#2375D1" Margin="0,7,0,0"/></StackPanel></Border>
   </Grid>

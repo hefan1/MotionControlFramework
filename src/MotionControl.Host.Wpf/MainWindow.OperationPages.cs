@@ -16,6 +16,26 @@ namespace MotionControl.Host.Wpf
         private CurrentAlarmsView _currentAlarmsPage;
         /// <summary>从总览或报警进入关联页面后的返回目标。</summary>
         private string _operationReturnPage;
+        /// <summary>返回目标所在分区，避免任务配置等非操作页被错误映射到首页。</summary>
+        private string _operationReturnSection;
+
+        /// <summary>保存当前页为返回目标并显示返回入口。</summary>
+        private void SetOperationReturnTarget(string section, string page)
+        {
+            _operationReturnSection = section;
+            _operationReturnPage = page;
+            OperationReturnButton.Visibility = string.IsNullOrWhiteSpace(section) || string.IsNullOrWhiteSpace(page)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+        }
+
+        /// <summary>普通主导航开始新路径时清除上一条关联导航的返回状态。</summary>
+        private void ClearOperationReturnTarget()
+        {
+            _operationReturnSection = null;
+            _operationReturnPage = null;
+            OperationReturnButton.Visibility = Visibility.Collapsed;
+        }
         /// <summary>创建两个只读工作区，不连接任何控制卡。</summary>
         private void CreateOperationPages()
         {
@@ -55,8 +75,7 @@ namespace MotionControl.Host.Wpf
                 MessageBox.Show(GetLocalizedText("关联页面尚未就绪"), GetLocalizedText(e.Page), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
-            _operationReturnPage = ReferenceEquals(sender, _currentAlarmsPage) ? "当前报警"
-                : ReferenceEquals(sender, _flowStatusPage) ? "流程状态" : "设备总览";
+            SetOperationReturnTarget(_currentSectionKey, _currentPageResourceKey);
             _currentPageResourceKey = e.Page;
             string section = e.Page == "当前报警" ? "Alarms"
                 : e.Page == "轴映射配置" ? "Settings"
@@ -64,20 +83,26 @@ namespace MotionControl.Host.Wpf
                 : e.Page == "IO监控" || e.Page == "流程状态" ? "Monitor"
                 : "Monitor";
             NavigateToSection(section);
-            if (e.Page == "IO监控" && ReferenceEquals(sender, _flowStatusPage) && _ioMonitorPage is IoMonitorView ioMonitorPage)
-                ioMonitorPage.SelectDigitalInputs();
+            if (e.Page == "IO监控" && _ioMonitorPage is IoMonitorView ioMonitorPage)
+            {
+                if (string.IsNullOrWhiteSpace(e.IoPointName)) ioMonitorPage.SelectDigitalInputs();
+                else ioMonitorPage.FocusDigitalInputByName(e.IoPointName);
+            }
             if (e.Page == "流程状态" && _flowStatusPage is FlowStatusView flow) flow.FocusStationByName(e.StationName);
-            OperationReturnButton.Visibility = Visibility.Visible;
         }
         /// <summary>返回原操作页，原报警选择和卡片滚动对象仍保留。</summary>
         private void OperationReturn_Click(object sender, RoutedEventArgs e)
         {
-            _currentPageResourceKey = _operationReturnPage ?? "设备总览";
-            string section = _currentPageResourceKey == "当前报警" ? "Alarms"
-                : _currentPageResourceKey == "流程状态" ? "Monitor" : "Home";
+            if (string.IsNullOrWhiteSpace(_operationReturnPage) || string.IsNullOrWhiteSpace(_operationReturnSection))
+            {
+                ClearOperationReturnTarget();
+                return;
+            }
+
+            _currentPageResourceKey = _operationReturnPage;
+            string section = _operationReturnSection;
+            ClearOperationReturnTarget();
             NavigateToSection(section);
-            OperationReturnButton.Visibility = Visibility.Collapsed;
-            _operationReturnPage = null;
         }
     }
 }

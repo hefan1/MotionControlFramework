@@ -100,7 +100,7 @@
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
                     <Border x:Name="SimulationConfigurationBadge" Visibility="Collapsed" Background="#FFF0C5"
                             BorderBrush="#C98915" BorderThickness="1" CornerRadius="4" Padding="7,3" Margin="0,0,8,0">
-                        <TextBlock Text="{DynamicResource 仿真配置标识}" Foreground="#6D4800" FontWeight="SemiBold" />
+                        <TextBlock Text="{DynamicResource 隔离配置标识}" Foreground="#6D4800" FontWeight="SemiBold" />
                     </Border>
                     <TextBlock x:Name="HeaderMessage"
                                Text="{DynamicResource 设备状态标题}"
@@ -250,9 +250,6 @@
                             VerticalAlignment="Center">
                     <Border Margin="2,0" Padding="8,3" Background="#ECEFF1" CornerRadius="2">
                         <TextBlock x:Name="MotionCardConnectionStatus" Text="{DynamicResource 控制卡未连接}" FontSize="12" Foreground="#5E666B" />
-                    </Border>
-                    <Border Margin="2,0" Padding="8,3" Background="#ECEFF1" CornerRadius="2">
-                        <TextBlock Text="{DynamicResource 通讯未连接}" FontSize="12" Foreground="#5E666B" />
                     </Border>
                     <Border Margin="2,0" Padding="8,3" Background="#ECEFF1" CornerRadius="2">
                         <TextBlock Text="{DynamicResource 数据库未接入}" FontSize="12" Foreground="#5E666B" />

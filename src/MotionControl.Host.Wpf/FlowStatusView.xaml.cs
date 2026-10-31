@@ -21,9 +21,19 @@ namespace MotionControl.Host.Wpf
         /// <summary>本页观察的整机运行时，与手动轴和 IO 页面共享同一个实例。</summary>
         private readonly MachineRuntime _runtime;
 
+        /// <summary>当前自动启动条件未满足时显示的具体原因。</summary>
+        private string _automaticStartBlockReason;
+
+        /// <summary>当前正在读取自动启动条件。</summary>
+        private bool _automaticStartReadinessChecking;
+
         /// <summary>按工位保存当前步骤文字，避免定时刷新时重建列表。</summary>
         private readonly Dictionary<IStationFlow, TextBlock> _stepTextByFlow =
             new Dictionary<IStationFlow, TextBlock>();
+
+        /// <summary>按工位保存输入核对入口，等待 DI 的工位才能定向跳转。</summary>
+        private readonly Dictionary<IStationFlow, Button> _inputButtonByFlow =
+            new Dictionary<IStationFlow, Button>();
 
         /// <summary>页面显示期间刷新可能在后台推进的当前工位步骤。</summary>
         private readonly DispatcherTimer _refreshTimer;
@@ -45,8 +55,14 @@ namespace MotionControl.Host.Wpf
                 });
                 var stepText = new TextBlock { FontSize = 12, Foreground = new SolidColorBrush(Color.FromRgb(38, 56, 77)) };
                 row.Children.Add(stepText);
+                var inputButton = new Button { Padding = new Thickness(8, 3, 8, 3), Margin = new Thickness(8, 0, 0, 0), Tag = flow };
+                inputButton.SetResourceReference(ContentControl.ContentProperty, "流程页.核对输入");
+                inputButton.SetResourceReference(FrameworkElement.ToolTipProperty, "流程页.核对输入说明");
+                inputButton.Click += OpenStationInput_Click;
+                row.Children.Add(inputButton);
                 StationRowsPanel.Children.Add(row);
                 _stepTextByFlow.Add(flow, stepText);
+                _inputButtonByFlow.Add(flow, inputButton);
             }
 
             if (_stepTextByFlow.Count == 0)
@@ -108,6 +124,14 @@ namespace MotionControl.Host.Wpf
             RefreshDisplay();
         }
 
+        /// <summary>同步总览和顶部状态栏使用的自动启动条件结果。</summary>
+        public void SetAutomaticStartReadiness(string blockReason, bool checking)
+        {
+            _automaticStartBlockReason = blockReason;
+            _automaticStartReadinessChecking = checking;
+            RefreshDisplay();
+        }
+
         /// <summary>打开 IO 监控；Host 会选中 DI 输入供现场核对传感器状态。</summary>
         private void OpenIoMonitor_Click(object sender, RoutedEventArgs e)
         {
@@ -126,6 +150,23 @@ namespace MotionControl.Host.Wpf
             NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("当前报警"));
         }
 
+        /// <summary>打开 DI 监控并按当前工位等待状态定位对应输入。</summary>
+        private void OpenStationInput_Click(object sender, RoutedEventArgs e)
+        {
+            var button = sender as Button;
+            var flow = button == null ? null : button.Tag as IStationFlow;
+            var inputState = flow as IStationInputWaitState;
+            if (flow == null || inputState == null || string.IsNullOrWhiteSpace(inputState.WaitingInputName))
+            {
+                return;
+            }
+
+            NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs(
+                "IO监控",
+                flow.StationName,
+                inputState.WaitingInputName));
+        }
+
         /// <summary>从总览或报警按工位名称只读定位，保留原页面布局和设备状态。</summary>
         public bool FocusStationByName(string stationName)
         {
@@ -142,8 +183,18 @@ namespace MotionControl.Host.Wpf
         /// <summary>刷新当前状态、步骤、报警及最近故障文字。</summary>
         private void RefreshDisplay()
         {
+            StationStepHeadingText.Text = (string)FindResource("流程页." + OperationUi.StepLabelKey(_runtime.State));
+            string stateResourceKey = !string.IsNullOrWhiteSpace(_automaticStartBlockReason)
+                ? "状态启动条件未满足"
+                : _automaticStartReadinessChecking
+                    ? "状态检查启动条件"
+                    : GetMachineStateResourceKey(_runtime.State);
             MachineStateText.Text = ((string)FindResource("整机当前状态"))
-                + (string)FindResource(GetMachineStateResourceKey(_runtime.State));
+                + (string)FindResource(stateResourceKey);
+            StartReadinessText.Text = _automaticStartBlockReason ?? string.Empty;
+            StartReadinessText.Visibility = string.IsNullOrWhiteSpace(_automaticStartBlockReason)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
             string resetGuidance = _runtime.State == MachineRunState.ResetRequired
                 ? (string)FindResource("整机复位提示")
                 : string.Empty;
@@ -154,15 +205,32 @@ namespace MotionControl.Host.Wpf
             foreach (KeyValuePair<IStationFlow, TextBlock> row in _stepTextByFlow)
             {
                 row.Value.Text = row.Key.CurrentStepName;
+                Button inputButton = _inputButtonByFlow[row.Key];
+                var inputState = row.Key as IStationInputWaitState;
+                string inputName = inputState == null ? null : inputState.WaitingInputName;
+                inputButton.Visibility = string.IsNullOrWhiteSpace(inputName) ? Visibility.Collapsed : Visibility.Visible;
+                inputButton.IsEnabled = !string.IsNullOrWhiteSpace(inputName);
+                inputButton.ToolTip = string.IsNullOrWhiteSpace(inputName)
+                    ? null
+                    : string.Format((string)FindResource("流程页.核对输入说明"), inputName);
             }
 
             MachineAlarmRecord[] alarms = _runtime.AlarmService.Alarms.ToArray();
-            AlarmText.Text = alarms.Length == 0
-                ? (string)FindResource("无当前报警")
-                : string.Join("\n", alarms.Select(alarm =>
+            if (alarms.Length == 0)
+            {
+                AlarmText.Text = (string)FindResource("无当前报警");
+            }
+            else
+            {
+                int stopAlarmCount = alarms.Count(alarm => alarm.RequiresReset);
+                string summary = string.Format(
+                    (string)FindResource("报警数量摘要"), alarms.Length, stopAlarmCount, alarms.Length - stopAlarmCount);
+                string details = string.Join("\n", alarms.Select(alarm =>
                     alarm.SourceName + " / " + alarm.Definition.Code + " / " + alarm.Definition.Message
                     + "：" + alarm.Detail
                     + (alarm.ConditionActive ? string.Empty : (string)FindResource("报警待复位"))));
+                AlarmText.Text = summary + "\n" + details;
+            }
 
             LastErrorText.Text = _runtime.LastError == null
                 ? string.Empty

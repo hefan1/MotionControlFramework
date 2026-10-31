@@ -8,7 +8,7 @@
 
     <!-- 中文原文作为资源键，中文开发者可直接按界面文字搜索。 -->
     <sys:String x:Key="运动控制上位机">Motion Control Host</sys:String>
-    <sys:String x:Key="仿真配置标识">Isolated test configuration</sys:String>
+    <sys:String x:Key="隔离配置标识">Isolated test configuration</sys:String>
     <sys:String x:Key="首页">Home</sys:String>
     <sys:String x:Key="统计">Statistics</sys:String>
     <sys:String x:Key="监控">Monitor</sys:String>
@@ -55,18 +55,25 @@
     <sys:String x:Key="暂停">Ⅱ Pause</sys:String>
     <sys:String x:Key="停止">■ Stop</sys:String>
     <sys:String x:Key="自动启动提示">Start the configured station after the machine is ready.</sys:String>
-    <sys:String x:Key="自动暂停提示">Stop the current action in a controlled way and retain the station step.</sys:String>
-    <sys:String x:Key="自动停止提示">This demo uses a controlled pause for Stop; reset resumes from the retained step.</sys:String>
+    <sys:String x:Key="自动暂停提示">Pause all automatic stations in a controlled manner and retain their current steps. Reset the machine before pressing Start to continue.</sys:String>
+    <sys:String x:Key="自动停止提示">Stop also pauses all automatic stations in a controlled manner and retains their current steps. Confirm the equipment is safe, then reset the machine and press Start to continue.</sys:String>
     <sys:String x:Key="自动流程命令失败标题">Automatic Sequence Command Failed</sys:String>
     <sys:String x:Key="工位流程状态说明">Automatic and manual pages share the same card, logical axes, and I/O mapping. Manual commands are blocked while running.</sys:String>
-    <sys:String x:Key="工位当前步骤">Current Station Step</sys:String>
+    <sys:String x:Key="流程页.待启动步骤">Next steps before Start</sys:String>
+    <sys:String x:Key="流程页.正在执行步骤">Steps in progress</sys:String>
+    <sys:String x:Key="流程页.暂停保留步骤">Steps retained during pause</sys:String>
+    <sys:String x:Key="流程页.报警停留步骤">Station steps during alarm</sys:String>
+    <sys:String x:Key="流程页.当前步骤">Current steps</sys:String>
+    <sys:String x:Key="流程页.查看轴监控">View Axis Monitor</sys:String>
     <sys:String x:Key="流程页.打开IO监控">Open I/O Monitor</sys:String>
     <sys:String x:Key="流程页.IO监控说明">Open I/O Monitor on digital inputs to check the sensor by its mapped name.</sys:String>
+    <sys:String x:Key="流程页.核对输入">Check input</sys:String>
+    <sys:String x:Key="流程页.核对输入说明">Locate the input currently awaited by this station: {0}</sys:String>
     <sys:String x:Key="流程页.查看当前报警">View Current Alarms</sys:String>
-    <sys:String x:Key="流程页.查看轴监控">View Axis Monitor</sys:String>
     <sys:String x:Key="整机当前状态">Machine state: </sys:String>
     <sys:String x:Key="未配置自动工位">No automatic station is enabled; axis and I/O manual pages remain available.</sys:String>
     <sys:String x:Key="无当前报警">No current alarms.</sys:String>
+    <sys:String x:Key="报警数量摘要">Current alarms: {0} (stop {1}, non-stop {2})</sys:String>
     <sys:String x:Key="报警待复位"> (reset required)</sys:String>
     <sys:String x:Key="最近故障">Last fault: </sys:String>
     <sys:String x:Key="外壳预览启动命令未接入设备控制逻辑">Shell preview · Start command is not connected</sys:String>
@@ -102,6 +109,7 @@
     <sys:String x:Key="手动调试说明">Axis and I/O manual controls are on separate pages. Manual commands are blocked while an automatic flow is running.</sys:String>
     <sys:String x:Key="轴手动页面说明">Each mapped axis has its own control card for jog, step move, positioning, and taught positions.</sys:String>
     <sys:String x:Key="IO手动页面说明">View mapped DI states and write DO outputs by logical name. Manual writes are blocked during automatic operation.</sys:String>
+    <sys:String x:Key="IO手动未配置映射说明">Unmapped DI/DO channels are not available as logical points. Name the channels used by this machine on the I/O Mapping page.</sys:String>
     <sys:String x:Key="IO手动标题">I/O Manual</sys:String>
     <sys:String x:Key="逻辑轴">Logical axis:</sys:String>
     <sys:String x:Key="伺服使能">Servo On</sys:String>
@@ -164,11 +172,13 @@
     <sys:String x:Key="状态未连接">Disconnected</sys:String>
     <sys:String x:Key="状态等待复位">Reset Required</sys:String>
     <sys:String x:Key="状态就绪">Ready</sys:String>
+    <sys:String x:Key="状态检查启动条件">Checking start conditions</sys:String>
+    <sys:String x:Key="状态启动条件未满足">Start conditions not met</sys:String>
     <sys:String x:Key="状态运行中">Running</sys:String>
     <sys:String x:Key="状态暂停中">Pausing</sys:String>
     <sys:String x:Key="状态已暂停">Paused</sys:String>
     <sys:String x:Key="状态报警">Alarmed</sys:String>
-    <sys:String x:Key="尚未配置轴">No logical axis is configured.</sys:String>
+    <sys:String x:Key="尚未配置轴">No logical axes are configured for this machine yet. After you map the axes, this page will show manual jog, homing, and positioning controls.</sys:String>
     <sys:String x:Key="当前位置">Position</sys:String>
     <sys:String x:Key="当前速度">Velocity</sys:String>
     <sys:String x:Key="伺服状态">Servo</sys:String>
@@ -341,6 +351,8 @@
     <sys:String x:Key="IO监控通道数量格式">Detected channel ranges: DI {0}, DO {1}. Check each channel for its current read status.</sys:String>
     <sys:String x:Key="IO监控可见通道读取失败格式">Visible {0} channels failed to read: {1}/{2}. Check the controller connection and channel configuration. First error: {3}</sys:String>
     <sys:String x:Key="IO监控当前显示范围格式">Showing {0}{1}–{0}{2}</sys:String>
+    <sys:String x:Key="IO监控流程输入已定位">Located waiting input “{0}” ({1}). Check its indicator and active level.</sys:String>
+    <sys:String x:Key="IO监控流程输入未找到">No DI mapping was found for waiting input “{0}”. Check I/O Mapping.</sys:String>
     <sys:String x:Key="IO监控没有可读通道">No readable physical channels are currently available.</sys:String>
     <sys:String x:Key="IO监控DO切换成功">{0} changed to {1}; readback confirmed.</sys:String>
     <sys:String x:Key="逻辑ON">Logical ON</sys:String>
@@ -398,16 +410,24 @@
     <sys:String x:Key="IO映射保存失败">Failed to save I/O mappings: {0}</sys:String>
     <sys:String x:Key="IO映射控制卡不支持热更新">This controller connection cannot apply I/O mappings online, so saving is disabled.</sys:String>
 
-    <sys:String x:Key="安全联锁页面说明">Configure the software monitored emergency-stop input separately from DI/DO physical channel mapping.</sys:String>
+    <sys:String x:Key="安全联锁页面说明">Configure machine Start, Stop, Reset and software emergency-stop logical inputs separately from DI/DO physical channel mapping.</sys:String>
     <sys:String x:Key="安全联锁标题">Software Emergency Stop Interlock</sys:String>
     <sys:String x:Key="安全联锁说明">Select a DI configured in I/O Mapping for software emergency-stop monitoring. Leaving it blank does not block manual debugging.</sys:String>
+    <sys:String x:Key="设备控制与安全联锁标题">Machine Buttons and Safety Interlock</sys:String>
+    <sys:String x:Key="设备控制与安全联锁说明">Select logical DIs for the physical Start, Stop, and Reset buttons. Stop is treated as Pause, matching the agreed machine behavior.</sys:String>
+    <sys:String x:Key="整机操作按钮输入">Machine Operation Button Inputs</sys:String>
+    <sys:String x:Key="现场启动按钮">Start Button DI</sys:String>
+    <sys:String x:Key="现场停止按钮">Stop Button DI (Pause)</sys:String>
+    <sys:String x:Key="现场复位按钮">Reset Button DI</sys:String>
+    <sys:String x:Key="设备控制按钮注意事项">Use logical DI names from I/O Mapping. A button acts only on a low-to-high transition. Start requires a successful reset; Stop pauses and retains station steps. Emergency stop must still use an independent hardware safety circuit; software monitoring does not replace it.</sys:String>
+    <sys:String x:Key="设备按钮DI不能重复">Start, Stop, Reset, and Emergency Stop must not use the same DI. Review the selected inputs.</sys:String>
     <sys:String x:Key="安全联锁输入名称">Emergency Stop Status DI</sys:String>
     <sys:String x:Key="安全联锁注意事项">When blank, software emergency-stop monitoring is disabled and manual axis/I/O debugging remains available; automatic flow start still requires a valid DI. This monitor does not replace the hardware safety circuit.</sys:String>
     <sys:String x:Key="安全联锁刷新DI">Refresh DI List</sys:String>
     <sys:String x:Key="安全联锁保存配置">Save Configuration</sys:String>
     <sys:String x:Key="安全联锁取消修改">Cancel Changes</sys:String>
     <sys:String x:Key="安全联锁未配置">Software emergency-stop DI is not configured; manual debugging is available, but automatic flow cannot start.</sys:String>
-    <sys:String x:Key="安全联锁输入未映射">The configured emergency-stop DI “{0}” is not in I/O Mapping. Select another input.</sys:String>
+    <sys:String x:Key="安全联锁输入未映射">The configured DI “{0}” is not in I/O Mapping. Select another input.</sys:String>
     <sys:String x:Key="安全联锁输入映射有效">Software emergency-stop source: {0} → {1}.</sys:String>
     <sys:String x:Key="安全联锁读取完成">Safety interlock configuration loaded.</sys:String>
     <sys:String x:Key="安全联锁DI刷新完成">DI list refreshed.</sys:String>
@@ -480,6 +500,8 @@
     <sys:String x:Key="手动调试速度">Manual Debug Speed</sys:String>
     <sys:String x:Key="回零模式">Home Mode</sys:String>
     <sys:String x:Key="回零模式手册提示">Choose a homing mode provided by the current adapter. Check the controller model, firmware, and home/limit input mapping.</sys:String>
+    <sys:String x:Key="DATUM原点输入通道">DATUM_IN Home Input Channel</sys:String>
+    <sys:String x:Key="DATUM原点输入通道说明">Leave blank to preserve the controller setting; enter -1 to clear it, or 0–4095 for a physical DI channel. The value is written to the controller when you save.</sys:String>
     <sys:String x:Key="回零搜索速度">Home Search Speed</sys:String>
     <sys:String x:Key="回零爬行速度">Home Creep Speed</sys:String>
     <sys:String x:Key="回零加速度">Home Acceleration</sys:String>
@@ -544,6 +566,7 @@
     <sys:String x:Key="正在在线应用轴映射">Saving and applying axis mapping online. The card connection will stay active.</sys:String>
     <sys:String x:Key="轴映射在线应用成功">Axis mapping was saved and applied online. The card connection stayed active.</sys:String>
     <sys:String x:Key="轴映射保存待下发">Axis mapping was saved. The card is disconnected; parameters will be applied when it connects.</sys:String>
+    <sys:String x:Key="轴映射需先断卡">This change requires a new connection. Stop the machine and disconnect the card before saving the axis mapping.</sys:String>
     <sys:String x:Key="轴映射保存下发失败">Configuration was saved, but the card could not apply the parameters: {0}</sys:String>
     <sys:String x:Key="轴映射保存失败">Failed to save axis mapping: {0}</sys:String>
     <sys:String x:Key="当前轴映射已清除">Mapping for the selected physical axis was cleared.</sys:String>
@@ -557,6 +580,7 @@
     <sys:String x:Key="轴软限位启用未选择格式">{0} must specify whether soft limits are enabled.</sys:String>
     <sys:String x:Key="轴回零速度无效格式">{0} home search and creep speeds must be valid numbers greater than zero.</sys:String>
     <sys:String x:Key="轴回零模式无效格式">{0} has no supported home mode configured for the current adapter, or its number belongs to another adapter. Select the mode again.</sys:String>
+    <sys:String x:Key="轴DATUM原点通道无效格式">{0} DATUM_IN must be -1 or between 0 and {1}.</sys:String>
     <!-- Device variable page -->
     <sys:String x:Key="设备变量">Device Variables</sys:String>
     <sys:String x:Key="设备变量页面说明">View and maintain this machine's variables. Definitions are saved per machine; current values update at runtime.</sys:String>
@@ -606,15 +630,20 @@
     <sys:String x:Key="取消">Cancel</sys:String>
     <sys:String x:Key="保存">Save</sys:String>
     <sys:String x:Key="任务运行">Task monitor</sys:String>
-    <sys:String x:Key="任务运行页面说明">View task execution availability and the associated device configuration.</sys:String>
-    <sys:String x:Key="任务仿真入口说明">Task execution is not connected to this equipment and cannot start it here. Review the associated axis, I/O and variable configuration first. View current equipment flows in Equipment Overview or Flow Status.</sys:String>
+    <sys:String x:Key="任务接入状态">Task Integration Status</sys:String>
+    <sys:String x:Key="任务接入状态页面说明">Review task execution availability and associated equipment resources.</sys:String>
+    <sys:String x:Key="任务接入状态说明">Task execution is not connected to this equipment, so this page only checks task resource links and cannot start the machine. View or operate the current station in Equipment Overview or Flow Status.</sys:String>
     <sys:String x:Key="刷新关联配置目录">Refresh shared catalog</sys:String>
     <sys:String x:Key="任务关联目录统计">Shared catalog: {0} axes, {1} DI, {2} DO, {3} variables, {4} teach points.</sys:String>
-    <sys:String x:Key="任务仿真错误详情">View full diagnostic details</sys:String>
+    <sys:String x:Key="任务关联诊断详情">View full diagnostic details</sys:String>
     <sys:String x:Key="任务目录读取失败">Unable to read the shared task configuration.</sys:String>
     <sys:String x:Key="任务配置文件不存在">Configuration file not found: {0}</sys:String>
     <sys:String x:Key="任务配置设备目录">Machine configuration directory: {0}</sys:String>
     <sys:String x:Key="任务配置检查建议">Check the relevant configuration files. If not yet configured, review Axis Mapping, I/O Mapping and Task Configuration in Settings.</sys:String>
+    <sys:String x:Key="打开轴映射配置">Open Axis Mapping</sys:String>
+    <sys:String x:Key="打开IO映射配置">Open I/O Mapping</sys:String>
+    <sys:String x:Key="打开任务配置">Open Task Configuration</sys:String>
+    <sys:String x:Key="打开设备变量">Open Device Variables</sys:String>
     <sys:String x:Key="任务关联手动页不可用">The axis manual page is unavailable because the controller is not connected. No motion has been requested.</sys:String>
     <sys:String x:Key="任务关联对象">Referenced object</sys:String>
     <sys:String x:Key="任务关联定位成功">Item located</sys:String>

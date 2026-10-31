@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -32,7 +33,7 @@ namespace MotionControl.Host.Wpf
         {
             { "Home", new[] { "设备总览", "运行日志" } },
             { "Statistics", new[] { "产量统计", "节拍统计", "运行统计" } },
-            { "Monitor", new[] { "轴监控", "IO监控", "流程状态", "任务运行", "设备变量" } },
+            { "Monitor", new[] { "轴监控", "IO监控", "流程状态", "任务接入状态", "设备变量" } },
             { "Manual", new[] { "轴手动", "IO手动", "气缸手动", "通讯调试" } },
             { "Settings", new[] { "轴映射配置", "IO映射", "安全联锁", "报警库", "通讯设置", "数据采集", "任务配置" } },
             { "Alarms", new[] { "当前报警", "历史报警", "报警统计", "操作日志" } },
@@ -70,7 +71,6 @@ namespace MotionControl.Host.Wpf
         /// <summary>IO 监控最近一次可见 DO 采样是否失败；空值表示尚未采样。</summary>
         private bool? _latestVisibleDoReadFailed;
 
-
         /// <summary>由 Host 注入按已映射逻辑轴读取状态的只读监控页面。</summary>
         private UserControl _axisMonitorPage;
 
@@ -103,6 +103,15 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>防止启动、暂停和停止命令被重复点击。</summary>
         private bool _isMachineCommandRunning;
+
+        /// <summary>自动启动的当前拦截原因；为空时仍需结合状态检查是否允许启动。</summary>
+        private string _automaticStartBlockReason;
+
+        /// <summary>是否已完成最近一次自动启动就绪检查。</summary>
+        private bool _automaticStartReadinessKnown;
+
+        /// <summary>防止界面计时器并行读取多份自动启动就绪状态。</summary>
+        private bool _automaticStartReadinessCheckInProgress;
 
         /// <summary>当前界面语言代码；支持 zh-CN 和 en-US。</summary>
         public string CurrentLanguage { get; private set; }
@@ -147,7 +156,7 @@ namespace MotionControl.Host.Wpf
         {
             Title = GetLocalizedText("运动控制上位机");
             if (_simulationConfigurationRoot != null)
-                Title += " — " + GetLocalizedText("仿真配置标识");
+                Title += " — " + GetLocalizedText("隔离配置标识");
         }
 
         /// <summary>
@@ -161,6 +170,7 @@ namespace MotionControl.Host.Wpf
                 return;
             }
 
+            ClearOperationReturnTarget();
             NavigateToSection(navigationButton.Tag as string);
         }
 
@@ -227,6 +237,7 @@ namespace MotionControl.Host.Wpf
         /// </summary>
         private void SidebarNavigationButton_Click(object sender, RoutedEventArgs e)
         {
+            ClearOperationReturnTarget();
             SelectSidebarPage(sender as ToggleButton);
         }
 
@@ -313,7 +324,10 @@ namespace MotionControl.Host.Wpf
             _flowStatusPage = flowStatusPage;
 
             if (_flowStatusPage is FlowStatusView flowStatusView)
+            {
                 flowStatusView.NavigationRequested += OperationNavigationRequested;
+                UpdateAutomaticStartReadinessPages();
+            }
 
             UpdatePageContent();
         }
@@ -368,6 +382,9 @@ namespace MotionControl.Host.Wpf
             }
 
             _machineRuntime = machineRuntime;
+            _automaticStartBlockReason = null;
+            _automaticStartReadinessKnown = machineRuntime == null
+                || machineRuntime.State != MachineRunState.Ready;
             _equipmentOverviewPage.SetRuntime(machineRuntime);
             _currentAlarmsPage.SetRuntime(machineRuntime);
             if (_machineRuntime != null)
@@ -379,11 +396,12 @@ namespace MotionControl.Host.Wpf
         }
 
         /// <summary>由 Host 组合根按运行时连接结果更新底栏的控制卡状态。</summary>
-        public void SetMotionCardConnectionStatus(bool isConnected)
+        public void SetMotionCardConnectionStatus(bool isConnected, string statusMessage = null)
         {
             _motionCardSessionConnected = isConnected;
             if (!isConnected) { _latestVisibleDiReadFailed = null; _latestVisibleDoReadFailed = null; }
             UpdateMotionCardFooter();
+            _equipmentOverviewPage.SetConnectionStatus(isConnected, statusMessage);
         }
 
         /// <summary>显示会话和最近可见 IO 读取异常；无采样不能当作通信正常。</summary>
@@ -412,12 +430,12 @@ namespace MotionControl.Host.Wpf
                 PagePlaceholder.Visibility = Visibility.Collapsed;
                 PageDescription.SetResourceReference(TextBlock.TextProperty, "任务配置页面说明"); return;
             }
-            if (_taskMonitorPage != null && _currentSectionKey == "Monitor" && _currentPageResourceKey == "任务运行")
+            if (_taskMonitorPage != null && _currentSectionKey == "Monitor" && _currentPageResourceKey == "任务接入状态")
             {
                 ManualDebugContent.Content = _taskMonitorPage;
                 ManualDebugContent.Visibility = Visibility.Visible;
                 PagePlaceholder.Visibility = Visibility.Collapsed;
-                PageDescription.SetResourceReference(TextBlock.TextProperty, "任务运行页面说明");
+                PageDescription.SetResourceReference(TextBlock.TextProperty, "任务接入状态页面说明");
                 return;
             }
             var isAxisMappingPage = _axisMappingConfigurationPage != null
@@ -660,6 +678,12 @@ namespace MotionControl.Host.Wpf
             }
             catch (Exception error)
             {
+                if (ReferenceEquals(runtime, _machineRuntime) && runtime.State == MachineRunState.Ready)
+                {
+                    _automaticStartReadinessKnown = false;
+                    await RefreshAutomaticStartReadinessAsync();
+                }
+
                 ShowMachineCommandError("启动", error);
             }
             finally
@@ -720,6 +744,16 @@ namespace MotionControl.Host.Wpf
         /// <summary>在界面线程上响应运行时状态变化并刷新整机状态显示。</summary>
         private void MachineRuntime_StatusChanged(object sender, EventArgs e)
         {
+            if (_machineRuntime != null && _machineRuntime.State == MachineRunState.Ready)
+            {
+                _automaticStartReadinessKnown = false;
+            }
+            else
+            {
+                _automaticStartBlockReason = null;
+                _automaticStartReadinessKnown = true;
+            }
+
             if (!Dispatcher.CheckAccess())
             {
                 Dispatcher.BeginInvoke(new Action(UpdateMachineStateDisplay));
@@ -757,11 +791,16 @@ namespace MotionControl.Host.Wpf
             MachineRunState state = _machineRuntime == null
                 ? MachineRunState.Disconnected
                 : _machineRuntime.State;
-            string stateResourceKey = GetMachineStateResourceKey(state);
+            string stateResourceKey = state == MachineRunState.Ready && !_automaticStartReadinessKnown
+                ? "状态检查启动条件"
+                : state == MachineRunState.Ready && !string.IsNullOrWhiteSpace(_automaticStartBlockReason)
+                    ? "状态启动条件未满足"
+                    : GetMachineStateResourceKey(state);
             string stateText = GetLocalizedText(stateResourceKey);
 
             CurrentMachineState.SetResourceReference(TextBlock.TextProperty, stateResourceKey);
             HeaderMessage.Text = GetLocalizedText("设备状态标题") + stateText;
+            UpdateAutomaticStartReadinessPages();
             MachineResetButton.SetResourceReference(
                 ContentControl.ContentProperty,
                 _isResetting ? "整机复位中" : "整机复位");
@@ -773,12 +812,35 @@ namespace MotionControl.Host.Wpf
                     || state == MachineRunState.Alarmed);
             MachineStartButton.IsEnabled = !_isResetting && !_isMachineCommandRunning
                 && _machineRuntime != null && _machineRuntime.StationFlows.Count > 0
-                && state == MachineRunState.Ready;
+                && state == MachineRunState.Ready
+                && _automaticStartReadinessKnown
+                && string.IsNullOrWhiteSpace(_automaticStartBlockReason);
             MachinePauseButton.IsEnabled = !_isMachineCommandRunning
                 && _machineRuntime != null && state == MachineRunState.Running;
             MachineStopButton.IsEnabled = !_isMachineCommandRunning
                 && _machineRuntime != null
                 && (state == MachineRunState.Running || state == MachineRunState.Pausing);
+        }
+
+        /// <summary>把同一份启动就绪结果同步到设备总览和流程状态页。</summary>
+        private void UpdateAutomaticStartReadinessPages()
+        {
+            MachineRunState state = _machineRuntime == null
+                ? MachineRunState.Disconnected
+                : _machineRuntime.State;
+            bool isReady = state == MachineRunState.Ready;
+            string blockReason = isReady ? _automaticStartBlockReason : null;
+            bool checking = isReady && !_automaticStartReadinessKnown;
+
+            if (_equipmentOverviewPage != null)
+            {
+                _equipmentOverviewPage.SetAutomaticStartReadiness(blockReason, checking);
+            }
+
+            if (_flowStatusPage is FlowStatusView flowStatusView)
+            {
+                flowStatusView.SetAutomaticStartReadiness(blockReason, checking);
+            }
         }
 
         /// <summary>调用 Runtime 的整机复位流程，并向操作员显示未能完成的原因。</summary>
@@ -814,9 +876,66 @@ namespace MotionControl.Host.Wpf
         /// <summary>
         /// 响应时钟定时器，并刷新主窗口的当前时间。
         /// </summary>
-        private void ClockTimer_Tick(object sender, EventArgs e)
+        private async void ClockTimer_Tick(object sender, EventArgs e)
         {
             UpdateClock();
+            await RefreshAutomaticStartReadinessAsync();
+        }
+
+        /// <summary>每秒刷新自动启动拦截原因，让总览与顶部启动按钮反映轴和安全就绪状态。</summary>
+        private async Task RefreshAutomaticStartReadinessAsync()
+        {
+            MachineRuntime runtime = _machineRuntime;
+            if (runtime == null || runtime.State != MachineRunState.Ready || runtime.StationFlows.Count == 0)
+            {
+                _automaticStartBlockReason = null;
+                _automaticStartReadinessKnown = true;
+                UpdateMachineStateDisplay();
+                return;
+            }
+
+            if (_automaticStartReadinessCheckInProgress)
+            {
+                return;
+            }
+
+            _automaticStartReadinessCheckInProgress = true;
+            _automaticStartReadinessKnown = false;
+            UpdateMachineStateDisplay();
+
+            string blockReason;
+            try
+            {
+                blockReason = await runtime
+                    .GetAutomaticStartBlockReasonAsync(CancellationToken.None)
+                    .ConfigureAwait(true);
+            }
+            catch (Exception readinessError)
+            {
+                blockReason = "无法确认自动启动条件。" + readinessError.Message;
+            }
+            finally
+            {
+                _automaticStartReadinessCheckInProgress = false;
+            }
+
+            if (!ReferenceEquals(runtime, _machineRuntime))
+            {
+                return;
+            }
+
+            if (runtime.State == MachineRunState.Ready)
+            {
+                _automaticStartBlockReason = blockReason;
+                _automaticStartReadinessKnown = true;
+            }
+            else
+            {
+                _automaticStartBlockReason = null;
+                _automaticStartReadinessKnown = true;
+            }
+
+            UpdateMachineStateDisplay();
         }
 
         /// <summary>

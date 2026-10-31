@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
@@ -195,9 +196,12 @@ namespace MotionControl.Host.Wpf
                 MachineId,
                 _cardConnection);
             _axisMappingPage.PrepareCardDisconnectAsync = DisconnectMachineBeforeCardAsync;
+            _axisMappingPage.ApplyConnectedConfigurationAsync = ApplyConnectedConfigurationAsync;
+            _axisMappingPage.RequiresDisconnectedForAxisReconnect = true;
             _axisMappingPage.CardConnectionChanged += AxisMappingPage_CardConnectionChanged;
             _axisMappingPage.AxisMappingApplied += AxisMappingPage_AxisMappingApplied;
             _ioMappingPage = new IoMappingConfigurationView(_configurationStore, MachineId, _cardConnection);
+            _ioMappingPage.ApplyConnectedConfigurationAsync = ApplyConnectedConfigurationAsync;
             _ioMappingPage.IoMappingApplied += IoMappingPage_IoMappingApplied;
             _safetyInterlockPage = new SafetyInterlockConfigurationView(_configurationStore, MachineId);
             _safetyInterlockPage.ConfigurationSaved += SafetyInterlockPage_ConfigurationSaved;
@@ -218,8 +222,15 @@ namespace MotionControl.Host.Wpf
             _mainWindow.SetDeviceVariablePage(_deviceVariablePage);
             _taskMonitorLauncher = new Tasks.TaskMonitorLauncher(_configurationStore, MachineId, _mainWindow);
             _mainWindow.SetTaskMonitorPage(_taskMonitorLauncher);
-            _taskConfigurationPage = new MotionControl.TaskEngine.Wpf.Editing.TaskConfigurationView(_configurationStore, MachineId, GetTaskApplyBlockedReason);
+            _taskConfigurationPage = new MotionControl.TaskEngine.Wpf.Editing.TaskConfigurationView(
+                _configurationStore,
+                MachineId,
+                GetTaskApplyBlockedReason,
+                GetTaskRuntimeStateText,
+                GetTaskRuntimeStationNames,
+                GetTaskRuntimeReadinessReason);
             _taskConfigurationPage.ReferenceRequested += TaskEditorReferenceRequested;
+            _taskConfigurationPage.CurrentFlowRequested += (sender, args) => _mainWindow.ShowFlowStatus();
             _mainWindow.SetTaskConfigurationPage(_taskConfigurationPage);
             RefreshIoMonitorPage();
             RefreshAxisMonitorPage(null);
@@ -374,6 +385,17 @@ namespace MotionControl.Host.Wpf
             }
         }
 
+        /// <summary>在线下发经过整机命令锁；需要重连的轴映射必须先断卡，避免旧 Runtime 持有旧卡。</summary>
+        private async Task ApplyConnectedConfigurationAsync(Func<Task> change, bool requiresReconnect, CancellationToken cancellationToken)
+        {
+            if (requiresReconnect)
+                throw new InvalidOperationException("此轴映射更改需要重新连接；请先停止设备并断开控制卡，再保存配置。");
+            MachineRuntime runtime = _machineRuntime;
+            if (runtime == null)
+                throw new InvalidOperationException("设备运行时尚未就绪，不能在线应用控制卡配置。");
+            await runtime.RunConnectedConfigurationChangeAsync(change, cancellationToken).ConfigureAwait(true);
+        }
+
         /// <summary>轴映射页断卡前先通过 Runtime 的同一命令锁检查并断开整机。</summary>
         private async Task DisconnectMachineBeforeCardAsync(CancellationToken cancellationToken)
         {
@@ -395,12 +417,22 @@ namespace MotionControl.Host.Wpf
                 _safetyInterlockPage.RefreshDigitalInputNames();
             }
 
-            _mainWindow.SetMotionCardConnectionStatus(_cardConnection.IsConnected);
+            _mainWindow.SetMotionCardConnectionStatus(
+                _cardConnection.IsConnected,
+                _axisMappingPage.CardConnectionStatusMessage);
             if (!_cardConnection.IsConnected)
             {
                 if (_machineRuntime != null)
                 {
                     _machineRuntime.StatusChanged -= MachineRuntime_RecoveryStatusChanged;
+                    try
+                    {
+                        await _machineRuntime.StopControlInputMonitoringAsync();
+                    }
+                    catch (Exception monitorError)
+                    {
+                        Trace.TraceWarning("控制卡断开后停止现场按钮监控失败：" + monitorError.Message);
+                    }
                 }
 
                 _machineRuntime = null;
@@ -419,6 +451,7 @@ namespace MotionControl.Host.Wpf
             }
 
             string recoveryMessage = string.Empty;
+            MachineRuntime createdRuntime = null;
             try
             {
                 IMotionCard connectedCard = _cardConnection.ConnectedMotionCard;
@@ -434,7 +467,8 @@ namespace MotionControl.Host.Wpf
                 }
 
                 var motionCards = new MotionCardGroup(new IMotionCard[] { connectedCard });
-                _machineSafetyStatus = CreateSafetyStatus(connectedLogicalIo);
+                SafetyInterlockConfigurationDocument controlInputConfiguration;
+                _machineSafetyStatus = CreateSafetyStatus(connectedLogicalIo, out controlInputConfiguration);
                 var alarmService = new MachineAlarmService();
                 IStationFlow[] stationFlows;
                 try
@@ -455,25 +489,41 @@ namespace MotionControl.Host.Wpf
 
                 _machineRecoveryCoordinator.TryRestoreStationFlows(stationFlows, out recoveryMessage);
 
-                var machineRuntime = new MachineRuntime(
+                createdRuntime = new MachineRuntime(
                     motionCards,
                     stationFlows,
                     alarmService,
-                    _machineSafetyStatus);
-                machineRuntime.RequestInitializationRecovery(
+                    _machineSafetyStatus,
+                    controlInputIo: connectedLogicalIo,
+                    startInputName: controlInputConfiguration.StartInputName,
+                    pauseInputName: controlInputConfiguration.PauseInputName,
+                    resetInputName: controlInputConfiguration.ResetInputName);
+                createdRuntime.RequestInitializationRecovery(
                     _machineRecoveryCoordinator.HasCompletedInitializationCheckpoint);
-                await machineRuntime.ConnectAsync(CancellationToken.None);
+                await createdRuntime.ConnectAsync(CancellationToken.None);
 
-                _machineRuntime = machineRuntime;
+                _machineRuntime = createdRuntime;
                 _machineRuntime.StatusChanged += MachineRuntime_RecoveryStatusChanged;
-                _mainWindow.SetMachineRuntime(machineRuntime);
-                _deviceVariablePage.SetMachineRuntime(machineRuntime);
-                _flowStatusPage = new FlowStatusView(machineRuntime);
+                _mainWindow.SetMachineRuntime(createdRuntime);
+                _deviceVariablePage.SetMachineRuntime(createdRuntime);
+                _flowStatusPage = new FlowStatusView(createdRuntime);
                 _mainWindow.SetFlowStatusPage(_flowStatusPage);
-                RefreshManualDebugPages(machineRuntime, motionCards, connectedLogicalIo);
+                RefreshManualDebugPages(createdRuntime, motionCards, connectedLogicalIo);
             }
             catch (Exception error)
             {
+                if (createdRuntime != null)
+                {
+                    try
+                    {
+                        await createdRuntime.StopControlInputMonitoringAsync();
+                    }
+                    catch (Exception monitorError)
+                    {
+                        Trace.TraceWarning("运行时初始化失败后停止现场按钮监控失败：" + monitorError.Message);
+                    }
+                }
+
                 _machineRuntime = null;
                 _machineSafetyStatus = null;
                 _manualMotionDebugPage = null;
@@ -583,6 +633,33 @@ namespace MotionControl.Host.Wpf
             return null;
         }
 
+        /// <summary>返回与顶部状态栏一致的正式 Runtime 状态；没有运行时则返回空值。</summary>
+        private string GetTaskRuntimeStateText()
+        {
+            if (_machineRuntime == null || _mainWindow == null)
+            {
+                return null;
+            }
+
+            return _mainWindow.GetTaskConfigurationRuntimeStateText();
+        }
+
+        /// <summary>返回正式 Runtime 当前的启动拦截原因，供任务配置页显示处理方向。</summary>
+        private string GetTaskRuntimeReadinessReason()
+        {
+            return _machineRuntime == null || _mainWindow == null
+                ? null
+                : _mainWindow.GetTaskConfigurationReadinessReason();
+        }
+
+        /// <summary>复制正式 Host 当前 Runtime 的工位名称供任务配置页只读对照。</summary>
+        private IEnumerable<string> GetTaskRuntimeStationNames()
+        {
+            return _machineRuntime == null
+                ? Enumerable.Empty<string>()
+                : _machineRuntime.StationFlows.Select(flow => flow.StationName).ToArray();
+        }
+
         /// <summary>保留编辑页对象并导航，返回任务配置时仍有原任务与草稿。</summary>
         private void TaskEditorReferenceRequested(object sender, MotionControl.TaskEngine.Wpf.Views.TaskReferenceEventArgs e)
         { _mainWindow.OpenTaskReference(e.Page, e.Name, e.Direction); }
@@ -612,6 +689,26 @@ namespace MotionControl.Host.Wpf
             ILogicalIo logicalIo,
             IMachineAlarmService alarmService)
         {
+            const string stationSetPath = "Parameters/DemoStations.json";
+            string stationSetFile = Path.Combine(
+                _configurationStore.GetMachineDirectory(MachineId),
+                stationSetPath.Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(stationSetFile))
+            {
+                DemoStationSetSettings stationSet = _configurationStore.LoadJson<DemoStationSetSettings>(MachineId, stationSetPath);
+                if (stationSet == null || !stationSet.Enabled)
+                    return new IStationFlow[0];
+
+                stationSet.Validate();
+                MachineAlarmCatalogDocument alarmCatalog = _alarmCatalogStore.Load(MachineId);
+                return stationSet.Stations
+                    .Where(station => station != null && station.Enabled)
+                    .Select(station => CreateDemoStationFlow(
+                        motionCards, logicalIo, alarmService, station,
+                        LoadDemoStationTimeoutAlarms(alarmCatalog, station.TimeoutAlarmCodes)))
+                    .ToArray();
+            }
+
             const string relativePath = "Parameters/DemoStation.json";
             string fullPath = Path.Combine(
                 _configurationStore.GetMachineDirectory(MachineId),
@@ -628,6 +725,23 @@ namespace MotionControl.Host.Wpf
             }
 
             settings.Validate();
+            MachineAlarmCatalogDocument legacyAlarmCatalog = _alarmCatalogStore.Load(MachineId);
+            return new IStationFlow[]
+            {
+                CreateDemoStationFlow(
+                    motionCards, logicalIo, alarmService, settings,
+                    LoadDemoStationTimeoutAlarms(legacyAlarmCatalog, settings.TimeoutAlarmCodes))
+            };
+        }
+
+        /// <summary>核对一个工位的逻辑硬件映射与行程后创建真实 Runtime 工位流程。</summary>
+        private IStationFlow CreateDemoStationFlow(
+            MotionCardGroup motionCards,
+            ILogicalIo logicalIo,
+            IMachineAlarmService alarmService,
+            DemoStationSettings settings,
+            IEnumerable<MachineAlarmDefinition> timeoutAlarms)
+        {
             var axisDefinition = _cardConnection.AxisHardwareDefinitions.SingleOrDefault(
                 axis => string.Equals(axis.Name, settings.AxisName, StringComparison.OrdinalIgnoreCase));
             if (axisDefinition == null)
@@ -656,17 +770,32 @@ namespace MotionControl.Host.Wpf
                 throw new InvalidOperationException("示例工位找不到已映射逻辑 DO：" + settings.OutputName + "。");
             }
 
-            MachineAlarmCatalogEntry timeoutAlarm = _alarmCatalogStore.Load(MachineId).Alarms.SingleOrDefault(
-                alarm => string.Equals(alarm.Code, DemoStationFlow.SensorTimeoutAlarmCode, StringComparison.OrdinalIgnoreCase));
-            if (timeoutAlarm == null)
-            {
-                throw new InvalidOperationException("报警库缺少示例流程所需的报警代码：" + DemoStationFlow.SensorTimeoutAlarmCode + "。");
-            }
+            return new DemoStationFlow(motionCards.GetAxis(settings.AxisName), logicalIo, alarmService, settings, timeoutAlarms);
+        }
 
-            return new IStationFlow[]
+        /// <summary>按工位显式配置的代码，从设备报警库读取一条或多条超时报警。</summary>
+        private static IReadOnlyList<MachineAlarmDefinition> LoadDemoStationTimeoutAlarms(
+            MachineAlarmCatalogDocument alarmCatalog,
+            IEnumerable<string> alarmCodes)
+        {
+            if (alarmCatalog == null) throw new ArgumentNullException(nameof(alarmCatalog));
+            if (alarmCodes == null) throw new ArgumentNullException(nameof(alarmCodes));
+
+            var definitionsByCode = alarmCatalog.Alarms.ToDictionary(
+                alarm => alarm.Code,
+                alarm => alarm,
+                StringComparer.OrdinalIgnoreCase);
+            var definitions = new List<MachineAlarmDefinition>();
+            foreach (string code in alarmCodes)
             {
-                new DemoStationFlow(motionCards.GetAxis(settings.AxisName), logicalIo, alarmService, settings, timeoutAlarm.ToDefinition())
-            };
+                MachineAlarmCatalogEntry entry;
+                if (!definitionsByCode.TryGetValue(code, out entry))
+                {
+                    throw new InvalidOperationException("设备报警库缺少工位已关联的报警代码：" + code + "。");
+                }
+                definitions.Add(entry.ToDefinition());
+            }
+            return definitions.AsReadOnly();
         }
 
         /// <summary>为首次运行的设备目录建立与示例工艺对应的一条可编辑报警定义。</summary>
@@ -699,11 +828,13 @@ namespace MotionControl.Host.Wpf
                 _cardConnection.DigitalOutputs,
                 _configurationStore,
                 MachineId);
+            manualPage.AxisMappingRequested += (sender, args) => _mainWindow.ShowConfigurationPage("轴映射配置");
             ManualIoDebugView ioManualPage = new ManualIoDebugView(
                 machineRuntime,
                 connectedLogicalIo,
                 _cardConnection.DigitalInputs.Select(point => point.Name),
                 _cardConnection.DigitalOutputs.Select(point => point.Name));
+            ioManualPage.IoMappingRequested += (sender, args) => _mainWindow.ShowConfigurationPage("IO映射");
 
             _manualMotionDebugPage = manualPage;
             _manualIoDebugPage = ioManualPage;
@@ -824,8 +955,10 @@ namespace MotionControl.Host.Wpf
             }
         }
 
-        /// <summary>从独立安全配置读取急停 DI；留空表示仅关闭软件监控，生产配置仍由全量校验把关。</summary>
-        private LogicalIoEmergencyStopStatus CreateSafetyStatus(ILogicalIo logicalIo)
+        /// <summary>读取独立保存的急停与现场按钮 DI；留空急停时保持软件监控关闭。</summary>
+        private LogicalIoEmergencyStopStatus CreateSafetyStatus(
+            ILogicalIo logicalIo,
+            out SafetyInterlockConfigurationDocument controlInputConfiguration)
         {
             const string safetyInterlockFilePath = "HardwareConfig/SafetyInterlock.json";
             string fullPath = Path.Combine(
@@ -844,6 +977,8 @@ namespace MotionControl.Host.Wpf
                         "SafetyInterlock.json 格式无效，只支持 schemaVersion 为 1。");
                 }
             }
+
+            controlInputConfiguration = configuration;
 
             string emergencyStopInputName = configuration.EmergencyStopInputName ?? string.Empty;
             if (string.IsNullOrWhiteSpace(emergencyStopInputName))
@@ -864,13 +999,21 @@ namespace MotionControl.Host.Wpf
             return new LogicalIoEmergencyStopStatus(logicalIo, emergencyStopInputName);
         }
 
-        /// <summary>安全配置保存后立即更新运行时正在使用的急停 DI。</summary>
+        /// <summary>安全配置保存后立即更新运行时正在使用的急停和整机按钮 DI。</summary>
         private void SafetyInterlockPage_ConfigurationSaved(object sender, EventArgs e)
         {
             if (_machineSafetyStatus != null)
             {
                 _machineSafetyStatus.UpdateEmergencyStopInputName(
                     _safetyInterlockPage.EmergencyStopInputName);
+                if (_machineRuntime != null)
+                {
+                    _machineRuntime.UpdateControlInputNames(
+                        _safetyInterlockPage.StartInputName,
+                        _safetyInterlockPage.PauseInputName,
+                        _safetyInterlockPage.ResetInputName);
+                }
+
                 return;
             }
 
@@ -883,6 +1026,18 @@ namespace MotionControl.Host.Wpf
         /// <summary>应用退出时断开已连接的控制卡，并报告句柄释放失败。</summary>
         protected override void OnExit(ExitEventArgs e)
         {
+            if (_machineRuntime != null)
+            {
+                try
+                {
+                    _machineRuntime.StopControlInputMonitoringAsync().GetAwaiter().GetResult();
+                }
+                catch (Exception monitorError)
+                {
+                    Trace.TraceWarning("应用退出时停止现场按钮监控失败：" + monitorError.Message);
+                }
+            }
+
             if (_cardConnection != null && _cardConnection.IsConnected)
             {
                 try

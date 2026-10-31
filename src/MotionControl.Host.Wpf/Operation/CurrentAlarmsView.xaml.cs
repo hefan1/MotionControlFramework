@@ -71,7 +71,17 @@ namespace MotionControl.Host.Wpf.Operation
             string query = SearchBox.Text.Trim();
             var alarms = _snapshot.Alarms.Where(alarm => Matches(alarm, query)).OrderBy(alarm => alarm.Definition.Kind == MachineAlarmKind.StopMachine ? 0 : 1).ThenByDescending(alarm => alarm.FirstRaisedAtUtc).ToList();
             SourceText.Text = T(_snapshot.IsPreview ? "离线页面示例" : "状态来源：设备运行数据") + " · " + T("软件状态采样") + " " + _snapshot.SampledAt.ToString("yyyy-MM-dd HH:mm:ss");
-            CountText.Text = T("当前报警") + "  " + (_snapshot.HasRuntime ? _snapshot.Alarms.Count.ToString() : "—");
+            if (!_snapshot.HasRuntime)
+            {
+                CountText.Text = T("未读取报警状态");
+            }
+            else
+            {
+                int stopAlarmCount = _snapshot.Alarms.Count(alarm => alarm.RequiresReset);
+                int noticeCount = _snapshot.Alarms.Count - stopAlarmCount;
+                CountText.Text = string.Format(
+                    T("报警数量摘要"), _snapshot.Alarms.Count, stopAlarmCount, noticeCount);
+            }
             EmptyText.Text = !_snapshot.HasRuntime ? T("未读取报警状态") : _snapshot.Alarms.Count == 0 ? T("当前无报警") : T("没有匹配的报警");
             EmptyText.Visibility = alarms.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             if (force || !_rows.Select(row => row.Alarm).SequenceEqual(alarms))
@@ -140,12 +150,12 @@ namespace MotionControl.Host.Wpf.Operation
         private void Io_Click(object sender, RoutedEventArgs e) { Navigate("IO监控"); }
         /// <summary>仅打开轴手动，页面本身不点动、不使能。</summary>
         private void Axis_Click(object sender, RoutedEventArgs e) { Navigate("轴手动"); }
-        /// <summary>发送报警来源；报警未记录关联输入时不把工位当前等待输入当作报警原因。</summary>
+        /// <summary>仅使用报警记录明确提供的输入；不把工位当前等待输入当作报警原因。</summary>
         private void Navigate(string page)
         {
             if (!(AlarmGrid.SelectedItem is AlarmDisplayRow row)) return;
             NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs(
-                page, row.Alarm.SourceName));
+                page, row.Alarm.SourceName, page == "IO监控" ? row.Alarm.RelatedInputName : null));
         }
         /// <summary>当前语言的中文资源键。</summary>
         private string T(string text) { return OperationUi.T(this, text); }
@@ -168,7 +178,7 @@ namespace MotionControl.Host.Wpf.Operation
         internal AlarmDisplayRow(MachineAlarmRecord alarm, Func<string, string> translate)
         {
             Alarm = alarm; Key = alarm.SourceName + "\u001f" + alarm.Definition.Code + "\u001f" + alarm.FirstRaisedAtUtc.Ticks;
-            KindText = translate(alarm.RequiresReset ? "停机" : "提醒");
+            KindText = translate(alarm.RequiresReset ? "停机" : "非停机");
             OccurredAt = alarm.FirstRaisedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
             ConditionText = translate(alarm.RequiresReset ? alarm.ConditionActive ? "条件仍有效" : "报警等待复位" : "非停机提醒");
         }

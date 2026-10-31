@@ -39,10 +39,12 @@ namespace MotionControl.Host.Wpf.Operation
             foreach (var flow in runtime.StationFlows)
             {
                 var statistics = flow as IStationCycleStatistics;
+                var inputWait = flow as IStationInputWaitState;
                 result.Stations.Add(new StationOverviewData
                 {
                     Name = flow.StationName,
                     CurrentStep = flow.CurrentStepName,
+                    WaitingInputName = inputWait?.WaitingInputName,
                     CompletedCycles = statistics?.CompletedCycles,
                     LastCycleSeconds = statistics?.LastCycleDuration?.TotalSeconds
                 });
@@ -65,6 +67,8 @@ namespace MotionControl.Host.Wpf.Operation
         public string Name { get; set; }
         /// <summary>工位提供的当前动作或保留步骤原文。</summary>
         public string CurrentStep { get; set; }
+        /// <summary>流程明确报告的当前等待逻辑 DI；未等待输入时为空。</summary>
+        public string WaitingInputName { get; set; }
         /// <summary>工位提供的完整循环数；为空表示该工位没有此统计能力。</summary>
         public long? CompletedCycles { get; set; }
         /// <summary>工位最近完整循环时长；为空表示尚无可测量的完整循环。</summary>
@@ -80,8 +84,10 @@ namespace MotionControl.Host.Wpf.Operation
         public string Page { get; private set; }
         /// <summary>可以按名称定位的工位，其他页面只打开页面本身。</summary>
         public string StationName { get; private set; }
+        /// <summary>可以在 IO 监控中定位的逻辑 IO 名称；为空时不切换具体通道。</summary>
+        public string IoPointName { get; private set; }
         /// <summary>创建只读导航请求。</summary>
-        public OperatorNavigationEventArgs(string page, string stationName = null)
-        { Page = page; StationName = stationName; }
+        public OperatorNavigationEventArgs(string page, string stationName = null, string ioPointName = null)
+        { Page = page; StationName = stationName; IoPointName = ioPointName; }
     }
 }

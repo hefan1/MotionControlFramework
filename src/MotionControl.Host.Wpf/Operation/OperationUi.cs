@@ -35,6 +35,20 @@ namespace MotionControl.Host.Wpf.Operation
                 default: return "未读取设备状态";
             }
         }
+        /// <summary>按整机状态选择准确描述工位步骤的标签，避免把待启动动作误认为正在执行。</summary>
+        internal static string StepLabelKey(MachineRunState? state)
+        {
+            switch (state)
+            {
+                case MachineRunState.ResetRequired:
+                case MachineRunState.Ready: return "待启动步骤";
+                case MachineRunState.Running: return "正在执行步骤";
+                case MachineRunState.Pausing:
+                case MachineRunState.Paused: return "暂停保留步骤";
+                case MachineRunState.Alarmed: return "报警停留步骤";
+                default: return "当前步骤";
+            }
+        }
         /// <summary>颜色只辅助文字；暂停和未知状态不会显示运行绿色。</summary>
         internal static Brush StateBrush(MachineRunState? state)
         {

@@ -2,16 +2,54 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using MotionControl.Framework.Runtime.Machine;
 
 namespace MotionControl.Host.Wpf
 {
     /// <summary>任务监控的导航组合，不改变现有整机按钮所控制的 Runtime。</summary>
     public partial class MainWindow
     {
-        /// <summary>本机任务目录及独立仿真入口页。</summary>
+        /// <summary>本机任务目录只读检查页，并提供当前工位运行状态导航。</summary>
         private UserControl _taskMonitorPage;
         /// <summary>任务配置与草稿编辑页面，独立于运行监控。</summary>
         private UserControl _taskConfigurationPage;
+
+        /// <summary>返回任务配置页应显示的当前设备状态，并把启动拦截与整机就绪区分开。</summary>
+        internal string GetTaskConfigurationRuntimeStateText()
+        {
+            if (_machineRuntime == null)
+            {
+                return null;
+            }
+
+            MachineRunState state = _machineRuntime.State;
+            if (state == MachineRunState.Ready)
+            {
+                if (!_automaticStartReadinessKnown)
+                {
+                    return "正在检查启动条件";
+                }
+
+                if (!string.IsNullOrWhiteSpace(_automaticStartBlockReason))
+                {
+                    return "启动条件未满足";
+                }
+            }
+
+            return Operation.OperationUi.StateKey(state);
+        }
+
+        /// <summary>返回正式 Host 已采集的启动拦截原因，供任务配置页与总览共用。</summary>
+        internal string GetTaskConfigurationReadinessReason()
+        {
+            if (_machineRuntime == null || _machineRuntime.State != MachineRunState.Ready
+                || !_automaticStartReadinessKnown)
+            {
+                return null;
+            }
+
+            return _automaticStartBlockReason;
+        }
 
         /// <summary>组合根显式接入任务配置页，不改变已有页面布局。</summary>
         public void SetTaskConfigurationPage(UserControl page) { _taskConfigurationPage = page; UpdatePageContent(); }
@@ -19,14 +57,47 @@ namespace MotionControl.Host.Wpf
         /// <summary>由 Host 显式接入任务模块。</summary>
         public void SetTaskMonitorPage(UserControl page) { _taskMonitorPage = page; UpdatePageContent(); }
 
+        /// <summary>从任务接入状态页返回设备总览。</summary>
+        internal void ShowEquipmentOverview()
+        {
+            SetOperationReturnTarget(_currentSectionKey, _currentPageResourceKey);
+            _currentPageResourceKey = "设备总览";
+            NavigateToSection("Home");
+            Activate();
+        }
+
+        /// <summary>从任务接入状态页查看当前工位步骤。</summary>
+        public void ShowFlowStatus()
+        {
+            SetOperationReturnTarget(_currentSectionKey, _currentPageResourceKey);
+            _currentPageResourceKey = "流程状态";
+            NavigateToSection("Monitor");
+            Activate();
+        }
+
+        /// <summary>从任务目录诊断直接打开需要维护的配置页；仅导航，不连接控制卡或保存配置。</summary>
+        internal void ShowConfigurationPage(string page)
+        {
+            if (page != "轴映射配置" && page != "IO映射" && page != "任务配置" && page != "设备变量")
+            {
+                return;
+            }
+
+            SetOperationReturnTarget(_currentSectionKey, _currentPageResourceKey);
+            _currentPageResourceKey = page;
+            NavigateToSection(page == "设备变量" ? "Monitor" : "Settings");
+            Activate();
+        }
+
         /// <summary>选择已有关联页并显示待查看的逻辑对象名，不能自动触发该页动作。</summary>
         public void OpenTaskReference(string page, string name, string direction = null)
         {
             if (page == "轴手动" && _manualMotionDebugPage == null)
             {
-                MessageBox.Show(GetLocalizedText("任务关联手动页不可用"), GetLocalizedText("任务运行")); return;
+                MessageBox.Show(GetLocalizedText("任务关联手动页不可用"), GetLocalizedText("任务接入状态")); return;
             }
             string section = page == "轴映射配置" || page == "IO映射" ? "Settings" : page == "轴手动" ? "Manual" : "Monitor";
+            SetOperationReturnTarget(_currentSectionKey, _currentPageResourceKey);
             _currentPageResourceKey = page;
             NavigateToSection(section);
             bool found = FocusTaskReference(page, name, direction);

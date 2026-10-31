@@ -7,7 +7,7 @@ using MotionControl.TaskEngine.Catalog;
 
 namespace MotionControl.Host.Wpf.Tasks
 {
-    /// <summary>说明任务执行的接入状态，并只读检查设备关联目录。</summary>
+    /// <summary>只读检查任务资源关联，并提供当前工位运行状态的直接入口。</summary>
     internal sealed class TaskMonitorLauncher : UserControl
     {
         /// <summary>复用当前设备配置服务。</summary>
@@ -28,16 +28,22 @@ namespace MotionControl.Host.Wpf.Tasks
         private string _failureOperationKey;
         /// <summary>最近一次失败后的建议资源键。</summary>
         private string _failureAdviceKey;
+        /// <summary>当前诊断对应的配置页快捷入口。</summary>
+        private readonly WrapPanel _nextStepButtons;
         /// <summary>创建明确的配置入口；不会从此处连接控制卡。</summary>
         internal TaskMonitorLauncher(MachineConfigurationStore store, string machineId, MainWindow host)
         {
             _store = store; _machineId = machineId; _host = host;
             var panel = new StackPanel { Margin = new Thickness(24) };
             var note = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,0,0,12), FontSize = 14 };
-            note.SetResourceReference(TextBlock.TextProperty, "任务仿真入口说明"); panel.Children.Add(note);
+            note.SetResourceReference(TextBlock.TextProperty, "任务接入状态说明"); panel.Children.Add(note);
             var buttons = new WrapPanel();
+            AddButton(buttons, "设备总览", EquipmentOverview_Click);
+            AddButton(buttons, "流程状态", FlowStatus_Click);
             AddButton(buttons, "刷新关联配置目录", RefreshCatalog_Click);
             panel.Children.Add(buttons);
+            _nextStepButtons = new WrapPanel { Margin = new Thickness(0,10,0,0), Visibility = Visibility.Collapsed };
+            panel.Children.Add(_nextStepButtons);
             _status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,14,0,0) };
             panel.Children.Add(_status);
             _diagnosticText = new TextBox { IsReadOnly = true, TextWrapping = TextWrapping.Wrap,
@@ -45,7 +51,7 @@ namespace MotionControl.Host.Wpf.Tasks
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Auto };
             _diagnostics = new Expander { Margin = new Thickness(0,8,0,0),
                 Visibility = Visibility.Collapsed, Content = _diagnosticText };
-            _diagnostics.SetResourceReference(HeaderedContentControl.HeaderProperty, "任务仿真错误详情");
+            _diagnostics.SetResourceReference(HeaderedContentControl.HeaderProperty, "任务关联诊断详情");
             panel.Children.Add(_diagnostics); Content = panel;
             _host.LanguageChanged += Host_LanguageChanged;
             Loaded += Launcher_Loaded;
@@ -61,6 +67,10 @@ namespace MotionControl.Host.Wpf.Tasks
         private void Launcher_Loaded(object sender, RoutedEventArgs e) { RefreshCatalog(); }
         /// <summary>重新读取其他页面已保存的配置。</summary>
         private void RefreshCatalog_Click(object sender, RoutedEventArgs e) { RefreshCatalog(); }
+        /// <summary>打开实际展示当前设备运行状态的总览页。</summary>
+        private void EquipmentOverview_Click(object sender, RoutedEventArgs e) { _host.ShowEquipmentOverview(); }
+        /// <summary>打开实际展示当前工位运行步骤的流程状态页。</summary>
+        private void FlowStatus_Click(object sender, RoutedEventArgs e) { _host.ShowFlowStatus(); }
         /// <summary>共享目录加载失败时给出明确文件错误。</summary>
         private void RefreshCatalog()
         {
@@ -88,7 +98,52 @@ namespace MotionControl.Host.Wpf.Tasks
             _diagnosticText.Text = error.ToString();
             _diagnostics.IsExpanded = false;
             _diagnostics.Visibility = Visibility.Visible;
+            UpdateNextStepButton(error);
             RefreshErrorText();
+        }
+
+        /// <summary>对已知缺失配置提供直达入口，不生成默认映射或自动保存。</summary>
+        private void UpdateNextStepButton(Exception error)
+        {
+            _nextStepButtons.Children.Clear();
+            _nextStepButtons.Visibility = Visibility.Collapsed;
+
+            var missingFile = error as FileNotFoundException;
+            if (missingFile == null || string.IsNullOrWhiteSpace(missingFile.FileName))
+            {
+                return;
+            }
+
+            string fileName = Path.GetFileName(missingFile.FileName);
+            string page;
+            string buttonResource;
+            if (string.Equals(fileName, "AxisParameters.json", StringComparison.OrdinalIgnoreCase))
+            {
+                page = "轴映射配置";
+                buttonResource = "打开轴映射配置";
+            }
+            else if (string.Equals(fileName, "IoMapping.json", StringComparison.OrdinalIgnoreCase))
+            {
+                page = "IO映射";
+                buttonResource = "打开IO映射配置";
+            }
+            else if (string.Equals(fileName, "TaskMachine.json", StringComparison.OrdinalIgnoreCase))
+            {
+                page = "任务配置";
+                buttonResource = "打开任务配置";
+            }
+            else if (string.Equals(fileName, "DeviceVariables.json", StringComparison.OrdinalIgnoreCase))
+            {
+                page = "设备变量";
+                buttonResource = "打开设备变量";
+            }
+            else
+            {
+                return;
+            }
+
+            AddButton(_nextStepButtons, buttonResource, (sender, args) => _host.ShowConfigurationPage(page));
+            _nextStepButtons.Visibility = Visibility.Visible;
         }
 
         /// <summary>语言切换后保留当前错误并更新提示，不重新读取或更改配置。</summary>
@@ -119,6 +174,8 @@ namespace MotionControl.Host.Wpf.Tasks
             _diagnosticText.Text = string.Empty;
             _diagnostics.IsExpanded = false;
             _diagnostics.Visibility = Visibility.Collapsed;
+            _nextStepButtons.Children.Clear();
+            _nextStepButtons.Visibility = Visibility.Collapsed;
         }
     }
 }
