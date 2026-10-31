@@ -271,3 +271,9 @@
 - 经正式 Host 发起一次 Load_X 回零后，Host 实时观察到位置由 0 向负方向变化，达到 -90 mm 时通过 Host “受控停止”停稳；DI8 未触发，回零以 `HOMESTATUS=0` 报失败，没有触发软限位或移动其他轴。随后对已打开的 ZDevelop 作一次只读核对：轴 1 的 `DPOS=-90`、`MPOS=-90`、`DATUM_IN=8`、`AXIS_STOPREASON=0x800`。该运动方向与模式 3 手册描述不一致，原因仍未确定，因此不再发起回零或生产循环。
 - ZSimu 截图显示输入 DI0–DI63 均未选中。对 DI8 的屏幕点击没有让 Host 的 Load_X ORG 指示产生可见变化，故输入切换记为未验证；没有修改任何 DO，输入输出均保持安全值。Load_X 当前停在 -90 mm、未回零，其他轴停止，当前无活动报警。
 - Machine01 测试配置按项目规则保留，路径为 `C:\Users\ASUS\AppData\Local\MotionControlFramework\Configurations\Machine01`；`Parameters/Equipment.json` 的 `executionOwner` 为 `TaskEngine`。本轮没有完成“任务 → 轴动 → DI 变化 → 报警进页面 → 连续循环”的端到端验证。下一步先核实 DI8 屏幕切换与 Host 原点指示映射，并查清轴方向来源；两项确认前不回零、不启动任务。
+
+## 正式 Host 轴状态与 IO 监控复核（2026-10-31）
+
+- 正式 Host 的轴监控读取 12 个逻辑轴，失败 0。`Load_X` 指令/反馈位置均为 -90 mm、速度为 0、伺服已使能、已停止、未回零，原点未触发，正负硬/软限位均未触发且无轴报警；其他轴均停在 0。
+- 正式 Host 的 IO 监控可读 DI/DO 各 4096 路，读取失败 0。DI8–DI11 分别显示为 Load_X、Press_Z、Camera_X、Unload_X 原点，均未触发；DO0 夹具夹紧、DO1 压头动作、DO2 相机触发、DO3 下料电磁阀均未触发。本次只是查看，没有切换 DI 或 DO。
+- 最新 ZSimu 屏幕上 DI8 仍未选中，Host 轴手动页 ORG 指示仍为灰色。全流程保持未启动；需要确认 DI8 的有效切换及模式 3 的方向差异后才能继续回零和循环验证。
