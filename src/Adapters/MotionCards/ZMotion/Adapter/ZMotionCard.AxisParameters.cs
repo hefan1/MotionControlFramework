@@ -31,7 +31,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 cancellationToken);
         }
 
-        /// <summary>读取控制器指定物理轴的单位、软限位和当前运动参数。</summary>
+        /// <summary>读取控制器指定物理轴的单位、软限位、回零运动参数和 DATUM 输入通道。</summary>
         public Task<ZMotionPhysicalAxisParameters> ReadPhysicalAxisParametersAsync(
             int axisNumber,
             CancellationToken cancellationToken)
@@ -45,7 +45,8 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     var axisName = GetPhysicalAxisName(axisNumber);
                     var parameters = new ZMotionPhysicalAxisParameters
                     {
-                        AxisNumber = axisNumber
+                        AxisNumber = axisNumber,
+                        DatumInputChannel = ReadDatumInputNumber(handle, axisNumber, axisName)
                     };
 
                     ReadAxisParameter(
@@ -221,7 +222,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             }
         }
 
-        /// <summary>按候选配置调用正运动 API 写入一个轴的单位、软限位和回零运动参数。</summary>
+        /// <summary>按候选配置调用正运动 API 写入一个轴的单位、软限位、回零参数和显式指定的原点通道。</summary>
         private void ApplyAxisParameters(
             IntPtr handle,
             ZMotionAxisConfiguration configuration,
@@ -289,6 +290,16 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     (float)configuration.HomeDeceleration),
                 "应用回零减速度",
                 configuration.Name);
+            if (configuration.DatumInputChannel.HasValue)
+            {
+                CheckResult(
+                    zmcaux.ZAux_Direct_SetDatumIn(
+                        handle,
+                        configuration.AxisNumber,
+                        configuration.DatumInputChannel.Value),
+                    "应用 DATUM_IN 原点输入通道 " + configuration.DatumInputChannel.Value,
+                    configuration.Name);
+            }
         }
 
         /// <summary>比较运行时轴映射中的全部正运动参数和逻辑名称。</summary>
@@ -310,7 +321,8 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 && first.HomeSearchSpeed == second.HomeSearchSpeed
                 && first.HomeCreepSpeed == second.HomeCreepSpeed
                 && first.HomeAcceleration == second.HomeAcceleration
-                && first.HomeDeceleration == second.HomeDeceleration;
+                && first.HomeDeceleration == second.HomeDeceleration
+                && first.DatumInputChannel == second.DatumInputChannel;
         }
 
         /// <summary>比较会写入正运动控制器的轴参数。</summary>
@@ -325,7 +337,8 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 && first.HomeSearchSpeed == second.HomeSearchSpeed
                 && first.HomeCreepSpeed == second.HomeCreepSpeed
                 && first.HomeAcceleration == second.HomeAcceleration
-                && first.HomeDeceleration == second.HomeDeceleration;
+                && first.HomeDeceleration == second.HomeDeceleration
+                && first.DatumInputChannel == second.DatumInputChannel;
         }
 
         /// <summary>使用正运动 API 读取一个浮点轴参数，并保留参数名和轴号。</summary>

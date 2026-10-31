@@ -38,5 +38,8 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
 
         /// <summary>控制器当前减速度参数。</summary>
         public double Deceleration { get; set; }
+
+        /// <summary>控制器当前 DATUM_IN 原点输入通道；-1 表示该轴尚未配置。</summary>
+        public int DatumInputChannel { get; set; }
     }
 }

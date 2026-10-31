@@ -34,7 +34,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             }, cancellationToken);
         }
 
-        /// <summary>按轴配置下发正运动 DATUM 指令，并等待控制器报告回零完成。</summary>
+        /// <summary>确认原点输入已配置后，按轴参数下发 DATUM 并等待控制器报告回零完成。</summary>
         internal async Task HomeAsync(ZMotionAxis axis, CancellationToken cancellationToken)
         {
             await Task.Run(() =>
@@ -45,6 +45,14 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     axis.Configuration.ValidateHomeParameters();
                     EnsureAxisParametersApplied(axis);
                     EnsureAxisIdle(handle, axis);
+                    int datumInputNumber = ReadDatumInputNumber(handle, axis);
+                    if (datumInputNumber < 0)
+                    {
+                        throw new InvalidOperationException(
+                            "逻辑轴 '" + axis.Name + "' 未配置 DATUM_IN 原点输入，已拒绝启动回零以避免轴持续搜索。"
+                            + "请先在控制器轴参数中为该轴配置有效原点输入，再执行回零。");
+                    }
+
                     EnsureServoEnabled(handle, axis);
                     axis.ClearHomedState();
                     SetHomeProfile(handle, axis);

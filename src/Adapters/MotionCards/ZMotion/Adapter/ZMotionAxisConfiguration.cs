@@ -62,6 +62,9 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         /// <summary>回零减速度，单位为工程单位/秒²。</summary>
         public double HomeDeceleration { get; set; }
 
+        /// <summary>正运动 DATUM_IN 原点输入物理通道；空值不修改控制器现有设置，-1 表示清除。</summary>
+        public int? DatumInputChannel { get; set; }
+
         /// <summary>检查轴名称、通道、单位换算、软限位、到位容差和手动调试默认速度。</summary>
         internal void Validate()
         {
@@ -127,6 +130,15 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             {
                 throw new InvalidOperationException(
                     "轴 '" + Name + "' 的回零速度、爬行速度、加速度和减速度必须是大于 0 的有限数值。");
+            }
+
+            if (DatumInputChannel.HasValue
+                && DatumInputChannel.Value != -1
+                && (DatumInputChannel.Value < 0 || DatumInputChannel.Value >= 4096))
+            {
+                throw new InvalidOperationException(
+                    "轴 '" + Name + "' 的 DATUM_IN 通道必须为 -1 或 0 到 4095。实际值："
+                    + DatumInputChannel.Value + "。");
             }
         }
 

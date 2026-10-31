@@ -69,11 +69,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         /// <summary>读取 DATUM_IN 对应输入及其反相设置，得到控制器识别的原点信号状态。</summary>
         private bool? ReadOriginInputActive(IntPtr handle, ZMotionAxis axis)
         {
-            int inputNumber = -1;
-            CheckResult(
-                zmcaux.ZAux_Direct_GetDatumIn(handle, axis.AxisNumber, ref inputNumber),
-                "读取 DATUM_IN 原点输入通道",
-                axis.Name);
+            int inputNumber = ReadDatumInputNumber(handle, axis);
 
             if (inputNumber < 0)
             {
@@ -94,6 +90,23 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
 
             bool inputActive = inputValue != 0;
             return inputInverted != 0 ? !inputActive : inputActive;
+        }
+
+        /// <summary>读取控制器为指定轴配置的 DATUM_IN 通道；负数表示没有配置原点输入。</summary>
+        private int ReadDatumInputNumber(IntPtr handle, ZMotionAxis axis)
+        {
+            return ReadDatumInputNumber(handle, axis.AxisNumber, axis.Name);
+        }
+
+        /// <summary>按物理轴号读取 DATUM_IN 通道，供轴状态和轴映射读回共用。</summary>
+        private int ReadDatumInputNumber(IntPtr handle, int axisNumber, string axisName)
+        {
+            int inputNumber = -1;
+            CheckResult(
+                zmcaux.ZAux_Direct_GetDatumIn(handle, axisNumber, ref inputNumber),
+                "读取 DATUM_IN 原点输入通道",
+                axisName);
+            return inputNumber;
         }
 
         /// <summary>读取正运动控制器的实时轴状态字。</summary>
