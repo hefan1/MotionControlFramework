@@ -14,6 +14,9 @@ namespace MotionControl.TaskEngine.Wpf.Editing
     {
         /// <summary>列表中显示的报警代码勾选项。</summary>
         private readonly List<CheckBox> _checks = new List<CheckBox>();
+        /// <summary>按报警代码保存等级，用于让关联数量摘要同时显示停机与非停机条数。</summary>
+        private readonly Dictionary<string, MachineAlarmKind> _alarmKindsByCode =
+            new Dictionary<string, MachineAlarmKind>(StringComparer.OrdinalIgnoreCase);
         /// <summary>显示当前关联数量，让操作人员确认多选结果。</summary>
         private readonly TextBlock _selectionSummary;
         /// <summary>关联数量的本地化格式。</summary>
@@ -31,6 +34,11 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 .GroupBy(alarm => alarm.Code, StringComparer.OrdinalIgnoreCase)
                 .Select(group => group.First())
                 .ToList();
+            foreach (TaskAlarmInfo alarm in catalogAlarms)
+            {
+                _alarmKindsByCode[alarm.Code] = alarm.Kind;
+            }
+
             var codes = catalogAlarms.Select(alarm => alarm.Code).ToList();
             foreach (string code in selected)
             {
@@ -155,11 +163,40 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             UpdateSelectionSummary();
         }
 
-        /// <summary>把当前已勾选数量显示在报警列表上方。</summary>
+        /// <summary>把关联总数、停机数、非停机数和失效引用数显示在报警列表上方。</summary>
         private void UpdateSelectionSummary()
         {
             if (_selectionSummary != null)
-                _selectionSummary.Text = string.Format(_selectionSummaryFormat, SelectedCodes.Count);
+            {
+                IReadOnlyList<string> selectedCodes = SelectedCodes;
+                int stopCount = 0;
+                int nonStopCount = 0;
+                foreach (string code in selectedCodes)
+                {
+                    MachineAlarmKind kind;
+                    if (!_alarmKindsByCode.TryGetValue(code, out kind))
+                    {
+                        continue;
+                    }
+
+                    if (kind == MachineAlarmKind.StopMachine)
+                    {
+                        stopCount++;
+                    }
+                    else
+                    {
+                        nonStopCount++;
+                    }
+                }
+
+                int missingCount = selectedCodes.Count - stopCount - nonStopCount;
+                _selectionSummary.Text = string.Format(
+                    _selectionSummaryFormat,
+                    selectedCodes.Count,
+                    stopCount,
+                    nonStopCount,
+                    missingCount);
+            }
         }
 
         /// <summary>把报警的现场检查和恢复指导放入悬停说明。</summary>

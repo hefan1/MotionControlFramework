@@ -223,6 +223,39 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             RuntimeStationsText.Text = T("设备流程工位") + "："
                 + (stationNames.Length == 0 ? T("没有自动工位") : string.Join("、", stationNames));
             RuntimeStationsText.ToolTip = T("运行工位说明");
+
+            StationTaskConfiguration[] draftStations = _workspace?.Machine?.Stations?
+                .Where(station => station != null)
+                .ToArray() ?? new StationTaskConfiguration[0];
+            TaskWorkspaceTask[] draftTasks = _workspace?.Tasks?
+                .Where(item => item != null)
+                .ToArray() ?? new TaskWorkspaceTask[0];
+            int enabledDraftStations = draftStations.Count(station => station.Enabled);
+            var draftAssignments = new List<string>();
+            foreach (StationTaskConfiguration station in draftStations)
+            {
+                string stationName = string.IsNullOrWhiteSpace(station.Name) ? station.StationId : station.Name;
+                TaskWorkspaceTask assignedTask = draftTasks.FirstOrDefault(item => item.Definition != null
+                    && string.Equals(item.Definition.TaskId, station.TaskId, StringComparison.OrdinalIgnoreCase));
+                string taskName = assignedTask?.Definition?.Name;
+                if (string.IsNullOrWhiteSpace(taskName))
+                {
+                    taskName = string.IsNullOrWhiteSpace(station.TaskId)
+                        ? T("任务未分配")
+                        : station.TaskId + "（" + T("任务定义未找到") + "）";
+                }
+
+                draftAssignments.Add(stationName + " → " + taskName + "（"
+                    + T(station.Enabled ? "工位参与运行" : "工位已停用") + "）");
+            }
+
+            TaskDraftStationsText.Text = T("任务草稿工位") + "（"
+                + string.Format(T("草稿工位参与数量"), enabledDraftStations, draftStations.Length) + "）："
+                + (draftAssignments.Count == 0 ? T("草稿没有工位") : string.Join("；", draftAssignments));
+            TaskDraftStationsText.ToolTip = TaskDraftStationsText.Text;
+            TaskDraftBoundaryText.Text = T("草稿工位运行边界");
+            TaskDraftStationsText.Visibility = _workspace == null ? Visibility.Collapsed : Visibility.Visible;
+            TaskDraftBoundaryText.Visibility = _workspace == null ? Visibility.Collapsed : Visibility.Visible;
             CurrentFlowButton.IsEnabled = stationNames.Length > 0;
             CurrentFlowButton.ToolTip = stationNames.Length > 0 ? T("查看当前流程状态") : T("没有自动工位");
         }
@@ -304,7 +337,11 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         private string DraftState(TaskWorkspaceTask task)
         {
             if (_lastCheckIssues != null)
-                return T(_lastCheckIssues.Any(issue => string.Equals(issue.TaskId, task.Definition.TaskId, StringComparison.OrdinalIgnoreCase) && issue.Severity == TaskIssueSeverity.Error) ? "任务检查有错误" : "任务检查通过");
+            {
+                var taskIssues = _lastCheckIssues.Where(issue => string.Equals(issue.TaskId, task.Definition.TaskId, StringComparison.OrdinalIgnoreCase)).ToList();
+                return T(taskIssues.Any(issue => issue.Severity == TaskIssueSeverity.Error) ? "任务检查有错误"
+                    : taskIssues.Count > 0 ? "任务检查有提醒" : "任务检查通过");
+            }
             var active = _activeWorkspace?.Tasks.FirstOrDefault(item => string.Equals(item.FileName, task.FileName, StringComparison.OrdinalIgnoreCase));
             bool changed = active == null || TaskDefinitionJson.Serialize(active.Definition) != TaskDefinitionJson.Serialize(task.Definition);
             return T(!changed ? "无修改" : _dirty ? "未保存修改" : "草稿待检查");
@@ -576,7 +613,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 RefreshLibraryRows();
                 _sourceChanged = _store.ComputeSignature(_machineId) != _workspace.BaseSignature;
                 bool hasErrors = _lastCheckIssues.Any(issue => issue.Severity == TaskIssueSeverity.Error);
-                SetStatusText(T("草稿来源已同步") + "；" + T(hasErrors ? "检查发现问题" : "检查通过")
+                SetStatusText(T("草稿来源已同步") + "；" + T(hasErrors ? "检查发现问题" : _lastCheckIssues.Count > 0 ? "检查有提醒" : "检查通过")
                     + (_sourceChanged ? "；" + T("来源文件再次变化，请重新检查") : "") + "\n"
                     + T("同步前草稿备份") + "：" + backupPath);
                 RefreshPermission(null, EventArgs.Empty);
@@ -632,7 +669,8 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 if (_lastCheckIssues != null)
                 {
                     bool hasErrors = _lastCheckIssues.Any(item => item.Severity == TaskIssueSeverity.Error);
-                    SetStatusText(T(hasErrors ? "备份已恢复为草稿，检查发现问题" : "备份已恢复为草稿，检查通过")
+                    SetStatusText(T(hasErrors ? "备份已恢复为草稿，检查发现问题"
+                        : _lastCheckIssues.Count > 0 ? "备份已恢复为草稿，检查有提醒" : "备份已恢复为草稿，检查通过")
                         + "\n" + T("恢复前草稿已自动保留") + "：" + currentCopy);
                 }
             }

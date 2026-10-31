@@ -19,6 +19,8 @@
       <TextBlock x:Name="RuntimeStateText" FontWeight="SemiBold" Foreground="#26384D"/>
       <TextBlock x:Name="RuntimeReadinessText" TextWrapping="Wrap" Margin="0,3,0,0" Foreground="#845B0A" Visibility="Collapsed"/>
       <TextBlock x:Name="RuntimeStationsText" TextWrapping="Wrap" Margin="0,3,0,0" Foreground="#40536A"/>
+      <TextBlock x:Name="TaskDraftStationsText" TextWrapping="Wrap" Margin="0,3,0,0" Foreground="#40536A"/>
+      <TextBlock x:Name="TaskDraftBoundaryText" TextWrapping="Wrap" Margin="0,2,0,0" Foreground="#845B0A"/>
      </StackPanel>
     </DockPanel>
    </Border>

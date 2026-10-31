@@ -18,6 +18,7 @@
  <sys:String x:Key="任务编辑.同步前草稿备份">Draft backup before synchronization</sys:String>
  <sys:String x:Key="任务编辑.检查发现问题">The check found issues. Review the results below.</sys:String>
  <sys:String x:Key="任务编辑.检查通过">Check passed</sys:String>
+ <sys:String x:Key="任务编辑.检查有提醒">Check has notices. Review the results below.</sys:String>
  <sys:String x:Key="任务编辑.来源文件再次变化，请重新检查">Source files changed again. Check the draft again.</sys:String>
  <sys:String x:Key="任务编辑.来源文件已经变化，请先同步草稿或重新载入运行文件">Source files changed. Sync the draft or reload active task files.</sys:String>
  <sys:String x:Key="任务编辑.放弃草稿并读取运行版本">Discard draft and load active version...</sys:String>
@@ -29,6 +30,7 @@
  <sys:String x:Key="任务编辑.恢复备份确认说明">This replaces the current draft only. Active task files will not change. The current window content will be kept as an internal copy first. Continue?</sys:String>
  <sys:String x:Key="任务编辑.备份已恢复为草稿，检查发现问题">Backup restored as a draft. The check found issues.</sys:String>
  <sys:String x:Key="任务编辑.备份已恢复为草稿，检查通过">Backup restored as a draft. The check passed.</sys:String>
+ <sys:String x:Key="任务编辑.备份已恢复为草稿，检查有提醒">Backup restored as a draft. Review the notices below.</sys:String>
  <sys:String x:Key="任务编辑.恢复前草稿已自动保留">The previous draft was kept internally</sys:String>
  <sys:String x:Key="任务编辑.草稿已重新读取，当前内容已保留">Latest draft reloaded. Current content was kept at</sys:String>
  <sys:String x:Key="任务编辑.已读取运行版本，草稿内容已保留">Active version loaded. Draft content was kept at</sys:String>
@@ -69,7 +71,7 @@
  <sys:String x:Key="任务编辑.等待超时关联报警">Alarm on wait timeout</sys:String>
  <sys:String x:Key="任务编辑.条件不成立关联报警（可多选）">Alarms when condition is false (multiple)</sys:String>
  <sys:String x:Key="任务编辑.等待超时关联报警（可多选）">Wait-timeout alarms (select one or more)</sys:String>
- <sys:String x:Key="任务编辑.已关联 {0} 条报警">{0} alarm(s) linked</sys:String>
+ <sys:String x:Key="任务编辑.已关联 {0} 条报警">{0} linked (stop: {1}, non-stop: {2}, missing from catalog: {3})</sys:String>
  <sys:String x:Key="任务编辑.停机报警">Stop machine</sys:String>
  <sys:String x:Key="任务编辑.非停机报警">Non-stop</sys:String>
  <sys:String x:Key="任务编辑.检查：">Check: </sys:String>
@@ -231,6 +233,14 @@
  <sys:String x:Key="任务编辑.设备未连接">Equipment disconnected</sys:String>
  <sys:String x:Key="任务编辑.未读取设备状态">Equipment state unavailable</sys:String>
  <sys:String x:Key="任务编辑.设备流程工位">Equipment flow stations</sys:String>
+ <sys:String x:Key="任务编辑.任务草稿工位">Task draft stations</sys:String>
+ <sys:String x:Key="任务编辑.草稿工位参与数量">Enabled {0}/{1}</sys:String>
+ <sys:String x:Key="任务编辑.任务未分配">No task assigned</sys:String>
+ <sys:String x:Key="任务编辑.任务定义未找到">task definition missing</sys:String>
+ <sys:String x:Key="任务编辑.工位参与运行">enabled</sys:String>
+ <sys:String x:Key="任务编辑.工位已停用">disabled</sys:String>
+ <sys:String x:Key="任务编辑.草稿没有工位">No stations in this draft</sys:String>
+ <sys:String x:Key="任务编辑.草稿工位运行边界">Draft assignments are not connected to the equipment runtime. Editing, saving, or checking this draft does not change the current runtime stations.</sys:String>
  <sys:String x:Key="任务编辑.没有连接运行时">No connected equipment runtime</sys:String>
  <sys:String x:Key="任务编辑.没有自动工位">No automatic stations</sys:String>
  <sys:String x:Key="任务编辑.运行工位说明">These automatic station flows are currently loaded in the equipment runtime. Their presence does not mean they are running. A task draft marked “Not applied” does not change these flows; names are shown for operator comparison.</sys:String>
@@ -274,6 +284,7 @@
  <sys:String x:Key="任务编辑.未应用">Not applied</sys:String>
  <sys:String x:Key="任务编辑.任务检查有错误">Task has errors</sys:String>
  <sys:String x:Key="任务编辑.任务检查通过">Task check passed</sys:String>
+ <sys:String x:Key="任务编辑.任务检查有提醒">Task has notices</sys:String>
  <sys:String x:Key="任务编辑.无修改">Unchanged</sys:String>
  <sys:String x:Key="任务编辑.草稿待检查">Draft; validate next</sys:String>
  <sys:String x:Key="任务编辑.草稿基准版本">Draft baseline</sys:String>

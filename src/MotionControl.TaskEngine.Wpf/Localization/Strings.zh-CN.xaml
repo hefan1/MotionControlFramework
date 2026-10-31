@@ -20,7 +20,7 @@
  <sys:String x:Key="任务监控.内置示例来源">内置示例（未读取现场映射）</sys:String>
  <sys:String x:Key="任务监控.刷新失败，以下为旧数据">刷新失败，以下为旧数据</sys:String>
  <sys:String x:Key="任务监控.当前无等待或停机故障">当前没有等待步骤或停机故障</sys:String>
- <sys:String x:Key="任务监控.故障恢复提示">故障恢复提示</sys:String>
+ <sys:String x:Key="任务监控.故障恢复提示">先确认故障原因已排除、设备处于安全状态，再按“整机复位”和“启动”继续。流程会从故障步骤继续，已完成步骤不会重复执行。</sys:String>
  <sys:String x:Key="任务监控.请选择步骤">请选择步骤</sys:String>
  <sys:String x:Key="任务监控.尚无执行采样">尚无执行采样</sys:String>
  <sys:String x:Key="任务监控.最后执行采样">最后执行采样</sys:String>

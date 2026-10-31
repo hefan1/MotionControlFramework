@@ -21,7 +21,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                         code => T("报警库不存在") + code, T("当前设备报警库为空，请先维护报警代码"),
                         T("已关联 {0} 条报警"), T("停机报警"), T("非停机报警"), T("检查："), T("恢复：")));
                 Details.Children.Add(TaskEditingUi.Label(this, "未知输入不会当作无效信号放行")); AddReference("IO映射", "@Input", "DI");
-                Details.Children.Add(TaskEditingUi.Label(this, "报警引用保存在任务草稿；当前任务执行尚未接入设备 Runtime"));
+                Details.Children.Add(TaskEditingUi.Label(this, "任务报警关联规则"));
             }
             else if (_selected is SetOutputNode output)
             {

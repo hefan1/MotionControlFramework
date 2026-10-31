@@ -18,6 +18,7 @@
  <sys:String x:Key="任务编辑.同步前草稿备份">同步前草稿备份</sys:String>
  <sys:String x:Key="任务编辑.检查发现问题">检查发现问题，请查看下方定位结果</sys:String>
  <sys:String x:Key="任务编辑.检查通过">检查通过</sys:String>
+ <sys:String x:Key="任务编辑.检查有提醒">检查有提醒，请查看下方定位结果</sys:String>
  <sys:String x:Key="任务编辑.来源文件再次变化，请重新检查">来源文件再次变化，请重新检查</sys:String>
  <sys:String x:Key="任务编辑.来源文件已经变化，请先同步草稿或重新载入运行文件">来源文件已经变化，请先同步草稿或重新载入运行文件</sys:String>
  <sys:String x:Key="任务编辑.放弃草稿并读取运行版本">放弃草稿并读取运行版本...</sys:String>
@@ -29,6 +30,7 @@
  <sys:String x:Key="任务编辑.恢复备份确认说明">恢复会替换当前草稿，当前运行任务文件不会改变。恢复前的本窗口内容会自动保留为内部副本。确认恢复吗？</sys:String>
  <sys:String x:Key="任务编辑.备份已恢复为草稿，检查发现问题">备份已恢复为草稿，检查发现问题</sys:String>
  <sys:String x:Key="任务编辑.备份已恢复为草稿，检查通过">备份已恢复为草稿，检查通过</sys:String>
+ <sys:String x:Key="任务编辑.备份已恢复为草稿，检查有提醒">备份已恢复为草稿，检查有提醒，请查看下方定位结果</sys:String>
  <sys:String x:Key="任务编辑.恢复前草稿已自动保留">恢复前草稿已自动保留</sys:String>
  <sys:String x:Key="任务编辑.草稿已重新读取，当前内容已保留">已重新读取最新草稿，当前内容已保留在</sys:String>
  <sys:String x:Key="任务编辑.已读取运行版本，草稿内容已保留">已读取运行版本，草稿内容已保留在</sys:String>
@@ -69,7 +71,7 @@
  <sys:String x:Key="任务编辑.等待超时关联报警">等待超时关联报警</sys:String>
  <sys:String x:Key="任务编辑.条件不成立关联报警（可多选）">条件不成立关联报警（可多选）</sys:String>
  <sys:String x:Key="任务编辑.等待超时关联报警（可多选）">等待超时报警（至少关联一条，可多选）</sys:String>
- <sys:String x:Key="任务编辑.已关联 {0} 条报警">已关联 {0} 条报警</sys:String>
+ <sys:String x:Key="任务编辑.已关联 {0} 条报警">已关联 {0} 条（停机 {1}，非停机 {2}，库中缺失 {3}）</sys:String>
  <sys:String x:Key="任务编辑.停机报警">停机报警</sys:String>
  <sys:String x:Key="任务编辑.非停机报警">非停机报警</sys:String>
  <sys:String x:Key="任务编辑.检查：">检查：</sys:String>
@@ -231,6 +233,14 @@
  <sys:String x:Key="任务编辑.设备未连接">设备未连接</sys:String>
  <sys:String x:Key="任务编辑.未读取设备状态">未读取设备状态</sys:String>
  <sys:String x:Key="任务编辑.设备流程工位">设备流程工位</sys:String>
+ <sys:String x:Key="任务编辑.任务草稿工位">任务草稿工位</sys:String>
+ <sys:String x:Key="任务编辑.草稿工位参与数量">参与 {0}/{1} 个</sys:String>
+ <sys:String x:Key="任务编辑.任务未分配">未分配任务</sys:String>
+ <sys:String x:Key="任务编辑.任务定义未找到">任务定义未找到</sys:String>
+ <sys:String x:Key="任务编辑.工位参与运行">参与运行</sys:String>
+ <sys:String x:Key="任务编辑.工位已停用">不参与</sys:String>
+ <sys:String x:Key="任务编辑.草稿没有工位">当前草稿未配置工位</sys:String>
+ <sys:String x:Key="任务编辑.草稿工位运行边界">草稿安排尚未接入正式设备流程；编辑、保存或检查草稿不会改变当前 Runtime 工位。</sys:String>
  <sys:String x:Key="任务编辑.没有连接运行时">当前未连接设备运行时</sys:String>
  <sys:String x:Key="任务编辑.没有自动工位">当前没有自动工位</sys:String>
  <sys:String x:Key="任务编辑.运行工位说明">此处显示正式设备当前加载的自动工位流程，不代表这些工位正在运行。任务草稿显示“未应用”时，不会改变现有流程；名称用于现场对照。</sys:String>
@@ -274,6 +284,7 @@
  <sys:String x:Key="任务编辑.未应用">未应用</sys:String>
  <sys:String x:Key="任务编辑.任务检查有错误">任务检查有错误</sys:String>
  <sys:String x:Key="任务编辑.任务检查通过">任务检查通过</sys:String>
+ <sys:String x:Key="任务编辑.任务检查有提醒">任务检查有提醒</sys:String>
  <sys:String x:Key="任务编辑.无修改">无修改</sys:String>
  <sys:String x:Key="任务编辑.草稿待检查">草稿待检查</sys:String>
  <sys:String x:Key="任务编辑.草稿基准版本">草稿基准版本</sys:String>
