@@ -229,7 +229,7 @@ namespace MotionControl.TaskEngine.MachineDevice
             }
         }
 
-        /// <summary>取得设备命令权；设备正在运行或已配置工位流程时由运行时拒绝。</summary>
+        /// <summary>取得设备命令权；工位流程运行中或已有其他任务会话时由运行时拒绝。</summary>
         public void ClaimMachine(object owner)
         {
             object token = owner ?? AnonymousOwner;
@@ -237,18 +237,12 @@ namespace MotionControl.TaskEngine.MachineDevice
             {
                 if (_machineOwner != null)
                 {
-                    if (ReferenceEquals(_machineOwner, token))
-                    {
-                        return;
-                    }
-
+                    if (ReferenceEquals(_machineOwner, token)) return;
                     throw new InvalidOperationException("任务设备已被其他整机控制器占用。");
                 }
-            }
-
-            Wait(_runtime.AcquireTaskEngineControlAsync(CancellationToken.None));
-            lock (_sync)
-            {
+                if (_activeRuns.Count != 0)
+                    throw new InvalidOperationException("仍有任务运行未收尾，不能接管设备。");
+                Wait(_runtime.AcquireTaskEngineControlAsync(this, CancellationToken.None));
                 _machineOwner = token;
             }
         }
@@ -260,19 +254,10 @@ namespace MotionControl.TaskEngine.MachineDevice
             lock (_sync)
             {
                 if (!ReferenceEquals(_machineOwner, token))
-                {
                     throw new InvalidOperationException("任务设备所有权不匹配，不能由当前对象归还。");
-                }
-            }
-
-            if (_activeRuns.Count != 0)
-            {
-                throw new InvalidOperationException("仍有任务运行未收尾，不能归还设备命令权。");
-            }
-
-            _runtime.ReleaseTaskEngineControl();
-            lock (_sync)
-            {
+                if (_activeRuns.Count != 0)
+                    throw new InvalidOperationException("仍有任务运行未收尾，不能归还设备命令权。");
+                _runtime.ReleaseTaskEngineControl(this);
                 _machineOwner = null;
             }
         }
@@ -283,9 +268,9 @@ namespace MotionControl.TaskEngine.MachineDevice
             object token = owner ?? AnonymousOwner;
             lock (_sync)
             {
-                if (_machineOwner != null && !ReferenceEquals(_machineOwner, token))
+                if (_machineOwner == null || !ReferenceEquals(_machineOwner, token))
                 {
-                    throw new InvalidOperationException("设备受整机控制，不能混用独立任务入口。");
+                    throw new InvalidOperationException("任务必须先取得整机控制权，不能使用独立任务入口。");
                 }
 
                 _activeRuns.Add(runId);

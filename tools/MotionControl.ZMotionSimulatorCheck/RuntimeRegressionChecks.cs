@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -220,6 +220,12 @@ namespace MotionControl.ZMotionSimulatorCheck
             await ExpectExceptionAsync<InvalidOperationException>(
                 () => runtime.StartAsync(CancellationToken.None)).ConfigureAwait(false);
             Ensure(runtime.State == MachineRunState.Ready, "入口被拒绝时误启动改变了整机状态。");
+            object session = new object();
+            await runtime.AcquireTaskEngineControlAsync(session, CancellationToken.None).ConfigureAwait(false);
+            await ExpectExceptionAsync<InvalidOperationException>(
+                () => runtime.AcquireTaskEngineControlAsync(new object(), CancellationToken.None)).ConfigureAwait(false);
+            runtime.ReleaseTaskEngineControl(session);
+            Ensure(runtime.ControlOwner == MachineControlOwner.TaskEngine, "归还后未保留配置指定的任务入口。");
             await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
         }
 

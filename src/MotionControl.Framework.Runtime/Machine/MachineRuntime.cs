@@ -80,6 +80,12 @@ namespace MotionControl.Framework.Runtime.Machine
 
         /// <summary>当前独占设备命令权的执行入口；同一时刻只允许一个入口启动设备。</summary>
         private MachineControlOwner _controlOwner;
+        /// <summary>当前任务会话的唯一所有者。</summary>
+        private object _taskEngineOwner;
+        /// <summary>兼容未传所有者的旧调用。</summary>
+        private readonly object _legacyTaskEngineOwner = new object();
+        /// <summary>任务会话接管之前的入口。</summary>
+        private MachineControlOwner _ownerBeforeTaskEngine;
 
         /// <summary>保护整机状态及最近错误，供不同线程安全读取和更新。</summary>
         private readonly object _statusLock = new object();
@@ -465,19 +471,26 @@ namespace MotionControl.Framework.Runtime.Machine
         }
 
         /// <summary>
-        /// 请求由图形化任务定义入口接管设备命令权。只有未配置 C# 工位流程且设备不在运行时允许；
-        /// 已配置工位流程的设备必须先停用这些流程，避免两套入口同时控制同一批轴。
+        /// 请求由图形化任务定义入口接管设备命令权；工位流程必须空闲，且不能被其他任务会话占用。
         /// </summary>
-        public async Task AcquireTaskEngineControlAsync(CancellationToken cancellationToken)
+        public Task AcquireTaskEngineControlAsync(CancellationToken cancellationToken)
         {
+            return AcquireTaskEngineControlAsync(_legacyTaskEngineOwner, cancellationToken);
+        }
+
+        /// <summary>以明确会话身份申请任务控制权，防止多个任务设备同时接管。</summary>
+        public async Task AcquireTaskEngineControlAsync(object owner, CancellationToken cancellationToken)
+        {
+            if (owner == null) throw new ArgumentNullException(nameof(owner));
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 lock (_controlOwnerLock)
                 {
-                    if (_controlOwner == MachineControlOwner.TaskEngine)
+                    if (_taskEngineOwner != null)
                     {
-                        return;
+                        if (ReferenceEquals(_taskEngineOwner, owner)) return;
+                        throw new InvalidOperationException("任务执行入口已被其他会话占用。");
                     }
 
                     // 互斥看的是"谁正在控制设备"，不是"配置了哪种入口"。
@@ -496,6 +509,8 @@ namespace MotionControl.Framework.Runtime.Machine
                             + currentState + "。");
                     }
 
+                    _ownerBeforeTaskEngine = _controlOwner;
+                    _taskEngineOwner = owner;
                     _controlOwner = MachineControlOwner.TaskEngine;
                 }
             }
@@ -506,17 +521,26 @@ namespace MotionControl.Framework.Runtime.Machine
         }
 
         /// <summary>
-        /// 归还任务执行入口。配置了 C# 工位流程的设备回到工位流程入口，否则回到无入口；
-        /// 运行中的设备拒绝归还，避免任务执行器在轴仍在运动时被替换。
+        /// 归还任务执行入口并恢复接管前的入口；设备运行中拒绝归还。
         /// </summary>
         public void ReleaseTaskEngineControl()
         {
+            ReleaseTaskEngineControl(_legacyTaskEngineOwner);
+        }
+
+        /// <summary>只允许持有控制权的任务会话归还入口。</summary>
+        public void ReleaseTaskEngineControl(object owner)
+        {
+            if (owner == null) throw new ArgumentNullException(nameof(owner));
             lock (_controlOwnerLock)
             {
                 if (_controlOwner != MachineControlOwner.TaskEngine)
                 {
                     return;
                 }
+
+                if (!ReferenceEquals(_taskEngineOwner, owner))
+                    throw new InvalidOperationException("任务执行入口的所有者不匹配，不能归还。");
 
                 var currentState = State;
                 if (currentState == MachineRunState.Running || currentState == MachineRunState.Pausing)
@@ -526,9 +550,8 @@ namespace MotionControl.Framework.Runtime.Machine
                         + currentState + "。");
                 }
 
-                _controlOwner = _flowScheduler.StationFlows.Count > 0
-                    ? MachineControlOwner.StationFlows
-                    : MachineControlOwner.None;
+                _controlOwner = _ownerBeforeTaskEngine;
+                _taskEngineOwner = null;
             }
         }
 

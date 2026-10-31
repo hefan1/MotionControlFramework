@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -146,9 +146,15 @@ namespace MotionControl.MachineDevice.Checks
             MachineTaskDevice device = CreateDevice(
                 axis, new FakeLogicalIo(), out _, out MachineRuntime runtime, withStationFlow: true);
 
+            ExpectMessage(() => device.RegisterRun("independent", null), "先取得整机控制权");
             device.ClaimMachine(null);
             Ensure(runtime.ControlOwner == MachineControlOwner.TaskEngine, "接管后运行时执行入口不是任务入口。");
-
+            ExpectMessage(() => runtime.AcquireTaskEngineControlAsync(new object(), CancellationToken.None)
+                .GetAwaiter().GetResult(), "其他会话占用");
+            ExpectMessage(() => runtime.ReleaseTaskEngineControl(new object()), "所有者不匹配");
+            device.RegisterRun("active", null);
+            ExpectMessage(() => device.ReleaseMachine(null), "未收尾");
+            device.UnregisterRun("active");
             device.ReleaseMachine(null);
             Ensure(runtime.ControlOwner == MachineControlOwner.StationFlows, "归还后执行入口没有回到工位流程。");
         }
