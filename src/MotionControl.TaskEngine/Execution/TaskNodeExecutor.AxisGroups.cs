@@ -44,7 +44,7 @@ namespace MotionControl.TaskEngine.Execution
                         completed = _device.AdvanceGroupMove(moves, _run.ActiveMilliseconds - started, out detail);
                         ObserveAxes(scope, scope.AcceptedAxisTargets);
                         scope.WaitDetail = completed ? null : detail;
-                        _run.Report(scope, completed ? TaskNodeState.Running : TaskNodeState.Waiting, detail);
+                        _run.Report(scope, completed ? TaskNodeState.Running : TaskNodeState.Moving, detail);
                     }).ConfigureAwait(false);
                     if (!completed) await scope.NextPollAsync().ConfigureAwait(false);
                 }

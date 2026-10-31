@@ -21,14 +21,14 @@ namespace MotionControl.TaskEngine.Simulation
                     if (target == null || !names.Add(target.AxisName ?? string.Empty))
                         throw new InvalidOperationException("内存定位组目标为空或逻辑轴重复。");
                     SimulatedAxis axis = FindAxis(target.AxisName);
-                    if (axis.Operation != null) throw new InvalidOperationException("仿真轴被其他动作占用：" + target.AxisName);
+                    if (axis.Operation != null) throw new InvalidOperationException("轴被其他动作占用：" + target.AxisName);
                     CheckReady(target.AxisName, axis, false);
                     double end = target.Relative ? axis.Position + target.Target : target.Target;
                     CheckPosition(target.AxisName, end);
                     double duration = Math.Abs(end - axis.Position) / target.Speed * 1000;
                     if (target.Speed <= 0 || double.IsInfinity(target.Speed) || double.IsNaN(target.Speed)
                         || double.IsInfinity(duration) || double.IsNaN(duration))
-                        throw new InvalidOperationException("仿真轴速度或运动时长超出有限范围：" + target.AxisName);
+                        throw new InvalidOperationException("轴速度或运动时长超出有限范围：" + target.AxisName);
                     moves.Add(new SimulatedGroupAxisMove(new SimulatedMove(target.AxisName, axis.Position, end, false), duration));
                 }
                 // 前面的检查不改变设备状态，整组通过后才一次登记接受的命令。
@@ -52,7 +52,7 @@ namespace MotionControl.TaskEngine.Simulation
                     string name = move.Operation.AxisName;
                     SimulatedAxis axis = FindAxis(name);
                     if (!move.Completed && axis.Operation != move.Operation)
-                        throw new InvalidOperationException("仿真轴组动作凭证失效：" + name);
+                        throw new InvalidOperationException("轴组动作凭证失效：" + name);
                     // 已到位的轴也仍属于本组；它出现报警时不能让整组继续。
                     CheckReady(name, axis, false);
                 }

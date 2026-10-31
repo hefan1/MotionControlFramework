@@ -68,7 +68,7 @@ namespace MotionControl.TaskEngine.Simulation
             lock (_sync)
             {
                 DeviceVariableType type;
-                if (!Catalog.Variables.TryGetValue(name, out type)) throw new ArgumentException("仿真变量不存在：" + name);
+                if (!Catalog.Variables.TryGetValue(name, out type)) throw new ArgumentException("设备变量未配置：" + name);
                 if (value == null)
                 {
                     _variables.RestoreCurrentValues(new[] { new DeviceVariableSnapshot(name, type.ToString(),
@@ -100,7 +100,7 @@ namespace MotionControl.TaskEngine.Simulation
         /// <summary>拒绝错误的 IO 名称，不自动创建或猜测通道。</summary>
         private static void RequireIo(Dictionary<string, bool?> values, string name, string direction)
         {
-            if (name == null || !values.ContainsKey(name)) throw new ArgumentException("仿真 " + direction + " 不存在：" + name);
+            if (name == null || !values.ContainsKey(name)) throw new ArgumentException(direction + " 未配置：" + name);
         }
     }
 }

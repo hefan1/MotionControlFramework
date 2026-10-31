@@ -22,13 +22,14 @@ namespace MotionControl.TaskEngine.Resources
         }
 
         /// <summary>登记完整申请；调用方负责在结束时释放或标记待确认。</summary>
-        internal TaskResourceRequest Enqueue(string runId, string taskId, string nodeId, string executionId,
-            IEnumerable<string> names, TaskInterlock exitInterlock = null, TaskCondition exitCondition = null)
+        internal TaskResourceRequest Enqueue(string runId, string taskId, string taskName, string nodeId,
+            string nodeName, string executionId, IEnumerable<string> names,
+            TaskInterlock exitInterlock = null, TaskCondition exitCondition = null)
         {
             var group = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
             if (group.Count == 0 || group.Any(name => !_known.Contains(name)))
                 throw new InvalidOperationException("申请包含空资源组或未登记的资源。");
-            var request = new TaskResourceRequest(runId, taskId, nodeId, executionId,
+            var request = new TaskResourceRequest(runId, taskId, taskName, nodeId, nodeName, executionId,
                 group.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList(), exitInterlock, exitCondition);
             lock (_sync) _requests.Add(request);
             return request;
@@ -122,12 +123,26 @@ namespace MotionControl.TaskEngine.Resources
             return null;
         }
 
-        /// <summary>把阻塞者的完整定位放入诊断，不只显示笼统的资源忙。</summary>
+        /// <summary>用工位、步骤和资源名称说明等待原因；唯一编号保留在结构化快照中。</summary>
         private static string DescribeBlocker(TaskResourceRequest blocker)
         {
-            return blocker == null ? "等待本节点下一次取得执行许可。" : "等待资源 [" + string.Join(", ", blocker.Names)
-                + "]；状态=" + blocker.State + "，运行=" + blocker.RunId + "，任务=" + blocker.TaskId
-                + "，节点=" + blocker.NodeId + "，申请=" + blocker.Id;
+            if (blocker == null) return "等待本节点下一次取得执行许可。";
+            string task = string.IsNullOrWhiteSpace(blocker.TaskName) ? blocker.TaskId : blocker.TaskName;
+            string node = string.IsNullOrWhiteSpace(blocker.NodeName) ? blocker.NodeId : blocker.NodeName;
+            string resources = string.Join(", ", blocker.Names.Select(DescribeResourceName));
+            string owner = "“" + task + "”工位的“" + node + "”步骤";
+            string reason = blocker.State == TaskResourceState.Blocked ? "资源占用待确认，关联" + owner + "。"
+                : blocker.State == TaskResourceState.Held ? "当前由" + owner + "占用。"
+                : "前序资源申请来自" + owner + "。";
+            return "等待资源 [" + resources + "]；" + reason;
+        }
+
+        /// <summary>把控制器资源类别转换成操作界面使用的中文名称。</summary>
+        private static string DescribeResourceName(string name)
+        {
+            if (name.StartsWith("Axis:", StringComparison.OrdinalIgnoreCase)) return "轴：" + name.Substring(5);
+            if (name.StartsWith("Output:", StringComparison.OrdinalIgnoreCase)) return "输出：" + name.Substring(7);
+            return name;
         }
 
         /// <summary>拒绝跨协调器或已释放的凭证；调用时已持有队列锁。</summary>

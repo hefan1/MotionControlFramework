@@ -28,12 +28,27 @@ namespace MotionControl.TaskEngine.Execution
         internal string WaitDetail { get; set; }
         /// <summary>当前调用最后一次明确采样，重进节点时由新采样替换。</summary>
         internal TaskStepDiagnostics Diagnostics { get; set; }
+        /// <summary>此节点已上报过超时报警；故障复位后节点重进时仍需在条件恢复后清除。</summary>
+        internal bool TimeoutAlarmsReported { get; set; }
         /// <summary>父调用，故障复位后可为仍然活动的步骤重新建立时限。</summary>
         private readonly TaskExecutionScope _parent;
         /// <summary>本节点的绝对活动时间截止值，单位毫秒。</summary>
         private double _deadline;
         /// <summary>已接受的运动绝对终点；故障重进当前节点时不重复叠加相对位移。</summary>
         internal Dictionary<string, double> AcceptedAxisTargets { get; } = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>当前节点拥有最早截止时间且已经超时；父级更早超时仍由父节点处理。</summary>
+        internal bool IsOwnTimeoutOwnerExpired
+        {
+            get
+            {
+                double deadline = _deadline;
+                if (Run.ActiveMilliseconds < deadline) return false;
+                for (TaskExecutionScope parent = _parent; parent != null; parent = parent._parent)
+                    if (parent._deadline <= deadline) return false;
+                return true;
+            }
+        }
 
         /// <summary>从父调用继承取消和时间边界，并生成独立调用编号。</summary>
         internal TaskExecutionScope(TaskRun run, string taskId, TaskNode node,
@@ -69,6 +84,12 @@ namespace MotionControl.TaskEngine.Execution
                 for (TaskExecutionScope scope = this; scope != null; scope = scope._parent)
                     scope._deadline = now + scope.Node.TimeoutMs;
             }, Token);
+        }
+
+        /// <summary>非停机报警触发后继续等待原条件；父级截止时间仍保持有效。</summary>
+        internal void IgnoreOwnTimeout()
+        {
+            _deadline = double.PositiveInfinity;
         }
 
         /// <summary>等待下一次状态检查，不用阻塞线程的 Sleep。</summary>

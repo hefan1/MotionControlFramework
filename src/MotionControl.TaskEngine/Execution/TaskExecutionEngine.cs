@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.TaskEngine.Configuration;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Simulation;
@@ -18,19 +19,21 @@ namespace MotionControl.TaskEngine.Execution
         public TaskRun Start(TaskDefinition definition, SimulatedTaskDevice device,
             IEnumerable<TaskDefinition> dependencies = null, CancellationToken cancellationToken = default(CancellationToken))
         {
-            return StartCore(definition, device, dependencies, null, cancellationToken);
+            return StartCore(definition, device, dependencies, null, cancellationToken, null);
         }
 
         /// <summary>整机控制器专用入口，先暂停再发布，确保全机启动许可生效前不接受动作。</summary>
         internal TaskRun StartManaged(TaskDefinition definition, SimulatedTaskDevice device,
-            IEnumerable<TaskDefinition> dependencies, StationExecutionControl station, CancellationToken token)
+            IEnumerable<TaskDefinition> dependencies, StationExecutionControl station, CancellationToken token,
+            IMachineAlarmService alarmService)
         {
-            return StartCore(definition, device, dependencies, station, token);
+            return StartCore(definition, device, dependencies, station, token, alarmService);
         }
 
         /// <summary>统一校验和冻结；设备所有权登记成功后才安排后台执行。</summary>
         private TaskRun StartCore(TaskDefinition definition, SimulatedTaskDevice device,
-            IEnumerable<TaskDefinition> dependencies, StationExecutionControl station, CancellationToken cancellationToken)
+            IEnumerable<TaskDefinition> dependencies, StationExecutionControl station, CancellationToken cancellationToken,
+            IMachineAlarmService alarmService)
         {
             if (device == null) throw new ArgumentNullException(nameof(device));
             var dependencyList = new List<TaskDefinition>();
@@ -53,20 +56,21 @@ namespace MotionControl.TaskEngine.Execution
             catch { run.Cancel(); run.Finish(null); throw; }
             if (station != null) run.Pause();
             // 不把取消令牌传给 Task.Run：即使立即取消，也必须进入后台的统一收尾路径。
-            Task.Run(() => ExecuteAsync(run, frozen, device, library, station, cancellationToken));
+            Task.Run(() => ExecuteAsync(run, frozen, device, library, station, cancellationToken, alarmService));
             return run;
         }
 
         /// <summary>等待执行器和全部分支退出，最后只发布一次终态。</summary>
         private static async Task ExecuteAsync(TaskRun run, TaskDefinition definition, SimulatedTaskDevice device,
-            Dictionary<string, TaskDefinition> library, StationExecutionControl station, CancellationToken externalCancellation)
+            Dictionary<string, TaskDefinition> library, StationExecutionControl station,
+            CancellationToken externalCancellation, IMachineAlarmService alarmService)
         {
             TaskExecutionException failure = null;
             try
             {
                 using (externalCancellation.Register(() => run.Cancel()))
                 {
-                    var executor = new TaskNodeExecutor(run, device, library, station);
+                    var executor = new TaskNodeExecutor(run, device, library, station, alarmService);
                     await executor.ExecuteAsync(definition.TaskId, definition.Root, null, run.Cancellation).ConfigureAwait(false);
                 }
             }

@@ -20,10 +20,12 @@ namespace MotionControl.TaskEngine.Execution
     /// <summary>单次节点调用的进度；相同定义可有多次独立调用。</summary>
     public enum TaskNodeState
     {
-        /// <summary>执行动作或容器内的步骤。</summary>
+        /// <summary>执行非运动动作或容器内的步骤。</summary>
         Running,
-        /// <summary>正在等待输入、变量、运动或分支汇合。</summary>
+        /// <summary>正在等待输入、变量、资源或分支汇合。</summary>
         Waiting,
+        /// <summary>运动指令已接受，轴尚未到位。</summary>
+        Moving,
         /// <summary>节点执行成功。</summary>
         Completed,
         /// <summary>节点因取消退出。</summary>

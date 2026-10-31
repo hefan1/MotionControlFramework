@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using MotionControl.Framework.Contracts.Alarms;
+using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.TaskEngine.Configuration;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Execution;
@@ -17,6 +19,8 @@ namespace MotionControl.TaskEngine.Machine
         private readonly object _sync = new object();
         /// <summary>本会话独占的内存设备。</summary>
         private readonly SimulatedTaskDevice _device;
+        /// <summary>当前设备报警服务；可由 Host 注入正式 Runtime 共用的实例。</summary>
+        public IMachineAlarmService AlarmService { get; }
         /// <summary>冻结的设备清单。</summary>
         private readonly TaskMachineConfiguration _configuration;
         /// <summary>冻结的执行任务库，不引用编辑中的定义。</summary>
@@ -50,9 +54,10 @@ namespace MotionControl.TaskEngine.Machine
 
         /// <summary>先校验并冻结清单和任务库，再取得设备控制权；构造不会运行任务或修改场景值。</summary>
         public TaskMachineController(TaskMachineConfiguration configuration, IEnumerable<TaskDefinition> definitions,
-            SimulatedTaskDevice device)
+            SimulatedTaskDevice device, IMachineAlarmService alarmService = null)
         {
             _device = device ?? throw new ArgumentNullException(nameof(device));
+            AlarmService = alarmService ?? new MachineAlarmService();
             var original = new List<TaskDefinition>();
             foreach (TaskDefinition task in definitions ?? new TaskDefinition[0])
             {

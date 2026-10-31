@@ -13,8 +13,12 @@ namespace MotionControl.TaskEngine.Resources
         internal string RunId { get; }
         /// <summary>所属任务编号。</summary>
         internal string TaskId { get; }
+        /// <summary>操作员可识别的任务名称。</summary>
+        internal string TaskName { get; }
         /// <summary>所属节点编号。</summary>
         internal string NodeId { get; }
+        /// <summary>操作员可识别的步骤名称。</summary>
+        internal string NodeName { get; }
         /// <summary>所属调用编号。</summary>
         internal string ExecutionId { get; }
         /// <summary>已排序的资源名称，创建后不再修改。</summary>
@@ -29,10 +33,12 @@ namespace MotionControl.TaskEngine.Resources
         internal TaskCondition ExitCondition { get; }
 
         /// <summary>保存诊断身份、资源组及最少的恢复条件。</summary>
-        internal TaskResourceRequest(string runId, string taskId, string nodeId, string executionId,
-            List<string> names, TaskInterlock exitInterlock, TaskCondition exitCondition)
+        internal TaskResourceRequest(string runId, string taskId, string taskName, string nodeId,
+            string nodeName, string executionId, List<string> names,
+            TaskInterlock exitInterlock, TaskCondition exitCondition)
         {
-            RunId = runId; TaskId = taskId; NodeId = nodeId; ExecutionId = executionId;
+            RunId = runId; TaskId = taskId; TaskName = taskName; NodeId = nodeId;
+            NodeName = nodeName; ExecutionId = executionId;
             Names = names.AsReadOnly(); ExitInterlock = exitInterlock; ExitCondition = exitCondition;
             State = TaskResourceState.Waiting;
         }

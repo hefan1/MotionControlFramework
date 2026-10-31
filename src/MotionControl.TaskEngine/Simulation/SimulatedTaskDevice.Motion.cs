@@ -12,7 +12,7 @@ namespace MotionControl.TaskEngine.Simulation
             {
                 SimulatedAxis axis = FindAxis(name);
                 if (axis.Operation != null || Resources.IsReserved("Axis:" + name))
-                    throw new InvalidOperationException("仿真轴仍被占用或待确认：" + name);
+                    throw new InvalidOperationException("轴仍被占用或待确认：" + name);
                 CheckPosition(name, position);
                 axis.Position = position;
                 axis.Enabled = enabled;
@@ -43,7 +43,7 @@ namespace MotionControl.TaskEngine.Simulation
             lock (_sync)
             {
                 SimulatedAxis axis = FindAxis(name);
-                if (axis.Operation != null) throw new InvalidOperationException("仿真轴被其他动作占用：" + name);
+                if (axis.Operation != null) throw new InvalidOperationException("轴被其他动作占用：" + name);
                 CheckReady(name, axis, home);
                 double end = home ? 0 : relative ? axis.Position + target : target;
                 CheckPosition(name, end);
@@ -61,7 +61,7 @@ namespace MotionControl.TaskEngine.Simulation
             lock (_sync)
             {
                 SimulatedAxis axis = FindAxis(move.AxisName);
-                if (axis.Operation != move) throw new InvalidOperationException("仿真轴占用凭证已失效：" + move.AxisName);
+                if (axis.Operation != move) throw new InvalidOperationException("轴占用凭证已失效：" + move.AxisName);
                 CheckReady(move.AxisName, axis, move.Home);
                 axis.Position = move.Start + (move.Target - move.Start) * Math.Min(1, Math.Max(0, progress));
             }
@@ -73,7 +73,7 @@ namespace MotionControl.TaskEngine.Simulation
             lock (_sync)
             {
                 SimulatedAxis axis = FindAxis(move.AxisName);
-                if (axis.Operation != move) throw new InvalidOperationException("仿真轴清理时占用不一致：" + move.AxisName);
+                if (axis.Operation != move) throw new InvalidOperationException("轴清理时占用不一致：" + move.AxisName);
                 if (completed)
                 {
                     axis.Position = move.Target;
@@ -88,23 +88,23 @@ namespace MotionControl.TaskEngine.Simulation
         {
             lock (_sync)
                 if (FindAxis(name).Operation != null)
-                    throw new InvalidOperationException("轴被其他仿真动作占用；请取消所属运行并等待完成：" + name);
+                    throw new InvalidOperationException("轴被其他动作占用；请取消所属运行并等待完成：" + name);
         }
 
         /// <summary>按逻辑名称找轴。</summary>
         private SimulatedAxis FindAxis(string name)
         {
             SimulatedAxis axis;
-            if (name == null || !_axes.TryGetValue(name, out axis)) throw new ArgumentException("仿真轴不存在：" + name);
+            if (name == null || !_axes.TryGetValue(name, out axis)) throw new ArgumentException("轴未配置：" + name);
             return axis;
         }
 
         /// <summary>移动前和移动期间检查使能、位置参考及报警。</summary>
         private static void CheckReady(string name, SimulatedAxis axis, bool home)
         {
-            if (!axis.Enabled) throw new InvalidOperationException("仿真轴未使能：" + name);
-            if (!string.IsNullOrWhiteSpace(axis.Alarm)) throw new InvalidOperationException("仿真轴报警：" + name + "，" + axis.Alarm);
-            if (!home && !axis.Homed) throw new InvalidOperationException("仿真轴尚未回零：" + name);
+            if (!axis.Enabled) throw new InvalidOperationException("轴未使能：" + name);
+            if (!string.IsNullOrWhiteSpace(axis.Alarm)) throw new InvalidOperationException("轴报警：" + name + "，" + axis.Alarm);
+            if (!home && !axis.Homed) throw new InvalidOperationException("轴尚未回零：" + name);
         }
 
         /// <summary>依据实际起点和目录检查最终位置，拒绝无效和越界的动态目标。</summary>
@@ -113,7 +113,7 @@ namespace MotionControl.TaskEngine.Simulation
             var info = Catalog.Axes[name];
             if (double.IsNaN(position) || double.IsInfinity(position) || !info.MinimumPosition.HasValue
                 || !info.MaximumPosition.HasValue || position < info.MinimumPosition || position > info.MaximumPosition)
-                throw new InvalidOperationException("仿真轴目标超出配置行程或不是有限数：" + name + "，" + position);
+                throw new InvalidOperationException("轴目标超出配置行程或不是有限数：" + name + "，" + position);
         }
 
         /// <summary>仅在设备锁内读写的单轴状态。</summary>

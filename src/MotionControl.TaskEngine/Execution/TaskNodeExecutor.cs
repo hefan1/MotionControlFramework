@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Simulation;
 using MotionControl.TaskEngine.Machine;
@@ -19,12 +20,14 @@ namespace MotionControl.TaskEngine.Execution
         private readonly Dictionary<string, TaskDefinition> _library;
         /// <summary>可选受控工位；独立单次执行时为空，保留原来的失败终态行为。</summary>
         private readonly StationExecutionControl _station;
+        /// <summary>可选设备报警服务；受控整机任务使用正式或会话级同一报警源。</summary>
+        private readonly IMachineAlarmService _alarmService;
 
         /// <summary>保存本次运行依赖，不读取全局服务。</summary>
         internal TaskNodeExecutor(TaskRun run, SimulatedTaskDevice device, Dictionary<string, TaskDefinition> library,
-            StationExecutionControl station = null)
+            StationExecutionControl station = null, IMachineAlarmService alarmService = null)
         {
-            _run = run; _device = device; _library = library; _station = station;
+            _run = run; _device = device; _library = library; _station = station; _alarmService = alarmService;
         }
 
         /// <summary>执行一个节点并统一记录结果；只在动作收尾后标记取消或失败。</summary>

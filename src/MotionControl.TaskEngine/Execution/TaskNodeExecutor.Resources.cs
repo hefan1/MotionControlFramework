@@ -49,7 +49,8 @@ namespace MotionControl.TaskEngine.Execution
             try
             {
                 await scope.StepAsync(() => request = _device.Resources.Enqueue(_run.RunId, scope.TaskId,
-                    scope.Node.Id, scope.ExecutionId, names, exitInterlock, exitCondition)).ConfigureAwait(false);
+                    _library[scope.TaskId].Name, scope.Node.Id, scope.Node.Name, scope.ExecutionId,
+                    names, exitInterlock, exitCondition)).ConfigureAwait(false);
                 while (!acquired)
                 {
                     await scope.StepAsync(() =>

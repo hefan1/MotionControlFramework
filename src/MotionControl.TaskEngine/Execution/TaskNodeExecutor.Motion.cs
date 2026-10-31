@@ -43,7 +43,7 @@ namespace MotionControl.TaskEngine.Execution
                     started = _run.ActiveMilliseconds;
                     // 回零只验证流程生命周期；100ms 是内存模型时间，不是硬件回零参数。
                     duration = home ? 100 : Math.Abs(operation.Target - operation.Start) / node.Profile.Speed * 1000;
-                    if (double.IsInfinity(duration) || double.IsNaN(duration)) throw new InvalidOperationException("仿真运动时长超出有限范围。");
+                    if (double.IsInfinity(duration) || double.IsNaN(duration)) throw new InvalidOperationException("运动时长超出有限范围。");
                 }).ConfigureAwait(false);
                 while (operation != null)
                 {
@@ -55,7 +55,7 @@ namespace MotionControl.TaskEngine.Execution
                         else scope.Diagnostics = new TaskStepDiagnostics(progress >= 1
                             ? "内存回零结束，位置参考已建立；未模拟厂商原点与限位信号。"
                             : "正在执行内存回零；未模拟厂商回零模式。");
-                        _run.Report(scope, TaskNodeState.Waiting, "等待仿真轴 " + axisName + " 到位；目标=" + operation.Target);
+                        _run.Report(scope, TaskNodeState.Moving, "运动中：等待轴 " + axisName + " 到位；目标=" + operation.Target);
                         if (progress >= 1)
                         {
                             _device.EndMove(operation, true);

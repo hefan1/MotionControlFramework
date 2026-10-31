@@ -33,7 +33,7 @@ namespace MotionControl.TaskEngine.Validation
         }
 
         /// <summary>检查节点并递归检查子节点；过深或重复引用立即停止该分支。</summary>
-        internal void Check(TaskNode node, string path, int depth)
+        internal void Check(TaskNode node, string path, int depth, TaskNode earliestAncestor = null)
         {
             if (node == null) { Error(null, path, "节点不能为空。"); return; }
             if (depth > 32 || _objects.Count >= 5000)
@@ -51,22 +51,34 @@ namespace MotionControl.TaskEngine.Validation
             if (!ValidName(node.Name)) Error(node, path + ".name", "请填写清楚的步骤名称。");
             if (node.TimeoutMs <= 0) Error(node, path + ".timeoutMs", "时限必须大于零。");
 
+            if ((node is WaitInputNode || node is WaitConditionNode)
+                && node.TimeoutMs > 0 && earliestAncestor != null
+                && earliestAncestor.TimeoutMs > 0 && earliestAncestor.TimeoutMs <= node.TimeoutMs)
+            {
+                Warning(node, path + ".timeoutMs", "上层步骤“" + earliestAncestor.Name + "”的时限（"
+                    + earliestAncestor.TimeoutMs + " ms）不大于本等待时限（" + node.TimeoutMs
+                    + " ms），上层可能先超时，导致本步骤关联的等待超时报警不触发；请检查上层和前序步骤的时间预算。");
+            }
+            TaskNode nextAncestor = node.TimeoutMs > 0 && (earliestAncestor == null
+                || earliestAncestor.TimeoutMs <= 0 || node.TimeoutMs < earliestAncestor.TimeoutMs)
+                ? node : earliestAncestor;
+
             if (node is SequenceNode sequence)
             {
-                CheckChildren(node, sequence.Children, path + ".children", depth, false);
+                CheckChildren(node, sequence.Children, path + ".children", depth, false, nextAncestor);
             }
             else if (node is ParallelGroupNode parallel)
             {
                 if (parallel.Branches == null || parallel.Branches.Count < 2)
                     Error(node, path + ".branches", "并行组至少需要两个顺序分支。");
-                CheckChildren(node, parallel.Branches, path + ".branches", depth, true);
+                CheckChildren(node, parallel.Branches, path + ".branches", depth, true, nextAncestor);
             }
             else if (node is ConditionBranchNode branch)
             {
                 CheckCondition(branch.Condition, node, path + ".condition", new HashSet<TaskCondition>(), 0);
                 CheckAlarmReferences(branch.WhenFalseAlarmCodes, node, path + ".whenFalseAlarmCodes");
-                CheckSequence(branch.WhenTrue, node, path + ".whenTrue", depth);
-                if (branch.WhenFalse != null) CheckSequence(branch.WhenFalse, node, path + ".whenFalse", depth);
+                CheckSequence(branch.WhenTrue, node, path + ".whenTrue", depth, nextAncestor);
+                if (branch.WhenFalse != null) CheckSequence(branch.WhenFalse, node, path + ".whenFalse", depth, nextAncestor);
             }
             else if (node is ResourceScopeNode scope)
             {
@@ -80,7 +92,7 @@ namespace MotionControl.TaskEngine.Validation
                             || !_catalog.Resources.Contains(name, StringComparer.OrdinalIgnoreCase))
                             Error(node, path + ".resources", "资源为空、重复或未登记：" + name);
                 }
-                CheckSequence(scope.Body, node, path + ".body", depth);
+                CheckSequence(scope.Body, node, path + ".body", depth, nextAncestor);
                 if (scope.ExitCondition != null)
                     CheckCondition(scope.ExitCondition, node, path + ".exitCondition", new HashSet<TaskCondition>(), 0);
                 CheckInterlock(scope.EntryInterlock, scope, path + ".entryInterlock");
@@ -100,23 +112,24 @@ namespace MotionControl.TaskEngine.Validation
         }
 
         /// <summary>检查一个子节点列表，必要时要求每项都是顺序分支。</summary>
-        private void CheckChildren(TaskNode owner, List<TaskNode> children, string path, int depth, bool sequenceOnly)
+        private void CheckChildren(TaskNode owner, List<TaskNode> children, string path, int depth, bool sequenceOnly,
+            TaskNode earliestAncestor)
         {
             if (children == null) { Error(owner, path, "子节点列表不能为 null。"); return; }
             if (children.Count > 5000) { Error(owner, path, "子节点数量超过 5000。"); return; }
             for (int index = 0; index < children.Count; index++)
             {
                 string childPath = path + "[" + index + "]";
-                if (sequenceOnly) CheckSequence(children[index], owner, childPath, depth);
-                else Check(children[index], childPath, depth + 1);
+                if (sequenceOnly) CheckSequence(children[index], owner, childPath, depth, earliestAncestor);
+                else Check(children[index], childPath, depth + 1, earliestAncestor);
             }
         }
 
         /// <summary>分支和资源正文必须是顺序节点，保证树的含义明确。</summary>
-        private void CheckSequence(TaskNode child, TaskNode owner, string path, int depth)
+        private void CheckSequence(TaskNode child, TaskNode owner, string path, int depth, TaskNode earliestAncestor)
         {
             if (!(child is SequenceNode)) Error(owner, path, "这里必须使用 Sequence 顺序节点。");
-            Check(child, path, depth + 1);
+            Check(child, path, depth + 1, earliestAncestor);
         }
 
         /// <summary>登记会阻止保存的定义错误。</summary>

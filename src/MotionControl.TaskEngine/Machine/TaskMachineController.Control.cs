@@ -13,6 +13,7 @@ namespace MotionControl.TaskEngine.Machine
         /// <summary>检查停机条件和轴报警后进入就绪；不清报警、不重置工位步骤、不自动运行。</summary>
         public void Reset()
         {
+            AlarmService.EnsureStopAlarmConditionsRecovered();
             lock (_sync)
             {
                 RequireOpen();
@@ -28,6 +29,7 @@ namespace MotionControl.TaskEngine.Machine
                 _faults.Clear();
                 _state = TaskMachineState.Ready;
             }
+            AlarmService.ResetStopAlarms();
         }
 
         /// <summary>只从复位后的就绪启动；首次创建工位，后续继续原节点和原终点。</summary>

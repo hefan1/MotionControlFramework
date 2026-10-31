@@ -22,8 +22,12 @@ namespace MotionControl.TaskEngine.Resources
         public string RunId { get; }
         /// <summary>所属任务编号。</summary>
         public string TaskId { get; }
+        /// <summary>所属任务名称。</summary>
+        public string TaskName { get; }
         /// <summary>所属节点编号。</summary>
         public string NodeId { get; }
+        /// <summary>所属步骤名称。</summary>
+        public string NodeName { get; }
         /// <summary>本次节点调用编号。</summary>
         public string ExecutionId { get; }
         /// <summary>整组资源的只读副本。</summary>
@@ -36,8 +40,8 @@ namespace MotionControl.TaskEngine.Resources
         /// <summary>在协调器锁内复制一次完整状态。</summary>
         internal TaskResourceSnapshot(TaskResourceRequest request, string detail)
         {
-            RequestId = request.Id; RunId = request.RunId; TaskId = request.TaskId;
-            NodeId = request.NodeId; ExecutionId = request.ExecutionId;
+            RequestId = request.Id; RunId = request.RunId; TaskId = request.TaskId; TaskName = request.TaskName;
+            NodeId = request.NodeId; NodeName = request.NodeName; ExecutionId = request.ExecutionId;
             Resources = new List<string>(request.Names).AsReadOnly();
             State = request.State; Detail = detail;
         }

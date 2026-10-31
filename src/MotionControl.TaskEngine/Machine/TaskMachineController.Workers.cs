@@ -60,7 +60,7 @@ namespace MotionControl.TaskEngine.Machine
             {
                 var definition = _library[station.Configuration.TaskId];
                 run = new TaskExecutionEngine().StartManaged(definition, _device,
-                    _library.Values.Where(task => task.TaskId != definition.TaskId), station, token);
+                    _library.Values.Where(task => task.TaskId != definition.TaskId), station, token, AlarmService);
                 station.CurrentRun = run;
                 station.State = StationTaskState.Executing;
                 station.Detail = "正在执行周期 " + (station.CompletedCycles + 1) + "。";

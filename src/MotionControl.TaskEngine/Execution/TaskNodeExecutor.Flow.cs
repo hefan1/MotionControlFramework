@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.TaskEngine.Definitions;
 
 namespace MotionControl.TaskEngine.Execution
@@ -89,18 +90,40 @@ namespace MotionControl.TaskEngine.Execution
         private async Task WaitInputAsync(TaskExecutionScope scope, WaitInputNode node)
         {
             bool complete = false;
+            bool timeoutReportedThisAttempt = false;
             while (!complete)
             {
-                await scope.StepAsync(() =>
+                try
                 {
-                    bool? actual = _device.ReadInput(node.InputName);
-                    complete = actual.HasValue && actual.Value == node.Expected;
-                    scope.Diagnostics = new TaskStepDiagnostics("等待输入：" + node.InputName, new[] {
-                        new TaskObservedValue(node.InputName, node.Expected.ToString(), actual?.ToString(), actual.HasValue ? (bool?)complete : null) });
-                    _run.Report(scope, TaskNodeState.Waiting, "等待 DI " + node.InputName + "=" + node.Expected
-                        + "；当前=" + (actual.HasValue ? actual.Value.ToString() : "未知"));
-                }).ConfigureAwait(false);
+                    await scope.StepAsync(() =>
+                    {
+                        bool? actual = _device.ReadInput(node.InputName);
+                        complete = actual.HasValue && actual.Value == node.Expected;
+                        string current = actual.HasValue ? actual.Value.ToString() : "未知";
+                        scope.WaitDetail = "等待 DI " + node.InputName + "=" + node.Expected + "；当前=" + current;
+                        scope.Diagnostics = new TaskStepDiagnostics("等待输入：" + node.InputName, new[] {
+                            new TaskObservedValue(node.InputName, node.Expected.ToString(), actual?.ToString(), actual.HasValue ? (bool?)complete : null) });
+                        _run.Report(scope, TaskNodeState.Waiting, scope.WaitDetail);
+                    }).ConfigureAwait(false);
+                }
+                catch (TaskExecutionException error) when (!timeoutReportedThisAttempt
+                    && error.NodeId == scope.Node.Id && scope.IsOwnTimeoutOwnerExpired
+                    && error.InnerException is TimeoutException)
+                {
+                    string detail = "等待 DI '" + node.InputName + "' 达到超时时限 " + node.TimeoutMs + " ms；" + scope.WaitDetail;
+                    bool stopRequired = ReportTimeoutAlarms(scope, node.TimeoutAlarmCodes, detail);
+                    timeoutReportedThisAttempt = true;
+                    scope.TimeoutAlarmsReported = true;
+                    if (stopRequired) throw;
+                    scope.IgnoreOwnTimeout();
+                }
                 if (!complete) await scope.NextPollAsync().ConfigureAwait(false);
+            }
+
+            if (scope.TimeoutAlarmsReported)
+            {
+                ClearTimeoutAlarms(scope, node.TimeoutAlarmCodes, "等待 DI '" + node.InputName + "' 已满足。");
+                scope.TimeoutAlarmsReported = false;
             }
         }
 
@@ -108,19 +131,41 @@ namespace MotionControl.TaskEngine.Execution
         private async Task WaitConditionAsync(TaskExecutionScope scope, WaitConditionNode node)
         {
             bool complete = false;
+            bool timeoutReportedThisAttempt = false;
             while (!complete)
             {
-                await scope.StepAsync(() =>
+                try
                 {
-                    bool result;
-                    string reason;
-                    var values = new List<TaskObservedValue>();
-                    bool known = TaskConditionEvaluator.TryEvaluate(node.Condition, _device.Catalog, _device.ReadVariables(), out result, out reason, values);
-                    scope.Diagnostics = new TaskStepDiagnostics(reason, values, known ? (bool?)result : null);
-                    complete = known && result;
-                    _run.Report(scope, TaskNodeState.Waiting, "等待条件：" + reason);
-                }).ConfigureAwait(false);
+                    await scope.StepAsync(() =>
+                    {
+                        bool result;
+                        string reason;
+                        var values = new List<TaskObservedValue>();
+                        bool known = TaskConditionEvaluator.TryEvaluate(node.Condition, _device.Catalog, _device.ReadVariables(), out result, out reason, values);
+                        scope.Diagnostics = new TaskStepDiagnostics(reason, values, known ? (bool?)result : null);
+                        complete = known && result;
+                        scope.WaitDetail = "等待条件：" + reason;
+                        _run.Report(scope, TaskNodeState.Waiting, scope.WaitDetail);
+                    }).ConfigureAwait(false);
+                }
+                catch (TaskExecutionException error) when (!timeoutReportedThisAttempt
+                    && error.NodeId == scope.Node.Id && scope.IsOwnTimeoutOwnerExpired
+                    && error.InnerException is TimeoutException)
+                {
+                    string detail = "等待条件达到超时时限 " + node.TimeoutMs + " ms；" + scope.WaitDetail;
+                    bool stopRequired = ReportTimeoutAlarms(scope, node.TimeoutAlarmCodes, detail);
+                    timeoutReportedThisAttempt = true;
+                    scope.TimeoutAlarmsReported = true;
+                    if (stopRequired) throw;
+                    scope.IgnoreOwnTimeout();
+                }
                 if (!complete) await scope.NextPollAsync().ConfigureAwait(false);
+            }
+
+            if (scope.TimeoutAlarmsReported)
+            {
+                ClearTimeoutAlarms(scope, node.TimeoutAlarmCodes, "等待条件已成立。");
+                scope.TimeoutAlarmsReported = false;
             }
         }
     }
