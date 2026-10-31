@@ -46,7 +46,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
         /// <summary>正运动 SDK 返回的原始错误码。</summary>
         public int ErrorCode { get; private set; }
 
-        /// <summary>生成包含控制卡、操作、上下文和厂商错误码的中文说明。</summary>
+        /// <summary>保留原始错误码；厂商明确说明句柄错误时补充面向维护人员的诊断。</summary>
         private static string CreateMessage(
             string controllerId,
             string operation,
@@ -57,8 +57,11 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             var contextText = string.IsNullOrWhiteSpace(contextName)
                 ? string.Empty
                 : "，" + contextType + " '" + contextName + "'";
-            return "正运动控制卡 '" + controllerId + "'" + contextText
+            string message = "正运动控制卡 '" + controllerId + "'" + contextText
                 + "执行 '" + operation + "' 失败，SDK 错误码：" + errorCode + "。";
+            if (errorCode == 20009)
+                message += "厂商定义为控制器句柄错误；请检查控制器会话及设备实际状态。";
+            return message;
         }
     }
 }
