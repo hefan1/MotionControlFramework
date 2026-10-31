@@ -1,8 +1,10 @@
 **/bin/
 **/obj/
+**/tmp/
 .vs/
 .tool-home/
 .nuget/
 *.user
 *.suo
+*.log
 /src/Adapters/MotionCards/ZMotion/Adapter/Runtime/**/*.dll
