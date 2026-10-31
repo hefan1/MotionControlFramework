@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Flow;
+using MotionControl.Framework.Contracts.IO;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Contracts.Safety;
 using MotionControl.Framework.Runtime.FlowScheduling;
@@ -41,6 +42,27 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>提供急停回路状态的读取入口。</summary>
         private readonly IMachineSafetyStatus _safetyStatus;
 
+        /// <summary>读取现场启动、停止和复位按钮逻辑 DI 的服务。</summary>
+        private readonly ILogicalIo _controlInputIo;
+
+        /// <summary>保护现场按钮映射名称，供配置页和监控线程安全读取。</summary>
+        private readonly object _controlInputLock = new object();
+
+        /// <summary>现场启动按钮对应的逻辑 DI 名称。</summary>
+        private string _startInputName = string.Empty;
+
+        /// <summary>现场停止按钮对应的逻辑 DI 名称；按设备约定作为暂停输入。</summary>
+        private string _pauseInputName = string.Empty;
+
+        /// <summary>现场复位按钮对应的逻辑 DI 名称。</summary>
+        private string _resetInputName = string.Empty;
+
+        /// <summary>现场按钮状态监控后台任务。</summary>
+        private Task _controlInputMonitorTask = Task.CompletedTask;
+
+        /// <summary>取消现场按钮状态监控及其发起的整机命令。</summary>
+        private CancellationTokenSource _controlInputMonitorCancellation;
+
         /// <summary>请求暂停后等待流程退出当前步骤的最长时间。</summary>
         private readonly TimeSpan _pauseTimeout;
 
@@ -71,7 +93,7 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>取消当前急停监控任务的令牌源。</summary>
         private CancellationTokenSource _safetyMonitorCancellation;
 
-        /// <summary>创建单机运行上下文；可选设置启动前初始化流程、暂停时限和急停轮询间隔。</summary>
+        /// <summary>创建单机运行上下文；可选接入现场按钮 DI、启动前初始化流程和监控间隔。</summary>
         public MachineRuntime(
             MotionCardGroup motionCards,
             IEnumerable<IStationFlow> stationFlows,
@@ -79,7 +101,11 @@ namespace MotionControl.Framework.Runtime.Machine
             IMachineSafetyStatus safetyStatus,
             TimeSpan? pauseTimeout = null,
             TimeSpan? safetyPollInterval = null,
-            IEquipmentInitializationFlow equipmentInitializationFlow = null)
+            IEquipmentInitializationFlow equipmentInitializationFlow = null,
+            ILogicalIo controlInputIo = null,
+            string startInputName = null,
+            string pauseInputName = null,
+            string resetInputName = null)
         {
             if (motionCards == null)
             {
@@ -118,6 +144,8 @@ namespace MotionControl.Framework.Runtime.Machine
                 equipmentInitializationFlow);
             _alarmService = alarmService;
             _safetyStatus = safetyStatus;
+            _controlInputIo = controlInputIo;
+            UpdateControlInputNames(startInputName, pauseInputName, resetInputName);
             _pauseTimeout = pauseTimeout ?? DefaultPauseTimeout;
             _safetyPollInterval = safetyPollInterval ?? DefaultSafetyPollInterval;
             _state = MachineRunState.Disconnected;
@@ -186,6 +214,53 @@ namespace MotionControl.Framework.Runtime.Machine
             get { return _flowScheduler.HasPendingInitialization; }
         }
 
+        /// <summary>读取自动启动拦截原因，供操作页在启动前显示具体就绪条件。</summary>
+        public async Task<string> GetAutomaticStartBlockReasonAsync(CancellationToken cancellationToken)
+        {
+            if (State != MachineRunState.Ready)
+            {
+                return null;
+            }
+
+            if (_flowScheduler.StationFlows.Count == 0)
+            {
+                return "尚未配置自动工位，不能启动自动流程。";
+            }
+
+            if (!IsEmergencyStopMonitoringConfigured())
+            {
+                return "软件急停状态 DI 尚未配置，不能启动自动流程。请先在安全联锁页选择 DI。";
+            }
+
+            if (Interlocked.CompareExchange(ref _activeManualOperationCount, 0, 0) > 0)
+            {
+                return "仍有手动动作执行，请等待动作完成后再启动自动流程。";
+            }
+
+            try
+            {
+                if (await UpdateEmergencyStopAlarmAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    return "急停输入仍处于触发状态，设备不能启动。";
+                }
+
+                await _flowScheduler
+                    .EnsureAxesReadyForAutomaticStartAsync(
+                        _flowScheduler.HasPendingInitialization,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                return null;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception readinessError)
+            {
+                return readinessError.Message;
+            }
+        }
+
         /// <summary>连接控制卡前载入上次初始化完成标记，供设备流程重连后检查现场状态。</summary>
         public void RequestInitializationRecovery(bool initializationCompletedBeforeRestart)
         {
@@ -205,6 +280,7 @@ namespace MotionControl.Framework.Runtime.Machine
                     _flowScheduler.ResetForNewConnection();
                     await _motionCards.ConnectAsync(cancellationToken).ConfigureAwait(false);
                     SetStatus(MachineRunState.ResetRequired, null);
+                    StartControlInputMonitor();
                 }
                 catch (Exception connectionError)
                 {
@@ -233,6 +309,7 @@ namespace MotionControl.Framework.Runtime.Machine
 
                 try
                 {
+                    await StopControlInputMonitorAsync().ConfigureAwait(false);
                     await _motionCards.DisconnectAsync(cancellationToken).ConfigureAwait(false);
                     SetStatus(MachineRunState.Disconnected, null);
                 }
@@ -380,6 +457,13 @@ namespace MotionControl.Framework.Runtime.Machine
                         "软件急停状态 DI 尚未配置，不能启动自动流程。请先在安全联锁页选择 DI；手动调试仍可使用。设备安全停机仍须由硬件安全回路完成。");
                 }
 
+                if (!_flowScheduler.HasPendingInitialization)
+                {
+                    await _flowScheduler
+                        .EnsureRequiredStationAxesHomedForAutomaticStartAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
                 try
                 {
                     if (await UpdateEmergencyStopAlarmAsync(cancellationToken).ConfigureAwait(false))
@@ -410,6 +494,11 @@ namespace MotionControl.Framework.Runtime.Machine
                 catch (Exception startError)
                 {
                     await StopEmergencyStopMonitorAsync().ConfigureAwait(false);
+                    if (startError is StationAxesNotHomedException)
+                    {
+                        throw;
+                    }
+
                     SetStatus(MachineRunState.Alarmed, startError);
                     throw;
                 }

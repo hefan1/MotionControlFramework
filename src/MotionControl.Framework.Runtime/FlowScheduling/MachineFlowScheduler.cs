@@ -21,6 +21,9 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
         /// <summary>本设备可选的启动前初始化流程；为空时直接启动各工位。</summary>
         private readonly IEquipmentInitializationFlow _equipmentInitializationFlow;
 
+        /// <summary>按逻辑轴名称记录启动前需要回零的工位。</summary>
+        private readonly IReadOnlyDictionary<string, IReadOnlyList<string>> _stationsRequiringHomedAxes;
+
         /// <summary>保护当前运行任务和取消令牌，避免重复启动或并发暂停。</summary>
         private readonly object _runSync = new object();
 
@@ -77,6 +80,7 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
             _motionCards = motionCards;
             _stationFlows = flowList.AsReadOnly();
             _equipmentInitializationFlow = equipmentInitializationFlow;
+            _stationsRequiringHomedAxes = BuildHomedAxisRequirements(motionCards, flowList);
         }
 
         /// <summary>当前连接周期内存在尚未完成的可选初始化时返回 true。</summary>
@@ -147,11 +151,12 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
             await _equipmentInitializationFlow.ResetAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        /// <summary>检查所有逻辑轴是否停稳、无报警且限位状态可确认；可选初始化可处理未回零标记。</summary>
+        /// <summary>检查所有逻辑轴是否停稳、无报警且限位状态可确认；同时汇总全部必需回零轴。</summary>
         public async Task EnsureAxesReadyForAutomaticStartAsync(
             bool allowHomingRequired,
             CancellationToken cancellationToken)
         {
+            var missingHomedRequirements = new List<KeyValuePair<string, IReadOnlyList<string>>>();
             foreach (IAxis axis in _motionCards.Axes)
             {
                 AxisStatus status = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
@@ -200,7 +205,173 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
                         "逻辑轴 '" + axis.Name
                         + "' 曾触发硬限位，恢复后必须先完成回零，才能启动自动流程。");
                 }
+
+                IReadOnlyList<string> stations;
+                if (!allowHomingRequired
+                    && _stationsRequiringHomedAxes.TryGetValue(axis.Name, out stations)
+                    && !status.Homed)
+                {
+                    missingHomedRequirements.Add(
+                        new KeyValuePair<string, IReadOnlyList<string>>(axis.Name, stations));
+                }
             }
+
+            if (missingHomedRequirements.Count > 0)
+            {
+                throw CreateHomingRequiredException(missingHomedRequirements);
+            }
+        }
+
+        /// <summary>无待执行初始化时，在启动前汇总检查全部自动工位所需轴是否已回零。</summary>
+        public async Task EnsureRequiredStationAxesHomedForAutomaticStartAsync(CancellationToken cancellationToken)
+        {
+            var missingHomedRequirements = new List<KeyValuePair<string, IReadOnlyList<string>>>();
+            foreach (KeyValuePair<string, IReadOnlyList<string>> requirement in _stationsRequiringHomedAxes)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                IAxis axis = _motionCards.GetAxis(requirement.Key);
+                AxisStatus status = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
+                if (!status.Homed)
+                {
+                    missingHomedRequirements.Add(
+                        new KeyValuePair<string, IReadOnlyList<string>>(axis.Name, requirement.Value));
+                }
+            }
+
+            if (missingHomedRequirements.Count > 0)
+            {
+                throw CreateHomingRequiredException(missingHomedRequirements);
+            }
+        }
+
+        /// <summary>汇总各工位声明的回零要求，并在 Runtime 创建时校验逻辑轴确实已映射。</summary>
+        private static IReadOnlyDictionary<string, IReadOnlyList<string>> BuildHomedAxisRequirements(
+            MotionCardGroup motionCards,
+            IReadOnlyList<IStationFlow> stationFlows)
+        {
+            var stationsByAxis = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (IStationFlow station in stationFlows)
+            {
+                var requirements = station as IStationAxisRequirements;
+                if (requirements == null)
+                {
+                    continue;
+                }
+
+                if (requirements.RequiredHomedAxes == null)
+                {
+                    throw new ArgumentException(
+                        "工位 '" + station.StationName + "' 的回零轴清单不能为空。",
+                        nameof(stationFlows));
+                }
+
+                var stationAxes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (string axisName in requirements.RequiredHomedAxes)
+                {
+                    if (string.IsNullOrWhiteSpace(axisName))
+                    {
+                        throw new ArgumentException(
+                            "工位 '" + station.StationName + "' 包含空的回零轴名称。",
+                            nameof(stationFlows));
+                    }
+
+                    if (!stationAxes.Add(axisName))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        motionCards.GetAxis(axisName);
+                    }
+                    catch (KeyNotFoundException error)
+                    {
+                        throw new ArgumentException(
+                            "工位 '" + station.StationName + "' 需要回零的逻辑轴未映射：'" + axisName + "'。",
+                            nameof(stationFlows),
+                            error);
+                    }
+
+                    List<string> stations;
+                    if (!stationsByAxis.TryGetValue(axisName, out stations))
+                    {
+                        stations = new List<string>();
+                        stationsByAxis.Add(axisName, stations);
+                    }
+
+                    stations.Add(station.StationName);
+                }
+            }
+
+            return stationsByAxis.ToDictionary(
+                pair => pair.Key,
+                pair => (IReadOnlyList<string>)pair.Value.AsReadOnly(),
+                StringComparer.OrdinalIgnoreCase);
+        }
+
+        /// <summary>按工位显示顺序整理未回零轴，并给出适合当前设备配置的处理方法。</summary>
+        private StationAxesNotHomedException CreateHomingRequiredException(
+            IReadOnlyList<KeyValuePair<string, IReadOnlyList<string>>> requirements)
+        {
+            var orderedRequirements = (requirements ?? Array.Empty<KeyValuePair<string, IReadOnlyList<string>>>())
+                .OrderBy(GetRequirementStationOrder)
+                .ThenBy(GetRequirementAxisOrder)
+                .ToList();
+            return new StationAxesNotHomedException(
+                orderedRequirements,
+                _equipmentInitializationFlow != null);
+        }
+
+        /// <summary>返回该轴最先关联工位在流程列表中的位置，使跨页面原因顺序保持一致。</summary>
+        private int GetRequirementStationOrder(KeyValuePair<string, IReadOnlyList<string>> requirement)
+        {
+            for (int stationIndex = 0; stationIndex < _stationFlows.Count; stationIndex++)
+            {
+                if (requirement.Value != null
+                    && requirement.Value.Contains(_stationFlows[stationIndex].StationName, StringComparer.OrdinalIgnoreCase))
+                {
+                    return stationIndex;
+                }
+            }
+
+            return int.MaxValue;
+        }
+
+        /// <summary>返回轴在其首个关联工位回零清单中的位置，保持同一工位的轴顺序。</summary>
+        private int GetRequirementAxisOrder(KeyValuePair<string, IReadOnlyList<string>> requirement)
+        {
+            if (requirement.Value == null)
+            {
+                return int.MaxValue;
+            }
+
+            for (int stationIndex = 0; stationIndex < _stationFlows.Count; stationIndex++)
+            {
+                IStationFlow station = _stationFlows[stationIndex];
+                if (!requirement.Value.Contains(station.StationName, StringComparer.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var axisRequirements = station as IStationAxisRequirements;
+                if (axisRequirements?.RequiredHomedAxes == null)
+                {
+                    return int.MaxValue;
+                }
+
+                int axisIndex = 0;
+                foreach (string axisName in axisRequirements.RequiredHomedAxes)
+                {
+                    if (string.Equals(axisName, requirement.Key, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return axisIndex;
+                    }
+
+                    axisIndex++;
+                }
+            }
+
+            return int.MaxValue;
         }
 
         /// <summary>组合当前已触发的正负硬限位和软限位原因，并附上适配器提供的来源。</summary>
