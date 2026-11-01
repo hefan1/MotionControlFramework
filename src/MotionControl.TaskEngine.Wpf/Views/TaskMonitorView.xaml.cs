@@ -55,6 +55,12 @@ namespace MotionControl.TaskEngine.Wpf.Views
             Unloaded += View_Unloaded;
         }
 
+        /// <summary>由正式 Host 将来源路径收纳到诊断区，保留监控刷新时间。</summary>
+        public void HideSourcePath()
+        {
+            SourceText.Visibility = Visibility.Collapsed;
+        }
+
         /// <summary>页面进入可见区域后开始采样。</summary>
         private void View_Loaded(object sender, RoutedEventArgs e) { Refresh(); _timer.Start(); }
         /// <summary>移出界面后停止采样，后台任务仍由所属窗口管理。</summary>

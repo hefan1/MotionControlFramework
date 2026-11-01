@@ -78,7 +78,7 @@
  <sys:String x:Key="任务编辑.恢复：">Recovery: </sys:String>
  <sys:String x:Key="任务编辑.报警库不存在"> (missing from alarm catalog)</sys:String>
  <sys:String x:Key="任务编辑.当前设备报警库为空，请先维护报警代码">The equipment alarm catalog is empty. Add alarm codes first.</sys:String>
- <sys:String x:Key="任务编辑.任务报警关联规则">Runtime behavior after equipment-flow integration: all selected alarms are raised together when the condition triggers; a stop alarm puts the machine into reset-required state. Associations are currently saved in the task draft only.</sys:String>
+ <sys:String x:Key="任务编辑.任务报警关联规则">When the condition triggers, all selected alarms are raised. A stop alarm requires reset. Save the draft, update the task files, and reload the task to use these changes.</sys:String>
  <sys:String x:Key="任务编辑.等待DI">Wait for DI</sys:String>
  <sys:String x:Key="任务编辑.等级">Severity</sys:String>
  <sys:String x:Key="任务编辑.等于">Equal</sys:String>
@@ -220,6 +220,8 @@
  <sys:String x:Key="任务编辑.更新任务文件">Update task files</sys:String>
  <sys:String x:Key="任务编辑.重新载入运行文件提示">The current draft is kept as a copy before active files are loaded. Confirmation is required.</sys:String>
  <sys:String x:Key="任务编辑.查看当前流程状态">View current flow status</sys:String>
+ <sys:String x:Key="任务编辑.查看任务运行">View task operation</sys:String>
+ <sys:String x:Key="任务编辑.任务运行工位查看指引">Task list control is selected. Open task operation to view the loaded tasks and stations.</sys:String>
  <sys:String x:Key="任务编辑.正式设备当前状态">Current equipment state</sys:String>
  <sys:String x:Key="任务编辑.设备运行中">Equipment running</sys:String>
  <sys:String x:Key="任务编辑.设备已就绪">Equipment ready</sys:String>
@@ -240,13 +242,13 @@
  <sys:String x:Key="任务编辑.工位参与运行">enabled</sys:String>
  <sys:String x:Key="任务编辑.工位已停用">disabled</sys:String>
  <sys:String x:Key="任务编辑.草稿没有工位">No stations in this draft</sys:String>
- <sys:String x:Key="任务编辑.草稿工位运行边界">Draft assignments are not connected to the equipment runtime. Editing, saving, or checking this draft does not change the current runtime stations.</sys:String>
+ <sys:String x:Key="任务编辑.草稿工位运行边界">Editing, saving, and checking affect only the draft, not the current equipment flow. Reload the task after updating the task files to use the new assignments.</sys:String>
  <sys:String x:Key="任务编辑.没有连接运行时">No connected equipment runtime</sys:String>
  <sys:String x:Key="任务编辑.没有自动工位">No automatic stations</sys:String>
  <sys:String x:Key="任务编辑.运行工位说明">These automatic station flows are currently loaded in the equipment runtime. Their presence does not mean they are running. A task draft marked “Not applied” does not change these flows; names are shown for operator comparison.</sys:String>
- <sys:String x:Key="任务编辑.仅更新任务文件，不启动设备">Updates task configuration files only. Flow execution is not connected to the controller and will not connect to or start equipment.</sys:String>
- <sys:String x:Key="任务编辑.确认更新以下任务文件">Update the following task files? Flow execution is not connected to the controller; this will not connect to or start equipment.</sys:String>
- <sys:String x:Key="任务编辑.任务文件已更新">Task files updated. Flow execution is not connected to the controller.</sys:String>
+ <sys:String x:Key="任务编辑.仅更新任务文件，不启动设备">Updating task files does not start the equipment. Reload the task to use the updated configuration.</sys:String>
+ <sys:String x:Key="任务编辑.确认更新以下任务文件">Update the following task files? This will not start the equipment. Reload the task to use the updated configuration.</sys:String>
+ <sys:String x:Key="任务编辑.任务文件已更新">Task files updated. Reload the task to use the new configuration.</sys:String>
  <sys:String x:Key="任务编辑.有未保存修改，运行版本未改变">Unsaved changes. Active files are unchanged.</sys:String>
  <sys:String x:Key="任务编辑.有效">Active</sys:String>
  <sys:String x:Key="任务编辑.右值">Right value</sys:String>

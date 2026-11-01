@@ -65,7 +65,7 @@
     <sys:String x:Key="自动暂停提示">受控暂停全部自动工位并保留当前工步；继续运行前需整机复位，再按启动。</sys:String>
     <sys:String x:Key="自动停止提示">停止也会受控暂停全部自动工位并保留当前工步；现场确认安全后，整机复位再按启动。</sys:String>
     <sys:String x:Key="自动流程命令失败标题">自动流程命令失败</sys:String>
-    <sys:String x:Key="工位流程状态说明">自动工位与手动页面共用当前控制卡、逻辑轴和 IO 映射；运行时手动操作会被阻止。</sys:String>
+    <sys:String x:Key="工位流程状态说明">查看当前执行入口的运行信息和报警。</sys:String>
     <sys:String x:Key="流程页.待启动步骤">待启动步骤</sys:String>
     <sys:String x:Key="流程页.正在执行步骤">正在执行步骤</sys:String>
     <sys:String x:Key="流程页.暂停保留步骤">暂停保留步骤</sys:String>
@@ -77,6 +77,11 @@
     <sys:String x:Key="流程页.核对输入">核对输入</sys:String>
     <sys:String x:Key="流程页.核对输入说明">定位此工位当前等待的输入：{0}</sys:String>
     <sys:String x:Key="流程页.查看当前报警">查看当前报警</sys:String>
+    <sys:String x:Key="流程页.查看任务运行">查看任务运行</sys:String>
+    <sys:String x:Key="流程页.当前未启用自动运行">当前未启用自动运行，可进行手动调试。</sys:String>
+    <sys:String x:Key="流程页.任务状态待查看">当前使用任务列表，请到任务运行页面查看任务状态和步骤。</sys:String>
+    <sys:String x:Key="流程页.任务未读取">当前使用任务列表，尚未读取任务。请到任务运行页面读取当前任务。</sys:String>
+    <sys:String x:Key="流程页.任务已读取">任务已读取，请到任务运行页面查看实时工位、步骤和报警。</sys:String>
     <sys:String x:Key="整机当前状态">整机状态：</sys:String>
     <sys:String x:Key="未配置自动工位">未启用自动工位；可继续使用轴手动和 IO 手动页面。</sys:String>
     <sys:String x:Key="无当前报警">当前无报警。</sys:String>
@@ -654,7 +659,7 @@
     <sys:String x:Key="取消">取消</sys:String>
     <sys:String x:Key="保存">保存</sys:String>
     <sys:String x:Key="任务运行">任务运行</sys:String>
-    <sys:String x:Key="任务接入状态">任务接入状态</sys:String>
+    <sys:String x:Key="任务接入状态">任务运行</sys:String>
     <sys:String x:Key="任务接入状态页面说明">管理正式设备任务的运行、步骤状态和当前报警。</sys:String>
     <sys:String x:Key="任务接入状态说明">读取已应用的设备任务后，可在此复位、启动、暂停和停止任务，并查看当前步骤与报警。</sys:String>
     <sys:String x:Key="任务执行页面说明">读取已应用的任务配置后，可复位、启动、暂停和停止整机任务；运行状态、步骤与当前报警会显示在本页。</sys:String>
@@ -727,7 +732,7 @@
     <sys:String x:Key="报警库未保存修改">报警库尚有未保存修改。选择是保存后关闭，选择否放弃修改，取消则返回页面。</sys:String>
     <sys:String x:Key="报警库未保存">报警库未保存</sys:String>
     <sys:String x:Key="任务配置先断开会话">当前控制卡会话仍连接。请先在轴映射页断开会话，再更新任务文件；不会自动断开，草稿可随时保存。</sys:String>
-    <sys:String x:Key="设备总览页面说明">查看当前 Runtime、工位动作和报警；启停使用顶部按钮。</sys:String>
+    <sys:String x:Key="设备总览页面说明">查看设备状态、运行信息和报警。</sys:String>
     <sys:String x:Key="当前报警页面说明">查看故障位置、条件与处理指导；刷新和导航不会复位报警。</sys:String>
     <sys:String x:Key="关联页面尚未就绪">当前运行时尚未提供此页面，请先检查连接。此次跳转未执行任何设备操作。</sys:String>
     <sys:String x:Key="返回操作页">返回操作页</sys:String>

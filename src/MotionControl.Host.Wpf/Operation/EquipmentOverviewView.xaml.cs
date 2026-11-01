@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
+using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Runtime.Machine;
 
 namespace MotionControl.Host.Wpf.Operation
@@ -17,6 +18,8 @@ namespace MotionControl.Host.Wpf.Operation
         public event EventHandler<OperatorNavigationEventArgs> NavigationRequested;
         /// <summary>当前生产运行入口，可为空。</summary>
         private MachineRuntime _runtime;
+        /// <summary>查询正式任务页面是否已读取任务；未提供时不推断会话状态。</summary>
+        private Func<bool> _isTaskSessionLoaded;
         /// <summary>当前控制卡连接状态。</summary>
         private bool _isCardConnected;
         /// <summary>Host 是否已提供连接结果；未提供时不臆断独立预览状态。</summary>
@@ -63,6 +66,9 @@ namespace MotionControl.Host.Wpf.Operation
         }
         /// <summary>连接或断开时替换当前实际来源，同时清除任何预览数据。</summary>
         public void SetRuntime(MachineRuntime runtime) { _runtime = runtime; _preview = null; RefreshDisplay(); }
+        /// <summary>接入任务会话状态查询，供总览区分未读取和已读取任务。</summary>
+        public void SetTaskSessionStateProvider(Func<bool> provider)
+        { _isTaskSessionLoaded = provider; RefreshDisplay(); }
         /// <summary>同步控制卡连接诊断，供操作员在首页直接查看并跳转设置。</summary>
         public void SetConnectionStatus(bool isConnected, string statusMessage)
         {
@@ -106,6 +112,8 @@ namespace MotionControl.Host.Wpf.Operation
         {
             OperationSnapshot snapshot = _preview ?? OperationSnapshot.Read(_runtime);
             bool connectionLost = _preview == null && _connectionStatusKnown && !_isCardConnected && snapshot.HasRuntime;
+            bool taskOwner = snapshot.ControlOwner == MachineControlOwner.TaskEngine;
+            bool showTask = taskOwner && !connectionLost;
             MachineRunState? displayState = connectionLost ? MachineRunState.Disconnected : snapshot.State;
             bool startBlocked = displayState == MachineRunState.Ready
                 && !string.IsNullOrWhiteSpace(_automaticStartBlockReason);
@@ -122,7 +130,9 @@ namespace MotionControl.Host.Wpf.Operation
             SampleText.Text = T("软件状态采样") + " · " + snapshot.SampledAt.ToString("yyyy-MM-dd HH:mm:ss");
             bool noNamedAxes = _axisMappingStatusKnown && _configuredAxisCount == 0;
             NextActionText.Text = connectionLost ? T("控制器断开后请核对状态") : startBlocked ? _automaticStartBlockReason
-                : T(startChecking ? "正在检查启动条件" : _isCardConnected && noNamedAxes
+                : startChecking ? T("正在检查启动条件")
+                : showTask && displayState != MachineRunState.Alarmed && displayState != MachineRunState.Paused ? T("任务入口操作提示")
+                : T(_isCardConnected && noNamedAxes
                     ? "先配置设备轴映射再进行手动调试"
                     : NextAction(snapshot));
             bool axisActionRequired = startBlocked
@@ -137,7 +147,10 @@ namespace MotionControl.Host.Wpf.Operation
                     ? T("打开轴映射查看连接原因")
                     : _connectionStatusMessage;
             bool showStationSummary = snapshot.Stations.Count <= 1;
-            AggregateMetrics.Visibility = showStationSummary ? Visibility.Visible : Visibility.Collapsed;
+            AggregateMetrics.Visibility = showStationSummary && !taskOwner ? Visibility.Visible : Visibility.Collapsed;
+            TaskRunPanel.Visibility = showTask ? Visibility.Visible : Visibility.Collapsed;
+            TaskRunStatusText.Text = T(_isTaskSessionLoaded == null ? "任务会话状态待查看"
+                : _isTaskSessionLoaded() ? "任务已读取请查看运行状态" : "任务未读取请先读取");
             StationCards.Visibility = connectionLost ? Visibility.Collapsed : Visibility.Visible;
             CompletedText.Text = snapshot.Stations.Count > 1 ? T("按工位查看")
                 : snapshot.CompletedCount.HasValue ? snapshot.CompletedCount.Value.ToString(CultureInfo.InvariantCulture) + " " + T("次")
@@ -145,8 +158,10 @@ namespace MotionControl.Host.Wpf.Operation
             CycleText.Text = snapshot.Stations.Count > 1 ? T("按工位查看")
                 : snapshot.CycleSeconds.HasValue ? snapshot.CycleSeconds.Value.ToString("0.0", CultureInfo.InvariantCulture) + " " + T("秒")
                 : T("未完成");
-            EmptyText.Text = snapshot.Stations.Count == 0 ? T(snapshot.HasRuntime ? "未配置自动工位" : "尚无运行时，请先检查控制卡连接") : "";
-            EmptyText.Visibility = snapshot.Stations.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            EmptyText.Text = snapshot.Stations.Count == 0 && !taskOwner
+                ? T(!snapshot.HasRuntime ? "尚无运行时，请先检查控制卡连接"
+                    : snapshot.ControlOwner == MachineControlOwner.None ? "当前未启用自动运行" : "未配置自动工位") : "";
+            EmptyText.Visibility = snapshot.Stations.Count == 0 && !taskOwner ? Visibility.Visible : Visibility.Collapsed;
             bool changed = _cards.Count != snapshot.Stations.Count || _cards.Where((card, index) => card.StationName != snapshot.Stations[index].Name).Any();
             if (changed)
             {
@@ -284,6 +299,9 @@ namespace MotionControl.Host.Wpf.Operation
         }
         /// <summary>进入当前报警，不执行复位。</summary>
         private void Alarms_Click(object sender, RoutedEventArgs e) { NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("当前报警")); }
+        /// <summary>打开真实任务运行页，不自动读取任务或启动设备。</summary>
+        private void OpenTaskRun_Click(object sender, RoutedEventArgs e)
+        { NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("任务接入状态")); }
         /// <summary>从启动拦截提示直接打开轴手动页，便于完成回零或处理轴状态。</summary>
         private void OpenAxisManual_Click(object sender, RoutedEventArgs e)
         { NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("轴手动")); }

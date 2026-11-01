@@ -239,9 +239,14 @@ namespace MotionControl.Host.Wpf
                 GetTaskApplyBlockedReason,
                 GetTaskRuntimeStateText,
                 GetTaskRuntimeStationNames,
-                GetTaskRuntimeReadinessReason);
+                GetTaskRuntimeReadinessReason,
+                IsTaskEngineOwner);
             _taskConfigurationPage.ReferenceRequested += TaskEditorReferenceRequested;
-            _taskConfigurationPage.CurrentFlowRequested += (sender, args) => _mainWindow.ShowFlowStatus();
+            _taskConfigurationPage.CurrentFlowRequested += (sender, args) =>
+            {
+                if (IsTaskEngineOwner()) _mainWindow.ShowTaskRun();
+                else _mainWindow.ShowFlowStatus();
+            };
             _mainWindow.SetTaskConfigurationPage(_taskConfigurationPage);
             RefreshIoMonitorPage();
             RefreshAxisMonitorPage(null);
@@ -376,6 +381,7 @@ namespace MotionControl.Host.Wpf
                     ?? "软件控制器通讯已中断，轴和输出状态未确认。";
                 _axisMappingPage.ReportCardConnectionLost(reason);
                 _flowStatusPage?.MarkControllerConnectionLost();
+                _taskMonitorLauncher?.MarkControllerConnectionLost();
                 _mainWindow.SetMotionCardConnectionStatus(false, reason, true);
             }
         }
@@ -462,6 +468,7 @@ namespace MotionControl.Host.Wpf
                 softwareController);
             if (!_cardConnection.IsConnected)
             {
+                _taskMonitorLauncher?.MarkControllerConnectionLost();
                 if (_taskMonitorLauncher != null)
                 {
                     try
@@ -559,7 +566,7 @@ namespace MotionControl.Host.Wpf
                 _machineRuntime.StatusChanged += MachineRuntime_RecoveryStatusChanged;
                 _mainWindow.SetMachineRuntime(createdRuntime);
                 _deviceVariablePage.SetMachineRuntime(createdRuntime);
-                _flowStatusPage = new FlowStatusView(createdRuntime);
+                _flowStatusPage = new FlowStatusView(createdRuntime, () => _taskMonitorLauncher != null && _taskMonitorLauncher.HasTaskSession);
                 _mainWindow.SetFlowStatusPage(_flowStatusPage);
                 RefreshManualDebugPages(createdRuntime, motionCards, connectedLogicalIo);
                 await _taskMonitorLauncher.SetMachineContextAsync(
@@ -710,9 +717,15 @@ namespace MotionControl.Host.Wpf
         /// <summary>复制正式 Host 当前 Runtime 的工位名称供任务配置页只读对照。</summary>
         private IEnumerable<string> GetTaskRuntimeStationNames()
         {
-            return _machineRuntime == null
+            return _machineRuntime == null || _machineRuntime.ControlOwner != MachineControlOwner.StationFlows
                 ? Enumerable.Empty<string>()
                 : _machineRuntime.StationFlows.Select(flow => flow.StationName).ToArray();
+        }
+
+        /// <summary>识别设备当前采用的任务列表控制入口。</summary>
+        private bool IsTaskEngineOwner()
+        {
+            return _machineRuntime != null && _machineRuntime.ControlOwner == MachineControlOwner.TaskEngine;
         }
 
         /// <summary>保留编辑页对象并导航，返回任务配置时仍有原任务与草稿。</summary>

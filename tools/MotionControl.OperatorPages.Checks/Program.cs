@@ -37,9 +37,11 @@ namespace MotionControl.OperatorPages.Checks
             Check("未知状态、真实Runtime来源和无硬件调用", RuntimeSource, ref failures);
             Check("暂停覆盖、任意数量工位和预览来源", OverviewStates, ref failures);
             Check("整机启动拦截原因跨页面一致", StartReadinessConsistency, ref failures);
+            Check("任务入口的会话状态和导航", TaskOwnerDisplay, ref failures);
             Check("报警恢复待复位、搜索和稳定选择", AlarmConditions, ref failures);
             Check("报警状态与报警库恢复指导同时可见", AlarmGuidanceChecks.Run, ref failures);
             Check("任务页报警表格快照与语言切换", TaskAlarmGridChecks.Run, ref failures);
+            Check("任务运行空状态与诊断", TaskRunPageChecks.Run, ref failures);
             Check("设备状态资源覆盖与中英文显示", MachineStateLocalization, ref failures);
             Check("IO 监控区分通道范围和当前读取失败", IoMonitorReadFailureChecks.Run, ref failures);
             Check("DO 切换前重读实际电平", IoMonitorToggleChecks.Run, ref failures);
@@ -50,7 +52,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("暂停和停止的现场恢复提示", MachineCommandGuidance, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：16 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：18 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }
@@ -163,6 +165,60 @@ namespace MotionControl.OperatorPages.Checks
                 && ((Panel)flowStatus.FindName("StationRowsPanel")).Visibility == Visibility.Collapsed
                 && ((TextBlock)flowStatus.FindName("AlarmText")).Text.Contains("通讯已中断"),
                 "控制器断开后流程页仍把旧步骤或无报警显示为当前状态。");
+        }
+        /// <summary>任务控制入口不能把保留的 C# 工位当成任务步骤。</summary>
+        private static void TaskOwnerDisplay()
+        {
+            var card = new GuardCard();
+            var runtime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { card }),
+                new IStationFlow[] { new ReadOnlyFlow("旧流程工位") }, new MachineAlarmService(), new GuardSafety(),
+                controlOwner: MachineControlOwner.TaskEngine);
+            bool loaded = false;
+            var snapshot = OperationSnapshot.Read(runtime);
+            Assert(snapshot.ControlOwner == MachineControlOwner.TaskEngine && snapshot.Stations.Count == 0,
+                "任务入口快照包含未运行的 C# 工位。");
+            var overview = new EquipmentOverviewView();
+            overview.SetRuntime(runtime); overview.SetConnectionStatus(true, null);
+            overview.SetTaskSessionStateProvider(() => loaded);
+            Assert(((Border)overview.FindName("TaskRunPanel")).Visibility == Visibility.Visible
+                && ((TextBlock)overview.FindName("TaskRunStatusText")).Text.Contains("尚未读取")
+                && ((ItemsControl)overview.FindName("StationCards")).Items.Count == 0
+                && ((FrameworkElement)overview.FindName("AggregateMetrics")).Visibility == Visibility.Collapsed,
+                "总览未正确显示任务未读取，或显示了其他入口工位及统计。");
+            OperatorNavigationEventArgs navigation = null;
+            overview.NavigationRequested += (sender, e) => navigation = e;
+            FindButton(overview, "查看任务运行").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert(navigation != null && navigation.Page == "任务接入状态", "总览没有导航到任务运行页。");
+            var flow = new FlowStatusView(runtime, () => loaded);
+            Assert(((Panel)flow.FindName("StationRowsPanel")).Visibility == Visibility.Collapsed
+                && ((Panel)flow.FindName("TaskRunPanel")).Visibility == Visibility.Visible
+                && ((TextBlock)flow.FindName("TaskRunStatusText")).Text.Contains("尚未读取")
+                && !flow.FocusStationByName("旧流程工位"), "流程状态显示了旧工位，或错误显示任务状态。");
+            navigation = null; flow.NavigationRequested += (sender, e) => navigation = e;
+            FindButton(flow, "查看任务运行").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert(navigation != null && navigation.Page == "任务接入状态", "流程状态没有导航到任务运行页。");
+            loaded = true; overview.RefreshDisplay(); flow.RefreshLocalizedText();
+            Assert(((TextBlock)overview.FindName("TaskRunStatusText")).Text.Contains("已读取")
+                && ((TextBlock)flow.FindName("TaskRunStatusText")).Text.Contains("已读取"), "已读取会话状态未更新。");
+            overview.SetConnectionStatus(false, "连接中断"); flow.MarkControllerConnectionLost();
+            Assert(((Border)overview.FindName("TaskRunPanel")).Visibility == Visibility.Collapsed
+                && ((Panel)flow.FindName("TaskRunPanel")).Visibility == Visibility.Collapsed
+                && ((Panel)flow.FindName("StationRowsPanel")).Visibility == Visibility.Collapsed,
+                "断开后显示了过时的任务或工位步骤。");
+            Assert(card.Calls == 0, "观察和导航意外调用了控制卡。");
+            var manualRuntime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { card }),
+                new IStationFlow[] { new ReadOnlyFlow("已配置但未启用") }, new MachineAlarmService(), new GuardSafety(),
+                controlOwner: MachineControlOwner.None);
+            var manualOverview = new EquipmentOverviewView(); manualOverview.SetRuntime(manualRuntime);
+            Assert(((TextBlock)manualOverview.FindName("EmptyText")).Text.Contains("未启用自动运行"),
+                "仅手动入口错误断言未配置工位。");
+            var manualFlow = new FlowStatusView(manualRuntime);
+            Assert(((TextBlock)manualFlow.FindName("NoAutomaticRunText")).Visibility == Visibility.Visible
+                && ((Panel)manualFlow.FindName("StationRowsPanel")).Visibility == Visibility.Collapsed,
+                "仅手动入口没有说明或显示了未启用的工位。");
+            manualFlow.MarkControllerConnectionLost();
+            Assert(((TextBlock)manualFlow.FindName("NoAutomaticRunText")).Visibility == Visibility.Collapsed,
+                "断线时错误宣称已确认自动运行模式。");
         }
         /// <summary>界面只观察报警服务，刷新不清除锁存，状态变化仍选择同一次报警。</summary>
         private static void AlarmConditions()
@@ -297,6 +353,14 @@ namespace MotionControl.OperatorPages.Checks
                     && Equals(((TextBlock)window.FindName("PageTitle")).Text, "任务配置")
                     && ((Button)window.FindName("OperationReturnButton")).Visibility == Visibility.Collapsed,
                     "从流程状态没有返回原任务配置页，或遗留了过期返回入口。");
+                var taskRun = new UserControl();
+                window.SetTaskMonitorPage(taskRun);
+                window.ShowTaskRun();
+                Assert(ReferenceEquals(content.Content, taskRun)
+                    && ((Button)window.FindName("OperationReturnButton")).Visibility == Visibility.Visible,
+                    "从任务配置查看任务运行没有打开任务页及返回入口。");
+                ((Button)window.FindName("OperationReturnButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert(ReferenceEquals(content.Content, taskConfiguration), "任务运行没有返回原任务配置页。");
                 homeButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 Assert(((Button)window.FindName("OperationReturnButton")).Visibility == Visibility.Collapsed,
                     "普通主导航没有清除上一次操作路径的返回入口。");
@@ -333,10 +397,26 @@ namespace MotionControl.OperatorPages.Checks
                 string draftStations = ((TextBlock)page.FindName("TaskDraftStationsText")).Text;
                 string draftBoundary = ((TextBlock)page.FindName("TaskDraftBoundaryText")).Text;
                 Assert(runtimeStations.Contains("正式上料定位工位") && runtimeStations.Contains("正式压装工位"), "任务配置页没有显示正式 Runtime 工位清单。 ");
+                Assert(((Button)page.FindName("CurrentFlowButton")).IsEnabled
+                    && (string)((Button)page.FindName("CurrentFlowButton")).Content == "查看当前流程状态", "代码流程模式的导航发生变化。");
+                var taskPage = new TaskConfigurationView(test.Configuration, "TaskEditorPreview", () => null,
+                    () => "等待复位", () => { throw new InvalidOperationException("任务列表模式不应读取 C# 工位"); }, null, () => true);
+                var taskStationText = (TextBlock)taskPage.FindName("RuntimeStationsText");
+                var taskFlowButton = (Button)taskPage.FindName("CurrentFlowButton");
+                Assert(taskStationText.Text.Contains("任务运行") && taskFlowButton.IsEnabled
+                    && (string)taskFlowButton.Content == "查看任务运行", "任务列表模式没有引导查看实际任务。");
+                bool navigationRequested = false;
+                taskPage.CurrentFlowRequested += (sender, args) => navigationRequested = true;
+                taskFlowButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert(navigationRequested, "任务运行入口没有请求导航。");
+                taskPage.SetLanguage("en-US");
+                Assert(taskStationText.Text.Contains("loaded tasks and stations")
+                    && (string)taskFlowButton.Content == "View task operation", "任务列表模式的英文指引不正确。");
                 Assert(draftStations.Contains("参与 3/3 个") && draftStations.Contains("上料工位 → 上料任务")
                     && draftStations.Contains("搬运工位 → 搬运任务") && draftStations.Contains("检测工位 → 检测任务"),
                     "任务草稿的工位、任务分配或参与数量没有显示完整。");
-                Assert(draftBoundary.Contains("尚未接入正式设备流程") && draftBoundary.Contains("不会改变当前 Runtime 工位"),
+                Assert(draftBoundary.Contains("只影响草稿") && draftBoundary.Contains("不改变当前设备流程")
+                    && draftBoundary.Contains("重新读取任务"),
                     "任务草稿与正式设备流程的运行边界没有说明清楚。");
                 var library = (DataGrid)page.FindName("TasksGrid");
                 Assert(library.Items.Cast<TaskLibraryRow>().All(row => row.AppliedVersion == "R1" && row.DraftState == "无修改"), "文件版本或无修改状态错误。");
@@ -412,7 +492,10 @@ namespace MotionControl.OperatorPages.Checks
                     string draftStations = ((TextBlock)configuration.FindName("TaskDraftStationsText")).Text;
                     string draftBoundary = ((TextBlock)configuration.FindName("TaskDraftBoundaryText")).Text;
                     Assert(draftStations.Contains(language == "zh-CN" ? "参与 3/3 个" : "Enabled 3/3"), "任务配置页工位汇总没有随语言切换。");
-                    Assert(draftBoundary.Contains(language == "zh-CN" ? "正式设备流程" : "equipment runtime"), "任务配置页运行边界没有随语言切换。");
+                    Assert(language == "zh-CN"
+                        ? draftBoundary.Contains("只影响草稿") && draftBoundary.Contains("重新读取任务")
+                        : draftBoundary.Contains("only the draft") && draftBoundary.Contains("Reload the task"),
+                        "任务配置页未用当前语言说明草稿边界和重新读取任务的要求。");
                     foreach (int width in new[] { 1200, 824 })
                     {
                         int height = width == 1200 ? 780 : 550;

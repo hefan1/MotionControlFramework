@@ -55,7 +55,13 @@ namespace MotionControl.Host.Wpf
         public void SetTaskConfigurationPage(UserControl page) { _taskConfigurationPage = page; UpdatePageContent(); }
 
         /// <summary>由 Host 显式接入任务模块。</summary>
-        public void SetTaskMonitorPage(UserControl page) { _taskMonitorPage = page; UpdatePageContent(); }
+        public void SetTaskMonitorPage(UserControl page)
+        {
+            _taskMonitorPage = page;
+            var launcher = page as Tasks.TaskMonitorLauncher;
+            _equipmentOverviewPage.SetTaskSessionStateProvider(launcher == null ? (Func<bool>)null : () => launcher.HasTaskSession);
+            UpdatePageContent();
+        }
 
         /// <summary>任务会话接管或归还设备控制权后刷新顶部整机命令。</summary>
         internal void RefreshMachineStateDisplay()
@@ -77,6 +83,15 @@ namespace MotionControl.Host.Wpf
         {
             SetOperationReturnTarget(_currentSectionKey, _currentPageResourceKey);
             _currentPageResourceKey = "流程状态";
+            NavigateToSection("Monitor");
+            Activate();
+        }
+
+        /// <summary>查看任务会话，不读取任务或启动设备。</summary>
+        public void ShowTaskRun()
+        {
+            SetOperationReturnTarget(_currentSectionKey, _currentPageResourceKey);
+            _currentPageResourceKey = "任务接入状态";
             NavigateToSection("Monitor");
             Activate();
         }

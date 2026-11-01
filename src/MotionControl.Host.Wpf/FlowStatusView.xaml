@@ -24,6 +24,11 @@
                 <StackPanel>
                     <TextBlock x:Name="StationStepHeadingText" FontSize="13" FontWeight="SemiBold" Foreground="#26384D" />
                     <StackPanel x:Name="StationRowsPanel" Margin="0,8,0,0" />
+                    <TextBlock x:Name="NoAutomaticRunText" Text="{DynamicResource 流程页.当前未启用自动运行}" TextWrapping="Wrap" Foreground="#40536A" Visibility="Collapsed" />
+                    <StackPanel x:Name="TaskRunPanel" Visibility="Collapsed">
+                        <TextBlock x:Name="TaskRunStatusText" TextWrapping="Wrap" Foreground="#40536A" FontSize="13" />
+                        <Button Content="{DynamicResource 流程页.查看任务运行}" Click="OpenTaskRun_Click" HorizontalAlignment="Left" Padding="10,4" Margin="0,8,0,0" />
+                    </StackPanel>
                     <WrapPanel Margin="0,8,0,0">
                         <Button Content="{DynamicResource 流程页.查看轴监控}" Click="OpenAxisMonitor_Click" Padding="10,4" Margin="0,0,8,0" />
                         <Button Content="{DynamicResource 流程页.打开IO监控}" ToolTip="{DynamicResource 流程页.IO监控说明}"

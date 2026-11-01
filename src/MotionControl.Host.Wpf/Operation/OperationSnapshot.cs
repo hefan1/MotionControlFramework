@@ -16,6 +16,8 @@ namespace MotionControl.Host.Wpf.Operation
         public bool HasRuntime { get; set; }
         /// <summary>整机软件状态，未知时为空。</summary>
         public MachineRunState? State { get; set; }
+        /// <summary>当前设备控制入口，用于避免展示其他入口的工位步骤。</summary>
+        public MachineControlOwner? ControlOwner { get; set; }
         /// <summary>软件状态采样时间，不代表轴或 IO 的硬件采集时间。</summary>
         public DateTime SampledAt { get; set; }
         /// <summary>按设备配置顺序排列的工位。</summary>
@@ -34,8 +36,11 @@ namespace MotionControl.Host.Wpf.Operation
             var result = new OperationSnapshot { SampledAt = DateTime.Now, HasRuntime = runtime != null };
             if (runtime == null) return result;
             result.State = runtime.State;
+            result.ControlOwner = runtime.ControlOwner;
             result.Alarms = runtime.AlarmService.Alarms.ToList();
             result.LastError = runtime.LastError?.ToString();
+            // 任务列表控制设备时，传统 C# 工位对象仍然存在，但不是实际运行步骤。
+            if (result.ControlOwner != MachineControlOwner.StationFlows) return result;
             foreach (var flow in runtime.StationFlows)
             {
                 var statistics = flow as IStationCycleStatistics;

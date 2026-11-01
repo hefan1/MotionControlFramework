@@ -40,6 +40,8 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         private readonly Func<IEnumerable<string>> _getRuntimeStationNames;
         /// <summary>由 Host 提供与总览一致的自动启动拦截原因。</summary>
         private readonly Func<string> _getRuntimeReadinessReason;
+        /// <summary>由 Host 判断当前是否使用任务列表控制。</summary>
+        private readonly Func<bool> _isTaskEngineOwner;
         /// <summary>完整设备草稿。</summary>
         private TaskWorkspaceDocument _workspace;
         /// <summary>已应用文件的快照，仅供显示版本与草稿差异。</summary>
@@ -92,12 +94,14 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             Func<string> getBlockedReason,
             Func<string> getRuntimeStateText = null,
             Func<IEnumerable<string>> getRuntimeStationNames = null,
-            Func<string> getRuntimeReadinessReason = null)
+            Func<string> getRuntimeReadinessReason = null,
+            Func<bool> isTaskEngineOwner = null)
         {
             _store = new TaskWorkspaceStore(store); _machineId = machineId; _getBlockedReason = getBlockedReason ?? (() => "未提供运行会话状态，暂不能应用。");
             _getRuntimeStateText = getRuntimeStateText;
             _getRuntimeStationNames = getRuntimeStationNames;
             _getRuntimeReadinessReason = getRuntimeReadinessReason;
+            _isTaskEngineOwner = isTaskEngineOwner;
             InitializeComponent();
             UpdateHeaders(); IssuesGrid.Visibility = Visibility.Collapsed; ConfigIssueRow.Height = new GridLength(0);
             AddHandler(TextBox.TextChangedEvent, new TextChangedEventHandler(TextChanged));
@@ -217,12 +221,13 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             RuntimeReadinessText.Visibility = string.IsNullOrWhiteSpace(readinessReason)
                 ? Visibility.Collapsed
                 : Visibility.Visible;
-            string[] stationNames = (_getRuntimeStationNames() ?? Enumerable.Empty<string>())
+            bool taskEngineOwner = _isTaskEngineOwner != null && _isTaskEngineOwner();
+            string[] stationNames = (taskEngineOwner ? Enumerable.Empty<string>() : _getRuntimeStationNames() ?? Enumerable.Empty<string>())
                 .Where(name => !string.IsNullOrWhiteSpace(name))
                 .ToArray();
-            RuntimeStationsText.Text = T("设备流程工位") + "："
-                + (stationNames.Length == 0 ? T("没有自动工位") : string.Join("、", stationNames));
-            RuntimeStationsText.ToolTip = T("运行工位说明");
+            RuntimeStationsText.Text = taskEngineOwner ? T("任务运行工位查看指引")
+                : T("设备流程工位") + "：" + (stationNames.Length == 0 ? T("没有自动工位") : string.Join("、", stationNames));
+            RuntimeStationsText.ToolTip = taskEngineOwner ? RuntimeStationsText.Text : T("运行工位说明");
 
             StationTaskConfiguration[] draftStations = _workspace?.Machine?.Stations?
                 .Where(station => station != null)
@@ -256,8 +261,10 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             TaskDraftBoundaryText.Text = T("草稿工位运行边界");
             TaskDraftStationsText.Visibility = _workspace == null ? Visibility.Collapsed : Visibility.Visible;
             TaskDraftBoundaryText.Visibility = _workspace == null ? Visibility.Collapsed : Visibility.Visible;
-            CurrentFlowButton.IsEnabled = stationNames.Length > 0;
-            CurrentFlowButton.ToolTip = stationNames.Length > 0 ? T("查看当前流程状态") : T("没有自动工位");
+            CurrentFlowButton.Content = T(taskEngineOwner ? "查看任务运行" : "查看当前流程状态");
+            CurrentFlowButton.IsEnabled = taskEngineOwner || stationNames.Length > 0;
+            CurrentFlowButton.ToolTip = taskEngineOwner ? T("查看任务运行")
+                : stationNames.Length > 0 ? T("查看当前流程状态") : T("没有自动工位");
         }
         /// <summary>只读跳转到 Host 当前流程页，不更改草稿或运行状态。</summary>
         private void CurrentFlow_Click(object sender, RoutedEventArgs e)

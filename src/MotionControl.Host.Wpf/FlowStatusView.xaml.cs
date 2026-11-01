@@ -21,6 +21,9 @@ namespace MotionControl.Host.Wpf
         /// <summary>本页观察的整机运行时，与手动轴和 IO 页面共享同一个实例。</summary>
         private readonly MachineRuntime _runtime;
 
+        /// <summary>查询任务会话是否已读取；未提供时不推断任务状态。</summary>
+        private readonly Func<bool> _isTaskSessionLoaded;
+
         /// <summary>控制器会话异常丢失后，工艺步骤和轴状态仅为最后已知值。</summary>
         private bool _controllerConnectionLost;
 
@@ -42,9 +45,10 @@ namespace MotionControl.Host.Wpf
         private readonly DispatcherTimer _refreshTimer;
 
         /// <summary>创建工位进度页，并建立当前 Runtime 的每个工位行。</summary>
-        public FlowStatusView(MachineRuntime runtime)
+        public FlowStatusView(MachineRuntime runtime, Func<bool> isTaskSessionLoaded = null)
         {
             _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+            _isTaskSessionLoaded = isTaskSessionLoaded;
             InitializeComponent();
             foreach (IStationFlow flow in _runtime.StationFlows)
             {
@@ -160,6 +164,12 @@ namespace MotionControl.Host.Wpf
             NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("当前报警"));
         }
 
+        /// <summary>进入真实任务运行页，仅导航，不读取任务或启动设备。</summary>
+        private void OpenTaskRun_Click(object sender, RoutedEventArgs e)
+        {
+            NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("任务接入状态"));
+        }
+
         /// <summary>打开 DI 监控并按当前工位等待状态定位对应输入。</summary>
         private void OpenStationInput_Click(object sender, RoutedEventArgs e)
         {
@@ -180,6 +190,7 @@ namespace MotionControl.Host.Wpf
         /// <summary>从总览或报警按工位名称只读定位，保留原页面布局和设备状态。</summary>
         public bool FocusStationByName(string stationName)
         {
+            if (_controllerConnectionLost || _runtime.ControlOwner != MachineControlOwner.StationFlows) return false;
             bool found = false;
             foreach (var row in _stepTextByFlow)
             {
@@ -193,8 +204,16 @@ namespace MotionControl.Host.Wpf
         /// <summary>刷新当前状态、步骤、报警及最近故障文字。</summary>
         private void RefreshDisplay()
         {
-            StationStepHeadingText.Visibility = _controllerConnectionLost ? Visibility.Collapsed : Visibility.Visible;
-            StationRowsPanel.Visibility = _controllerConnectionLost ? Visibility.Collapsed : Visibility.Visible;
+            bool showStationFlows = !_controllerConnectionLost && _runtime.ControlOwner == MachineControlOwner.StationFlows;
+            bool showTasks = !_controllerConnectionLost && _runtime.ControlOwner == MachineControlOwner.TaskEngine;
+            StationStepHeadingText.Visibility = showStationFlows ? Visibility.Visible : Visibility.Collapsed;
+            StationRowsPanel.Visibility = showStationFlows ? Visibility.Visible : Visibility.Collapsed;
+            TaskRunPanel.Visibility = showTasks ? Visibility.Visible : Visibility.Collapsed;
+            NoAutomaticRunText.Visibility = !_controllerConnectionLost && _runtime.ControlOwner == MachineControlOwner.None
+                ? Visibility.Visible : Visibility.Collapsed;
+            if (showTasks)
+                TaskRunStatusText.Text = (string)FindResource(_isTaskSessionLoaded == null ? "流程页.任务状态待查看"
+                    : _isTaskSessionLoaded() ? "流程页.任务已读取" : "流程页.任务未读取");
             StationStepHeadingText.Text = (string)FindResource("流程页." + OperationUi.StepLabelKey(_runtime.State));
             string stateResourceKey = _controllerConnectionLost ? "状态未连接" : !string.IsNullOrWhiteSpace(_automaticStartBlockReason)
                 ? "状态启动条件未满足"

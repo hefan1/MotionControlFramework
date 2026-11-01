@@ -33,6 +33,20 @@ namespace MotionControl.Host.Wpf.Tasks
         private readonly TextBlock _status;
         /// <summary>运行入口的当前状态说明。</summary>
         private readonly TextBlock _runStatus;
+        /// <summary>依据设备状态显示下一步操作。</summary>
+        private readonly TextBlock _nextAction;
+        /// <summary>未读取任务时的说明。</summary>
+        private readonly TextBlock _emptyState;
+        /// <summary>报警数据的读取状态。</summary>
+        private readonly TextBlock _alarmState;
+        /// <summary>供维护人员查看的资源目录。</summary>
+        private readonly TextBlock _catalogDetails;
+        /// <summary>上次读取的目录，用于切换语言时更新统计文字。</summary>
+        private TaskResourceCatalog _catalog;
+        /// <summary>供维护人员核对的任务来源。</summary>
+        private readonly TextBlock _loadedSource;
+        /// <summary>已读取任务的原始来源。</summary>
+        private string _taskSource;
         /// <summary>默认收起的完整错误详情，供维护人员定位配置和异常来源。</summary>
         private readonly Expander _diagnostics;
         /// <summary>可复制的原始异常内容。</summary>
@@ -43,6 +57,10 @@ namespace MotionControl.Host.Wpf.Tasks
         private string _failureOperationKey;
         /// <summary>最近一次失败后的建议资源键。</summary>
         private string _failureAdviceKey;
+        /// <summary>最近成功操作的文字键，用于切换语言时重新显示。</summary>
+        private string _successTextKey;
+        /// <summary>成功提示对应的任务状态；任务关闭后的停止提示使用空值。</summary>
+        private TaskMachineState? _successTaskState;
         /// <summary>当前诊断对应的配置页快捷入口。</summary>
         private readonly WrapPanel _nextStepButtons;
         /// <summary>装载当前已应用的任务、复位、启动、暂停和停止控制。</summary>
@@ -77,6 +95,8 @@ namespace MotionControl.Host.Wpf.Tasks
         private bool _faultStatusSyncing;
         /// <summary>防止多个任务按钮同时操作设备。</summary>
         private bool _commandInProgress;
+        /// <summary>连接异常丢失后须重新建立设备上下文，不能把旧任务监控当作实时状态。</summary>
+        private bool _controllerConnectionLost;
         /// <summary>当前是否已装载一个整机任务会话。</summary>
         internal bool HasTaskSession { get { return _session != null; } }
 
@@ -90,11 +110,9 @@ namespace MotionControl.Host.Wpf.Tasks
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star), MinHeight = 220 });
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             var header = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
-            var note = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 9), FontSize = 13 };
-            note.SetResourceReference(TextBlock.TextProperty, "任务执行页面说明");
-            header.Children.Add(note);
 
             var toolbar = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
             StyleToolbar(toolbar);
@@ -105,34 +123,48 @@ namespace MotionControl.Host.Wpf.Tasks
             _stopButton = AddCommandButton(toolbar, "任务执行停止", StopTask_Click);
             AddButton(toolbar, "设备总览", EquipmentOverview_Click);
             AddButton(toolbar, "流程状态", FlowStatus_Click);
-            AddButton(toolbar, "刷新关联配置目录", RefreshCatalog_Click);
             header.Children.Add(toolbar);
             root.Children.Add(header);
 
-            _runStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6), Foreground = Brush("#176BD0") };
-            Grid.SetRow(_runStatus, 1); root.Children.Add(_runStatus);
+            var summary = new StackPanel();
+            _runStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 4), Foreground = Brush("#176BD0"), FontSize = 15, FontWeight = FontWeights.SemiBold };
+            summary.Children.Add(_runStatus);
+            _nextAction = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Brush("#40536A"), Margin = new Thickness(0, 0, 0, 4) };
+            summary.Children.Add(_nextAction);
+            Grid.SetRow(summary, 1); root.Children.Add(summary);
             _status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 5) };
             Grid.SetRow(_status, 2); root.Children.Add(_status);
 
             var monitorArea = new Grid();
             _monitorContent = new ContentControl();
             monitorArea.Children.Add(_monitorContent);
+            _emptyState = new TextBlock { Margin = new Thickness(16), TextWrapping = TextWrapping.Wrap, Foreground = Brush("#596B7D"), FontSize = 13 };
+            monitorArea.Children.Add(_emptyState);
             _nextStepButtons = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(8), Visibility = Visibility.Collapsed };
-            monitorArea.Children.Add(_nextStepButtons);
+                Margin = new Thickness(0, 2, 0, 4), Visibility = Visibility.Collapsed };
+            summary.Children.Add(_nextStepButtons);
             _diagnosticText = new TextBox { IsReadOnly = true, TextWrapping = TextWrapping.Wrap,
-                MaxHeight = 200, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto };
-            _diagnostics = new Expander { Margin = new Thickness(8), HorizontalAlignment = HorizontalAlignment.Stretch,
-                VerticalAlignment = VerticalAlignment.Bottom, Visibility = Visibility.Collapsed, Content = _diagnosticText };
-            _diagnostics.SetResourceReference(HeaderedContentControl.HeaderProperty, "任务关联诊断详情");
-            monitorArea.Children.Add(_diagnostics);
+                MaxHeight = 120, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, Visibility = Visibility.Collapsed };
+            var details = new StackPanel();
+            var refresh = new WrapPanel();
+            AddButton(refresh, "刷新关联配置目录", RefreshCatalog_Click);
+            details.Children.Add(refresh);
+            _catalogDetails = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 4) };
+            details.Children.Add(_catalogDetails);
+            _loadedSource = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 4) };
+            details.Children.Add(_loadedSource);
+            details.Children.Add(_diagnosticText);
+            _diagnostics = new Expander { Margin = new Thickness(0, 6, 0, 0), Content = details };
+            Grid.SetRow(_diagnostics, 5); root.Children.Add(_diagnostics);
             Grid.SetRow(monitorArea, 3); root.Children.Add(monitorArea);
 
             var alarmPanel = new DockPanel { Margin = new Thickness(0, 8, 0, 0) };
             var alarmTitle = new TextBlock { FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 8, 4) };
             alarmTitle.SetResourceReference(TextBlock.TextProperty, "任务执行当前报警");
             DockPanel.SetDock(alarmTitle, Dock.Top); alarmPanel.Children.Add(alarmTitle);
+            _alarmState = new TextBlock { Margin = new Thickness(0, 0, 0, 4), Foreground = Brush("#596B7D"), TextWrapping = TextWrapping.Wrap };
+            DockPanel.SetDock(_alarmState, Dock.Top); alarmPanel.Children.Add(_alarmState);
             _alarmGrid = new TaskAlarmGrid(GetText); alarmPanel.Children.Add(_alarmGrid);
             Grid.SetRow(alarmPanel, 4); root.Children.Add(alarmPanel);
             Content = root;
@@ -143,6 +175,7 @@ namespace MotionControl.Host.Wpf.Tasks
             Loaded += Launcher_Loaded;
             UpdateRunStatus();
             UpdateCommandAvailability();
+            RefreshPageText();
         }
 
         /// <summary>创建任务运行命令按钮并接入 Host 当前语言资源。</summary>
@@ -174,18 +207,49 @@ namespace MotionControl.Host.Wpf.Tasks
         {
             if (_session != null) await CloseTaskSessionAsync().ConfigureAwait(true);
             _runtime = runtime; _motionCards = motionCards; _logicalIo = logicalIo; _variables = variables;
+            _controllerConnectionLost = runtime == null;
             if (runtime == null)
             {
                 _stateTimer.Stop();
                 _alarmGrid.ClearAlarms();
             }
+            _successTextKey = null;
+            _status.Text = string.Empty;
             ClearError();
             UpdateRunStatus();
             UpdateCommandAvailability();
+            RefreshPageText();
         }
 
         /// <summary>页面进入可见区域后刷新已保存的任务资源目录。</summary>
-        private void Launcher_Loaded(object sender, RoutedEventArgs e) { RefreshCatalog(); }
+        private void Launcher_Loaded(object sender, RoutedEventArgs e)
+        {
+            RefreshCatalog();
+            RefreshConnectionDisplay();
+        }
+        /// <summary>控制器异常断开后立即隐藏旧任务画面；新上下文建立后才重新确认状态。</summary>
+        internal void MarkControllerConnectionLost()
+        {
+            _controllerConnectionLost = true;
+            RefreshConnectionDisplay();
+        }
+        /// <summary>依据实际连接与会话状态刷新显示，不修改任务或设备。</summary>
+        private void RefreshConnectionDisplay()
+        {
+            bool connected = IsControllerConnected();
+            _monitorContent.Visibility = connected && _session != null ? Visibility.Visible : Visibility.Collapsed;
+            _alarmGrid.Visibility = connected ? Visibility.Visible : Visibility.Collapsed;
+            _emptyState.Visibility = !connected || _session == null ? Visibility.Visible : Visibility.Collapsed;
+            _emptyState.Text = !connected
+                ? PageText("控制器未连接，任务和设备状态未确认。请重新连接后检查。", "Controller disconnected. Task and equipment states are unconfirmed; reconnect and check.")
+                : PageText("任务尚未读取。读取后可在此查看工位步骤与运行状态。", "Tasks are not loaded. Load tasks to view station steps and run status.");
+            UpdateRunStatus();
+            UpdateCommandAvailability();
+            RefreshAlarmState();
+        }
+        /// <summary>异常断线锁存到新设备上下文建立，避免心跳恢复就误认旧会话有效。</summary>
+        private bool IsControllerConnected()
+        { return !_controllerConnectionLost && _runtime != null && _motionCards != null && _motionCards.IsConnected; }
         /// <summary>重新读取其他页面已保存的配置。</summary>
         private void RefreshCatalog_Click(object sender, RoutedEventArgs e) { RefreshCatalog(); }
         /// <summary>打开实际展示设备运行状态的总览页。</summary>
@@ -210,12 +274,17 @@ namespace MotionControl.Host.Wpf.Tasks
 
                 _session = loaded;
                 _monitor = new TaskMonitorView(loaded);
+                _monitor.HideSourcePath();
+                _taskSource = loaded.Source;
                 _monitor.ReferenceRequested += Monitor_ReferenceRequested;
                 _monitor.SetLanguage(_host.CurrentLanguage);
                 _monitorContent.Content = _monitor;
                 _stateTimer.Start();
                 ClearError();
-                _status.Text = string.Format(GetText("任务执行已装载"), loaded.Source);
+                SetSuccessText("已读取当前任务");
+                _emptyState.Visibility = Visibility.Collapsed;
+                RefreshAlarms();
+                RefreshPageText();
                 UpdateRunStatus();
                 UpdateCommandAvailability();
                 _host.RefreshMachineStateDisplay();
@@ -232,7 +301,7 @@ namespace MotionControl.Host.Wpf.Tasks
                 if (_runtime.State != MachineRunState.Ready)
                     await _runtime.ResetAsync(CancellationToken.None).ConfigureAwait(true);
                 await _session.Machine.ResetAsync().ConfigureAwait(true);
-                _status.Text = GetText("任务执行复位完成");
+                SetSuccessText("任务执行复位完成");
             }, "任务复位失败", "任务运行复位建议").ConfigureAwait(true);
         }
 
@@ -249,7 +318,7 @@ namespace MotionControl.Host.Wpf.Tasks
                     await _runtime.FinishTaskEngineRunAsync(true, startError).ConfigureAwait(true);
                     throw;
                 }
-                _status.Text = GetText("任务执行已启动");
+                SetSuccessText("任务执行已启动");
             }, "任务启动失败", "任务运行复位建议").ConfigureAwait(true);
         }
 
@@ -261,7 +330,7 @@ namespace MotionControl.Host.Wpf.Tasks
                 RequireTaskSession();
                 await _session.Machine.PauseAsync().ConfigureAwait(true);
                 await _runtime.FinishTaskEngineRunAsync(false, null).ConfigureAwait(true);
-                _status.Text = GetText("任务执行已暂停");
+                SetSuccessText("任务执行已暂停");
             }, "任务暂停失败", "任务运行复位建议").ConfigureAwait(true);
         }
 
@@ -275,7 +344,7 @@ namespace MotionControl.Host.Wpf.Tasks
                 if (_runtime.State == MachineRunState.Running || _runtime.State == MachineRunState.Pausing)
                     await _runtime.FinishTaskEngineRunAsync(false, null).ConfigureAwait(true);
                 await CloseTaskSessionAsync().ConfigureAwait(true);
-                _status.Text = GetText("任务执行已停止");
+                SetSuccessText("任务执行已停止");
             }, "任务停止失败", "任务运行复位建议").ConfigureAwait(true);
         }
 
@@ -294,9 +363,12 @@ namespace MotionControl.Host.Wpf.Tasks
             _session = null;
             _monitor = null;
             _monitorContent.Content = null;
+            _taskSource = null;
+            _emptyState.Visibility = Visibility.Visible;
             _alarmGrid.ClearAlarms();
             UpdateRunStatus();
             UpdateCommandAvailability();
+            RefreshPageText();
             _host.RefreshMachineStateDisplay();
         }
 
@@ -308,13 +380,15 @@ namespace MotionControl.Host.Wpf.Tasks
                 var namedResources = new MotionControl.TaskEngine.Configuration.TaskMachineConfigurationStore(_store)
                     .LoadNamedResources(_machineId);
                 var catalog = new TaskResourceCatalogLoader(_store).Load(_machineId, namedResources);
+                if (_lastError != null) _status.Text = string.Empty;
                 ClearError();
-                _status.Text = string.Format(GetText("任务关联目录统计"), catalog.Axes.Count, catalog.Inputs.Count,
-                    catalog.Outputs.Count, catalog.Variables.Count, catalog.TeachPoints.Count)
-                    + "\n" + _store.GetMachineDirectory(_machineId) + "\n" + string.Join("\n", catalog.Notices);
+                _catalog = catalog;
+                RefreshCatalogDetails();
             }
             catch (Exception error)
             {
+                _catalog = null;
+                _catalogDetails.Text = string.Empty;
                 ShowError(error, "任务目录读取失败", "任务配置检查建议");
             }
         }
@@ -356,12 +430,15 @@ namespace MotionControl.Host.Wpf.Tasks
         {
             var alarms = _runtime?.AlarmService.Alarms ?? new MachineAlarmRecord[0];
             _alarmGrid.ShowAlarms(alarms);
+            RefreshAlarmState();
         }
 
         /// <summary>更新任务整机和设备运行状态摘要。</summary>
         private void UpdateRunStatus(TaskMachineSnapshot snapshot = null)
         {
-            if (_motionCards != null && !_motionCards.IsConnected)
+            if (_session != null && snapshot == null) snapshot = _session.Machine.GetSnapshot();
+            UpdateSuccessFeedback(snapshot?.State, IsControllerConnected());
+            if (!IsControllerConnected())
             {
                 _runStatus.Text = GetText("任务执行等待连接");
                 return;
@@ -374,7 +451,6 @@ namespace MotionControl.Host.Wpf.Tasks
                 return;
             }
 
-            snapshot = snapshot ?? _session.Machine.GetSnapshot();
             _runStatus.Text = string.Format(GetText("任务执行运行状态"),
                 _monitor?.T(snapshot.State.ToString()) ?? snapshot.State.ToString(),
                 GetText(MainWindow.GetMachineStateResourceKey(_runtime?.State ?? MachineRunState.Disconnected)));
@@ -394,7 +470,7 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>按任务整机状态启用命令，避免从其他页面并发启动或复位。</summary>
         private void UpdateCommandAvailability()
         {
-            bool connected = _runtime != null && _motionCards != null && _motionCards.IsConnected
+            bool connected = IsControllerConnected()
                 && _logicalIo != null && _variables != null;
             TaskMachineState? taskState = _session == null ? (TaskMachineState?)null : _session.Machine.GetSnapshot().State;
             _loadButton.IsEnabled = connected && _session == null && !_commandInProgress;
@@ -405,6 +481,7 @@ namespace MotionControl.Host.Wpf.Tasks
                 && _runtime.State == MachineRunState.Ready;
             _pauseButton.IsEnabled = taskState == TaskMachineState.Running && !_commandInProgress;
             _stopButton.IsEnabled = _session != null && !_commandInProgress;
+            UpdateNextAction(connected, taskState);
         }
 
         /// <summary>统一串行执行页面命令并在失败时保留完整诊断。</summary>
@@ -441,11 +518,13 @@ namespace MotionControl.Host.Wpf.Tasks
         private void ShowError(Exception error, string operationKey, string adviceKey)
         {
             _lastError = error;
+            _successTextKey = null;
             _failureOperationKey = operationKey;
             _failureAdviceKey = adviceKey;
+            _status.Foreground = Brush("#B23B3B");
             _diagnosticText.Text = error.ToString();
             _diagnostics.IsExpanded = false;
-            _diagnostics.Visibility = Visibility.Visible;
+            _diagnosticText.Visibility = Visibility.Visible;
             UpdateNextStepButton(error);
             RefreshErrorText();
         }
@@ -482,18 +561,18 @@ namespace MotionControl.Host.Wpf.Tasks
             _alarmGrid.UpdateHeaders();
             if (_lastError != null) RefreshErrorText();
             UpdateRunStatus();
+            UpdateCommandAvailability();
+            RefreshPageText();
         }
 
-        /// <summary>显示失败操作、文件路径、原因和维护人员下一步建议。</summary>
+        /// <summary>显示失败操作、原因和建议，完整诊断保留在展开区。</summary>
         private void RefreshErrorText()
         {
             string reason = _lastError.Message;
             var missingFile = _lastError as FileNotFoundException;
             if (missingFile != null && !string.IsNullOrWhiteSpace(missingFile.FileName))
-                reason = string.Format(GetText("任务配置文件不存在"), missingFile.FileName);
-            _status.Text = GetText(_failureOperationKey) + "\n" + reason + "\n"
-                + string.Format(GetText("任务配置设备目录"), _store.GetMachineDirectory(_machineId))
-                + "\n" + GetText(_failureAdviceKey);
+                reason = string.Format(GetText("任务配置文件不存在"), Path.GetFileName(missingFile.FileName));
+            _status.Text = GetText(_failureOperationKey) + "\n" + reason + "\n" + GetText(_failureAdviceKey);
         }
 
         /// <summary>成功后清除过期的错误详情。</summary>
@@ -502,11 +581,110 @@ namespace MotionControl.Host.Wpf.Tasks
             _lastError = null;
             _failureOperationKey = null;
             _failureAdviceKey = null;
+            _status.Foreground = Brush("#26384D");
             _diagnosticText.Text = string.Empty;
-            _diagnostics.IsExpanded = false;
-            _diagnostics.Visibility = Visibility.Collapsed;
+            _diagnosticText.Visibility = Visibility.Collapsed;
             _nextStepButtons.Children.Clear();
             _nextStepButtons.Visibility = Visibility.Collapsed;
+        }
+
+        /// <summary>根据连接和任务状态说明下一步，不改变原有按钮控制条件。</summary>
+        private void UpdateNextAction(bool connected, TaskMachineState? state)
+        {
+            if (_commandInProgress)
+                _nextAction.Text = PageText("正在处理，请稍候。", "Processing, please wait.");
+            else if (!connected)
+                _nextAction.Text = string.Empty;
+            else if (!state.HasValue)
+                _nextAction.Text = _runtime.State == MachineRunState.Running || _runtime.State == MachineRunState.Pausing
+                    ? PageText("设备正在运行或停轴，请先确认停稳，再读取任务。", "Wait for the equipment to stop before loading tasks.")
+                    : PageText("先读取当前任务，再检查现场、复位并启动。", "Load tasks, check the equipment, then reset and start.");
+            else if (state == TaskMachineState.NeedsReset)
+                _nextAction.Text = PageText("请检查现场及输出状态，然后复位。", "Check the equipment and outputs, then reset.");
+            else if (state == TaskMachineState.Ready)
+                _nextAction.Text = _runtime.State == MachineRunState.Ready
+                    ? PageText("检查现场后按启动。", "Check the equipment, then start.")
+                    : PageText("设备尚未就绪，请检查报警和复位条件。", "Equipment is not ready; check alarms and reset conditions.");
+            else if (state == TaskMachineState.Running)
+                _nextAction.Text = PageText("需要人工介入时请先暂停，并确认机构停稳。", "Before intervention, pause and confirm motion has stopped.");
+            else if (state == TaskMachineState.Pausing)
+                _nextAction.Text = PageText("正在等待停轴，请等待停稳。", "Waiting for motion to stop.");
+            else if (state == TaskMachineState.Paused)
+                _nextAction.Text = PageText("暂停后输出可能保持原状态；请检查机构和输出，再复位、启动。", "Outputs may remain active while paused. Check the equipment and outputs before reset and start.");
+            else if (state == TaskMachineState.Faulted)
+                _nextAction.Text = PageText("请处理报警并检查机构和输出，再复位、启动。", "Resolve alarms and check the equipment and outputs before reset and start.");
+            else
+                _nextAction.Text = PageText("请检查任务状态，必要时停止并重新读取任务。", "Check task status; stop and reload tasks if needed.");
+        }
+
+        /// <summary>区分未读取、通讯中断和已读取但没有报警。</summary>
+        private void RefreshAlarmState()
+        {
+            if (_runtime == null)
+                _alarmState.Text = PageText("未连接设备，报警状态未确认。", "Equipment disconnected; alarm status is unknown.");
+            else if (!IsControllerConnected())
+                _alarmState.Text = PageText("控制器未连接，报警状态未确认。", "Controller disconnected; alarm status is unknown.");
+            else if (_session == null)
+                _alarmState.Text = PageText("任务尚未读取，请在“当前报警”页面查看设备报警。", "Tasks are not loaded; check the Current Alarms page.");
+            else
+                _alarmState.Text = _runtime.AlarmService.Alarms.Count == 0
+                    ? PageText("当前无报警。", "No active alarms.") : string.Empty;
+        }
+
+        /// <summary>切换语言或会话时刷新页面专用说明。</summary>
+        private void RefreshPageText()
+        {
+            _diagnostics.Header = PageText("工程诊断与配置目录", "Diagnostics and configuration");
+            _loadedSource.Text = string.IsNullOrWhiteSpace(_taskSource) ? string.Empty
+                : PageText("已读取任务来源：", "Loaded task source: ") + _taskSource;
+            if (_lastError == null && _successTextKey != null) _status.Text = SuccessText(_successTextKey);
+            RefreshCatalogDetails();
+            RefreshConnectionDisplay();
+        }
+
+        /// <summary>使用已读取的目录更新统计与来源路径，不再次读取设备配置。</summary>
+        private void RefreshCatalogDetails()
+        {
+            if (_catalog == null) return;
+            _catalogDetails.Text = string.Format(GetText("任务关联目录统计"), _catalog.Axes.Count, _catalog.Inputs.Count,
+                _catalog.Outputs.Count, _catalog.Variables.Count, _catalog.TeachPoints.Count)
+                + "\n" + _store.GetMachineDirectory(_machineId) + "\n" + string.Join("\n", _catalog.Notices);
+        }
+
+        /// <summary>记录成功操作并根据当前语言显示反馈。</summary>
+        private void SetSuccessText(string key)
+        {
+            _successTextKey = key;
+            switch (key)
+            {
+                case "任务执行复位完成": _successTaskState = TaskMachineState.Ready; break;
+                case "任务执行已启动": _successTaskState = TaskMachineState.Running; break;
+                case "任务执行已暂停": _successTaskState = TaskMachineState.Paused; break;
+                case "任务执行已停止": _successTaskState = null; break;
+                default: _successTaskState = _session?.Machine.GetSnapshot().State; break;
+            }
+            _status.Text = SuccessText(key);
+        }
+
+        /// <summary>返回成功操作在当前语言下的说明。</summary>
+        private string SuccessText(string key)
+        {
+            return key == "已读取当前任务"
+                ? PageText("已读取当前任务。", "Current tasks loaded.") : GetText(key);
+        }
+
+        /// <summary>状态变化或连接中断后移除过期成功提示，错误提示不受影响。</summary>
+        private void UpdateSuccessFeedback(TaskMachineState? state, bool connected)
+        {
+            if (_successTextKey == null || (connected && state == _successTaskState)) return;
+            _successTextKey = null;
+            _status.Text = string.Empty;
+        }
+
+        /// <summary>选择当前页面语言对应的说明。</summary>
+        private string PageText(string chinese, string english)
+        {
+            return string.Equals(_host.CurrentLanguage, "en-US", StringComparison.OrdinalIgnoreCase) ? english : chinese;
         }
 
         /// <summary>按当前 Host 语言读取界面文字。</summary>

@@ -78,7 +78,7 @@
  <sys:String x:Key="任务编辑.恢复：">恢复：</sys:String>
  <sys:String x:Key="任务编辑.报警库不存在">（报警库不存在）</sys:String>
  <sys:String x:Key="任务编辑.当前设备报警库为空，请先维护报警代码">当前设备报警库为空，请先维护报警代码</sys:String>
- <sys:String x:Key="任务编辑.任务报警关联规则">运行规则（设备流程接入后）：条件触发时同时上报全部已选报警；停机报警使整机等待复位。当前关联只保存在任务草稿。</sys:String>
+ <sys:String x:Key="任务编辑.任务报警关联规则">条件触发时上报全部已选报警；停机报警需要复位。修改需先保存草稿、更新任务文件，再重新读取任务后生效。</sys:String>
  <sys:String x:Key="任务编辑.等待DI">等待DI</sys:String>
  <sys:String x:Key="任务编辑.等级">等级</sys:String>
  <sys:String x:Key="任务编辑.等于">等于</sys:String>
@@ -220,6 +220,8 @@
  <sys:String x:Key="任务编辑.更新任务文件">更新任务文件</sys:String>
  <sys:String x:Key="任务编辑.重新载入运行文件提示">将当前草稿先保留为副本，再读取当前运行文件；操作前会再次确认。</sys:String>
  <sys:String x:Key="任务编辑.查看当前流程状态">查看当前流程状态</sys:String>
+ <sys:String x:Key="任务编辑.查看任务运行">查看任务运行</sys:String>
+ <sys:String x:Key="任务编辑.任务运行工位查看指引">当前使用任务列表，请到任务运行查看已读取的任务和工位。</sys:String>
  <sys:String x:Key="任务编辑.正式设备当前状态">正式设备当前状态</sys:String>
  <sys:String x:Key="任务编辑.设备运行中">设备运行中</sys:String>
  <sys:String x:Key="任务编辑.设备已就绪">设备已就绪</sys:String>
@@ -240,13 +242,13 @@
  <sys:String x:Key="任务编辑.工位参与运行">参与运行</sys:String>
  <sys:String x:Key="任务编辑.工位已停用">不参与</sys:String>
  <sys:String x:Key="任务编辑.草稿没有工位">当前草稿未配置工位</sys:String>
- <sys:String x:Key="任务编辑.草稿工位运行边界">草稿安排尚未接入正式设备流程；编辑、保存或检查草稿不会改变当前 Runtime 工位。</sys:String>
+ <sys:String x:Key="任务编辑.草稿工位运行边界">编辑、保存或检查只影响草稿，不改变当前设备流程。更新任务文件后，需要重新读取任务才能使用新安排。</sys:String>
  <sys:String x:Key="任务编辑.没有连接运行时">当前未连接设备运行时</sys:String>
  <sys:String x:Key="任务编辑.没有自动工位">当前没有自动工位</sys:String>
  <sys:String x:Key="任务编辑.运行工位说明">此处显示正式设备当前加载的自动工位流程，不代表这些工位正在运行。任务草稿显示“未应用”时，不会改变现有流程；名称用于现场对照。</sys:String>
- <sys:String x:Key="任务编辑.仅更新任务文件，不启动设备">仅更新任务配置文件；当前流程执行尚未接入控制卡，不会连接或启动设备</sys:String>
- <sys:String x:Key="任务编辑.确认更新以下任务文件">确认更新以下任务文件？当前流程执行尚未接入控制卡，本操作不会连接或启动设备。</sys:String>
- <sys:String x:Key="任务编辑.任务文件已更新">任务文件已更新；当前流程执行尚未接入控制卡</sys:String>
+ <sys:String x:Key="任务编辑.仅更新任务文件，不启动设备">更新任务文件不会启动设备；更新后需重新读取任务才能使用新配置。</sys:String>
+ <sys:String x:Key="任务编辑.确认更新以下任务文件">确认更新以下任务文件？本操作不会启动设备；更新后需重新读取任务才能使用新配置。</sys:String>
+ <sys:String x:Key="任务编辑.任务文件已更新">任务文件已更新；重新读取任务后使用新配置。</sys:String>
  <sys:String x:Key="任务编辑.有未保存修改，运行版本未改变">有未保存修改，运行版本未改变</sys:String>
  <sys:String x:Key="任务编辑.有效">有效</sys:String>
  <sys:String x:Key="任务编辑.右值">右值</sys:String>
