@@ -8,12 +8,12 @@
 |---|---|
 | 基线提交 | `ffd587e`（本轮实现的提交前基线） |
 | 工作区 | 本轮包含任务执行接入、真实轴暂停/报警处理和复位预检查；精确状态以 `git status --short` 为准 |
-| 构建 | 此处为历史基线记录：MachineDevice 8 组、TaskEngine 23/53/16 组、Runtime 35 项、OperatorPages 原 10 组；当前操作页检查增加任务报警表格后为 11 组，构建与检查结果需按第 6 节重新确认 |
+| 构建 | MachineDevice 检查现为 9 组、OperatorPages 检查现为 12 组；TaskEngine 23/53/16 组、Runtime 35 项为历史记录，构建与检查结果需按第 6 节重新确认 |
 | 正式 Host | 历史联调中 Load_X 在 -90 mm 停止且未回零；控制器会话与轴位置可能变化，继续测试前必须在正式 Host 重新核对 |
 | 配置根 | `C:\Users\ASUS\AppData\Local\MotionControlFramework\Configurations\Machine01` |
-| 执行入口 | `Parameters/Equipment.json` 的 `executionOwner` 当前为 `TaskEngine` |
+| 执行入口 | 2026-11-01 验证任务页面后，`Parameters/Equipment.json` 的 `executionOwner` 为 `TaskEngine`；`DemoStations.json` 仅启用上料定位工位，其余三个工位保留配置但已禁用。两种流程的测试配置均保留，切换入口后需重新加载 |
 
-一句话：**Host 任务执行入口已装配，正式窗口曾验证未回零轴会被拦截；生产循环尚未端到端验证。** 历史联调中 Load_X 配置为 DATUM 模式 3、原点 DI8，但回零搜索实际向负方向移动；当时 DI8 未触发，屏幕操作也未能切换该输入。方向和输入切换问题查清前，不再发回零或循环命令。
+一句话：**正式 Host 中，任务列表和 C# 上料工位均已验证未回零轴会被拦截；生产循环尚未端到端验证。** 历史联调中 Load_X 配置为 DATUM 模式 3、原点 DI8，但回零搜索实际向负方向移动。2026-11-01 已确认 DI8 可以切换，且 Host 原点显示随之变化；控制器回零有效电平和当时负向动作原因仍未证实，查清前不再发回零或循环命令。
 
 ## 2. 本轮已完成的改动
 
@@ -48,7 +48,7 @@
 ## 4. 未完成（阶段 C 剩余）
 
 - **正式 Host 生产循环**：任务入口、任务装配、受控暂停/停止和共享报警接线已在当前工作区实现，软件回归通过；正式 Host 已验证任务复位会在 Runtime 复位前拦截未回零定位轴。仍未完成“任务 → 轴动 → DI 变化 → 报警进页面 → 连续循环”的端到端运行。
-- **Load_X 回零方向与 DI8 输入**：模式 3 按厂商手册应先正向快找，但 Host 实际观察到轴从 0 向负方向运行并在 -90 mm 受控停止；Host 与 ZDevelop 在线表都显示轴 1 停在 -90、DATUM_IN=8，DI8 未触发。ZSimu 画面切换 DI8 的屏幕操作没有产生可见变化。不要为了继续流程重复回零；先确认仿真输入切换是否生效及控制器轴方向来源。
+- **Load_X 回零方向与有效电平**：历史模式 3 运行时从 0 向负方向移动并在 -90 mm 受控停止。2026-11-01 重启控制器后，Host 显示轴 1 在 0 mm 且未回零，DI8 切换可使 Host 原点状态变化并已恢复；控制器输入表显示 DI8 为 `datum_in(1)` 且输入反转关闭。厂商手册对不同控制器族的有效电平有区别，历史负向动作是否为反找尚未确认。不要为了继续流程重复回零；先核实该控制器的原点有效状态和模式行为。
 - **互锁节点**：`MachineTaskDevice.CheckInterlock` 仍抛 `NotSupportedException`，需要设计并实现框架级安全语义。
 
 ## 5. 已知坑（先读再动手）
@@ -67,7 +67,7 @@ $env:DOTNET_CLI_HOME='F:\Work\运动控制框架\.dotnet-cli-home'
 cd F:\Work\运动控制框架\MotionControlFramework
 $dotnet='C:\Program Files\dotnet\dotnet.exe'
 
-# 1) 真机任务设备检查：期望 8 组，失败 0
+# 1) 真机任务设备检查：期望 9 组，失败 0
 & $dotnet build tools/MotionControl.MachineDevice.Checks/MotionControl.MachineDevice.Checks.csproj -c Release -o tmp/check-md -v:q
 & .\tmp\check-md\MotionControl.MachineDevice.Checks.exe
 
@@ -79,7 +79,7 @@ $dotnet='C:\Program Files\dotnet\dotnet.exe'
 & $dotnet build tools/MotionControl.ZMotionSimulatorCheck/MotionControl.ZMotionSimulatorCheck.csproj -c Release -o tmp/check-rt -v:q
 & .\tmp\check-rt\MotionControl.ZMotionSimulatorCheck.exe --runtime-regression
 
-# 4) 操作员页面检查：期望 11 组，失败 0（增加任务页报警表格检查）
+# 4) 操作员页面检查：期望 12 组，失败 0（含任务页设备状态本地化检查）
 & $dotnet build tools/MotionControl.OperatorPages.Checks/MotionControl.OperatorPages.Checks.csproj -c Release -o tmp/check-ops -v:q
 & .\tmp\check-ops\MotionControl.OperatorPages.Checks.exe
 ```
@@ -88,7 +88,7 @@ $dotnet='C:\Program Files\dotnet\dotnet.exe'
 
 ## 7. 第一件事
 
-先解决 Load_X 回零方向与 DI8 输入的验证阻塞。厂商 RTBasic 手册说明 DATUM 模式 3 正向快找、反向慢速复找；本轮正式 Host 上观察到模式 3 朝负向运动。ZDevelop 在线轴表只读显示轴 1 的 `DPOS=-90`、`MPOS=-90`、`DATUM_IN=8`，ZSimu 当前输入仍未触发。先确认 DI8 能否在 ZSimu 中切换并映射到 Host 的 ORG 状态，再查清轴方向参数来源；在此之前保持 Load_X 停止，不运行回零和任务循环。
+先解决 Load_X 回零有效电平与历史方向异常的验证阻塞。2026-11-01 已在正式 Host 验证 DI8 切换与原点显示联动，并恢复原值；两种执行入口均因 Load_X 未回零而被拦截。须确认控制器实际原点有效电平、反转参数与初始原点有效时的回零行为；在此之前保持 Load_X 停止，不运行回零和任务循环。
 
 阻塞排除后，再通过正式 Host 完成 Load_X 回零、任务复位、启动/暂停/恢复/停止和连续周期验证，并逐页核对 DI/DO 与共享报警。配置目录中的测试配置按项目规则保留；所有轴停止，测试输入输出恢复安全值。
 

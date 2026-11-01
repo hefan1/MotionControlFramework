@@ -653,6 +653,9 @@
     <sys:String x:Key="任务执行当前报警">当前报警</sys:String>
     <sys:String x:Key="任务执行等待连接">请先连接运动控制卡，再读取当前任务。</sys:String>
     <sys:String x:Key="任务执行设备已连接">设备已连接 · 当前配置入口：{0}。读取任务后可在本页控制。</sys:String>
+    <sys:String x:Key="控制入口工位流程">代码工位流程</sys:String>
+    <sys:String x:Key="控制入口任务列表">任务列表</sys:String>
+    <sys:String x:Key="控制入口无">未指定</sys:String>
     <sys:String x:Key="任务执行运行状态">任务状态：{0} · 设备状态：{1}</sys:String>
     <sys:String x:Key="任务执行已装载">已读取已应用任务配置。来源：{0}</sys:String>
     <sys:String x:Key="任务执行复位完成">整机已复位到就绪状态，可按启动运行任务。</sys:String>

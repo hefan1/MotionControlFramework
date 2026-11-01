@@ -643,6 +643,9 @@
     <sys:String x:Key="任务执行当前报警">Current alarms</sys:String>
     <sys:String x:Key="任务执行等待连接">Connect the motion controller before loading tasks.</sys:String>
     <sys:String x:Key="任务执行设备已连接">Equipment connected · configured owner: {0}. Load tasks to operate here.</sys:String>
+    <sys:String x:Key="控制入口工位流程">Code station flows</sys:String>
+    <sys:String x:Key="控制入口任务列表">Task list</sys:String>
+    <sys:String x:Key="控制入口无">None</sys:String>
     <sys:String x:Key="任务执行运行状态">Task state: {0} · Equipment state: {1}</sys:String>
     <sys:String x:Key="任务执行已装载">Applied task configuration loaded. Source: {0}</sys:String>
     <sys:String x:Key="任务执行复位完成">Machine reset completed. Press Start when ready.</sys:String>

@@ -8,6 +8,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using MotionControl.Framework.Contracts.Alarms;
+using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.IO;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Runtime.Machine;
@@ -364,13 +365,25 @@ namespace MotionControl.Host.Wpf.Tasks
             {
                 _runStatus.Text = _runtime == null
                     ? GetText("任务执行等待连接")
-                    : string.Format(GetText("任务执行设备已连接"), _runtime.ControlOwner);
+                    : string.Format(GetText("任务执行设备已连接"), GetControlOwnerText(_runtime.ControlOwner));
                 return;
             }
 
             snapshot = snapshot ?? _session.Machine.GetSnapshot();
             _runStatus.Text = string.Format(GetText("任务执行运行状态"),
-                _monitor?.T(snapshot.State.ToString()) ?? snapshot.State.ToString(), _runtime?.State.ToString() ?? "未知");
+                _monitor?.T(snapshot.State.ToString()) ?? snapshot.State.ToString(),
+                GetText(MainWindow.GetMachineStateResourceKey(_runtime?.State ?? MachineRunState.Disconnected)));
+        }
+
+        /// <summary>将当前控制入口转换为操作员可读的本地化名称。</summary>
+        private string GetControlOwnerText(MachineControlOwner owner)
+        {
+            switch (owner)
+            {
+                case MachineControlOwner.StationFlows: return GetText("控制入口工位流程");
+                case MachineControlOwner.TaskEngine: return GetText("控制入口任务列表");
+                default: return GetText("控制入口无");
+            }
         }
 
         /// <summary>按任务整机状态启用命令，避免从其他页面并发启动或复位。</summary>

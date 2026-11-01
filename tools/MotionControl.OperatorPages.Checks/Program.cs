@@ -40,14 +40,34 @@ namespace MotionControl.OperatorPages.Checks
             Check("报警恢复待复位、搜索和稳定选择", AlarmConditions, ref failures);
             Check("报警状态与报警库恢复指导同时可见", AlarmGuidanceChecks.Run, ref failures);
             Check("任务页报警表格快照与语言切换", TaskAlarmGridChecks.Run, ref failures);
+            Check("设备状态资源覆盖与中英文显示", MachineStateLocalization, ref failures);
             Check("IO 监控区分通道范围和当前读取失败", IoMonitorReadFailureChecks.Run, ref failures);
             Check("Host导航和返回原页面", HostNavigation, ref failures);
             Check("暂停和停止的现场恢复提示", MachineCommandGuidance, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：11 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：12 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
+        }
+        /// <summary>检查任务页复用的顶部状态资源覆盖全部设备状态，且等待复位在两种语言下可读。</summary>
+        private static void MachineStateLocalization()
+        {
+            var method = typeof(MainWindow).GetMethod("GetMachineStateResourceKey",
+                System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+            Assert(method != null, "找不到共用设备状态映射。");
+            var zh = new ResourceDictionary { Source = new Uri("/MotionControl.Host.Wpf;component/Localization/Strings.zh-CN.xaml", UriKind.Relative) };
+            var en = new ResourceDictionary { Source = new Uri("/MotionControl.Host.Wpf;component/Localization/Strings.en-US.xaml", UriKind.Relative) };
+            foreach (MachineRunState state in Enum.GetValues(typeof(MachineRunState)))
+            {
+                string key = (string)method.Invoke(null, new object[] { state });
+                Assert(zh.Contains(key) && en.Contains(key), "设备状态缺少语言资源：" + state);
+            }
+            string resetKey = (string)method.Invoke(null, new object[] { MachineRunState.ResetRequired });
+            Assert((string)zh[resetKey] == "等待复位", "中文设备等待复位状态错误。");
+            Assert((string)en[resetKey] == "Reset Required", "英文设备等待复位状态错误。");
+            foreach (string key in new[] { "控制入口工位流程", "控制入口任务列表", "控制入口无" })
+                Assert(zh.Contains(key) && en.Contains(key), "控制入口缺少语言资源：" + key);
         }
         /// <summary>统一输出每组结果，异常保留原始堆栈。</summary>
         private static void Check(string name, Action action, ref int failures)

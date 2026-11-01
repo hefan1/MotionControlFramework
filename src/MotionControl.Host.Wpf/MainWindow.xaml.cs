@@ -765,7 +765,7 @@ namespace MotionControl.Host.Wpf
         }
 
         /// <summary>把运行时状态转换成当前语言资源中的简短显示文字。</summary>
-        private string GetMachineStateResourceKey(MachineRunState state)
+        internal static string GetMachineStateResourceKey(MachineRunState state)
         {
             switch (state)
             {

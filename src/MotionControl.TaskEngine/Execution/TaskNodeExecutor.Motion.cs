@@ -62,7 +62,7 @@ namespace MotionControl.TaskEngine.Execution
                             operation = _device.BeginMove(axisName, target, !home && !acceptedBefore && node.Mode == TaskMoveMode.Relative, home, home ? null : ToAxisProfile(node.Profile));
                             if (!home) scope.AcceptedAxisTargets[axisName] = operation.Target;
                             started = _run.ActiveMilliseconds;
-                            // 回零只验证流程生命周期；100ms 是内存模型时间，不是硬件回零参数。
+                            // 100ms 仅用于内存设备推进；实际设备以动作反馈判断回零完成。
                             duration = home ? 100 : Math.Abs(operation.Target - operation.Start) / node.Profile.Speed * 1000;
                             if (double.IsInfinity(duration) || double.IsNaN(duration)) throw new InvalidOperationException("运动时长超出有限范围。");
                             pauseStopRegistration = _run.RegisterPauseStopAction(() =>
@@ -87,12 +87,21 @@ namespace MotionControl.TaskEngine.Execution
 
                                 double progress = duration == 0 ? 1 : (_run.ActiveMilliseconds - started) / duration;
                                 _device.AdvanceMove(operation, progress);
-                                if (!home) ObserveAxes(scope, scope.AcceptedAxisTargets);
-                                else scope.Diagnostics = new TaskStepDiagnostics(progress >= 1
-                                    ? "内存回零结束，位置参考已建立；未模拟厂商原点与限位信号。"
-                                    : "正在执行内存回零；未模拟厂商回零模式。");
-                                _run.Report(scope, TaskNodeState.Moving, "运动中：等待轴 " + axisName + " 到位；目标=" + operation.Target);
-                                completed = _device.IsMoveComplete(operation, progress);
+                                if (!home)
+                                {
+                                    ObserveAxes(scope, scope.AcceptedAxisTargets);
+                                    _run.Report(scope, TaskNodeState.Moving, "运动中：等待轴 " + axisName + " 到位；目标=" + operation.Target);
+                                    completed = _device.IsMoveComplete(operation, progress);
+                                }
+                                else
+                                {
+                                    // 回零可能远超内存模型的 100ms，只有设备报告完成才能显示完成。
+                                    completed = _device.IsMoveComplete(operation, progress);
+                                    scope.Diagnostics = new TaskStepDiagnostics(completed
+                                        ? "轴回零已完成。"
+                                        : "正在等待轴回零完成。");
+                                    _run.Report(scope, TaskNodeState.Moving, "正在等待轴 " + axisName + " 回零完成。");
+                                }
                                 if (completed)
                                 {
                                     pauseStopRegistration.Dispose();

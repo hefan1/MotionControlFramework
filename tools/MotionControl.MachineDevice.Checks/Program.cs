@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Alarms;
@@ -14,6 +16,7 @@ using MotionControl.Framework.Runtime.Variables;
 using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Device;
+using MotionControl.TaskEngine.Execution;
 using MotionControl.TaskEngine.MachineDevice;
 using MotionControl.TaskEngine.Machine;
 
@@ -34,8 +37,9 @@ namespace MotionControl.MachineDevice.Checks
             Run("变量按目录类型写入", VariablesAreWrittenByType, ref failures);
             Run("工位流程空闲时接管并在归还后恢复入口", ClaimTakesOverWhenStationFlowsAreIdle, ref failures);
             Run("任务复位拦截未回零的定位轴", TaskResetRequiresPositioningAxesHomed, ref failures);
+            Run("任务回零诊断按设备反馈区分等待和完成", TaskHomeDiagnosticsFollowDeviceCompletion, ref failures);
 
-            Console.WriteLine("真机任务设备检查：共 8 组，失败 " + failures + "。未连接控制器。");
+            Console.WriteLine("真机任务设备检查：共 9 组，失败 " + failures + "。未连接控制器。");
             return failures == 0 ? 0 : 1;
         }
 
@@ -227,6 +231,82 @@ namespace MotionControl.MachineDevice.Checks
             }
         }
 
+        /// <summary>设备回零超过内存进度时仍显示等待，设备确认完成后才显示回零完成。</summary>
+        private static void TaskHomeDiagnosticsFollowDeviceCompletion()
+        {
+            TaskHomeDiagnosticsFollowDeviceCompletionAsync().GetAwaiter().GetResult();
+        }
+
+        /// <summary>用任务控制器和可控轴替身检查回零节点快照；不连接控制器。</summary>
+        private static async Task TaskHomeDiagnosticsFollowDeviceCompletionAsync()
+        {
+            var axis = new FakeAxis("X") { Homed = false, DeferHomeCompletion = true };
+            MachineTaskDevice device = CreateDevice(axis, new FakeLogicalIo(), out _, out MachineRuntime runtime);
+            var task = new TaskDefinition
+            {
+                TaskId = "HomeTask",
+                Name = "回零检查",
+                Root = new SequenceNode
+                {
+                    Id = "sequence",
+                    Name = "回零步骤",
+                    Children = new List<TaskNode>
+                    {
+                        new AxisCommandNode { Id = "home", Name = "X回零", AxisName = "X", Command = TaskAxisCommand.Home }
+                    }
+                }
+            };
+            var configuration = new TaskMachineConfiguration
+            {
+                MachineId = "HomeCheck",
+                Name = "HomeCheck",
+                Stations = new List<StationTaskConfiguration>
+                {
+                    new StationTaskConfiguration
+                    {
+                        StationId = "HomeStation", Name = "回零工位", TaskId = task.TaskId,
+                        Enabled = true, Mode = StationTaskMode.Once
+                    }
+                }
+            };
+            var controller = new TaskMachineController(configuration, new[] { task }, device, runtime.AlarmService);
+            try
+            {
+                await controller.ResetAsync().ConfigureAwait(false);
+                controller.Start();
+                await WaitForHomeNodeAsync(controller, node => node.State == TaskNodeState.Moving).ConfigureAwait(false);
+                // 真实设备不以 100ms 的内存时间估算完成；确保在此之后仍检查未完成状态。
+                await Task.Delay(250).ConfigureAwait(false);
+                TaskNodeSnapshot waiting = await WaitForHomeNodeAsync(controller,
+                    node => node.State == TaskNodeState.Moving && node.Diagnostics != null).ConfigureAwait(false);
+                Ensure(waiting.Diagnostics.Summary == "正在等待轴回零完成。", "设备尚未完成时错误显示回零完成：" + waiting.Diagnostics.Summary);
+                Ensure(!waiting.Detail.Contains("内存") && !waiting.Diagnostics.Summary.Contains("模拟"), "正式设备回零信息不应描述为内存模型。");
+                axis.Complete();
+                TaskNodeSnapshot completed = await WaitForHomeNodeAsync(controller,
+                    node => node.State == TaskNodeState.Completed).ConfigureAwait(false);
+                Ensure(completed.Diagnostics != null && completed.Diagnostics.Summary == "轴回零已完成。", "设备确认回零后缺少完成诊断。");
+            }
+            finally
+            {
+                await controller.CloseAsync().ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>限时等待指定回零节点快照，避免检查失败时无限等待。</summary>
+        private static async Task<TaskNodeSnapshot> WaitForHomeNodeAsync(TaskMachineController controller,
+            Func<TaskNodeSnapshot, bool> predicate)
+        {
+            var watch = Stopwatch.StartNew();
+            while (watch.Elapsed < TimeSpan.FromSeconds(5))
+            {
+                TaskRunSnapshot run = controller.GetSnapshot().Stations.Single().Run;
+                TaskNodeSnapshot node = run?.Nodes.FirstOrDefault(item => item.NodeId == "home");
+                if (node != null && predicate(node)) return node;
+                await Task.Delay(10).ConfigureAwait(false);
+            }
+            throw new InvalidOperationException("等待回零节点状态超时。");
+        }
+
         /// <summary>创建一套最小设备环境；可选加入一个工位流程用于验证互斥。</summary>
         private static MachineTaskDevice CreateDevice(
             FakeAxis axis,
@@ -306,6 +386,9 @@ namespace MotionControl.MachineDevice.Checks
             /// <summary>本次动作的目标位置。</summary>
             private double _target;
 
+            /// <summary>当前未完成动作是否为测试用回零。</summary>
+            private bool _homeInProgress;
+
             /// <summary>建立默认已使能、已回零的测试轴。</summary>
             internal FakeAxis(string name)
             {
@@ -332,6 +415,9 @@ namespace MotionControl.MachineDevice.Checks
             /// <summary>是否模拟驱动器不响应取消，用于验证补发受控停止。</summary>
             internal bool IgnoresCancellation { get; set; }
 
+            /// <summary>为真机任务检查保持回零进行中，直到检查显式完成或取消。</summary>
+            internal bool DeferHomeCompletion { get; set; }
+
             /// <summary>已收到的运动命令次数。</summary>
             internal int MoveCalls { get; private set; }
 
@@ -343,6 +429,8 @@ namespace MotionControl.MachineDevice.Checks
             {
                 Position = _target;
                 Moving = false;
+                if (_homeInProgress) Homed = true;
+                _homeInProgress = false;
                 _motion?.TrySetResult(true);
             }
 
@@ -370,6 +458,12 @@ namespace MotionControl.MachineDevice.Checks
             /// <summary>测试替身把回零作为一次普通动作处理。</summary>
             public Task HomeAsync(CancellationToken cancellationToken)
             {
+                if (DeferHomeCompletion)
+                {
+                    _homeInProgress = true;
+                    Homed = false;
+                    return MoveAbsoluteAsync(0, null, cancellationToken);
+                }
                 MoveCalls++;
                 Homed = true;
                 return Task.CompletedTask;
@@ -384,7 +478,7 @@ namespace MotionControl.MachineDevice.Checks
                 _motion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 if (!IgnoresCancellation)
                 {
-                    cancellationToken.Register(() => { Moving = false; _motion.TrySetCanceled(); });
+                    cancellationToken.Register(() => { Moving = false; _homeInProgress = false; _motion.TrySetCanceled(); });
                 }
 
                 return _motion.Task;
@@ -407,6 +501,7 @@ namespace MotionControl.MachineDevice.Checks
             {
                 StopCalls++;
                 Moving = false;
+                _homeInProgress = false;
                 _motion?.TrySetCanceled();
                 return Task.CompletedTask;
             }
