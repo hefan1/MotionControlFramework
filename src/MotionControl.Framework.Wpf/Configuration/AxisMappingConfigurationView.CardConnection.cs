@@ -18,6 +18,14 @@ namespace MotionControl.Framework.Wpf.Configuration
             get { return CardConnectionStatusText == null ? string.Empty : CardConnectionStatusText.Text; }
         }
 
+        /// <summary>会话异常中断后刷新连接状态，保留旧运行时供安全处理。</summary>
+        public void ReportCardConnectionLost(string reason)
+        {
+            _connectionLostRequiresRestart = true;
+            SetCardConnectionStatus("控制卡连接失败格式", reason);
+            UpdateCardConnectionUiState();
+        }
+
         /// <summary>根据物理轴号选择当前编辑行。</summary>
         private async void AxisMappingGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -137,17 +145,18 @@ namespace MotionControl.Framework.Wpf.Configuration
             ConnectionIndicator.Fill = connected ? new SolidColorBrush(Color.FromRgb(35, 153, 85)) : new SolidColorBrush(Color.FromRgb(135, 151, 168));
             CardConnectionStatusBadge.Background = connected ? new SolidColorBrush(Color.FromRgb(232, 247, 237)) : new SolidColorBrush(Color.FromRgb(239, 244, 249));
             CardConnectionStatusText.Foreground = connected ? new SolidColorBrush(Color.FromRgb(28, 126, 70)) : new SolidColorBrush(Color.FromRgb(89, 107, 125));
-            CardVendorComboBox.IsEnabled = !connected && !_connectionInProgress;
-            CardTypeComboBox.IsEnabled = !connected && !_connectionInProgress;
-            AxisCountComboBox.IsEnabled = !connected && !_connectionInProgress;
-            ConnectCardButton.IsEnabled = !connected && !_connectionInProgress && hasSupportedCard;
+            CardVendorComboBox.IsEnabled = !connected && !_connectionInProgress && !_hardwareConfigurationReadOnly;
+            CardTypeComboBox.IsEnabled = !connected && !_connectionInProgress && !_hardwareConfigurationReadOnly;
+            AxisCountComboBox.IsEnabled = !connected && !_connectionInProgress && !_hardwareConfigurationReadOnly;
+            ConnectCardButton.IsEnabled = !connected && !_connectionInProgress && hasSupportedCard && !_connectionLostRequiresRestart;
             DisconnectCardButton.IsEnabled = connected && !_connectionInProgress;
             AxisMappingGrid.IsEnabled = !_connectionInProgress;
-            AxisDetailsGrid.IsEnabled = !_connectionInProgress;
-            ClearAxisMappingButton.IsEnabled = !_connectionInProgress;
+            AxisMappingGrid.IsReadOnly = _hardwareConfigurationReadOnly;
+            AxisDetailsGrid.IsEnabled = !_connectionInProgress && !_hardwareConfigurationReadOnly;
+            ClearAxisMappingButton.IsEnabled = !_connectionInProgress && !_hardwareConfigurationReadOnly;
             CheckMappingButton.IsEnabled = !_connectionInProgress;
-            SaveConfigurationButton.IsEnabled = !_connectionInProgress && _configurationCanBeSaved;
-            ReadAxisParametersButton.IsEnabled = connected && !_connectionInProgress;
+            SaveConfigurationButton.IsEnabled = !_connectionInProgress && _configurationCanBeSaved && !_hardwareConfigurationReadOnly;
+            ReadAxisParametersButton.IsEnabled = connected && !_connectionInProgress && !_hardwareConfigurationReadOnly;
         }
 
         /// <summary>读取当前物理轴的控制器参数，并在右侧以只读文本显示卡上实时值。</summary>

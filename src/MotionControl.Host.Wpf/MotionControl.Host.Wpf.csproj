@@ -15,5 +15,6 @@
     <ProjectReference Include="..\MotionControl.Framework.Wpf\MotionControl.Framework.Wpf.csproj" />
     <ProjectReference Include="..\MotionControl.TaskEngine.MachineDevice\MotionControl.TaskEngine.MachineDevice.csproj" />
     <ProjectReference Include="..\Adapters\MotionCards\ZMotion\Adapter\MotionControl.Adapter.MotionCard.ZMotion.csproj" />
+    <ProjectReference Include="..\Adapters\MotionCards\Virtual\Adapter\MotionControl.Adapter.MotionCard.Virtual.csproj" />
   </ItemGroup>
 </Project>

@@ -361,6 +361,11 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>更新任务整机和设备运行状态摘要。</summary>
         private void UpdateRunStatus(TaskMachineSnapshot snapshot = null)
         {
+            if (_motionCards != null && !_motionCards.IsConnected)
+            {
+                _runStatus.Text = GetText("任务执行等待连接");
+                return;
+            }
             if (_session == null)
             {
                 _runStatus.Text = _runtime == null
@@ -389,7 +394,8 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>按任务整机状态启用命令，避免从其他页面并发启动或复位。</summary>
         private void UpdateCommandAvailability()
         {
-            bool connected = _runtime != null && _motionCards != null && _logicalIo != null && _variables != null;
+            bool connected = _runtime != null && _motionCards != null && _motionCards.IsConnected
+                && _logicalIo != null && _variables != null;
             TaskMachineState? taskState = _session == null ? (TaskMachineState?)null : _session.Machine.GetSnapshot().State;
             _loadButton.IsEnabled = connected && _session == null && !_commandInProgress;
             _resetButton.IsEnabled = connected && taskState.HasValue && !_commandInProgress

@@ -66,6 +66,9 @@ namespace MotionControl.Host.Wpf
         /// <summary>连接会话标志，不代表控制器当前读写一定正常。</summary>
         private bool _motionCardSessionConnected;
 
+        /// <summary>当前连接后端是否为软件控制器，用于明确标识连接来源。</summary>
+        private bool _softwareControllerSelected;
+
         /// <summary>IO 监控最近一次可见 DI 采样是否失败；空值表示尚未采样。</summary>
         private bool? _latestVisibleDiReadFailed;
 
@@ -397,12 +400,14 @@ namespace MotionControl.Host.Wpf
         }
 
         /// <summary>由 Host 组合根按运行时连接结果更新底栏的控制卡状态。</summary>
-        public void SetMotionCardConnectionStatus(bool isConnected, string statusMessage = null)
+        public void SetMotionCardConnectionStatus(bool isConnected, string statusMessage = null, bool softwareController = false)
         {
             _motionCardSessionConnected = isConnected;
+            _softwareControllerSelected = softwareController;
             if (!isConnected) { _latestVisibleDiReadFailed = null; _latestVisibleDoReadFailed = null; }
             UpdateMotionCardFooter();
             _equipmentOverviewPage.SetConnectionStatus(isConnected, statusMessage);
+            UpdateMachineStateDisplay();
         }
 
         /// <summary>显示会话和最近可见 IO 读取异常；无采样不能当作通信正常。</summary>
@@ -411,13 +416,19 @@ namespace MotionControl.Host.Wpf
             if (MotionCardConnectionStatus == null) return;
             bool diFailed = _motionCardSessionConnected && _latestVisibleDiReadFailed == true;
             bool doFailed = _motionCardSessionConnected && _latestVisibleDoReadFailed == true;
-            if (diFailed || doFailed)
-                MotionCardConnectionStatus.Text = string.Format(GetLocalizedText("控制卡会话IO读取异常格式"),
+            if (_softwareControllerSelected && !_motionCardSessionConnected)
+                MotionCardConnectionStatus.SetResourceReference(TextBlock.TextProperty, "软件控制器未连接");
+            else if (diFailed || doFailed)
+                MotionCardConnectionStatus.Text = string.Format(GetLocalizedText(_softwareControllerSelected
+                        ? "软件控制器IO读取异常格式" : "控制卡会话IO读取异常格式"),
                     diFailed && doFailed ? "DI/DO" : diFailed ? "DI" : "DO");
+            else if (_softwareControllerSelected)
+                MotionCardConnectionStatus.SetResourceReference(TextBlock.TextProperty, "软件控制器已连接");
             else
                 MotionCardConnectionStatus.SetResourceReference(TextBlock.TextProperty,
                     _motionCardSessionConnected ? "控制卡已连接" : "控制卡未连接");
-            MotionCardConnectionStatus.Foreground = diFailed || doFailed ? Brushes.Firebrick : new SolidColorBrush(Color.FromRgb(94, 102, 107));
+            MotionCardConnectionStatus.Foreground = diFailed || doFailed || (_softwareControllerSelected && !_motionCardSessionConnected)
+                ? Brushes.Firebrick : new SolidColorBrush(Color.FromRgb(94, 102, 107));
             MotionCardConnectionStatus.SetResourceReference(FrameworkElement.ToolTipProperty, "控制卡会话状态说明");
         }
 
@@ -789,9 +800,11 @@ namespace MotionControl.Host.Wpf
         /// <summary>同步顶部和底部整机状态，并按运行状态启用或禁用整机复位。</summary>
         private void UpdateMachineStateDisplay()
         {
-            MachineRunState state = _machineRuntime == null
+            MachineRunState actualState = _machineRuntime == null
                 ? MachineRunState.Disconnected
                 : _machineRuntime.State;
+            MachineRunState state = _softwareControllerSelected && !_motionCardSessionConnected
+                ? MachineRunState.Disconnected : actualState;
             string stateResourceKey = state == MachineRunState.Ready && !_automaticStartReadinessKnown
                 ? "状态检查启动条件"
                 : state == MachineRunState.Ready && !string.IsNullOrWhiteSpace(_automaticStartBlockReason)
@@ -820,10 +833,10 @@ namespace MotionControl.Host.Wpf
                 && string.IsNullOrWhiteSpace(_automaticStartBlockReason);
             MachinePauseButton.IsEnabled = !_isMachineCommandRunning
                 && _machineRuntime != null && _machineRuntime.ControlOwner == MachineControlOwner.StationFlows
-                && state == MachineRunState.Running;
+                && actualState == MachineRunState.Running;
             MachineStopButton.IsEnabled = !_isMachineCommandRunning
                 && _machineRuntime != null && _machineRuntime.ControlOwner == MachineControlOwner.StationFlows
-                && (state == MachineRunState.Running || state == MachineRunState.Pausing);
+                && (actualState == MachineRunState.Running || actualState == MachineRunState.Pausing);
         }
 
         /// <summary>把同一份启动就绪结果同步到设备总览和流程状态页。</summary>

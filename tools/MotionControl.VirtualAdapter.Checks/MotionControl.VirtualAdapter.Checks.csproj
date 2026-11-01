@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Adapters\MotionCards\Virtual\Adapter\MotionControl.Adapter.MotionCard.Virtual.csproj" />
+  </ItemGroup>
+</Project>

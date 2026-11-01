@@ -19,6 +19,8 @@ namespace MotionControl.Host.Wpf.Operation
         private MachineRuntime _runtime;
         /// <summary>当前控制卡连接状态。</summary>
         private bool _isCardConnected;
+        /// <summary>Host 是否已提供连接结果；未提供时不臆断独立预览状态。</summary>
+        private bool _connectionStatusKnown;
         /// <summary>轴映射页提供的连接结果或失败原因。</summary>
         private string _connectionStatusMessage;
         /// <summary>当前轴数量范围内已填写设备轴名称的通道数。</summary>
@@ -65,6 +67,7 @@ namespace MotionControl.Host.Wpf.Operation
         public void SetConnectionStatus(bool isConnected, string statusMessage)
         {
             _isCardConnected = isConnected;
+            _connectionStatusKnown = true;
             _connectionStatusMessage = statusMessage;
             RefreshDisplay();
         }
@@ -102,21 +105,23 @@ namespace MotionControl.Host.Wpf.Operation
         public void RefreshDisplay()
         {
             OperationSnapshot snapshot = _preview ?? OperationSnapshot.Read(_runtime);
-            bool startBlocked = snapshot.State == MachineRunState.Ready
+            bool connectionLost = _preview == null && _connectionStatusKnown && !_isCardConnected && snapshot.HasRuntime;
+            MachineRunState? displayState = connectionLost ? MachineRunState.Disconnected : snapshot.State;
+            bool startBlocked = displayState == MachineRunState.Ready
                 && !string.IsNullOrWhiteSpace(_automaticStartBlockReason);
-            bool startChecking = snapshot.State == MachineRunState.Ready && _automaticStartReadinessChecking;
+            bool startChecking = displayState == MachineRunState.Ready && _automaticStartReadinessChecking;
             MachineStateText.Text = T(startBlocked ? "启动条件未满足"
-                : startChecking ? "正在检查启动条件" : OperationUi.StateKey(snapshot.State));
+                : startChecking ? "正在检查启动条件" : OperationUi.StateKey(displayState));
             Brush stateBrush = startBlocked
                 ? StartBlockedBrush
-                : OperationUi.StateBrush(snapshot.State);
+                : OperationUi.StateBrush(displayState);
             MachineStateText.Foreground = stateBrush;
             var border = stateBrush.Clone(); border.Opacity = 0.32; StatusBanner.BorderBrush = border;
             var background = stateBrush.Clone(); background.Opacity = 0.06; StatusBanner.Background = background;
-            SourceText.Text = T(snapshot.IsPreview ? "离线页面示例" : "状态来源：设备运行数据");
+            SourceText.Text = T(connectionLost ? "控制器状态未确认" : snapshot.IsPreview ? "离线页面示例" : "状态来源：设备运行数据");
             SampleText.Text = T("软件状态采样") + " · " + snapshot.SampledAt.ToString("yyyy-MM-dd HH:mm:ss");
             bool noNamedAxes = _axisMappingStatusKnown && _configuredAxisCount == 0;
-            NextActionText.Text = startBlocked ? _automaticStartBlockReason
+            NextActionText.Text = connectionLost ? T("控制器断开后请核对状态") : startBlocked ? _automaticStartBlockReason
                 : T(startChecking ? "正在检查启动条件" : _isCardConnected && noNamedAxes
                     ? "先配置设备轴映射再进行手动调试"
                     : NextAction(snapshot));
@@ -133,6 +138,7 @@ namespace MotionControl.Host.Wpf.Operation
                     : _connectionStatusMessage;
             bool showStationSummary = snapshot.Stations.Count <= 1;
             AggregateMetrics.Visibility = showStationSummary ? Visibility.Visible : Visibility.Collapsed;
+            StationCards.Visibility = connectionLost ? Visibility.Collapsed : Visibility.Visible;
             CompletedText.Text = snapshot.Stations.Count > 1 ? T("按工位查看")
                 : snapshot.CompletedCount.HasValue ? snapshot.CompletedCount.Value.ToString(CultureInfo.InvariantCulture) + " " + T("次")
                 : T("未接入循环统计");
@@ -153,7 +159,7 @@ namespace MotionControl.Host.Wpf.Operation
             }
             for (int index = 0; index < _cards.Count; index++)
                 _cards[index].Update(snapshot, snapshot.Stations[index], startBlocked, startChecking);
-            if (!snapshot.HasRuntime)
+            if (!snapshot.HasRuntime || (connectionLost && snapshot.Alarms.Count == 0))
             {
                 AlertText.Text = T("未读取报警状态");
                 AlertBanner.Background = UnknownAlertBackground;
@@ -180,6 +186,7 @@ namespace MotionControl.Host.Wpf.Operation
                 }
 
                 AlertText.Text = summary + (string.IsNullOrWhiteSpace(details) ? string.Empty : "\n" + details);
+                if (connectionLost) AlertText.Text += "\n" + T("控制器断开报警可能不完整");
                 AlertBanner.Background = ActiveAlertBackground;
                 AlertBanner.BorderBrush = ActiveAlertBorder;
             }

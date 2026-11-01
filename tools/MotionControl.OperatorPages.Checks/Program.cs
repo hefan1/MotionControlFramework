@@ -45,11 +45,12 @@ namespace MotionControl.OperatorPages.Checks
             Check("DO 切换前重读实际电平", IoMonitorToggleChecks.Run, ref failures);
             Check("IO 反馈关联持久化与无效配置", IoFeedbackAssociationChecks.Run, ref failures);
             Check("IO 关联反馈显示与独立读取", IoFeedbackMonitorChecks.Run, ref failures);
+            Check("控制器后端选择与设备映射保护", HostBackendSelectionChecks.Run, ref failures);
             Check("Host导航和返回原页面", HostNavigation, ref failures);
             Check("暂停和停止的现场恢复提示", MachineCommandGuidance, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：15 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：16 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }
@@ -94,6 +95,13 @@ namespace MotionControl.OperatorPages.Checks
             Assert(((TextBlock)alarms.FindName("SourceText")).Text.StartsWith("状态来源：设备运行数据"), "当前报警显示了内部 Runtime 名称。");
             service.ReportCondition(notice, "测试工位", false, null); alarms.RefreshDisplay();
             Assert(((DataGrid)alarms.FindName("AlarmGrid")).Items.Count == 0, "非停机提醒恢复后没有消失。");
+            overview.SetConnectionStatus(true, null);
+            overview.SetConnectionStatus(false, "连接中断");
+            Assert(((TextBlock)overview.FindName("MachineStateText")).Text == "设备未连接"
+                && ((TextBlock)overview.FindName("SourceText")).Text == "控制器状态未确认"
+                && ((TextBlock)overview.FindName("AlertText")).Text == "未读取报警状态"
+                && ((ItemsControl)overview.FindName("StationCards")).Visibility == Visibility.Collapsed,
+                "控制器异常中断时仍显示已确认的运行或报警状态。");
             overview.SetRuntime(null); alarms.SetRuntime(null);
             Assert(((ItemsControl)overview.FindName("StationCards")).Items.Count == 0 && card.Calls == 0, "断开来源残留工位或页面调用了卡。");
         }
@@ -150,6 +158,11 @@ namespace MotionControl.OperatorPages.Checks
             Assert(((TextBlock)flowStatus.FindName("StartReadinessText")).Text == reason, "流程页未显示启动拦截原因。");
             flowStatus.SetAutomaticStartReadiness(null, true);
             Assert(((TextBlock)flowStatus.FindName("MachineStateText")).Text == "整机状态：检查启动条件", "流程页没有显示启动条件检查中状态。");
+            flowStatus.MarkControllerConnectionLost();
+            Assert(((TextBlock)flowStatus.FindName("MachineStateText")).Text == "整机状态：未连接"
+                && ((Panel)flowStatus.FindName("StationRowsPanel")).Visibility == Visibility.Collapsed
+                && ((TextBlock)flowStatus.FindName("AlarmText")).Text.Contains("通讯已中断"),
+                "控制器断开后流程页仍把旧步骤或无报警显示为当前状态。");
         }
         /// <summary>界面只观察报警服务，刷新不清除锁存，状态变化仍选择同一次报警。</summary>
         private static void AlarmConditions()

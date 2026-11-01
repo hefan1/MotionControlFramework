@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Threading;
 using MotionControl.Adapter.MotionCard.ZMotion;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Equipment;
@@ -47,6 +48,12 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>由 Host 创建并在应用退出时释放的运动卡连接服务。</summary>
         private IMotionCardHostConnection _cardConnection;
+
+        /// <summary>同步软件控制器心跳状态，不对其他厂商连接主动发起探测。</summary>
+        private DispatcherTimer _softwareConnectionTimer;
+
+        /// <summary>最近一次已显示的软件控制器会话状态。</summary>
+        private bool _lastSoftwareConnectionStatus;
 
         /// <summary>当前 Host 使用的轴映射页面，用于在应用启动时恢复控制卡连接。</summary>
         private AxisMappingConfigurationView _axisMappingPage;
@@ -197,6 +204,7 @@ namespace MotionControl.Host.Wpf
                 _configurationStore,
                 MachineId,
                 _cardConnection);
+            _axisMappingPage.SetHardwareConfigurationReadOnly(_cardConnection is VirtualAxisMappingCardConnection);
             _axisMappingPage.PrepareCardDisconnectAsync = DisconnectMachineBeforeCardAsync;
             _axisMappingPage.ApplyConnectedConfigurationAsync = ApplyConnectedConfigurationAsync;
             _axisMappingPage.RequiresDisconnectedForAxisReconnect = true;
@@ -308,7 +316,7 @@ namespace MotionControl.Host.Wpf
         /// <summary>在 Host 组合入口选择本次运行使用的运动卡连接实现。</summary>
         private IMotionCardHostConnection CreateMotionCardConnection()
         {
-            return new ZMotionAxisMappingCardConnection(_configurationStore, MachineId);
+            return HostMotionCardBackendSelection.Create(_configurationStore, MachineId);
         }
 
         /// <summary>复制首次部署的变量模板，并加载校验后的单机变量定义。</summary>
@@ -345,7 +353,31 @@ namespace MotionControl.Host.Wpf
         /// <summary>主窗口显示后按已保存的控制卡配置自动连接，不阻塞窗口创建。</summary>
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
+            if (_cardConnection is VirtualAxisMappingCardConnection)
+            {
+                _lastSoftwareConnectionStatus = _cardConnection.IsConnected;
+                _mainWindow.SetMotionCardConnectionStatus(_lastSoftwareConnectionStatus, null, true);
+                _softwareConnectionTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+                _softwareConnectionTimer.Tick += SoftwareConnectionTimer_Tick;
+                _softwareConnectionTimer.Start();
+            }
             await _axisMappingPage.InitializeSavedCardConnectionAsync();
+        }
+
+        /// <summary>软件控制器心跳中断后及时显示断线，保留旧运行时并禁止误认状态。</summary>
+        private void SoftwareConnectionTimer_Tick(object sender, EventArgs e)
+        {
+            bool connected = _cardConnection != null && _cardConnection.IsConnected;
+            if (connected == _lastSoftwareConnectionStatus || _mainWindow == null) return;
+            _lastSoftwareConnectionStatus = connected;
+            if (!connected)
+            {
+                string reason = _mainWindow.TryFindResource("软件控制器通讯中断") as string
+                    ?? "软件控制器通讯已中断，轴和输出状态未确认。";
+                _axisMappingPage.ReportCardConnectionLost(reason);
+                _flowStatusPage?.MarkControllerConnectionLost();
+                _mainWindow.SetMotionCardConnectionStatus(false, reason, true);
+            }
         }
 
         /// <summary>Host 语言切换后刷新轴映射页和 IO 映射页中由代码生成的文字。</summary>
@@ -422,9 +454,12 @@ namespace MotionControl.Host.Wpf
                 _safetyInterlockPage.RefreshDigitalInputNames();
             }
 
+            bool softwareController = _cardConnection is VirtualAxisMappingCardConnection;
+            if (softwareController) _lastSoftwareConnectionStatus = _cardConnection.IsConnected;
             _mainWindow.SetMotionCardConnectionStatus(
                 _cardConnection.IsConnected,
-                _axisMappingPage.CardConnectionStatusMessage);
+                _axisMappingPage.CardConnectionStatusMessage,
+                softwareController);
             if (!_cardConnection.IsConnected)
             {
                 if (_taskMonitorLauncher != null)
@@ -975,6 +1010,11 @@ namespace MotionControl.Host.Wpf
         /// <summary>应用退出时断开已连接的控制卡，并报告句柄释放失败。</summary>
         protected override void OnExit(ExitEventArgs e)
         {
+            if (_softwareConnectionTimer != null)
+            {
+                _softwareConnectionTimer.Stop();
+                _softwareConnectionTimer.Tick -= SoftwareConnectionTimer_Tick;
+            }
             if (_taskMonitorLauncher != null)
             {
                 try

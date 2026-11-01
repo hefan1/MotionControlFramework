@@ -63,6 +63,12 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>连接和断开期间锁定相关按钮，避免重复操作控制器句柄。</summary>
         private bool _connectionInProgress;
 
+        /// <summary>只读时保留卡型和轴映射供查看，禁止覆盖已保存的硬件参数。</summary>
+        private bool _hardwareConfigurationReadOnly;
+
+        /// <summary>会话异常中断后阻止在旧运行时仍持卡时建立新会话。</summary>
+        private bool _connectionLostRequiresRestart;
+
         /// <summary>通知页面绑定项已经变化。</summary>
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -77,6 +83,13 @@ namespace MotionControl.Framework.Wpf.Configuration
 
         /// <summary>正式 Host 不在旧 Runtime 仍持卡时重建连接；此类轴映射需先断卡。</summary>
         public bool RequiresDisconnectedForAxisReconnect { get; set; }
+
+        /// <summary>设置硬件配置只读状态；仍允许连接、断开及查看现有映射。</summary>
+        public void SetHardwareConfigurationReadOnly(bool readOnly)
+        {
+            _hardwareConfigurationReadOnly = readOnly;
+            UpdateCardConnectionUiState();
+        }
 
         /// <summary>通知 Host 当前卡实例已在线应用轴映射，手动页需要刷新显示定义。</summary>
         public event EventHandler AxisMappingApplied;
@@ -512,7 +525,7 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>保存轴映射；适配器支持且物理轴集合未变时在线应用，否则确认后重新连接。</summary>
         private async void SaveConfigurationButton_Click(object sender, RoutedEventArgs e)
         {
-            if (!_configurationCanBeSaved)
+            if (!_configurationCanBeSaved || _hardwareConfigurationReadOnly)
             {
                 return;
             }

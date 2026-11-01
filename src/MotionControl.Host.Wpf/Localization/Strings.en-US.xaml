@@ -89,6 +89,10 @@
     <sys:String x:Key="具体页面与内容后续逐项开发并接入此区域">Specific pages and content will be added here later.</sys:String>
     <sys:String x:Key="未登录">Not logged in</sys:String>
     <sys:String x:Key="控制卡未连接">Motion card: not connected</sys:String>
+    <sys:String x:Key="软件控制器未连接">Software controller: disconnected</sys:String>
+    <sys:String x:Key="软件控制器已连接">Software controller: connected</sys:String>
+    <sys:String x:Key="软件控制器IO读取异常格式">Software controller: connected · last visible {0} read failed</sys:String>
+    <sys:String x:Key="软件控制器通讯中断">Software controller communication lost; check axis and output states, end the run, then restart the application.</sys:String>
     <sys:String x:Key="控制卡已连接">Motion card: session established</sys:String>
     <sys:String x:Key="控制卡会话IO读取异常格式">Motion card: session established · last visible {0} read failed</sys:String>
     <sys:String x:Key="控制卡会话状态说明">A session does not guarantee current communication. I/O errors reflect the last visible-channel sample; check I/O, axis status, and current alarms.</sys:String>

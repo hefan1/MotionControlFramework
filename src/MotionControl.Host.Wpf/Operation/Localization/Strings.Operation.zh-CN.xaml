@@ -5,6 +5,9 @@
  <sys:String x:Key="操作页.当前提醒">当前提醒</sys:String>
  <sys:String x:Key="操作页.离线页面示例">离线页面示例</sys:String>
  <sys:String x:Key="操作页.状态来源：设备运行数据">状态来源：设备运行数据</sys:String>
+ <sys:String x:Key="操作页.控制器状态未确认">控制器状态未确认</sys:String>
+ <sys:String x:Key="操作页.控制器断开后请核对状态">控制器已断开，请检查轴、输出和设备状态。</sys:String>
+ <sys:String x:Key="操作页.控制器断开报警可能不完整">控制器已断开，报警信息可能不完整。</sys:String>
  <sys:String x:Key="操作页.软件状态采样">软件状态采样</sys:String>
  <sys:String x:Key="操作页.未统计">未统计</sys:String>
  <sys:String x:Key="操作页.未采集">未采集</sys:String>

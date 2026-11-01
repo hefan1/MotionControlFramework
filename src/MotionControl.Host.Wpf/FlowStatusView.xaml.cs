@@ -21,6 +21,9 @@ namespace MotionControl.Host.Wpf
         /// <summary>本页观察的整机运行时，与手动轴和 IO 页面共享同一个实例。</summary>
         private readonly MachineRuntime _runtime;
 
+        /// <summary>控制器会话异常丢失后，工艺步骤和轴状态仅为最后已知值。</summary>
+        private bool _controllerConnectionLost;
+
         /// <summary>当前自动启动条件未满足时显示的具体原因。</summary>
         private string _automaticStartBlockReason;
 
@@ -124,6 +127,13 @@ namespace MotionControl.Host.Wpf
             RefreshDisplay();
         }
 
+        /// <summary>控制器断开后避免继续把旧工位步骤显示为当前运行状态。</summary>
+        public void MarkControllerConnectionLost()
+        {
+            _controllerConnectionLost = true;
+            RefreshDisplay();
+        }
+
         /// <summary>同步总览和顶部状态栏使用的自动启动条件结果。</summary>
         public void SetAutomaticStartReadiness(string blockReason, bool checking)
         {
@@ -183,19 +193,21 @@ namespace MotionControl.Host.Wpf
         /// <summary>刷新当前状态、步骤、报警及最近故障文字。</summary>
         private void RefreshDisplay()
         {
+            StationStepHeadingText.Visibility = _controllerConnectionLost ? Visibility.Collapsed : Visibility.Visible;
+            StationRowsPanel.Visibility = _controllerConnectionLost ? Visibility.Collapsed : Visibility.Visible;
             StationStepHeadingText.Text = (string)FindResource("流程页." + OperationUi.StepLabelKey(_runtime.State));
-            string stateResourceKey = !string.IsNullOrWhiteSpace(_automaticStartBlockReason)
+            string stateResourceKey = _controllerConnectionLost ? "状态未连接" : !string.IsNullOrWhiteSpace(_automaticStartBlockReason)
                 ? "状态启动条件未满足"
                 : _automaticStartReadinessChecking
                     ? "状态检查启动条件"
                     : GetMachineStateResourceKey(_runtime.State);
             MachineStateText.Text = ((string)FindResource("整机当前状态"))
                 + (string)FindResource(stateResourceKey);
-            StartReadinessText.Text = _automaticStartBlockReason ?? string.Empty;
-            StartReadinessText.Visibility = string.IsNullOrWhiteSpace(_automaticStartBlockReason)
+            StartReadinessText.Text = _controllerConnectionLost ? (string)FindResource("软件控制器通讯中断") : _automaticStartBlockReason ?? string.Empty;
+            StartReadinessText.Visibility = !_controllerConnectionLost && string.IsNullOrWhiteSpace(_automaticStartBlockReason)
                 ? Visibility.Collapsed
                 : Visibility.Visible;
-            string resetGuidance = _runtime.State == MachineRunState.ResetRequired
+            string resetGuidance = !_controllerConnectionLost && _runtime.State == MachineRunState.ResetRequired
                 ? (string)FindResource("整机复位提示")
                 : string.Empty;
             ResetGuidanceText.Text = resetGuidance;
@@ -218,7 +230,9 @@ namespace MotionControl.Host.Wpf
             MachineAlarmRecord[] alarms = _runtime.AlarmService.Alarms.ToArray();
             if (alarms.Length == 0)
             {
-                AlarmText.Text = (string)FindResource("无当前报警");
+                AlarmText.Text = _controllerConnectionLost
+                    ? (string)FindResource("软件控制器通讯中断")
+                    : (string)FindResource("无当前报警");
             }
             else
             {
@@ -230,6 +244,7 @@ namespace MotionControl.Host.Wpf
                     + "：" + alarm.Detail
                     + (alarm.ConditionActive ? string.Empty : (string)FindResource("报警待复位"))));
                 AlarmText.Text = summary + "\n" + details;
+                if (_controllerConnectionLost) AlarmText.Text += "\n" + (string)FindResource("软件控制器通讯中断");
             }
 
             LastErrorText.Text = _runtime.LastError == null

@@ -18,20 +18,36 @@ Host 在工位受控暂停后保存设备变量值、可恢复工位步骤和初
 
 ## 运动卡连接位置
 
-- `App.xaml.cs` 的 `CreateMotionCardConnection()` 是当前 Host 选择控制卡实现的位置。设备流程和通用页面不在这里选择厂商。
+- `App.xaml.cs` 的 `CreateMotionCardConnection()` 委托 `HostMotionCardBackendSelection` 选择控制器后端。设备流程和通用页面不在这里选择厂商。
 - `IMotionCardHostConnection` 给 Host 提供通用的 `IMotionCard`、`ILogicalIo` 和已加载硬件映射。Host 运行逻辑通过这些契约创建运行时及手动调试页。
+- `VirtualAxisMappingCardConnection` 把已保存的轴与 IO 映射交给本机软件控制卡适配器；控制器是独立进程，协议与操作命令见 [本机虚拟控制器说明](../../tools/MotionControl.VirtualController/README.md)。该路径不调用正运动 SDK。
 - “IO 监控”页由 Host 组合根注入当前连接、IO 能力范围、物理通道监控可选接口和 DI/DO 映射；页面本身不连接或重连控制卡。
 - `ZMotionAxisMappingCardConnection` 是当前正运动仿真器的 Host 接入实现，负责读取设备配置、建立 ZMotion 适配器并提供轴映射页需要的参数读写。
 - 轴映射页使用 `IAxisMappingCardConnection`；可读取卡上 IO 能力时，由连接实现另外提供 `IMotionCardIoCapabilityProvider`。适配器还可以单独实现 `IAxisMappingCardOnlineApply`，在卡型、连接资料和物理轴集合未变化时保留卡连接并在线应用轴映射；其他情况由页面提示后走重连路径。
 - 当前正运动适配器支持相同物理轴集合的在线更新。参数确有变化时先确认已映射轴全部停止，再通过正运动 API 更新需要改变的参数，并复用现有轴对象；如果只改显示名称等运行时映射资料，不会重复写卡参数。新增或移除物理轴仍需重连，重连会清除回零完成状态。
-- IO 映射保存会检查轴已停止后，在当前卡实例内替换 DI/DO 逻辑映射，不重连控制卡。配置已保存但在线应用失败时，页面显示错误并按实际运行状态刷新手动调试页。
+- 正运动连接的 IO 映射保存会检查轴已停止后，在当前卡实例内替换 DI/DO 逻辑映射，不重连控制卡。软件控制器当前不支持映射在线修改，轴映射页为只读、IO 映射页不支持保存；两者都读取既有设备配置。
+
+### 选择本机软件控制器
+
+在 `%LOCALAPPDATA%/MotionControlFramework/Configurations/Machine01/Parameters/ControllerBackend.json` 中写入以下工程配置后，启动独立控制器，再启动正式 Host；没有此文件时默认使用原有正运动连接。端口只能用于本机，必须与独立进程一致。
+
+```json
+{ "backend": "Virtual", "port": 18520 }
+```
+
+当前电脑保留 `Virtual` 配置；切回正运动需要明确将 `backend` 改为 `ZMotion` 并重启 Host。未知后端和连接失败均报错，不会自动换到其他后端，也不会改写 `MotionCards.json`。顶部状态栏应以实际页面状态为准，底栏通过“软件控制器 已连接/未连接”区分连接身份。
+
+软件控制器和 Host 采用独占租约与心跳：租约超时后由控制器侧停止软件轴，但**不会自动更改输出**。Host 检测到通信中断后显示未连接，旧轴和输出状态视为未确认，旧运行时保留供检查并阻止原地重新接管；检查并结束运行后重新启动 Host。控制器进程重启会丢失轴、IO 和供料状态，需要重新检查伺服、回零并启用上料规则。此保护不代替现场急停和真实设备安全回路。
 
 ## 单工位流程核对
 
 - Host 的启动、暂停、停止按钮现在调用同一个 `MachineRuntime`，与轴手动、IO 手动页面共享控制卡及逻辑映射；示例流程运行时，手动操作由 Runtime 拒绝。当前“停止”和“暂停”都请求受控暂停并保留工位步骤。
-- 当前设备目录中的 `Parameters/DemoStation.json` 显式启用后，Host 根据其中的逻辑轴、逻辑 DI、逻辑 DO 和工程单位参数创建 `MotionControl.Equipment.Demo/DemoStationFlow`。没有该文件或 `enabled=false` 时不创建自动工位，启动按钮不可用，手动调试照常使用；配置错误时会提示原因并关闭示例自动流程，不影响手动页面。配置字段和流程顺序见 [示例工位说明](../MotionControl.Equipment.Demo/README.md)。
+- 示例设备优先读取当前设备目录的 `Parameters/DemoStations.json`，为每个启用项创建 `DemoStationFlow`；没有工位清单时兼容旧版 `Parameters/DemoStation.json`。未启用工位时不会创建自动工位，配置错误时会报告具体原因。配置字段和流程顺序见 [示例工位说明](../MotionControl.Equipment.Demo/README.md)。
 - 当前示例工位明确保存 10、20、30、40 步编号；暂停后重启会从保存步骤起点执行。若暂停发生在有外部副作用的步骤中，设备项目必须确认该步骤可以安全重试，或在流程中补充可恢复的工艺状态判断。
+- `Parameters/Equipment.json` 的 `executionOwner` 使用 `StationFlows` 选择 C# 工位、`TaskEngine` 选择任务列表；两条路径不能同时控制设备。当前 Machine01 保留 `TaskEngine`。任务列表通过“监控 → 任务接入状态”装载和启停，C# 工位使用顶部整机按钮。任务列表在 DO 打开后的保持步骤暂停时，实测输出保持当时状态；是否释放需要遵照设备工艺，不能假设暂停会自动关闭。
 - 在“监控 → 流程状态”查看整机状态、当前步骤、超时报警和最近故障。操作顺序为连接控制卡 → 整机复位 → 启动 → 观察轴定位与 DI → 观察 DO 脉冲；保持 DI 无效可核对超时报警，再复位重试。
+
+旧版软件控制器协议下，正式 Host 已测试上料工位两种流程的循环、暂停、报警与恢复；协议 2 已屏幕复测两种正常循环、任务列表暂停及缺料报警恢复和 C# 断线状态，C# 的报警与恢复仍需复测。上述仅为软件控制器验证，不证明正运动 SDK 或实体设备已验收。
 
 ## 增加另一种控制卡
 
@@ -39,4 +55,4 @@ Host 在工位受控暂停后保存设备变量值、可恢复工位步骤和初
 
 设备流程继续使用逻辑轴、逻辑 IO 和工程单位。新适配器需要按目标卡型和 SDK 版本单独验证；API 声明或其他卡型的仿真结果不能代替验证。
 
-当前 Host 只接入一张 ZDevelop `VPLC5xx-Simu` 仿真卡。Runtime 的 `MotionCardGroup` 虽然可以管理多张卡，但当前 Host 连接接口和轴/IO 配置页只接入一张卡；连接时发现 `MotionCards.json` 配置多张卡会明确拒绝，避免只连接第一张卡而遗漏其余卡。雷赛、固高、ADLINK 等目录中的原生 API 声明不代表已有可运行的驱动适配器。
+当前 Host 可选择一张正运动 `VPLC5xx-Simu` 或本机软件控制器。Runtime 的 `MotionCardGroup` 虽然可以管理多张卡，但当前 Host 连接接口和轴/IO 配置页只接入一张卡；连接时发现 `MotionCards.json` 配置多张卡会明确拒绝，避免只连接第一张卡而遗漏其余卡。正运动适配器当前不支持实体卡；雷赛、固高、ADLINK 等目录中的原生 API 声明不代表已有可运行的驱动适配器。
