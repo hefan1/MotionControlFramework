@@ -82,10 +82,10 @@ namespace MotionControl.TaskEngine.Device
         /// <summary>读取请求/完成握手的两个变量当前值；null 表示当前没有有效数据。</summary>
         void ReadHandshake(string requestName, string completedName, out bool? request, out bool? completed);
 
-        /// <summary>发布完成信号；请求已撤销或变量无效时返回 false，不伪造握手成功。</summary>
+        /// <summary>仅在请求有效且完成信号未置位时发布；未知值或条件不满足返回 false，不伪造握手成功。</summary>
         bool TryPublishCompletion(string requestName, string completedName);
 
-        /// <summary>清除完成信号；变量无效时返回 false。</summary>
+        /// <summary>仅在请求已清且完成信号已置位时复归；未知值或条件不满足返回 false。</summary>
         bool TryClearCompletion(string requestName, string completedName);
 
         /// <summary>取得本设备控制权；已被其他控制器或独立运行占用时必须报错。</summary>

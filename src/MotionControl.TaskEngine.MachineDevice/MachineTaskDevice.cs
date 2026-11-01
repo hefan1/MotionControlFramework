@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.IO;
@@ -187,46 +188,37 @@ namespace MotionControl.TaskEngine.MachineDevice
             return recovered;
         }
 
-        /// <summary>读取请求/完成握手的两个变量；变量未配置时明确报错。</summary>
+        /// <summary>在同一快照中读取请求和完成值；未知值不当作 false，变量未配置时明确报错。</summary>
         public void ReadHandshake(string requestName, string completedName, out bool? request, out bool? completed)
         {
             RequireBooleanVariable(requestName);
             RequireBooleanVariable(completedName);
-            request = _variables.GetBoolean(requestName);
-            completed = _variables.GetBoolean(completedName);
+            var snapshots = _variables.GetSnapshot();
+            DeviceVariableSnapshot requestValue = snapshots.SingleOrDefault(value => string.Equals(value.Name, requestName, StringComparison.OrdinalIgnoreCase));
+            DeviceVariableSnapshot completedValue = snapshots.SingleOrDefault(value => string.Equals(value.Name, completedName, StringComparison.OrdinalIgnoreCase));
+            if (requestValue == null || completedValue == null)
+                throw new InvalidOperationException("握手变量在当前变量表中不存在：" + requestName + " / " + completedName + "。");
+            if (!string.Equals(requestValue.DataType, DeviceVariableType.Boolean.ToString(), StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(completedValue.DataType, DeviceVariableType.Boolean.ToString(), StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("握手变量必须是布尔类型：" + requestName + " / " + completedName + "。");
+            request = requestValue.HasValue ? (bool?)bool.Parse(requestValue.CurrentValue) : null;
+            completed = completedValue.HasValue ? (bool?)bool.Parse(completedValue.CurrentValue) : null;
         }
 
-        /// <summary>请求仍有效时置位完成信号；请求已撤销或变量缺失时返回 false。</summary>
+        /// <summary>请求为真且完成为假时原子发布完成；未知或条件不满足时不发布。</summary>
         public bool TryPublishCompletion(string requestName, string completedName)
         {
-            try
-            {
-                if (!_variables.GetBoolean(requestName))
-                {
-                    return false;
-                }
-
-                _variables.SetBoolean(completedName, true);
-                return true;
-            }
-            catch (KeyNotFoundException)
-            {
-                return false;
-            }
+            RequireBooleanVariable(requestName);
+            RequireBooleanVariable(completedName);
+            return _variables.TryTransitionBooleanPair(requestName, true, completedName, false, true);
         }
 
-        /// <summary>清除完成信号；变量缺失时返回 false。</summary>
+        /// <summary>请求已清除且完成为真时原子复归，避免丢失完成信号。</summary>
         public bool TryClearCompletion(string requestName, string completedName)
         {
-            try
-            {
-                _variables.SetBoolean(completedName, false);
-                return true;
-            }
-            catch (KeyNotFoundException)
-            {
-                return false;
-            }
+            RequireBooleanVariable(requestName);
+            RequireBooleanVariable(completedName);
+            return _variables.TryTransitionBooleanPair(requestName, false, completedName, true, false);
         }
 
         /// <summary>取得设备命令权；工位流程运行中或已有其他任务会话时由运行时拒绝。</summary>

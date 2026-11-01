@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "alarms": [
+    {
+      "code": "FOUR_HANDSHAKE_TIMEOUT",
+      "message": "工位交接超时",
+      "kind": "StopMachine",
+      "checkGuidance": "检查下游工位状态、请求和完成信号。",
+      "recoveryGuidance": "排除故障后检查机构和输出，整机复位并启动。"
+    },
+    {
+      "code": "FOUR_PRESS_WARNING",
+      "message": "压装完成信号异常",
+      "kind": "NonStop",
+      "checkGuidance": "检查压头动作和压装完成输入。",
+      "recoveryGuidance": "检查机构和输出，反馈恢复后复位并启动。"
+    }
+  ]
+}

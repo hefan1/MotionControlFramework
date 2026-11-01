@@ -35,11 +35,13 @@ namespace MotionControl.MachineDevice.Checks
             Run("轴组插补明确拒绝", GroupMoveIsRejected, ref failures);
             Run("IO 读取失败向上抛出", IoFailureIsReported, ref failures);
             Run("变量按目录类型写入", VariablesAreWrittenByType, ref failures);
+            Run("真实设备握手保持完成直到请求复归", HandshakeWaitsForRequestClear, ref failures);
+            Run("握手条件更新在并发下只成功一次", HandshakeTransitionIsAtomic, ref failures);
             Run("工位流程空闲时接管并在归还后恢复入口", ClaimTakesOverWhenStationFlowsAreIdle, ref failures);
             Run("任务复位拦截未回零的定位轴", TaskResetRequiresPositioningAxesHomed, ref failures);
             Run("任务回零诊断按设备反馈区分等待和完成", TaskHomeDiagnosticsFollowDeviceCompletion, ref failures);
 
-            Console.WriteLine("真机任务设备检查：共 9 组，失败 " + failures + "。未连接控制器。");
+            Console.WriteLine("真机任务设备检查：共 11 组，失败 " + failures + "。未连接控制器。");
             return failures == 0 ? 0 : 1;
         }
 
@@ -143,6 +145,41 @@ namespace MotionControl.MachineDevice.Checks
             MachineTaskDevice device = CreateDevice(axis, new FakeLogicalIo(), out DeviceVariableStore store, out _);
             device.WriteVariable("Ready", true);
             Ensure(store.GetBoolean("Ready"), "布尔变量没有写入存储。");
+        }
+
+        /// <summary>请求有效期间完成信号保持，未知变量不放行，配置错误明确报告。</summary>
+        private static void HandshakeWaitsForRequestClear()
+        {
+            MachineTaskDevice device = CreateDevice(new FakeAxis("X"), new FakeLogicalIo(), out DeviceVariableStore store, out _);
+            Ensure(!device.TryPublishCompletion("Ready", "Complete"), "请求无效时发布了完成信号。");
+            device.WriteVariable("Ready", true);
+            Ensure(device.TryPublishCompletion("Ready", "Complete"), "请求有效时没有发布完成信号。");
+            Ensure(!device.TryPublishCompletion("Ready", "Complete"), "完成信号已发布时重复发布。");
+            Ensure(!device.TryClearCompletion("Ready", "Complete") && store.GetBoolean("Complete"), "请求仍有效时完成信号被提前清除。");
+            device.WriteVariable("Ready", false);
+            Ensure(device.TryClearCompletion("Ready", "Complete") && !store.GetBoolean("Complete"), "请求清除后完成信号没有复归。");
+            bool? request, complete;
+            device.ReadHandshake("Unknown", "Complete", out request, out complete);
+            Ensure(request == null && complete == false, "未知请求被当成有效电平。");
+            Ensure(!device.TryPublishCompletion("Unknown", "Complete"), "未知请求放行了完成信号。");
+            ExpectMessage(() => device.TryClearCompletion("Missing", "Complete"), "握手变量");
+        }
+
+        /// <summary>多个工位并发发布同一完成信号时，仅一次条件更新可以成功。</summary>
+        private static void HandshakeTransitionIsAtomic()
+        {
+            MachineTaskDevice device = CreateDevice(new FakeAxis("X"), new FakeLogicalIo(), out DeviceVariableStore store, out _);
+            device.WriteVariable("Ready", true);
+            for (int iteration = 0; iteration < 100; iteration++)
+            {
+                store.SetBoolean("Complete", false);
+                int successes = 0;
+                Parallel.For(0, 20, index =>
+                {
+                    if (device.TryPublishCompletion("Ready", "Complete")) Interlocked.Increment(ref successes);
+                });
+                Ensure(successes == 1 && store.GetBoolean("Complete"), "并发发布完成信号不是一次成功，次数：" + successes);
+            }
         }
 
         /// <summary>确认工位流程空闲时任务入口可以接管，归还后执行入口回到工位流程。</summary>
@@ -319,7 +356,7 @@ namespace MotionControl.MachineDevice.Checks
                 new[] { new TaskAxisInfo("X", "CardA", "mm", -100, 100) },
                 new[] { "Sensor" },
                 new[] { "Vacuum" },
-                new Dictionary<string, DeviceVariableType> { { "Ready", DeviceVariableType.Boolean } },
+                new Dictionary<string, DeviceVariableType> { { "Ready", DeviceVariableType.Boolean }, { "Complete", DeviceVariableType.Boolean }, { "Unknown", DeviceVariableType.Boolean } },
                 new TaskTeachPoint[0],
                 null,
                 null,
@@ -333,7 +370,9 @@ namespace MotionControl.MachineDevice.Checks
                     DataType = DeviceVariableType.Boolean.ToString(),
                     InitialValue = "false",
                     AllowOperatorWrite = false
-                }
+                },
+                new DeviceVariableDefinition { Name = "Complete", DataType = "Boolean", InitialValue = "false", AllowOperatorWrite = false },
+                new DeviceVariableDefinition { Name = "Unknown", DataType = "Boolean", InitialValue = null, AllowOperatorWrite = false }
             });
 
             var card = new FakeMotionCard("CardA", axis);

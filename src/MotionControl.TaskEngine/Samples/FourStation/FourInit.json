@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "taskId": "FourInit",
+  "name": "初始化工位交接信号",
+  "revision": 1,
+  "root": {
+    "kind": "Sequence",
+    "id": "FourInitRoot",
+    "name": "初始化工位交接信号",
+    "timeoutMs": 180000,
+    "children": [
+      {
+        "kind": "SetVariable",
+        "id": "initPressRequest",
+        "name": "清除PressRequest交接信号",
+        "timeoutMs": 30000,
+        "variableName": "Press.Request",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "initPressComplete",
+        "name": "清除PressComplete交接信号",
+        "timeoutMs": 30000,
+        "variableName": "Press.Complete",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "initInspectRequest",
+        "name": "清除InspectRequest交接信号",
+        "timeoutMs": 30000,
+        "variableName": "Inspect.Request",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "initInspectComplete",
+        "name": "清除InspectComplete交接信号",
+        "timeoutMs": 30000,
+        "variableName": "Inspect.Complete",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "initUnloadRequest",
+        "name": "清除UnloadRequest交接信号",
+        "timeoutMs": 30000,
+        "variableName": "Unload.Request",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "initUnloadComplete",
+        "name": "清除UnloadComplete交接信号",
+        "timeoutMs": 30000,
+        "variableName": "Unload.Complete",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      }
+    ]
+  }
+}

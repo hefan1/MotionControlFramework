@@ -39,6 +39,8 @@ namespace MotionControl.TaskEngine.Wpf.Views
         private TaskStepRow _selected;
         /// <summary>防止刷新失败后继续把旧数据称为当前状态。</summary>
         private bool _refreshFailed;
+        /// <summary>保持无法关联工位的报警提示，避免定时刷新立即覆盖。</summary>
+        private TaskMachineFault _unlocatedFault;
         /// <summary>请求 Host 定位关联配置；示例模式不跳转现场同名对象。</summary>
         public event EventHandler<TaskReferenceEventArgs> ReferenceRequested;
 
@@ -143,6 +145,9 @@ namespace MotionControl.TaskEngine.Wpf.Views
                     pending.Update(null, false, pending.StateText, T("本周期尚未进入本步骤"), pending.StateColor);
             }
             ShowDetails(_selected);
+            if (_unlocatedFault != null && _snapshot.Faults.Contains(_unlocatedFault))
+                DetailNotice.Text = _unlocatedFault.Message + "\n" + T("报警无法定位工位");
+            else _unlocatedFault = null;
         }
 
         /// <summary>代码选择不会关闭跟随；人工查看另一行时才关闭跟随。</summary>
@@ -220,11 +225,26 @@ namespace MotionControl.TaskEngine.Wpf.Views
         private void LocateCurrentCause_Click(object sender, RoutedEventArgs e)
         {
             if (_snapshot == null || _refreshFailed) return;
-            var fault = _snapshot.Faults.FirstOrDefault();
+            _unlocatedFault = null;
+            // 报警代码可能先于工位故障入列；先找选中工位，再找能明确对应工位的故障。
+            var selectedStation = StationsGrid.SelectedItem as TaskStationRow;
+            var fault = _snapshot.Faults.FirstOrDefault(item => selectedStation != null
+                && string.Equals(item.Source, selectedStation.Id, StringComparison.OrdinalIgnoreCase))
+                ?? _snapshot.Faults.FirstOrDefault(item => _stations.Any(station =>
+                    string.Equals(item.Source, station.Id, StringComparison.OrdinalIgnoreCase)))
+                ?? _snapshot.Faults.FirstOrDefault();
             if (fault != null)
             {
-                var faultStation = _stations.FirstOrDefault(item => item.Id == fault.Source);
-                if (faultStation != null) StationsGrid.SelectedItem = faultStation;
+                var faultStation = _stations.FirstOrDefault(item =>
+                    string.Equals(item.Id, fault.Source, StringComparison.OrdinalIgnoreCase));
+                if (faultStation == null)
+                {
+                    _followAfterFaultRecovery = false;
+                    _unlocatedFault = fault;
+                    DetailNotice.Text = fault.Message + "\n" + T("报警无法定位工位");
+                    return;
+                }
+                StationsGrid.SelectedItem = faultStation;
                 SetFollowExecution(false);
                 var faultStep = fault.Error == null ? null : TaskStepTree.Flatten(_steps).FirstOrDefault(item => item.Snapshot?.ExecutionId == fault.Error.ExecutionId);
                 if (faultStep != null) SelectFollowing(faultStep);
@@ -304,7 +324,7 @@ namespace MotionControl.TaskEngine.Wpf.Views
         /// <summary>显式写入本地化工位表头，确保 DataGridColumn 脱离可视树时仍显示资源文字。</summary>
         private void RefreshStationColumnHeaders()
         {
-            string[] keys = { "任务名称", "方式", "状态", "当前动作", "等待或异常说明", "完成次数" };
+            string[] keys = { "工位名称", "方式", "状态", "当前动作", "等待或异常说明", "完成次数" };
             for (int index = 0; index < keys.Length && index < StationsGrid.Columns.Count; index++)
                 StationsGrid.Columns[index].Header = T(keys[index]);
         }

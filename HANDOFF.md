@@ -2,16 +2,27 @@
 
 本文件记录正式 Host 两种设备流程及其软件控制器接入情况。接手时先读 `AGENTS.md`，再读本文件和第 7 节。计划文档 `docs/plans/2026-10-31-task-device-binding.md` 的部分步骤已调整，以实际代码和本文件为准。
 
+## 0. 2026-11-01 四工位验证与当前配置
+
+- 当前 `Machine01` 使用任务列表入口和本机软件控制器。运行清单 `Parameters/TaskMachine.json` 是版本 R3 的“上料 → 压装 → 检测 → 下料”四工位，使用 `Tasks/FourInit.json`、`FourLoad.json`、`FourPress.json`、`FourInspect.json`、`FourUnload.json`。原有的 `Tasks/Task_05d26ead.json` 和 `Drafts/TaskWorkspace.json` 保留；原草稿仍是旧单工位，来源与当前运行文件不一致，不能直接把旧草稿应用覆盖四工位运行文件。
+- 安装前的任务清单、变量和报警文件备份在 `C:\Users\ASUS\AppData\Local\MotionControlFramework\Configurations\Machine01\Backups\FourStation-20261101-160928-9ca2c6de5915454eb4bc788bee6b1bfd`。不要自动恢复这些文件；测试配置按 `AGENTS.md` 保留。
+- 上料工位循环执行，压装、检测、下料工位按请求运行；每次交接按“请求置位 → 完成置位 → 请求复归 → 完成复归”进行。`FourInit` 在每个新任务会话的首次启动时清除六个交接变量，仅用于已确认没有在制品的测试现场；不能未经工艺确认用于实际断电恢复。
+- 已修正 `MachineTaskDevice` 的交接适配：请求有效期间完成信号保持，请求清除后才能复归；设备变量存储在同一把锁内核对并更新握手值，未知值不放行。相关内部检查只能补充验证，不能代替正式 Host 实测。
+- 正式 Host 连接本机软件控制器实测四工位运行至第 10 个周期时注入压装反馈故障，验证超时报警、暂停及恢复；恢复后完成次数继续增至 21。任务运行页显示五行，并实测从初始化行定位到压装故障步骤。结果只覆盖本机软件控制器和此测试配置；当前是单件串行交接，不代表多件并行、共享区域防碰撞、真实节拍或实物设备验收。真实运动卡、伺服、接线、安全回路与机械仍需单独验证。
+- 任务运行页仍有偏工程化的条件和变量说明，操作员如何快速识别工位当前动作、等待原因和恢复步骤仍需继续优化。不要把内部测试结果表述为所有任务页面已完善。
+
+再次验证时按照 `src/MotionControl.TaskEngine/Samples/FourStation/README.md` 使用 `tools/MotionControl.VirtualController/StartFourStation.ps1`。脚本启动本机控制器和正式 Host，配置上料及三组反馈规则，不会自动使能、回零或启动任务。在正式 Host 核对连接、四轴使能与回零，再读取任务、复位并启动。脚本或控制器重启会重置轴、IO 和反馈状态；不要重复运行安装脚本覆盖已有配置。结束时在正式 Host 停止任务，确认四轴停止、相关输出和输入处于安全状态，并按样例说明停用供料和反馈规则。
+
 ## 1. 当前状态（判据）
 
 | 项目 | 值 |
 |---|---|
 | 基线提交 | 以 `git log` 为准；本轮软件控制器相关改动和提交状态以 `git status --short` 为准 |
 | 工作区 | 正式 Host 具备正运动及独立软件控制器两种后端；精确状态以 `git status --short` 为准 |
-| 构建 | MachineDevice 检查为 9 组、OperatorPages 检查为 16 组；TaskEngine 23/53/16 组、Runtime 35 项为历史记录，须按第 6 节重新确认 |
+| 构建 | MachineDevice 检查为 11 组、OperatorPages 检查为 18 组；TaskEngine 23/53/16 组、Runtime 35 项为历史记录，须按第 6 节重新确认 |
 | 正式 Host | 新一轮软件控制器测试前重新核对连接、轴和 IO；每次控制器进程重启后轴、IO 与供料场景状态均重置 |
 | 配置根 | `C:\Users\ASUS\AppData\Local\MotionControlFramework\Configurations\Machine01` |
-| 执行入口 | 2026-11-01 完成 C# 工位最终复测后，`Parameters/Equipment.json` 的 `executionOwner` 为 `StationFlows`；`DemoStations.json` 仅启用上料定位工位，其余三个工位保留配置但已禁用。两种流程的测试配置均保留，切换入口后需重新加载 |
+| 执行入口 | 当前 `Parameters/Equipment.json` 的 `executionOwner` 为 `TaskEngine`；四工位运行配置见第 0 节。C# 工位路径及其配置仍保留，切换入口后需重新加载 |
 | 控制器后端 | 当前 Machine01 的 `Parameters/ControllerBackend.json` 保留 `{"backend":"Virtual","port":18520}`；它不改写原有运动卡、轴和 IO 映射。未提供此文件时默认正运动 |
 
 正式 Host 已使用协议 2 软件控制器复测上料工位两种流程的正常循环、暂停、缺料报警和恢复，以及 C# 流程断线状态。任务列表故障恢复后继续循环至少 19 次，C# 故障恢复后至少 85 次。一键启动脚本已从未运行状态启动控制器和正式 Host。这些结论仅适用于软件控制器，不代表正运动 SDK 或实体设备验收。历史正运动联调中 Load_X 回零方向与有效电平尚未查清；切回正运动后仍须独立核对，不能把软件控制器的回零结果当作厂商结果。
@@ -71,7 +82,7 @@ $env:DOTNET_CLI_HOME='F:\Work\运动控制框架\.dotnet-cli-home'
 cd F:\Work\运动控制框架\MotionControlFramework
 $dotnet='C:\Program Files\dotnet\dotnet.exe'
 
-# 1) 真机任务设备检查：期望 9 组，失败 0
+# 1) 真机任务设备检查：期望 11 组，失败 0
 & $dotnet build tools/MotionControl.MachineDevice.Checks/MotionControl.MachineDevice.Checks.csproj -c Release -o tmp/check-md -v:q
 & .\tmp\check-md\MotionControl.MachineDevice.Checks.exe
 
@@ -83,7 +94,7 @@ $dotnet='C:\Program Files\dotnet\dotnet.exe'
 & $dotnet build tools/MotionControl.ZMotionSimulatorCheck/MotionControl.ZMotionSimulatorCheck.csproj -c Release -o tmp/check-rt -v:q
 & .\tmp\check-rt\MotionControl.ZMotionSimulatorCheck.exe --runtime-regression
 
-# 4) 操作员页面检查：期望 16 组，失败 0（含后端选择、断线和 IO 关联反馈检查）
+# 4) 操作员页面检查：期望 18 组，失败 0（含后端选择、断线和 IO 关联反馈检查）
 & $dotnet build tools/MotionControl.OperatorPages.Checks/MotionControl.OperatorPages.Checks.csproj -c Release -o tmp/check-ops -v:q
 & .\tmp\check-ops\MotionControl.OperatorPages.Checks.exe
 ```
@@ -92,7 +103,7 @@ $dotnet='C:\Program Files\dotnet\dotnet.exe'
 
 ## 7. 第一件事
 
-先核对当前 Machine01 的后端和执行入口，再按 `tools/MotionControl.VirtualController/README.md` 启动独立控制器和正式 Host。进程重启后重新确认伺服、回零和供料规则；继续按具体需求扩展设备场景，核对暂停时轴、DO 和报警状态。测试配置按项目规则保留，结束时安全停止所有轴并处理测试 IO。
+先核对第 0 节的 Machine01 四工位运行配置、旧草稿边界、后端和执行入口，再按 `src/MotionControl.TaskEngine/Samples/FourStation/README.md` 启动和检查。进程重启后重新确认伺服、回零和供料及反馈规则；继续按具体需求扩展设备场景，核对暂停时轴、DO 和报警状态。测试配置按项目规则保留，结束时安全停止所有轴并处理测试 IO。
 
 如本轮目标是正运动 SDK 而非软件控制器，先确认 `ControllerBackend.json` 的选择，再调查前述 Load_X 回零有效电平与历史方向异常；相关状态未查清前不发回零或循环命令。
 

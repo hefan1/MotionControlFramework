@@ -184,6 +184,33 @@ namespace MotionControl.Framework.Runtime.Variables
             SetRuntimeValue(name, DeviceVariableType.Boolean, value.ToString());
         }
 
+        /// <summary>原子核对两个布尔变量并更新完成值，避免工位或现场线程在检查和写入之间改变握手状态。</summary>
+        public bool TryTransitionBooleanPair(string requestName, bool expectedRequest, string completedName, bool expectedCompleted, bool newCompleted)
+        {
+            if (string.Equals(requestName, completedName, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("请求变量和完成变量不能相同。");
+
+            lock (_sync)
+            {
+                RuntimeVariable request = GetVariable(requestName);
+                RuntimeVariable completed = GetVariable(completedName);
+                EnsureTypeMatches(request.Definition, DeviceVariableType.Boolean);
+                EnsureTypeMatches(completed.Definition, DeviceVariableType.Boolean);
+                if (!request.HasValue || !completed.HasValue) return false;
+
+                bool requestValue, completedValue;
+                if (!bool.TryParse(request.CurrentValue, out requestValue) || !bool.TryParse(completed.CurrentValue, out completedValue))
+                    throw new InvalidOperationException("握手变量的布尔值无效：" + requestName + " / " + completedName + "。");
+                if (requestValue != expectedRequest || completedValue != expectedCompleted) return false;
+
+                completed.CurrentValue = newCompleted.ToString();
+                completed.LastUpdated = DateTime.Now;
+            }
+
+            RaiseVariablesChanged();
+            return true;
+        }
+
         /// <summary>由设备流程更新整数变量并记录更新时间。</summary>
         public void SetInteger(string name, int value)
         {

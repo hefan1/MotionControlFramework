@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "machineId": "Machine01",
+  "name": "四工位上料压装检测下料",
+  "revision": 1,
+  "namedResources": [],
+  "stations": [
+    {
+      "stationId": "Load",
+      "name": "上料工位",
+      "taskId": "FourLoad",
+      "enabled": true,
+      "mode": "Cyclic",
+      "cycleIntervalMs": 100
+    },
+    {
+      "stationId": "Press",
+      "name": "压装工位",
+      "taskId": "FourPress",
+      "enabled": true,
+      "mode": "OnRequest",
+      "cycleIntervalMs": 100,
+      "requestVariable": "Press.Request",
+      "completedVariable": "Press.Complete"
+    },
+    {
+      "stationId": "Inspect",
+      "name": "检测工位",
+      "taskId": "FourInspect",
+      "enabled": true,
+      "mode": "OnRequest",
+      "cycleIntervalMs": 100,
+      "requestVariable": "Inspect.Request",
+      "completedVariable": "Inspect.Complete"
+    },
+    {
+      "stationId": "Unload",
+      "name": "下料工位",
+      "taskId": "FourUnload",
+      "enabled": true,
+      "mode": "OnRequest",
+      "cycleIntervalMs": 100,
+      "requestVariable": "Unload.Request",
+      "completedVariable": "Unload.Complete"
+    }
+  ],
+  "initializationTaskId": "FourInit"
+}

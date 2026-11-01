@@ -45,6 +45,9 @@ namespace MotionControl.Framework.Contracts.Variables
         /// <summary>由设备流程更新布尔类型变量。</summary>
         void SetBoolean(string name, bool value);
 
+        /// <summary>在同一变量表锁内检查请求和完成值，仅在二者均有效且符合期望时更新完成值；未知值返回 false。</summary>
+        bool TryTransitionBooleanPair(string requestName, bool expectedRequest, string completedName, bool expectedCompleted, bool newCompleted);
+
         /// <summary>由设备流程更新整数类型变量。</summary>
         void SetInteger(string name, int value);
 

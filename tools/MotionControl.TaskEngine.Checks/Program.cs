@@ -11,11 +11,13 @@ namespace MotionControl.TaskEngine.Checks
         private static int Main(string[] args)
         {
             if (args.Length == 1 && args[0] == "--production-demo") return MachineChecks.RunProductionDemo();
+            if (args.Length == 3 && args[0] == "--four-station-demo") return MachineChecks.RunFourStationDemo(args[1], args[2]);
+            if (args.Length == 3 && args[0] == "--validate-machine") return MachineChecks.ValidateTaskMachine(args[1], args[2]);
             if (args.Length > 0)
             {
                 if (args.Length != 3 || args[0] != "--catalog")
                 {
-                    Console.Error.WriteLine("用法：不带参数运行离线检查；--production-demo 运行三工位内存演示；--catalog 配置根目录 MachineId 只读检查现场配置。");
+                    Console.Error.WriteLine("用法：不带参数运行离线检查；--production-demo 运行三工位内存演示；--catalog 配置根目录 MachineId 只读检查现场配置；--four-station-demo 配置根目录 Machine01 校验四工位样例并运行内存检查。");
                     return 2;
                 }
                 try

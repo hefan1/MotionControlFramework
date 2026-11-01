@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "taskId": "FourUnload",
+  "name": "下料并交接上游",
+  "revision": 1,
+  "root": {
+    "kind": "Sequence",
+    "id": "FourUnloadRoot",
+    "name": "下料并交接上游",
+    "timeoutMs": 900000,
+    "children": [
+      {
+        "kind": "MoveAxis",
+        "id": "unloadMove",
+        "name": "下料轴到工作位",
+        "timeoutMs": 30000,
+        "axisName": "Unload_X",
+        "mode": "Absolute",
+        "target": {
+          "source": "Constant",
+          "dataType": "Number",
+          "constant": "1"
+        },
+        "profile": {
+          "speed": 5,
+          "acceleration": 10,
+          "deceleration": 10
+        }
+      },
+      {
+        "kind": "SetOutput",
+        "id": "unloadOn",
+        "name": "下料动作",
+        "timeoutMs": 30000,
+        "outputName": "下料电磁阀",
+        "value": true
+      },
+      {
+        "kind": "WaitInput",
+        "id": "unloadDone",
+        "name": "等待下料到位",
+        "timeoutMs": 30000,
+        "inputName": "下料到位",
+        "expected": true,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "SetOutput",
+        "id": "unloadOff",
+        "name": "关闭下料动作",
+        "timeoutMs": 30000,
+        "outputName": "下料电磁阀",
+        "value": false
+      },
+      {
+        "kind": "WaitInput",
+        "id": "unloadReset",
+        "name": "等待下料反馈复位",
+        "timeoutMs": 30000,
+        "inputName": "下料到位",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "MoveAxis",
+        "id": "unloadReturn",
+        "name": "下料轴返回等待位",
+        "timeoutMs": 30000,
+        "axisName": "Unload_X",
+        "mode": "Absolute",
+        "target": {
+          "source": "Constant",
+          "dataType": "Number",
+          "constant": "0"
+        },
+        "profile": {
+          "speed": 5,
+          "acceleration": 10,
+          "deceleration": 10
+        }
+      }
+    ]
+  }
+}

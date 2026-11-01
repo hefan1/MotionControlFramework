@@ -1,0 +1,164 @@
+{
+  "schemaVersion": 1,
+  "taskId": "FourLoad",
+  "name": "上料并交接压装",
+  "revision": 1,
+  "root": {
+    "kind": "Sequence",
+    "id": "FourLoadRoot",
+    "name": "上料并交接压装",
+    "timeoutMs": 900000,
+    "children": [
+      {
+        "kind": "WaitInput",
+        "id": "loadReady",
+        "name": "等待上料到位",
+        "timeoutMs": 30000,
+        "inputName": "上料到位",
+        "expected": true,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT",
+          "LOAD_MATERIAL_MISSING"
+        ]
+      },
+      {
+        "kind": "MoveAxis",
+        "id": "loadMove",
+        "name": "上料轴到夹紧位",
+        "timeoutMs": 30000,
+        "axisName": "Load_X",
+        "mode": "Absolute",
+        "target": {
+          "source": "Constant",
+          "dataType": "Number",
+          "constant": "1"
+        },
+        "profile": {
+          "speed": 5,
+          "acceleration": 10,
+          "deceleration": 10
+        }
+      },
+      {
+        "kind": "SetOutput",
+        "id": "clampOn",
+        "name": "夹紧工件",
+        "timeoutMs": 30000,
+        "outputName": "夹具夹紧",
+        "value": true
+      },
+      {
+        "kind": "Delay",
+        "id": "clampHold",
+        "name": "保持夹紧",
+        "timeoutMs": 30000,
+        "milliseconds": 500
+      },
+      {
+        "kind": "SetOutput",
+        "id": "clampOff",
+        "name": "释放夹具",
+        "timeoutMs": 30000,
+        "outputName": "夹具夹紧",
+        "value": false
+      },
+      {
+        "kind": "WaitInput",
+        "id": "loadClear",
+        "name": "等待上料信号复位",
+        "timeoutMs": 30000,
+        "inputName": "上料到位",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "MoveAxis",
+        "id": "loadReturn",
+        "name": "上料轴返回等待位",
+        "timeoutMs": 30000,
+        "axisName": "Load_X",
+        "mode": "Absolute",
+        "target": {
+          "source": "Constant",
+          "dataType": "Number",
+          "constant": "0"
+        },
+        "profile": {
+          "speed": 5,
+          "acceleration": 10,
+          "deceleration": 10
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "PressRequest",
+        "name": "请求压装工位",
+        "timeoutMs": 30000,
+        "variableName": "Press.Request",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "true"
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "PressComplete",
+        "name": "等待压装工位完成",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Press.Complete"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "true"
+          }
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "PressClearRequest",
+        "name": "清除压装工位请求",
+        "timeoutMs": 30000,
+        "variableName": "Press.Request",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "PressClearComplete",
+        "name": "等待压装工位完成信号复归",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Press.Complete"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "false"
+          }
+        }
+      }
+    ]
+  }
+}

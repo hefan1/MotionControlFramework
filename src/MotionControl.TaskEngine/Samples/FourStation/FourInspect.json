@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 1,
+  "taskId": "FourInspect",
+  "name": "检测并交接下料",
+  "revision": 1,
+  "root": {
+    "kind": "Sequence",
+    "id": "FourInspectRoot",
+    "name": "检测并交接下料",
+    "timeoutMs": 900000,
+    "children": [
+      {
+        "kind": "MoveAxis",
+        "id": "inspectMove",
+        "name": "检测轴到工作位",
+        "timeoutMs": 30000,
+        "axisName": "Camera_X",
+        "mode": "Absolute",
+        "target": {
+          "source": "Constant",
+          "dataType": "Number",
+          "constant": "1"
+        },
+        "profile": {
+          "speed": 5,
+          "acceleration": 10,
+          "deceleration": 10
+        }
+      },
+      {
+        "kind": "SetOutput",
+        "id": "cameraOn",
+        "name": "触发检测",
+        "timeoutMs": 30000,
+        "outputName": "相机触发",
+        "value": true
+      },
+      {
+        "kind": "WaitInput",
+        "id": "cameraDone",
+        "name": "等待检测完成",
+        "timeoutMs": 30000,
+        "inputName": "检测完成",
+        "expected": true,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "SetOutput",
+        "id": "cameraOff",
+        "name": "关闭检测触发",
+        "timeoutMs": 30000,
+        "outputName": "相机触发",
+        "value": false
+      },
+      {
+        "kind": "WaitInput",
+        "id": "cameraReset",
+        "name": "等待检测反馈复位",
+        "timeoutMs": 30000,
+        "inputName": "检测完成",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "MoveAxis",
+        "id": "inspectReturn",
+        "name": "检测轴返回等待位",
+        "timeoutMs": 30000,
+        "axisName": "Camera_X",
+        "mode": "Absolute",
+        "target": {
+          "source": "Constant",
+          "dataType": "Number",
+          "constant": "0"
+        },
+        "profile": {
+          "speed": 5,
+          "acceleration": 10,
+          "deceleration": 10
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "UnloadRequest",
+        "name": "请求下料工位",
+        "timeoutMs": 30000,
+        "variableName": "Unload.Request",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "true"
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "UnloadComplete",
+        "name": "等待下料工位完成",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Unload.Complete"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "true"
+          }
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "UnloadClearRequest",
+        "name": "清除下料工位请求",
+        "timeoutMs": 30000,
+        "variableName": "Unload.Request",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "UnloadClearComplete",
+        "name": "等待下料工位完成信号复归",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Unload.Complete"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "false"
+          }
+        }
+      }
+    ]
+  }
+}

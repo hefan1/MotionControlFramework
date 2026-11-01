@@ -1,0 +1,164 @@
+{
+  "schemaVersion": 1,
+  "taskId": "FourPress",
+  "name": "压装并交接检测",
+  "revision": 1,
+  "root": {
+    "kind": "Sequence",
+    "id": "FourPressRoot",
+    "name": "压装并交接检测",
+    "timeoutMs": 900000,
+    "children": [
+      {
+        "kind": "MoveAxis",
+        "id": "pressMove",
+        "name": "压装轴到工作位",
+        "timeoutMs": 30000,
+        "axisName": "Press_Z",
+        "mode": "Absolute",
+        "target": {
+          "source": "Constant",
+          "dataType": "Number",
+          "constant": "1"
+        },
+        "profile": {
+          "speed": 5,
+          "acceleration": 10,
+          "deceleration": 10
+        }
+      },
+      {
+        "kind": "SetOutput",
+        "id": "pressOn",
+        "name": "压头动作",
+        "timeoutMs": 30000,
+        "outputName": "压头动作",
+        "value": true
+      },
+      {
+        "kind": "WaitInput",
+        "id": "pressDone",
+        "name": "等待压装完成",
+        "timeoutMs": 30000,
+        "inputName": "压装完成",
+        "expected": true,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT",
+          "FOUR_PRESS_WARNING"
+        ]
+      },
+      {
+        "kind": "Delay",
+        "id": "pressHold",
+        "name": "保持压装",
+        "timeoutMs": 30000,
+        "milliseconds": 500
+      },
+      {
+        "kind": "SetOutput",
+        "id": "pressOff",
+        "name": "压头关闭",
+        "timeoutMs": 30000,
+        "outputName": "压头动作",
+        "value": false
+      },
+      {
+        "kind": "WaitInput",
+        "id": "pressReset",
+        "name": "等待压装反馈复位",
+        "timeoutMs": 30000,
+        "inputName": "压装完成",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "MoveAxis",
+        "id": "pressReturn",
+        "name": "压装轴返回等待位",
+        "timeoutMs": 30000,
+        "axisName": "Press_Z",
+        "mode": "Absolute",
+        "target": {
+          "source": "Constant",
+          "dataType": "Number",
+          "constant": "0"
+        },
+        "profile": {
+          "speed": 5,
+          "acceleration": 10,
+          "deceleration": 10
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "InspectRequest",
+        "name": "请求检测工位",
+        "timeoutMs": 30000,
+        "variableName": "Inspect.Request",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "true"
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "InspectComplete",
+        "name": "等待检测工位完成",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Inspect.Complete"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "true"
+          }
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "InspectClearRequest",
+        "name": "清除检测工位请求",
+        "timeoutMs": 30000,
+        "variableName": "Inspect.Request",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "InspectClearComplete",
+        "name": "等待检测工位完成信号复归",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Inspect.Complete"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "false"
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "variables": [
+    {
+      "name": "Press.Request",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "Press 工位 请求握手",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Press.Complete",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "Press 工位 完成握手",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Inspect.Request",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "Inspect 工位 请求握手",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Inspect.Complete",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "Inspect 工位 完成握手",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Unload.Request",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "Unload 工位 请求握手",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Unload.Complete",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "Unload 工位 完成握手",
+      "allowOperatorWrite": false
+    }
+  ]
+}

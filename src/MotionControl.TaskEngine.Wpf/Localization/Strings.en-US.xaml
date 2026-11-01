@@ -1,5 +1,5 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:sys="clr-namespace:System;assembly=mscorlib">
- <sys:String x:Key="任务监控.任务名称">Task</sys:String>
+ <sys:String x:Key="任务监控.工位名称">Station</sys:String>
  <sys:String x:Key="任务监控.方式">Mode</sys:String>
  <sys:String x:Key="任务监控.状态">State</sys:String>
  <sys:String x:Key="任务监控.当前动作">Current actions</sys:String>
@@ -21,6 +21,7 @@
  <sys:String x:Key="任务监控.刷新失败，以下为旧数据">Refresh failed: displayed data is stale</sys:String>
  <sys:String x:Key="任务监控.当前无等待或停机故障">There are no waiting steps or stop faults.</sys:String>
  <sys:String x:Key="任务监控.故障恢复提示">Check the stated cause. After restoring the condition, reset the machine and press Start. Completed actions are retained.</sys:String>
+ <sys:String x:Key="任务监控.报警无法定位工位">This alarm is not linked to a station. Check current alarms.</sys:String>
  <sys:String x:Key="任务监控.请选择步骤">Select a step</sys:String>
  <sys:String x:Key="任务监控.尚无执行采样">No execution sample yet</sys:String>
  <sys:String x:Key="任务监控.最后执行采样">Last execution sample</sys:String>

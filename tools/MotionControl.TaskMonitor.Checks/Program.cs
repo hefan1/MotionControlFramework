@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -137,7 +138,11 @@ namespace MotionControl.TaskMonitor.Checks
                 view.ReferenceRequested += (sender, args) => requestedReference = args;
                 view.Refresh(); view.SetLanguage("en-US");
                 Assert(view.T("步骤详情") == "Step details", "英文资源未加载。");
+                Assert(((DataGrid)view.FindName("StationsGrid")).Columns[0].Header.ToString() == "Station",
+                    "英文工位列表表头没有说明该列显示工位名称。");
                 view.SetLanguage("zh-CN");
+                Assert(((DataGrid)view.FindName("StationsGrid")).Columns[0].Header.ToString() == "工位名称",
+                    "工位列表表头没有说明该列显示工位名称。");
 
                 const string sharedSignalName = "ClampSignal";
                 var ambiguousCatalog = new TaskResourceCatalog(
@@ -180,6 +185,9 @@ namespace MotionControl.TaskMonitor.Checks
                 Assert(stationsGrid != null && stationsGrid.Items.Count > 1 && followBox != null && stepsTree != null && causeButton != null,
                     "工位列表、步骤树、跟随选项或原因定位按钮未加载。");
                 Assert(!causeButton.IsEnabled, "没有运行步骤或停机故障时仍允许点击原因定位。");
+                ExerciseMultipleStationFaultSelection(view, session, stationsGrid, causeButton);
+                ExerciseFiveStationLayout(application);
+                ExerciseTimeoutAlarmLocation(application);
                 ExerciseOperatorControls(application);
                 ExerciseFaultRecoveryFromOperatorInput(application);
                 ExerciseIoMappingFocus(application);
@@ -623,6 +631,144 @@ namespace MotionControl.TaskMonitor.Checks
                         30000, "故障恢复检查窗口关闭后，整机会话没有完成收尾。");
                 }
                 else session.Machine.CloseAsync().GetAwaiter().GetResult();
+            }
+        }
+
+        /// <summary>验证初始化与四个工位在常见任务监控高度下默认可见，步骤区仍可操作。</summary>
+        private static void ExerciseFiveStationLayout(Application application)
+        {
+            var task = Definition("LayoutCheck", Delay("delay", 10));
+            var initializationTask = Definition("LayoutInitialization", Delay("initialize", 10));
+            var configuration = new TaskMachineConfiguration
+            {
+                MachineId = "LayoutCheck", Name = "四工位布局检查", InitializationTaskId = initializationTask.TaskId,
+                Stations = new[] { "上料", "压装", "检测", "下料" }.Select((name, index) =>
+                    new StationTaskConfiguration { StationId = "station" + index, Name = name, TaskId = task.TaskId,
+                        Enabled = true, Mode = StationTaskMode.Cyclic }).ToList()
+            };
+            var session = new TaskMonitorSession(configuration, new[] { initializationTask, task }, Device(), "布局检查", false);
+            var view = new TaskMonitorView(session);
+            var window = new Window { Content = view, Width = 1360, Height = 430, Opacity = 0, ShowInTaskbar = false };
+            try
+            {
+                window.Show();
+                application.Dispatcher.Invoke(new Action(() => { }), DispatcherPriority.ApplicationIdle);
+                view.Refresh();
+                view.UpdateLayout();
+                var grid = (DataGrid)view.FindName("StationsGrid");
+                var lastRow = grid.ItemContainerGenerator.ContainerFromIndex(4) as DataGridRow;
+                Assert(grid.Items.Count == 5 && lastRow != null && lastRow.IsVisible,
+                    "初始化和四个工位没有同时生成可见行。 ");
+                var rowBottom = lastRow.TranslatePoint(new Point(0, lastRow.ActualHeight), grid).Y;
+                Assert(rowBottom <= grid.ActualHeight - 1,
+                    "任务监控默认高度下末工位被裁切，需要滚动才能看到。 ");
+                var tree = (TreeView)view.FindName("StepsTree");
+                var cause = (Button)view.FindName("LocateCurrentCauseButton");
+                Assert(tree.ActualHeight >= 40 && cause.IsVisible,
+                    "工位区调整后步骤列表或原因定位入口不可见。 ");
+            }
+            finally
+            {
+                window.Close();
+                session.Machine.CloseAsync().GetAwaiter().GetResult();
+            }
+        }
+
+        /// <summary>注入两个工位故障快照，验证现场选择与无匹配工位时的回退；不启动设备。</summary>
+        private static void ExerciseMultipleStationFaultSelection(TaskMonitorView view, TaskMonitorSession session,
+            DataGrid stationsGrid, Button locateCause)
+        {
+            // 通过故障列表注入稳定快照，避免依赖多个工位同时报错的线程时序。
+            var field = typeof(TaskMachineController).GetField("_faults", BindingFlags.Instance | BindingFlags.NonPublic);
+            var faults = (List<TaskMachineFault>)field.GetValue(session.Machine);
+            var constructor = typeof(TaskMachineFault).GetConstructor(BindingFlags.Instance | BindingFlags.NonPublic,
+                null, new[] { typeof(string), typeof(string), typeof(TaskExecutionException) }, null);
+            faults.Add((TaskMachineFault)constructor.Invoke(new object[] { "EXTERNAL_STOP", "外部停机", null }));
+            faults.Add((TaskMachineFault)constructor.Invoke(new object[] { "LOAD", "上料工位故障", null }));
+            faults.Add((TaskMachineFault)constructor.Invoke(new object[] { "INSPECT", "检测工位故障", null }));
+            try
+            {
+                view.Refresh();
+                var inspect = stationsGrid.Items.OfType<TaskStationRow>().Single(row => row.Id == "inspect");
+                stationsGrid.SelectedItem = inspect;
+                locateCause.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, locateCause));
+                Assert(((TaskStationRow)stationsGrid.SelectedItem).Id == "inspect"
+                    && ((TextBlock)view.FindName("DetailNotice")).Text.Contains("检测工位故障"),
+                    "多工位故障时没有优先定位当前选中工位。 ");
+
+                stationsGrid.SelectedItem = stationsGrid.Items.OfType<TaskStationRow>().Single(row => row.Id == "transfer");
+                locateCause.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, locateCause));
+                Assert(((TaskStationRow)stationsGrid.SelectedItem).Id == "load"
+                    && ((TextBlock)view.FindName("DetailNotice")).Text.Contains("上料工位故障"),
+                    "全局报警先于工位故障时，没有回退到可定位的工位。 ");
+                faults.RemoveRange(1, faults.Count - 1);
+                view.Refresh();
+                stationsGrid.SelectedItem = inspect;
+                locateCause.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, locateCause));
+                Assert(((TaskStationRow)stationsGrid.SelectedItem).Id == "inspect"
+                    && ((TextBlock)view.FindName("DetailNotice")).Text.Contains("未关联具体工位"),
+                    "全局报警没有明确提示无法定位到工位。 ");
+                view.Refresh();
+                Assert(((TextBlock)view.FindName("DetailNotice")).Text.Contains("未关联具体工位"),
+                    "全局报警提示被定时刷新覆盖。 ");
+                Assert(session.Machine.GetSnapshot().State == TaskMachineState.NeedsReset,
+                    "查看故障意外改变了设备运行状态。 ");
+            }
+            finally
+            {
+                faults.Clear();
+                view.Refresh();
+                stationsGrid.SelectedIndex = 0;
+            }
+        }
+
+        /// <summary>执行实际输入超时和报警事件，验证先产生报警代码时仍定位故障工位与步骤。</summary>
+        private static void ExerciseTimeoutAlarmLocation(Application application)
+        {
+            var catalog = new TaskResourceCatalog(new TaskAxisInfo[0], new[] { "压装到位" }, new string[0],
+                new Dictionary<string, DeviceVariableType>(), new TaskTeachPoint[0],
+                alarmDefinitions: new[] { new TaskAlarmInfo("PRESS_TIMEOUT", "压装到位超时", MachineAlarmKind.StopMachine) });
+            var device = new InMemoryTaskDevice(catalog);
+            device.SetInput("压装到位", false);
+            var initialization = Definition("FaultInitialization", Delay("initialize", 10));
+            var load = Definition("FaultLoad", Delay("load", 10000));
+            var press = Definition("FaultPress", new WaitInputNode { Id = "pressInput", Name = "等待压装到位",
+                InputName = "压装到位", Expected = true, TimeoutMs = 400,
+                TimeoutAlarmCodes = new List<string> { "PRESS_TIMEOUT" } });
+            var configuration = new TaskMachineConfiguration
+            {
+                MachineId = "FaultLocation", Name = "多工位报警定位检查", InitializationTaskId = initialization.TaskId,
+                Stations = new List<StationTaskConfiguration> {
+                    new StationTaskConfiguration { StationId = "load", Name = "上料工位", TaskId = load.TaskId, Enabled = true, Mode = StationTaskMode.Once },
+                    new StationTaskConfiguration { StationId = "press", Name = "压装工位", TaskId = press.TaskId, Enabled = true, Mode = StationTaskMode.Once } }
+            };
+            var session = new TaskMonitorSession(configuration, new[] { initialization, load, press }, device, "多工位故障检查", false);
+            var view = new TaskMonitorView(session);
+            var window = new Window { Content = view, Width = 1360, Height = 720, Opacity = 0, ShowInTaskbar = false };
+            try
+            {
+                window.Show();
+                application.Dispatcher.Invoke(new Action(() => { }), DispatcherPriority.ApplicationIdle);
+                session.Machine.Reset();
+                session.Machine.Start();
+                WaitWithDispatcher(() => session.Machine.GetSnapshot().Faults.Any(fault => fault.Source == "press"),
+                    5000, "压装超时没有写入工位故障。 ");
+                var snapshot = session.Machine.GetSnapshot();
+                Assert(snapshot.Faults.Count >= 2 && snapshot.Faults[0].Source == "PRESS_TIMEOUT",
+                    "测试没有复现报警代码先于工位故障的快照顺序。 ");
+                view.Refresh();
+                var grid = (DataGrid)view.FindName("StationsGrid");
+                grid.SelectedItem = grid.Items.OfType<TaskStationRow>().Single(row => row.Id == "__initialization");
+                var locate = (Button)view.FindName("LocateCurrentCauseButton");
+                locate.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, locate));
+                var selectedStep = ((TreeView)view.FindName("StepsTree")).SelectedItem as TaskStepRow;
+                Assert(((TaskStationRow)grid.SelectedItem).Id == "press" && selectedStep?.Node.Id == "pressInput",
+                    "从初始化工位定位压装超时时，没有跳到故障工位和步骤。 ");
+            }
+            finally
+            {
+                window.Close();
+                session.Machine.CloseAsync().GetAwaiter().GetResult();
             }
         }
 

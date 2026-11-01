@@ -24,14 +24,14 @@
  </ResourceDictionary>
  </UserControl.Resources>
  <Grid Margin="14,8,14,12">
-  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="2*" MinHeight="120"/><RowDefinition Height="8"/><RowDefinition Height="5*" MinHeight="230"/></Grid.RowDefinitions>
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="3*" MinHeight="190"/><RowDefinition Height="8"/><RowDefinition Height="4*" MinHeight="160"/></Grid.RowDefinitions>
   <Border Background="#EAF2FC" BorderBrush="#D8E2EE" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,0,0,8">
    <DockPanel><TextBlock x:Name="RefreshStatus" DockPanel.Dock="Right" Foreground="#596B7D" Margin="15,0,0,0"/>
     <TextBlock x:Name="SourceText" TextWrapping="Wrap" Foreground="#40536A"/></DockPanel>
   </Border>
-  <DataGrid x:Name="StationsGrid" Grid.Row="1" SelectionChanged="Station_Selected" IsReadOnly="True" AutoGenerateColumns="False" HeadersVisibility="Column" ColumnHeaderHeight="34">
+  <DataGrid x:Name="StationsGrid" Grid.Row="1" SelectionChanged="Station_Selected" IsReadOnly="True" AutoGenerateColumns="False" HeadersVisibility="Column" ColumnHeaderHeight="34" RowHeight="30">
    <DataGrid.Columns>
-    <DataGridTextColumn Header="{DynamicResource 任务监控.任务名称}" Binding="{Binding Name}" Width="1.1*"/>
+    <DataGridTextColumn Header="{DynamicResource 任务监控.工位名称}" Binding="{Binding Name}" Width="1.1*"/>
     <DataGridTextColumn Header="{DynamicResource 任务监控.方式}" Binding="{Binding Mode}" Width="80"/>
     <DataGridTextColumn Header="{DynamicResource 任务监控.状态}" Binding="{Binding State}" Width="88">
      <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{Binding Color}"/><Setter Property="VerticalAlignment" Value="Center"/></Style></DataGridTextColumn.ElementStyle>

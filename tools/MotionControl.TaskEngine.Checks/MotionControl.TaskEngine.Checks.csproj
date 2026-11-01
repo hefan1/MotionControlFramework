@@ -11,5 +11,6 @@
     <None Include="..\..\src\MotionControl.TaskEngine\Samples\ResourceTransfer.json" Link="Samples\ResourceTransfer.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\MotionControl.TaskEngine\Samples\AxisGroupPositioning.json" Link="Samples\AxisGroupPositioning.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\MotionControl.TaskEngine\Samples\ProductionDemo\*.json" Link="Samples\ProductionDemo\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\MotionControl.TaskEngine\Samples\FourStation\*.json" Link="Samples\FourStation\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
