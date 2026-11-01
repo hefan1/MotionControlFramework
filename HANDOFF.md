@@ -8,12 +8,12 @@
 |---|---|
 | 基线提交 | `ffd587e`（本轮实现的提交前基线） |
 | 工作区 | 本轮包含任务执行接入、真实轴暂停/报警处理和复位预检查；精确状态以 `git status --short` 为准 |
-| 构建 | 正式 Host Release 0 警告、0 错误；四套基线检查全部通过：MachineDevice 8 组、TaskEngine 23/53/16 组、Runtime 35 项、OperatorPages 10 组 |
-| 正式 Host | 目标 Release exe 正在运行，`VPLC5xx-Simu` 会话已建立；设备等待复位。Load_X 停在 -90 mm、已停止、未回零；本轮任务会话已关闭 |
+| 构建 | 此处为历史基线记录：MachineDevice 8 组、TaskEngine 23/53/16 组、Runtime 35 项、OperatorPages 原 10 组；当前操作页检查增加任务报警表格后为 11 组，构建与检查结果需按第 6 节重新确认 |
+| 正式 Host | 历史联调中 Load_X 在 -90 mm 停止且未回零；控制器会话与轴位置可能变化，继续测试前必须在正式 Host 重新核对 |
 | 配置根 | `C:\Users\ASUS\AppData\Local\MotionControlFramework\Configurations\Machine01` |
 | 执行入口 | `Parameters/Equipment.json` 的 `executionOwner` 当前为 `TaskEngine` |
 
-一句话：**Host 任务执行入口已装配，正式窗口也验证了未回零轴会被拦截；生产循环尚未端到端验证。** Load_X 配置为 DATUM 模式 3、原点 DI8，但回零搜索实际向负方向移动；DI8 目前未触发，且本轮屏幕操作未能切换该输入。方向和输入切换问题查清前，不再发回零或循环命令。
+一句话：**Host 任务执行入口已装配，正式窗口曾验证未回零轴会被拦截；生产循环尚未端到端验证。** 历史联调中 Load_X 配置为 DATUM 模式 3、原点 DI8，但回零搜索实际向负方向移动；当时 DI8 未触发，屏幕操作也未能切换该输入。方向和输入切换问题查清前，不再发回零或循环命令。
 
 ## 2. 本轮已完成的改动
 
@@ -34,7 +34,7 @@
 - 真机实现：`src/MotionControl.TaskEngine.MachineDevice/MachineTaskDevice.cs`、`MachineTaskDevice.Motion.cs`、`MachineAxisMove.cs`
 - 内存替身：`src/MotionControl.TaskEngine/Device/InMemory/`（只给离线检查和预览用，见其 README）
 - 入口仲裁：`src/MotionControl.Framework.Runtime/Machine/MachineRuntime.cs`（`ControlOwner`、`AcquireTaskEngineControlAsync`、`ReleaseTaskEngineControl`）
-- Host 装配点：`src/MotionControl.Host.Wpf/App.xaml.cs`（`ResolveEquipmentDefinition`、`ResolveExecutionOwner`、`CreateEquipmentStationFlows`）
+- Host 装配点：`src/MotionControl.Host.Wpf/App.xaml.cs` 的 `CreateEquipmentStationFlows`；设备定义与执行入口的配置解析位于 `src/MotionControl.Host.Wpf/HostEquipmentSelection.cs`。
 
 ## 3. 已定决策（不要推翻）
 
@@ -79,7 +79,7 @@ $dotnet='C:\Program Files\dotnet\dotnet.exe'
 & $dotnet build tools/MotionControl.ZMotionSimulatorCheck/MotionControl.ZMotionSimulatorCheck.csproj -c Release -o tmp/check-rt -v:q
 & .\tmp\check-rt\MotionControl.ZMotionSimulatorCheck.exe --runtime-regression
 
-# 4) 操作员页面检查：期望 10 组，失败 0
+# 4) 操作员页面检查：期望 11 组，失败 0（增加任务页报警表格检查）
 & $dotnet build tools/MotionControl.OperatorPages.Checks/MotionControl.OperatorPages.Checks.csproj -c Release -o tmp/check-ops -v:q
 & .\tmp\check-ops\MotionControl.OperatorPages.Checks.exe
 ```

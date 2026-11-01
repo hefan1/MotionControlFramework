@@ -6,16 +6,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
 using System.Windows.Threading;
-using MotionControl.Adapter.MotionCard.ZMotion;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.IO;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Runtime.Machine;
 using MotionControl.Framework.Runtime.Variables;
 using MotionControl.TaskEngine.Catalog;
-using MotionControl.TaskEngine.MachineDevice;
 using MotionControl.TaskEngine.Machine;
 using MotionControl.TaskEngine.Wpf.Simulation;
 using MotionControl.TaskEngine.Wpf.Views;
@@ -60,9 +57,7 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>显示当前任务步骤监控页。</summary>
         private readonly ContentControl _monitorContent;
         /// <summary>显示 Runtime 当前报警，保持任务页内可见。</summary>
-        private readonly DataGrid _alarmGrid;
-        /// <summary>稳定的报警行快照，变化时才替换表格数据。</summary>
-        private List<TaskAlarmDisplayRow> _alarmRows = new List<TaskAlarmDisplayRow>();
+        private readonly TaskAlarmGrid _alarmGrid;
         /// <summary>连接后提供任务设备组合所需的当前 Runtime。</summary>
         private MachineRuntime _runtime;
         /// <summary>连接后的运动卡组。</summary>
@@ -137,7 +132,7 @@ namespace MotionControl.Host.Wpf.Tasks
             var alarmTitle = new TextBlock { FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 8, 4) };
             alarmTitle.SetResourceReference(TextBlock.TextProperty, "任务执行当前报警");
             DockPanel.SetDock(alarmTitle, Dock.Top); alarmPanel.Children.Add(alarmTitle);
-            _alarmGrid = CreateAlarmGrid(); alarmPanel.Children.Add(_alarmGrid);
+            _alarmGrid = new TaskAlarmGrid(GetText); alarmPanel.Children.Add(_alarmGrid);
             Grid.SetRow(alarmPanel, 4); root.Children.Add(alarmPanel);
             Content = root;
 
@@ -172,27 +167,6 @@ namespace MotionControl.Host.Wpf.Tasks
             panel.Background = Brush("#F7F9FC");
         }
 
-        /// <summary>建立只读的当前报警列表，支持维护人员直接识别停机类型和原因。</summary>
-        private DataGrid CreateAlarmGrid()
-        {
-            var grid = new DataGrid { IsReadOnly = true, AutoGenerateColumns = false, CanUserAddRows = false,
-                HeadersVisibility = DataGridHeadersVisibility.Column, MinHeight = 64, MaxHeight = 150,
-                BorderBrush = Brush("#D9E0E8"), BorderThickness = new Thickness(1),
-                Background = Brush("#FFFFFF"), RowHeight = 28, ColumnHeaderHeight = 30 };
-            grid.Columns.Add(AlarmColumn("报警级别", "Kind", new DataGridLength(100)));
-            grid.Columns.Add(AlarmColumn("报警代码", "Code", new DataGridLength(150)));
-            grid.Columns.Add(AlarmColumn("报警来源", "Source", new DataGridLength(130)));
-            grid.Columns.Add(AlarmColumn("报警内容", "Message", new DataGridLength(1, DataGridLengthUnitType.Star)));
-            grid.Columns.Add(AlarmColumn("当前条件", "Detail", new DataGridLength(1.2, DataGridLengthUnitType.Star)));
-            return grid;
-        }
-
-        /// <summary>创建绑定报警字段的表格列。</summary>
-        private DataGridTextColumn AlarmColumn(string headerKey, string path, DataGridLength width)
-        {
-            return new DataGridTextColumn { Header = GetText(headerKey), Binding = new Binding(path), Width = width };
-        }
-
         /// <summary>提供连接后的设备实例；断开前必须先安全结束任务会话。</summary>
         internal async Task SetMachineContextAsync(MachineRuntime runtime, MotionCardGroup motionCards,
             ILogicalIo logicalIo, DeviceVariableStore variables)
@@ -202,8 +176,7 @@ namespace MotionControl.Host.Wpf.Tasks
             if (runtime == null)
             {
                 _stateTimer.Stop();
-                _alarmGrid.ItemsSource = null;
-                _alarmRows.Clear();
+                _alarmGrid.ClearAlarms();
             }
             ClearError();
             UpdateRunStatus();
@@ -231,14 +204,8 @@ namespace MotionControl.Host.Wpf.Tasks
             await RunCommandAsync(async () =>
             {
                 var runtime = _runtime;
-                TaskMonitorSession loaded = await Task.Run(() =>
-                {
-                    var namedResources = new MotionControl.TaskEngine.Configuration.TaskMachineConfigurationStore(_store)
-                        .LoadNamedResources(_machineId);
-                    var catalog = new TaskResourceCatalogLoader(_store).Load(_machineId, namedResources);
-                    var device = new MachineTaskDevice(catalog, _motionCards, _logicalIo, _variables, runtime);
-                    return TaskMonitorSession.LoadMachine(_store, _machineId, device, runtime.AlarmService);
-                }).ConfigureAwait(true);
+                TaskMonitorSession loaded = await Task.Run(() => HostTaskSessionLoader.Load(
+                    _store, _machineId, _motionCards, _logicalIo, _variables, runtime)).ConfigureAwait(true);
 
                 _session = loaded;
                 _monitor = new TaskMonitorView(loaded);
@@ -326,8 +293,7 @@ namespace MotionControl.Host.Wpf.Tasks
             _session = null;
             _monitor = null;
             _monitorContent.Content = null;
-            _alarmGrid.ItemsSource = null;
-            _alarmRows.Clear();
+            _alarmGrid.ClearAlarms();
             UpdateRunStatus();
             UpdateCommandAvailability();
             _host.RefreshMachineStateDisplay();
@@ -388,12 +354,7 @@ namespace MotionControl.Host.Wpf.Tasks
         private void RefreshAlarms()
         {
             var alarms = _runtime?.AlarmService.Alarms ?? new MachineAlarmRecord[0];
-            var rows = alarms.Select(alarm => new TaskAlarmDisplayRow(alarm,
-                GetText(alarm.Definition.Kind == MachineAlarmKind.StopMachine ? "停机报警" : "非停机报警"))).ToList();
-            if (_alarmRows.Count == rows.Count && _alarmRows.Zip(rows, (left, right) => left.Signature == right.Signature).All(equal => equal))
-                return;
-            _alarmRows = rows;
-            _alarmGrid.ItemsSource = _alarmRows;
+            _alarmGrid.ShowAlarms(alarms);
         }
 
         /// <summary>更新任务整机和设备运行状态摘要。</summary>
@@ -499,17 +460,9 @@ namespace MotionControl.Host.Wpf.Tasks
         private void Host_LanguageChanged(object sender, EventArgs e)
         {
             _monitor?.SetLanguage(_host.CurrentLanguage);
-            UpdateAlarmHeaders();
+            _alarmGrid.UpdateHeaders();
             if (_lastError != null) RefreshErrorText();
             UpdateRunStatus();
-        }
-
-        /// <summary>按当前 Host 语言更新报警表格表头。</summary>
-        private void UpdateAlarmHeaders()
-        {
-            string[] keys = { "报警级别", "报警代码", "报警来源", "报警内容", "当前条件" };
-            for (int index = 0; index < keys.Length && index < _alarmGrid.Columns.Count; index++)
-                _alarmGrid.Columns[index].Header = GetText(keys[index]);
         }
 
         /// <summary>显示失败操作、文件路径、原因和维护人员下一步建议。</summary>
@@ -549,29 +502,5 @@ namespace MotionControl.Host.Wpf.Tasks
             return (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString(color);
         }
 
-        /// <summary>保存一条报警表格行，并生成稳定比较键。</summary>
-        private sealed class TaskAlarmDisplayRow
-        {
-            /// <summary>显示停机或非停机类型。</summary>
-            public string Kind { get; }
-            /// <summary>稳定的报警代码。</summary>
-            public string Code { get; }
-            /// <summary>报告该报警的来源。</summary>
-            public string Source { get; }
-            /// <summary>报警库说明。</summary>
-            public string Message { get; }
-            /// <summary>当前报警条件补充信息。</summary>
-            public string Detail { get; }
-            /// <summary>用于判断表格是否发生变化。</summary>
-            public string Signature { get; }
-
-            /// <summary>从 Runtime 报警记录生成界面行。</summary>
-            public TaskAlarmDisplayRow(MachineAlarmRecord alarm, string kind)
-            {
-                Kind = kind; Code = alarm.Definition.Code; Source = alarm.SourceName;
-                Message = alarm.Definition.Message; Detail = alarm.Detail;
-                Signature = string.Join("|", Kind, Code, Source, Message, Detail, alarm.ConditionActive);
-            }
-        }
     }
 }

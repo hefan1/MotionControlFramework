@@ -9,7 +9,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using MotionControl.Adapter.MotionCard.ZMotion;
-using MotionControl.Equipment.Demo;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Equipment;
 using MotionControl.Framework.Contracts.Flow;
@@ -33,9 +32,6 @@ namespace MotionControl.Host.Wpf
     {
         /// <summary>当前 Host 示例所使用设备的稳定编号。</summary>
         private const string MachineId = "Machine01";
-
-        /// <summary>设备定义选择配置的相对路径；Host 按其中的名称选择设备工程。</summary>
-        private const string EquipmentSelectionPath = "Parameters/Equipment.json";
 
         /// <summary>限制同一 Windows 登录会话只运行一个 Host，避免多个实例争用控制卡。</summary>
         private const string SingleInstanceMutexName = @"Local\MotionControl.Host.Wpf.Machine01";
@@ -179,7 +175,7 @@ namespace MotionControl.Host.Wpf
             {
                 _alarmCatalogStore.LoadOrCreate(
                     MachineId,
-                    CreateDefaultAlarmCatalog(ResolveEquipmentDefinition().CreateDefaultAlarms()));
+                    CreateDefaultAlarmCatalog(HostEquipmentSelection.ResolveEquipmentDefinition(_configurationStore, MachineId).CreateDefaultAlarms()));
             }
             catch (Exception error)
             {
@@ -518,7 +514,7 @@ namespace MotionControl.Host.Wpf
                     startInputName: controlInputConfiguration.StartInputName,
                     pauseInputName: controlInputConfiguration.PauseInputName,
                     resetInputName: controlInputConfiguration.ResetInputName,
-                    controlOwner: ResolveExecutionOwner());
+                    controlOwner: HostEquipmentSelection.ResolveExecutionOwner(_configurationStore, MachineId));
                 createdRuntime.RequestInitializationRecovery(
                     _machineRecoveryCoordinator.HasCompletedInitializationCheckpoint);
                 await createdRuntime.ConnectAsync(CancellationToken.None);
@@ -712,7 +708,7 @@ namespace MotionControl.Host.Wpf
             ILogicalIo logicalIo,
             IMachineAlarmService alarmService)
         {
-            IEquipmentDefinition equipment = ResolveEquipmentDefinition();
+            IEquipmentDefinition equipment = HostEquipmentSelection.ResolveEquipmentDefinition(_configurationStore, MachineId);
             var context = new HostEquipmentContext(
                 _configurationStore,
                 MachineId,
@@ -724,80 +720,6 @@ namespace MotionControl.Host.Wpf
                 logicalIo,
                 alarmService);
             return equipment.CreateStationFlows(context).ToArray();
-        }
-
-        /// <summary>
-        /// 读取设备配置中的设备定义名称并返回对应定义；未配置时默认示例设备。
-        /// 新增设备时在此显式登记，不使用反射扫描或运行时加载。
-        /// </summary>
-        private IEquipmentDefinition ResolveEquipmentDefinition()
-        {
-            EquipmentSelectionSettings settings = LoadEquipmentSelection();
-            string name = settings == null || settings.Definition == null
-                ? string.Empty
-                : settings.Definition.Trim();
-            if (name.Length == 0)
-            {
-                name = "Demo";
-            }
-
-            if (string.Equals(name, "Demo", StringComparison.OrdinalIgnoreCase))
-            {
-                return new DemoEquipmentDefinition();
-            }
-
-            throw new InvalidOperationException(
-                "设备定义配置 '" + EquipmentSelectionPath + "' 指定了未登记的设备定义：" + name
-                + "。当前版本支持：Demo。");
-        }
-
-        /// <summary>
-        /// 读取配置指定的执行入口。留空时返回 null，由 Runtime 按是否配置工位流程自动判断；
-        /// 写了未登记的值时拒绝启动，不静默退回默认入口。
-        /// </summary>
-        private MachineControlOwner? ResolveExecutionOwner()
-        {
-            EquipmentSelectionSettings settings = LoadEquipmentSelection();
-            string value = settings == null || settings.ExecutionOwner == null
-                ? string.Empty
-                : settings.ExecutionOwner.Trim();
-            if (value.Length == 0)
-            {
-                return null;
-            }
-
-            if (string.Equals(value, "StationFlows", StringComparison.OrdinalIgnoreCase))
-            {
-                return MachineControlOwner.StationFlows;
-            }
-
-            if (string.Equals(value, "TaskEngine", StringComparison.OrdinalIgnoreCase))
-            {
-                return MachineControlOwner.TaskEngine;
-            }
-
-            if (string.Equals(value, "None", StringComparison.OrdinalIgnoreCase))
-            {
-                return MachineControlOwner.None;
-            }
-
-            throw new InvalidOperationException(
-                "设备配置 '" + EquipmentSelectionPath + "' 的执行入口无法识别：" + value
-                + "。可填写 StationFlows、TaskEngine 或 None，留空表示按工位流程自动判断。");
-        }
-
-        /// <summary>读取设备定义选择配置，首次运行时写入默认文件。</summary>
-        private EquipmentSelectionSettings LoadEquipmentSelection()
-        {
-            string fullPath = Path.Combine(
-                _configurationStore.GetMachineDirectory(MachineId),
-                EquipmentSelectionPath.Replace('/', Path.DirectorySeparatorChar));
-            if (!File.Exists(fullPath))
-            {
-                _configurationStore.SaveJson(MachineId, EquipmentSelectionPath, new EquipmentSelectionSettings());
-            }
-
-            return _configurationStore.LoadJson<EquipmentSelectionSettings>(MachineId, EquipmentSelectionPath);
         }
 
         /// <summary>为首次运行的设备目录按设备定义预置报警，框架不内置任何设备的报警代码。</summary>

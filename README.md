@@ -56,12 +56,12 @@
 
 | 要做的事情 | 从哪里开始 |
 | --- | --- |
-| 用 C# 增加工位流程 | 先看 [`DemoStationFlow.cs`](src/MotionControl.Equipment.Demo/DemoStationFlow.cs) 和 [`DemoEquipmentDefinition.cs`](src/MotionControl.Equipment.Demo/DemoEquipmentDefinition.cs)；设备项目负责工艺步骤和设备专属配置 |
+| 用 C# 增加工位流程 | 先看 [`DemoStationFlow.cs`](src/MotionControl.Equipment.Demo/DemoStationFlow.cs) 和 [`DemoEquipmentDefinition.cs`](src/MotionControl.Equipment.Demo/DemoEquipmentDefinition.cs)；设备项目负责工艺步骤和设备专属配置，Host 在 [`HostEquipmentSelection.cs`](src/MotionControl.Host.Wpf/HostEquipmentSelection.cs) 显式登记设备定义 |
 | 用任务列表配置流程 | 在 Host 的任务配置页安排工位和编辑任务；先保存草稿、检查，再更新任务文件。运行入口读取已应用的任务和工位配置；当前控制卡会话连接时不允许更新任务文件 |
-| 理解任务如何调用设备 | 从 [`TaskMonitorLauncher.cs`](src/MotionControl.Host.Wpf/Tasks/TaskMonitorLauncher.cs) 看加载与启停，再看 [`ITaskDevice`](src/MotionControl.TaskEngine/Device/ITaskDevice.cs) 和 [`MachineTaskDevice`](src/MotionControl.TaskEngine.MachineDevice/MachineTaskDevice.cs) |
+| 理解任务如何调用设备 | 从 [`TaskMonitorLauncher.cs`](src/MotionControl.Host.Wpf/Tasks/TaskMonitorLauncher.cs) 看加载与启停；[`HostTaskSessionLoader.cs`](src/MotionControl.Host.Wpf/Tasks/HostTaskSessionLoader.cs) 负责装配设备任务会话，再看 [`ITaskDevice`](src/MotionControl.TaskEngine/Device/ITaskDevice.cs) 和 [`MachineTaskDevice`](src/MotionControl.TaskEngine.MachineDevice/MachineTaskDevice.cs) |
 | 修改公共轴、IO 或报警行为 | 先找 `Framework.Contracts` 中的契约，再看 `Framework.Runtime` 对应功能；确认两条流程路径的影响 |
 | 修改正运动卡专有行为 | 在 `Adapters/MotionCards/ZMotion` 查找适配器和厂商 API；设备工艺使用逻辑名称与工程单位 |
-| 修改现场界面 | 先找 `Framework.Wpf` 或 `TaskEngine.Wpf` 的对应页面，再看 Host 的装配和导航 |
+| 修改现场界面 | 先找 `Framework.Wpf` 或 `TaskEngine.Wpf` 的对应页面，再看 Host 的装配和导航；任务入口中的报警表格显示见 [`TaskAlarmGrid.cs`](src/MotionControl.Host.Wpf/Tasks/TaskAlarmGrid.cs) |
 
 `Parameters/Equipment.json` 可指定 `StationFlows`、`TaskEngine` 或 `None` 作为执行入口；任务会话申请控制权时，运行中的 C# 工位会阻止接管，关闭会话后归还接管前的入口。两条路径的流程定义各自维护，不会自动互相转换。配置入口本身不代表设备正在运行。
 

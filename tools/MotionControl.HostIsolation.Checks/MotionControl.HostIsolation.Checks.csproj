@@ -4,5 +4,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\..\src\MotionControl.Host.Wpf\SimulationConfigurationRoot.cs" Link="SimulationConfigurationRoot.cs" />
+    <Compile Include="..\..\src\MotionControl.Host.Wpf\EquipmentSelectionSettings.cs" Link="EquipmentSelectionSettings.cs" />
+    <Compile Include="..\..\src\MotionControl.Host.Wpf\HostEquipmentSelection.cs" Link="HostEquipmentSelection.cs" />
+    <ProjectReference Include="..\..\src\MotionControl.Equipment.Demo\MotionControl.Equipment.Demo.csproj" />
+    <ProjectReference Include="..\..\src\MotionControl.Framework.Runtime\MotionControl.Framework.Runtime.csproj" />
   </ItemGroup>
 </Project>

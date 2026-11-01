@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
  <PropertyGroup><UseWPF>true</UseWPF><OutputType>Exe</OutputType><PlatformTarget>x64</PlatformTarget></PropertyGroup>
- <ItemGroup><ProjectReference Include="../../src/MotionControl.Host.Wpf/MotionControl.Host.Wpf.csproj"/></ItemGroup>
+ <ItemGroup>
+  <ProjectReference Include="../../src/MotionControl.Host.Wpf/MotionControl.Host.Wpf.csproj"/>
+  <Compile Include="../../src/MotionControl.Host.Wpf/Tasks/TaskAlarmGrid.cs" Link="TaskAlarmGrid.cs"/>
+ </ItemGroup>
 </Project>
