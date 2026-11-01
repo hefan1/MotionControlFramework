@@ -348,6 +348,8 @@
                             </StackPanel>
                         </StackPanel>
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button x:Name="FeedbackAssociationButton" Content="{DynamicResource IO反馈关联}" Click="FeedbackAssociationButton_Click"
+                                    Style="{StaticResource IoMappingButton}" Margin="4,0,0,0" />
                             <Button x:Name="RemoveOutputButton" Content="{DynamicResource 清空逻辑名}" Click="RemoveOutputButton_Click"
                                     Style="{StaticResource IoMappingButton}" Margin="4,0,0,0" />
                         </StackPanel>

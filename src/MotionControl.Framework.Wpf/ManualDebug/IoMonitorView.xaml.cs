@@ -6,12 +6,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using MotionControl.Framework.Contracts.Configuration;
 using MotionControl.Framework.Contracts.IO;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Runtime.Machine;
+using MotionControl.Framework.Runtime.Configuration;
 
 namespace MotionControl.Framework.Wpf.ManualDebug
 {
@@ -41,6 +43,24 @@ namespace MotionControl.Framework.Wpf.ManualDebug
 
         /// <summary>当前设备配置的 DO 映射，用于显示名称并按有效电平切换输出。</summary>
         private readonly IReadOnlyList<DigitalIoHardwareDefinition> _digitalOutputs;
+
+        /// <summary>按逻辑名读取反馈输入；由设备连接提供，可正确跨控制卡读取。</summary>
+        private readonly ILogicalIo _logicalIo;
+
+        /// <summary>输出逻辑名到反馈输入名称的映射，仅用于监控显示。</summary>
+        private readonly Dictionary<string, List<string>> _feedbackAssociations;
+
+        /// <summary>关联配置文件或失效输出的错误，供操作员查看。</summary>
+        private readonly string _feedbackConfigurationError;
+
+        /// <summary>右侧反馈面板当前选择的输出行。</summary>
+        private IoMonitorChannel _selectedFeedbackOutput;
+
+        /// <summary>选择或页面变化后递增，使已失效的异步反馈不能覆盖当前显示。</summary>
+        private int _feedbackVersion;
+
+        /// <summary>当前是否已经在后台读取选中输出的反馈。</summary>
+        private bool _feedbackRefreshInProgress;
 
         /// <summary>按物理通道顺序保存完整 DI 列表，供列布局和状态轮询使用。</summary>
         private readonly ObservableCollection<IoMonitorChannel> _inputChannels =
@@ -107,9 +127,23 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             IMotionCardIoCapabilityProvider capabilityProvider,
             IPhysicalDigitalIoMonitor physicalIoMonitor,
             IEnumerable<DigitalIoHardwareDefinition> digitalInputs,
-            IEnumerable<DigitalIoHardwareDefinition> digitalOutputs)
+            IEnumerable<DigitalIoHardwareDefinition> digitalOutputs,
+            ILogicalIo logicalIo = null,
+            IoFeedbackAssociationConfiguration feedbackConfiguration = null,
+            string feedbackConfigurationError = null)
         {
+            _logicalIo = logicalIo;
+            _feedbackAssociations = (feedbackConfiguration?.Associations ?? new List<IoFeedbackAssociation>())
+                .Where(item => item != null && !string.IsNullOrWhiteSpace(item.OutputName))
+                .ToDictionary(item => item.OutputName, item => item.InputNames ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+            var outputNames = new HashSet<string>((digitalOutputs ?? Enumerable.Empty<DigitalIoHardwareDefinition>())
+                .Where(point => point != null && !string.IsNullOrWhiteSpace(point.Name)).Select(point => point.Name), StringComparer.OrdinalIgnoreCase);
+            string[] missingOutputs = _feedbackAssociations.Keys.Where(name => !outputNames.Contains(name)).ToArray();
+            _feedbackConfigurationError = string.Join("；", new[] { feedbackConfigurationError,
+                missingOutputs.Length == 0 ? null : "关联输出未映射：" + string.Join("、", missingOutputs) }
+                .Where(value => !string.IsNullOrWhiteSpace(value)));
             InitializeComponent();
+            FeedbackPanelColumn.Width = new GridLength(_feedbackAssociations.Count > 0 ? 300 : 0);
 
             _isCardConnected = isCardConnected;
             _machineRuntime = machineRuntime;
@@ -197,6 +231,9 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         private void IoMonitorView_Unloaded(object sender, RoutedEventArgs e)
         {
             _refreshTimer.Stop();
+            _visibleViewportVersion++;
+            _feedbackVersion++;
+            ResetFeedbackStates();
         }
 
         /// <summary>按当前 DI/DO 标签页定时刷新屏幕中可见的通道行。</summary>
@@ -227,9 +264,19 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
 
             _visibleViewportVersion++;
+            _feedbackVersion++;
+            ResetFeedbackStates();
             _visibleReadCount = 0;
             UpdateMonitorStatusText();
             UpdateDisplayedRangeText();
+            if (MonitorTabs.SelectedIndex == 1 && _selectedFeedbackOutput != null)
+            {
+                _ = Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+                {
+                    var column = _outputColumns.FirstOrDefault(group => group.Contains(_selectedFeedbackOutput));
+                    if (column != null) DigitalOutputList.ScrollIntoView(column);
+                }));
+            }
             await RefreshVisibleChannelsAsync().ConfigureAwait(true);
         }
 
@@ -249,6 +296,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
 
             _rowsPerColumn = rowsPerColumn;
             _visibleViewportVersion++;
+            ResetFeedbackStates();
             _visibleReadCount = 0;
             RebuildChannelColumns(_inputChannels, _inputColumns, _rowsPerColumn);
             RebuildChannelColumns(_outputChannels, _outputColumns, _rowsPerColumn);
@@ -262,6 +310,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             if (e.HorizontalChange != 0)
             {
                 _visibleViewportVersion++;
+                ResetFeedbackStates();
                 _visibleReadCount = 0;
                 UpdateMonitorStatusText();
                 UpdateDisplayedRangeText();
@@ -311,6 +360,8 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 RebuildChannelColumns(_outputChannels, _outputColumns, _rowsPerColumn);
                 DigitalInputList.ItemsSource = _inputColumns;
                 DigitalOutputList.ItemsSource = _outputColumns;
+                SelectFeedbackOutput(_outputChannels.FirstOrDefault(channel => channel.FeedbackNames.Count > 0)
+                    ?? _outputChannels.FirstOrDefault());
                 NoDigitalInputsText.Visibility = _inputChannelCount == 0 ? Visibility.Visible : Visibility.Collapsed;
                 NoDigitalOutputsText.Visibility = _outputChannelCount == 0 ? Visibility.Visible : Visibility.Collapsed;
                 _channelsInitialized = true;
@@ -380,6 +431,8 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                     isMapped && mapping.ActiveHigh,
                     isMapped,
                     !isInput);
+                if (!isInput && isMapped && _feedbackAssociations.TryGetValue(mapping.Name, out List<string> feedbackNames))
+                    row.SetFeedbackNames(feedbackNames, GetFeedbackAddress, GetText("IO等待读取"));
                 RefreshChannelLocalizedText(row, isInput);
                 row.SetOutputControlAvailable(!isInput && _isCardConnected && _physicalIoMonitor != null
                     && _machineRuntime != null);
@@ -448,6 +501,9 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                         .ConfigureAwait(true);
                 }
 
+                if (!isInput)
+                    StartFeedbackRefresh();
+
                 if (viewportVersion == _visibleViewportVersion
                     && isInput == (MonitorTabs.SelectedIndex == 0))
                 {
@@ -463,6 +519,105 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             {
                 _refreshInProgress = false;
             }
+        }
+
+        /// <summary>将旧反馈清为空闲等待状态，避免滚动或离页后把旧采样当作当前值。</summary>
+        private void ResetFeedbackStates()
+        {
+            foreach (IoMonitorChannel channel in _outputChannels)
+                foreach (string name in channel.FeedbackNames)
+                    channel.SetFeedbackState(name, GetText("IO等待读取"));
+        }
+
+        /// <summary>从输出行选择反馈，点击名称或空白处不会执行 DO 操作。</summary>
+        private void OutputRow_SelectFeedback(object sender, MouseButtonEventArgs e)
+        {
+            if ((sender as FrameworkElement)?.DataContext is IoMonitorChannel channel)
+                SelectFeedbackOutput(channel);
+        }
+
+        /// <summary>显示指定输出的关联输入，并使前一个选择的迟到采样失效。</summary>
+        private void SelectFeedbackOutput(IoMonitorChannel channel)
+        {
+            if (ReferenceEquals(channel, _selectedFeedbackOutput)) return;
+            _selectedFeedbackOutput?.SetFeedbackSelection(false);
+            _selectedFeedbackOutput = channel;
+            _selectedFeedbackOutput?.SetFeedbackSelection(true);
+            _feedbackVersion++;
+            ResetFeedbackStates();
+            FeedbackSelectionText.Text = channel == null ? string.Empty : channel.Address + "  " + channel.DisplayName;
+            FeedbackDetails.ItemsSource = channel?.FeedbackItems;
+            FeedbackEmptyText.Visibility = channel == null || channel.FeedbackNames.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            StartFeedbackRefresh();
+        }
+
+        /// <summary>由逻辑名称查找反馈地址；跨卡时同时显示卡号，失效映射不猜测通道。</summary>
+        private string GetFeedbackAddress(string name)
+        {
+            DigitalIoHardwareDefinition point = _digitalInputs.FirstOrDefault(item => item != null
+                && string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (point == null) return GetText("IO反馈未映射");
+            return "DI" + point.Channel + (string.IsNullOrWhiteSpace(point.ControllerId) ? string.Empty : " / " + point.ControllerId);
+        }
+
+        /// <summary>独立启动反馈采样；不占用物理输出刷新互斥，以免慢输入影响 DO 操作。</summary>
+        private void StartFeedbackRefresh()
+        {
+            if (_feedbackRefreshInProgress || !IsLoaded || MonitorTabs.SelectedIndex != 1
+                || _selectedFeedbackOutput == null || _selectedFeedbackOutput.FeedbackNames.Count == 0) return;
+            _ = RefreshSelectedFeedbackAsync(_selectedFeedbackOutput, _feedbackVersion);
+        }
+
+        /// <summary>有界并发读取右侧所有实际 DI，逐路显示失败、超时和等待。</summary>
+        private async Task RefreshSelectedFeedbackAsync(IoMonitorChannel channel, int version)
+        {
+            _feedbackRefreshInProgress = true;
+            foreach (string name in channel.FeedbackNames) channel.SetFeedbackState(name, GetText("IO等待读取"));
+            try
+            {
+                string[] names = channel.FeedbackNames.ToArray();
+                for (int start = 0; start < names.Length; start += 4)
+                {
+                    string[] group = names.Skip(start).Take(4).ToArray();
+                    Task<FeedbackInputReadResult>[] requests = group.Select(name =>
+                        !_digitalInputs.Any(point => point != null && string.Equals(point.Name, name, StringComparison.OrdinalIgnoreCase))
+                        ? Task.FromResult(new FeedbackInputReadResult { Status = FeedbackInputReadStatus.Error,
+                            Error = new InvalidOperationException("未映射") })
+                        : _logicalIo == null
+                        ? Task.FromResult(new FeedbackInputReadResult { Status = FeedbackInputReadStatus.Error,
+                            Error = new InvalidOperationException("逻辑输入未连接") })
+                        : FeedbackInputReadCoordinator.For(_logicalIo).ReadAsync(name)).ToArray();
+                    FeedbackInputReadResult[] results = await Task.WhenAll(requests).ConfigureAwait(false);
+                    bool stillCurrent = false;
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        stillCurrent = version == _feedbackVersion && IsLoaded && MonitorTabs.SelectedIndex == 1
+                            && ReferenceEquals(channel, _selectedFeedbackOutput);
+                        if (!stillCurrent) return;
+                        for (int index = 0; index < group.Length; index++)
+                        {
+                            FeedbackInputReadResult result = results[index];
+                            string state = result.Status == FeedbackInputReadStatus.Success
+                                ? GetText(result.Value == true ? "IO有效" : "IO无效")
+                                : result.Status == FeedbackInputReadStatus.Timeout ? GetText("IO反馈读取超时")
+                                : result.Status == FeedbackInputReadStatus.Busy ? GetText("IO反馈读取繁忙")
+                                : string.Format(GetText("IO读取失败"), result.Error?.Message ?? GetText("IO反馈读取异常"));
+                            channel.SetFeedbackState(group[index], state, result.Value, result.Status != FeedbackInputReadStatus.Success);
+                        }
+                    }).Task.ConfigureAwait(false);
+                    if (!stillCurrent) return;
+                }
+            }
+            catch (Exception error)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    if (version == _feedbackVersion && ReferenceEquals(channel, _selectedFeedbackOutput))
+                        foreach (string name in channel.FeedbackNames)
+                            channel.SetFeedbackState(name, string.Format(GetText("IO读取失败"), error.Message), null, true);
+                }).Task.ConfigureAwait(false);
+            }
+            finally { await Dispatcher.InvokeAsync(() => _feedbackRefreshInProgress = false).Task.ConfigureAwait(false); }
         }
 
         /// <summary>逐路读取当前可见通道；批量接口不支持或读取失败时仍保留单路监控。</summary>
@@ -680,26 +835,38 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             }
         }
 
-        /// <summary>点击 DO 状态灯后按当前逻辑状态反向写入，并立即回读物理电平。</summary>
+        /// <summary>点击 DO 灯时同步选择反馈，并在手动保护内重读电平、反向写入和回读确认。</summary>
         private async void OutputIndicator_Click(object sender, RoutedEventArgs e)
         {
             Button indicatorButton = sender as Button;
             IoMonitorChannel channel = indicatorButton == null
                 ? null
                 : indicatorButton.Tag as IoMonitorChannel;
-            if (_refreshInProgress || channel == null || !channel.PhysicalHigh.HasValue || _machineRuntime == null
+            if (channel == null)
+            {
+                return;
+            }
+
+            // 按钮会处理鼠标事件，外层行未必收到选择事件；先同步右侧反馈，避免显示其他输出。
+            SelectFeedbackOutput(channel);
+
+            if (_refreshInProgress)
+            {
+                OperationMessageText.Foreground = new SolidColorBrush(Color.FromRgb(163, 101, 28));
+                OperationMessageText.Text = GetText("IO监控正在刷新请重试");
+                return;
+            }
+
+            if (!channel.PhysicalHigh.HasValue || _machineRuntime == null
                 || _physicalIoMonitor == null)
             {
                 return;
             }
 
-            bool nextState = !channel.IsOn;
-            bool targetPhysicalHigh = channel.IsMapped
-                ? nextState == channel.ActiveHigh
-                : nextState;
+            bool targetPhysicalHigh = false;
             bool actualPhysicalHigh = false;
             bool readbackAvailable = false;
-            bool writeStarted = false;
+            bool readStarted = false;
             string readbackMismatchText = GetText("DO写入后读回不一致");
             _refreshInProgress = true;
             channel.SetWriting(true);
@@ -708,7 +875,18 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             {
                 ManualOperationBlockReason blockReason = await _machineRuntime.RunManualOperationAsync(async () =>
                 {
-                    writeStarted = true;
+                    // 页面显示值可能在等待关联反馈时过期；先读取当前输出再决定反向目标。
+                    readStarted = true;
+                    bool currentPhysicalHigh = await _physicalIoMonitor
+                        .ReadDigitalOutputChannelAsync(channel.Channel, CancellationToken.None)
+                        .ConfigureAwait(false);
+                    bool currentState = channel.IsMapped
+                        ? currentPhysicalHigh == channel.ActiveHigh
+                        : currentPhysicalHigh;
+                    bool nextState = !currentState;
+                    targetPhysicalHigh = channel.IsMapped
+                        ? nextState == channel.ActiveHigh
+                        : nextState;
                     await _physicalIoMonitor.WriteDigitalOutputChannelAsync(
                         channel.Channel,
                         targetPhysicalHigh,
@@ -741,7 +919,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 {
                     SetChannelReadSuccess(channel, actualPhysicalHigh);
                 }
-                else if (writeStarted)
+                else if (readStarted)
                 {
                     channel.SetReadFailure(error.Message, GetText("IO读取失败"));
                 }
@@ -828,6 +1006,11 @@ namespace MotionControl.Framework.Wpf.ManualDebug
                 GetText("IO监控通道数量格式"),
                 _inputChannelCount,
                 _outputChannelCount);
+            if (!string.IsNullOrWhiteSpace(_feedbackConfigurationError))
+            {
+                MonitorStatusText.Foreground = new SolidColorBrush(Color.FromRgb(163, 59, 53));
+                MonitorStatusText.Text += "\nIO 反馈关联：" + _feedbackConfigurationError;
+            }
             if (_visibleReadCount > 0 && _visibleReadFailureCount > 0
                 && _visibleReadIsInput == (MonitorTabs.SelectedIndex == 0))
             {

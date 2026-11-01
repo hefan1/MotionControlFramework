@@ -205,6 +205,7 @@ namespace MotionControl.Host.Wpf
             _ioMappingPage = new IoMappingConfigurationView(_configurationStore, MachineId, _cardConnection);
             _ioMappingPage.ApplyConnectedConfigurationAsync = ApplyConnectedConfigurationAsync;
             _ioMappingPage.IoMappingApplied += IoMappingPage_IoMappingApplied;
+            _ioMappingPage.FeedbackAssociationsChanged += IoMappingPage_FeedbackAssociationsChanged;
             _safetyInterlockPage = new SafetyInterlockConfigurationView(_configurationStore, MachineId);
             _safetyInterlockPage.ConfigurationSaved += SafetyInterlockPage_ConfigurationSaved;
             _alarmCatalogPage = new Configuration.AlarmCatalogConfigurationView(_alarmCatalogStore, MachineId);
@@ -801,14 +802,33 @@ namespace MotionControl.Host.Wpf
 
             IMotionCard connectedCard = _cardConnection.ConnectedMotionCard;
             bool isCardConnected = _cardConnection.IsConnected && connectedCard != null;
+            IoFeedbackAssociationConfiguration feedbackConfiguration = null;
+            string feedbackError = null;
+            try
+            {
+                feedbackConfiguration = new IoFeedbackAssociationStore(_configurationStore, MachineId).Load();
+            }
+            catch (Exception error)
+            {
+                feedbackError = error.Message;
+            }
             _ioMonitorPage = new IoMonitorView(
                 isCardConnected,
                 _machineRuntime,
                 isCardConnected ? _cardConnection as IMotionCardIoCapabilityProvider : null,
                 isCardConnected ? connectedCard as IPhysicalDigitalIoMonitor : null,
                 _cardConnection.DigitalInputs,
-                _cardConnection.DigitalOutputs);
+                _cardConnection.DigitalOutputs,
+                isCardConnected ? _cardConnection.ConnectedLogicalIo : null,
+                feedbackConfiguration,
+                feedbackError);
             _mainWindow.SetIoMonitorPage(_ioMonitorPage);
+        }
+
+        /// <summary>关联配置保存后只刷新 IO 监控，保留当前控制卡连接。</summary>
+        private void IoMappingPage_FeedbackAssociationsChanged(object sender, EventArgs e)
+        {
+            RefreshIoMonitorPage();
         }
 
         /// <summary>IO 映射热更新后刷新安全 DI 选项、手动页和 IO 监控页，保留现有控制卡与 Runtime。</summary>

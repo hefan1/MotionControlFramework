@@ -288,6 +288,14 @@
     <sys:String x:Key="无法读取轴关联IO">Unable to read the selected axis I/O association.</sys:String>
     <sys:String x:Key="DO操作正在执行">A DO operation is in progress. Wait for it to finish.</sys:String>
     <sys:String x:Key="轴关联IO映射已失效">Mapping is invalid</sys:String>
+    <sys:String x:Key="IO反馈查看全部">All</sys:String>
+    <sys:String x:Key="IO反馈输入标题">Related inputs</sys:String>
+    <sys:String x:Key="IO反馈选择提示">Click to view related inputs</sys:String>
+    <sys:String x:Key="IO反馈无关联">No related inputs</sys:String>
+    <sys:String x:Key="IO反馈未映射">Not mapped</sys:String>
+    <sys:String x:Key="IO反馈读取超时">Read timed out</sys:String>
+    <sys:String x:Key="IO反馈读取繁忙">Waiting</sys:String>
+    <sys:String x:Key="IO反馈读取异常">Read error</sys:String>
     <sys:String x:Key="IO有效">Active</sys:String>
     <sys:String x:Key="IO无效">Inactive</sys:String>
     <sys:String x:Key="IO监控页面说明">View DI/DO states by physical channel. Names follow I/O Mapping; click a DO lamp to toggle its output.</sys:String>
@@ -356,6 +364,7 @@
     <sys:String x:Key="IO监控流程输入未找到">No DI mapping was found for waiting input “{0}”. Check I/O Mapping.</sys:String>
     <sys:String x:Key="IO监控没有可读通道">No readable physical channels are currently available.</sys:String>
     <sys:String x:Key="IO监控DO切换成功">{0} changed to {1}; readback confirmed.</sys:String>
+    <sys:String x:Key="IO监控正在刷新请重试">Refreshing I/O. Please try again shortly.</sys:String>
     <sys:String x:Key="逻辑ON">Logical ON</sys:String>
     <sys:String x:Key="逻辑OFF">Logical OFF</sys:String>
     <sys:String x:Key="轴关联DI状态说明">Current logical DI state.</sys:String>
@@ -708,4 +717,19 @@
     <sys:String x:Key="当前报警页面说明">View the location, condition and handling guidance. Refreshing does not reset alarms.</sys:String>
     <sys:String x:Key="关联页面尚未就绪">This page is not available from the current Runtime. Check the connection. No device action was performed.</sys:String>
     <sys:String x:Key="返回操作页">Back to operation</sys:String>
+    <sys:String x:Key="IO反馈关联">Feedback links</sys:String>
+    <sys:String x:Key="IO反馈标题">Select feedback inputs for an output</sys:String>
+    <sys:String x:Key="IO反馈说明">Uses saved I/O mappings. Feedback shows actual input state and never changes the input.</sys:String>
+    <sys:String x:Key="IO反馈输出">Output</sys:String>
+    <sys:String x:Key="IO反馈输入">Feedback inputs (select one or more)</sys:String>
+    <sys:String x:Key="IO反馈清除">Clear this output</sys:String>
+    <sys:String x:Key="IO反馈无输出">Save an output in I/O mapping first.</sys:String>
+    <sys:String x:Key="IO反馈输出失效">This output is no longer mapped. Clear its links.</sys:String>
+    <sys:String x:Key="IO反馈输入失效">Inputs marked “not found” are no longer mapped. Clear their selections.</sys:String>
+    <sys:String x:Key="IO反馈未找到"> (not found)</sys:String>
+    <sys:String x:Key="IO反馈缺少输出">Output “{0}” no longer exists. Select it and clear its links.</sys:String>
+    <sys:String x:Key="IO反馈缺少输入">Output “{0}” references missing input “{1}”. Clear its selection.</sys:String>
+    <sys:String x:Key="IO反馈保存失败">Save failed: {0}</sys:String>
+    <sys:String x:Key="IO反馈读取失败">Unable to read saved I/O mappings or feedback links: {0}</sys:String>
+    <sys:String x:Key="IO反馈刷新失败">Links were saved, but the monitor could not refresh: {0}. Reopen the monitor.</sys:String>
 </ResourceDictionary>

@@ -8,7 +8,7 @@
 |---|---|
 | 基线提交 | `ffd587e`（本轮实现的提交前基线） |
 | 工作区 | 本轮包含任务执行接入、真实轴暂停/报警处理和复位预检查；精确状态以 `git status --short` 为准 |
-| 构建 | MachineDevice 检查现为 9 组、OperatorPages 检查现为 12 组；TaskEngine 23/53/16 组、Runtime 35 项为历史记录，构建与检查结果需按第 6 节重新确认 |
+| 构建 | MachineDevice 检查现为 9 组、OperatorPages 检查现为 15 组；TaskEngine 23/53/16 组、Runtime 35 项为历史记录，构建与检查结果需按第 6 节重新确认 |
 | 正式 Host | 历史联调中 Load_X 在 -90 mm 停止且未回零；控制器会话与轴位置可能变化，继续测试前必须在正式 Host 重新核对 |
 | 配置根 | `C:\Users\ASUS\AppData\Local\MotionControlFramework\Configurations\Machine01` |
 | 执行入口 | 2026-11-01 验证任务页面后，`Parameters/Equipment.json` 的 `executionOwner` 为 `TaskEngine`；`DemoStations.json` 仅启用上料定位工位，其余三个工位保留配置但已禁用。两种流程的测试配置均保留，切换入口后需重新加载 |
@@ -79,7 +79,7 @@ $dotnet='C:\Program Files\dotnet\dotnet.exe'
 & $dotnet build tools/MotionControl.ZMotionSimulatorCheck/MotionControl.ZMotionSimulatorCheck.csproj -c Release -o tmp/check-rt -v:q
 & .\tmp\check-rt\MotionControl.ZMotionSimulatorCheck.exe --runtime-regression
 
-# 4) 操作员页面检查：期望 12 组，失败 0（含任务页设备状态本地化检查）
+# 4) 操作员页面检查：期望 15 组，失败 0（含任务状态和 IO 关联反馈检查）
 & $dotnet build tools/MotionControl.OperatorPages.Checks/MotionControl.OperatorPages.Checks.csproj -c Release -o tmp/check-ops -v:q
 & .\tmp\check-ops\MotionControl.OperatorPages.Checks.exe
 ```

@@ -1,4 +1,7 @@
 using System.ComponentModel;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
 using System.Windows.Media;
 
 namespace MotionControl.Framework.Wpf.ManualDebug
@@ -8,6 +11,18 @@ namespace MotionControl.Framework.Wpf.ManualDebug
     {
         /// <summary>逻辑映射中的点位名称；未映射时为空。</summary>
         private readonly string _logicalName;
+
+        /// <summary>该输出关联的逻辑输入名称；只用于显示真实输入，不改变 IO。</summary>
+        private readonly List<string> _feedbackNames = new List<string>();
+
+        /// <summary>依次显示关联输入的最新状态。</summary>
+        private readonly Dictionary<string, string> _feedbackStates = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>各反馈输入各自的状态灯和文字。</summary>
+        public ObservableCollection<IoMonitorFeedback> FeedbackItems { get; } = new ObservableCollection<IoMonitorFeedback>();
+
+        /// <summary>同一行内显示全部关联输入状态，完整文本也作为悬停提示。</summary>
+        private string _feedbackSummary = string.Empty;
 
         /// <summary>该通道是否已经配置逻辑映射。</summary>
         private readonly bool _isMapped;
@@ -33,6 +48,9 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>该 DI 是否为从当前工位流程定向跳转的目标信号。</summary>
         private bool _isNavigationTarget;
 
+        /// <summary>该输出是否为右侧反馈列表的当前选择。</summary>
+        private bool _isFeedbackSelection;
+
         /// <summary>当前页面是否允许操作输出通道。</summary>
         private bool _outputControlAvailable;
 
@@ -54,6 +72,50 @@ namespace MotionControl.Framework.Wpf.ManualDebug
 
         /// <summary>控制卡上的零起始物理通道号。</summary>
         public int Channel { get; private set; }
+
+        /// <summary>该通道的逻辑名称；未映射时为空。</summary>
+        public string LogicalName { get { return _logicalName; } }
+
+        /// <summary>当前输出关联的逻辑输入，配置顺序即显示顺序。</summary>
+        public IReadOnlyList<string> FeedbackNames { get { return _feedbackNames; } }
+
+        /// <summary>已采样的各关联输入状态及名称。</summary>
+        public string FeedbackSummary
+        {
+            get { return _feedbackSummary; }
+            private set { SetProperty(ref _feedbackSummary, value, nameof(FeedbackSummary)); }
+        }
+
+        /// <summary>设置关联输入并将旧数据置为等待采样。</summary>
+        public void SetFeedbackNames(IEnumerable<string> names, System.Func<string, string> addressForName, string waitingText)
+        {
+            _feedbackNames.Clear();
+            _feedbackStates.Clear();
+            FeedbackItems.Clear();
+            foreach (string name in names ?? Enumerable.Empty<string>())
+            {
+                _feedbackNames.Add(name);
+                _feedbackStates[name] = waitingText;
+                FeedbackItems.Add(new IoMonitorFeedback(name, addressForName(name), waitingText));
+            }
+            UpdateFeedbackSummary();
+        }
+
+        /// <summary>更新一条真实输入反馈；读取失败应传入错误文字。</summary>
+        public void SetFeedbackState(string name, string state, bool? active = null, bool failed = false)
+        {
+            if (!_feedbackStates.ContainsKey(name)) return;
+            _feedbackStates[name] = state;
+            FeedbackItems.First(item => string.Equals(item.Name, name, System.StringComparison.OrdinalIgnoreCase))
+                .SetState(state, active, failed);
+            UpdateFeedbackSummary();
+        }
+
+        /// <summary>刷新整行显示，保留输入配置顺序。</summary>
+        private void UpdateFeedbackSummary()
+        {
+            FeedbackSummary = string.Join("  |  ", _feedbackNames.Select(name => name + "：" + _feedbackStates[name]));
+        }
 
         /// <summary>本地化后的 DI 或 DO 物理地址文字。</summary>
         public string Address { get; private set; }
@@ -125,6 +187,16 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             get { return _isNavigationTarget; }
             private set { SetProperty(ref _isNavigationTarget, value, nameof(IsNavigationTarget)); }
         }
+
+        /// <summary>选中的输出使用与输入定位一致的高亮。</summary>
+        public bool IsFeedbackSelection
+        {
+            get { return _isFeedbackSelection; }
+            private set { SetProperty(ref _isFeedbackSelection, value, nameof(IsFeedbackSelection)); }
+        }
+
+        /// <summary>更新关联输入面板的输出选择，不触发输出。</summary>
+        public void SetFeedbackSelection(bool selected) { IsFeedbackSelection = selected; }
 
         /// <summary>列表绑定属性变化时通知 WPF 刷新对应行。</summary>
         public event PropertyChangedEventHandler PropertyChanged;
@@ -244,6 +316,39 @@ namespace MotionControl.Framework.Wpf.ManualDebug
             {
                 handler(this, new PropertyChangedEventArgs(propertyName));
             }
+        }
+    }
+
+    /// <summary>一个反馈输入独立的文字和状态颜色；失败和未知不沿用上次灯色。</summary>
+    internal sealed class IoMonitorFeedback : INotifyPropertyChanged
+    {
+        /// <summary>创建等待采样的关联输入。</summary>
+        public IoMonitorFeedback(string name, string address, string waitingText) { Name = name; Address = address; SetState(waitingText, null, false); }
+
+        /// <summary>逻辑输入名称。</summary>
+        public string Name { get; }
+
+        /// <summary>反馈的控制卡和 DI 地址；失效映射明确显示未映射。</summary>
+        public string Address { get; }
+
+        /// <summary>当前状态文字。</summary>
+        public string State { get; private set; }
+
+        /// <summary>当前状态灯颜色，未知为灰色、有效为绿色、错误为红色。</summary>
+        public Brush IndicatorBrush { get; private set; }
+
+        /// <summary>状态属性变化通知。</summary>
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        /// <summary>更新采样状态及灯色，保留可读文字。</summary>
+        public void SetState(string state, bool? active, bool failed)
+        {
+            State = state;
+            IndicatorBrush = new SolidColorBrush(failed ? Color.FromRgb(184, 58, 50)
+                : active == true ? Color.FromRgb(46, 160, 91)
+                : active == false ? Color.FromRgb(92, 105, 119) : Color.FromRgb(184, 190, 198));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(State)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IndicatorBrush)));
         }
     }
 }

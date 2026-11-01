@@ -170,53 +170,17 @@
         </DataTemplate>
 
         <DataTemplate x:Key="DigitalOutputChannelTemplate">
-            <Border Height="30"
-                    Background="#F7F9FC"
-                    BorderBrush="#E6EBF1"
-                    BorderThickness="0,0,0,1"
-                    ToolTip="{Binding StateText}">
-                <Grid Margin="5,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="24" />
-                        <ColumnDefinition Width="46" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="56" />
-                    </Grid.ColumnDefinitions>
-                    <Button Grid.Column="0"
-                            Tag="{Binding}"
-                            IsEnabled="{Binding CanToggleOutput}"
-                            Click="OutputIndicator_Click"
-                            Padding="0"
-                            Background="Transparent"
-                            BorderThickness="0"
-                            ToolTip="{DynamicResource DO状态灯操作提示}">
-                        <Ellipse Width="14"
-                                 Height="14"
-                                 Fill="{Binding IndicatorBrush}"
-                                 HorizontalAlignment="Center"
-                                 VerticalAlignment="Center" />
+            <Border Height="30" BorderThickness="0,0,0,1" MouseLeftButtonDown="OutputRow_SelectFeedback" Cursor="Hand" ToolTip="{DynamicResource IO反馈选择提示}">
+                <Border.Style><Style TargetType="Border"><Setter Property="Background" Value="#F7F9FC" /><Setter Property="BorderBrush" Value="#E6EBF1" />
+                    <Style.Triggers><DataTrigger Binding="{Binding IsFeedbackSelection}" Value="True"><Setter Property="Background" Value="#E3F0FC" /><Setter Property="BorderBrush" Value="#7CB1E8" /></DataTrigger></Style.Triggers>
+                </Style></Border.Style>
+                <Grid Margin="5,0"><Grid.ColumnDefinitions><ColumnDefinition Width="24" /><ColumnDefinition Width="46" /><ColumnDefinition Width="*" /><ColumnDefinition Width="56" /></Grid.ColumnDefinitions>
+                    <Button Grid.Column="0" Tag="{Binding}" IsEnabled="{Binding CanToggleOutput}" Click="OutputIndicator_Click" Padding="0" Background="Transparent" BorderThickness="0" ToolTip="{DynamicResource DO状态灯操作提示}">
+                        <Ellipse Width="14" Height="14" Fill="{Binding IndicatorBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Button>
-                    <TextBlock Grid.Column="1"
-                               Text="{Binding Address}"
-                               Foreground="#40536A"
-                               FontSize="12"
-                               VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="2"
-                               Text="{Binding DisplayName}"
-                               Foreground="#26384D"
-                               FontSize="12"
-                               VerticalAlignment="Center"
-                               TextTrimming="CharacterEllipsis"
-                               ToolTip="{Binding DisplayName}" />
-                    <TextBlock Grid.Column="3"
-                               Text="{Binding StateText}"
-                               Foreground="{Binding IndicatorBrush}"
-                               FontSize="11"
-                               FontWeight="SemiBold"
-                               TextAlignment="Right"
-                               VerticalAlignment="Center"
-                               TextTrimming="CharacterEllipsis"
-                               ToolTip="{Binding StateText}" />
+                    <TextBlock Grid.Column="1" Text="{Binding Address}" Foreground="#40536A" FontSize="12" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="2" Text="{Binding DisplayName}" Foreground="#26384D" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding DisplayName}" />
+                    <TextBlock Grid.Column="3" Text="{Binding StateText}" Foreground="{Binding IndicatorBrush}" FontSize="11" FontWeight="SemiBold" TextAlignment="Right" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding StateText}" />
                 </Grid>
             </Border>
         </DataTemplate>
@@ -339,8 +303,8 @@
             </TabItem>
 
             <TabItem x:Name="DigitalOutputTab" Header="{DynamicResource 数字输出}">
-                <Grid x:Name="DigitalOutputViewport"
-                      SizeChanged="ChannelViewport_SizeChanged">
+                <Grid x:Name="DigitalOutputViewport" SizeChanged="ChannelViewport_SizeChanged">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition x:Name="FeedbackPanelColumn" Width="300" /></Grid.ColumnDefinitions>
                     <ListBox x:Name="DigitalOutputList"
                              Background="White"
                              BorderThickness="0"
@@ -389,6 +353,29 @@
                                VerticalAlignment="Center"
                                Foreground="#7A858D"
                                Visibility="Collapsed" />
+                    <Border x:Name="FeedbackPanel" Grid.Column="1" Margin="8,3,0,3" Padding="8" Background="White" BorderBrush="#D9E0E8" BorderThickness="1" CornerRadius="6">
+                        <DockPanel LastChildFill="True">
+                            <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                                <TextBlock Text="{DynamicResource IO反馈输入标题}" Foreground="#26384D" FontSize="13" FontWeight="SemiBold" />
+                                <TextBlock x:Name="FeedbackSelectionText" Foreground="#596B7D" FontSize="12" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <Grid>
+                                <TextBlock x:Name="FeedbackEmptyText" Text="{DynamicResource IO反馈无关联}" Foreground="#7A858D" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                    <ItemsControl x:Name="FeedbackDetails"><ItemsControl.ItemTemplate><DataTemplate>
+                                        <Border Height="30" Background="#F7F9FC" BorderBrush="#E6EBF1" BorderThickness="0,0,0,1">
+                                            <Grid Margin="5,0"><Grid.ColumnDefinitions><ColumnDefinition Width="24" /><ColumnDefinition Width="92" /><ColumnDefinition Width="*" /><ColumnDefinition Width="80" /></Grid.ColumnDefinitions>
+                                                <Ellipse Grid.Column="0" Width="14" Height="14" Fill="{Binding IndicatorBrush}" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Address}" Foreground="#40536A" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Address}" />
+                                                <TextBlock Grid.Column="2" Text="{Binding Name}" Foreground="#26384D" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}" />
+                                                <TextBlock Grid.Column="3" Text="{Binding State}" Foreground="{Binding IndicatorBrush}" FontSize="11" FontWeight="SemiBold" TextAlignment="Right" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding State}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                                </ScrollViewer>
+                            </Grid>
+                        </DockPanel>
+                    </Border>
                 </Grid>
             </TabItem>
         </TabControl>

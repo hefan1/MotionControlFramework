@@ -296,6 +296,14 @@
     <sys:String x:Key="无法读取轴关联IO">无法读取当前轴关联 IO。</sys:String>
     <sys:String x:Key="DO操作正在执行">当前 DO 操作正在执行，请等待完成。</sys:String>
     <sys:String x:Key="轴关联IO映射已失效">映射已失效</sys:String>
+    <sys:String x:Key="IO反馈查看全部">全部</sys:String>
+    <sys:String x:Key="IO反馈输入标题">关联输入</sys:String>
+    <sys:String x:Key="IO反馈选择提示">点击查看该输出的关联输入</sys:String>
+    <sys:String x:Key="IO反馈无关联">未设置关联输入</sys:String>
+    <sys:String x:Key="IO反馈未映射">未映射</sys:String>
+    <sys:String x:Key="IO反馈读取超时">读取超时</sys:String>
+    <sys:String x:Key="IO反馈读取繁忙">等待读取</sys:String>
+    <sys:String x:Key="IO反馈读取异常">读取异常</sys:String>
     <sys:String x:Key="IO有效">已触发</sys:String>
     <sys:String x:Key="IO无效">未触发</sys:String>
     <sys:String x:Key="IO监控页面说明">按物理通道逐路显示 DI/DO 状态，名称与 IO 映射页对应；点击 DO 状态灯可切换输出。</sys:String>
@@ -364,6 +372,7 @@
     <sys:String x:Key="IO监控流程输入未找到">没有找到流程等待输入“{0}”的 DI 映射，请检查 IO 映射配置。</sys:String>
     <sys:String x:Key="IO监控没有可读通道">当前没有可读取的物理通道。</sys:String>
     <sys:String x:Key="IO监控DO切换成功">{0} 已切换为{1}，读回确认成功。</sys:String>
+    <sys:String x:Key="IO监控正在刷新请重试">正在刷新 IO，请稍后再点击。</sys:String>
     <sys:String x:Key="逻辑ON">逻辑 ON</sys:String>
     <sys:String x:Key="逻辑OFF">逻辑 OFF</sys:String>
     <sys:String x:Key="轴关联DI状态说明">读取的逻辑 DI 当前电平状态。</sys:String>
@@ -718,4 +727,19 @@
     <sys:String x:Key="当前报警页面说明">查看故障位置、条件与处理指导；刷新和导航不会复位报警。</sys:String>
     <sys:String x:Key="关联页面尚未就绪">当前运行时尚未提供此页面，请先检查连接。此次跳转未执行任何设备操作。</sys:String>
     <sys:String x:Key="返回操作页">返回操作页</sys:String>
+    <sys:String x:Key="IO反馈关联">关联反馈</sys:String>
+    <sys:String x:Key="IO反馈标题">为输出选择反馈输入</sys:String>
+    <sys:String x:Key="IO反馈说明">依据已保存的 IO 映射；反馈显示实际输入状态，不会自动改变输入。</sys:String>
+    <sys:String x:Key="IO反馈输出">输出</sys:String>
+    <sys:String x:Key="IO反馈输入">反馈输入（可多选）</sys:String>
+    <sys:String x:Key="IO反馈清除">清除当前关联</sys:String>
+    <sys:String x:Key="IO反馈无输出">请先在 IO 映射中保存输出。</sys:String>
+    <sys:String x:Key="IO反馈输出失效">此输出已不在已保存映射中，请清除关联。</sys:String>
+    <sys:String x:Key="IO反馈输入失效">以下标记“未找到”的输入已失效，请取消勾选。</sys:String>
+    <sys:String x:Key="IO反馈未找到">（未找到）</sys:String>
+    <sys:String x:Key="IO反馈缺少输出">输出“{0}”已不存在，请选择它并清除关联。</sys:String>
+    <sys:String x:Key="IO反馈缺少输入">输出“{0}”的反馈“{1}”已不存在，请取消勾选。</sys:String>
+    <sys:String x:Key="IO反馈保存失败">保存失败：{0}</sys:String>
+    <sys:String x:Key="IO反馈读取失败">无法读取已保存的 IO 映射或反馈关联：{0}</sys:String>
+    <sys:String x:Key="IO反馈刷新失败">关联已保存，但监控页面刷新失败：{0}。请重新打开监控页。</sys:String>
 </ResourceDictionary>

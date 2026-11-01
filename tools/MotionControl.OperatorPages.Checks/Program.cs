@@ -42,11 +42,14 @@ namespace MotionControl.OperatorPages.Checks
             Check("任务页报警表格快照与语言切换", TaskAlarmGridChecks.Run, ref failures);
             Check("设备状态资源覆盖与中英文显示", MachineStateLocalization, ref failures);
             Check("IO 监控区分通道范围和当前读取失败", IoMonitorReadFailureChecks.Run, ref failures);
+            Check("DO 切换前重读实际电平", IoMonitorToggleChecks.Run, ref failures);
+            Check("IO 反馈关联持久化与无效配置", IoFeedbackAssociationChecks.Run, ref failures);
+            Check("IO 关联反馈显示与独立读取", IoFeedbackMonitorChecks.Run, ref failures);
             Check("Host导航和返回原页面", HostNavigation, ref failures);
             Check("暂停和停止的现场恢复提示", MachineCommandGuidance, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：12 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：15 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }

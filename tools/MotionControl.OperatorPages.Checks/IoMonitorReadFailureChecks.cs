@@ -6,9 +6,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Threading;
+using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.IO;
 using MotionControl.Framework.Contracts.Motion;
+using MotionControl.Framework.Runtime.Alarms;
+using MotionControl.Framework.Runtime.Machine;
 using MotionControl.Framework.Wpf.ManualDebug;
 using MotionControl.Host.Wpf;
 
@@ -21,7 +25,9 @@ namespace MotionControl.OperatorPages.Checks
         internal static void Run()
         {
             var fake = new ReadOnlyIo();
-            var view = new IoMonitorView(true, null, fake, fake, null, null);
+            var runtime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { new GuardCard() }),
+                new IStationFlow[0], new MachineAlarmService(), new GuardSafety());
+            var view = new IoMonitorView(true, runtime, fake, fake, null, null);
             int outputReads = 0;
             view.VisibleReadStatusChanged += (input, failed) => { if (!input && !failed) outputReads++; };
             var host = new MainWindow();
@@ -49,6 +55,20 @@ namespace MotionControl.OperatorPages.Checks
                 ((TabControl)view.FindName("MonitorTabs")).SelectedIndex = 1;
                 PumpUntil(() => outputReads > 0 && !status.Text.Contains("读取失败"), "切换 DO 后未完成独立读取。");
                 Require(footer.Text.Contains("DI最近可见通道读取异常"), "DO 成功时不应掩盖上次 DI 读取失败。");
+                // 模拟一次尚未返回的读取，检查点击不能静默丢失或误写输出。
+                fake.HoldOutputReads = true;
+                PumpUntil(() => fake.OutputReadBlocked, "未能使 DO 轮询保持进行中。");
+                Button indicator = FindButtons(view).FirstOrDefault(button => button.IsEnabled
+                    && button.Tag != null && button.Tag.GetType().Name == "IoMonitorChannel");
+                Require(indicator != null, "找不到已读取且可操作的 DO 状态灯。");
+                indicator.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                var message = (TextBlock)view.FindName("OperationMessageText");
+                Require(message.Text.Contains("正在刷新 IO") && message.Text.Contains("再点击"), "刷新期间点击没有提示重试。");
+                Require(fake.OutputWrites == 0, "刷新期间点击不应写入输出。");
+                int readsBeforeRelease = outputReads;
+                fake.ReleaseOutputRead();
+                PumpUntil(() => outputReads > readsBeforeRelease, "DO 读取未完成页面更新。");
+                Require(fake.OutputWrites == 0, "刷新完成后不应延迟执行先前的点击。");
                 fake.FailureMode = 0;
                 ((TabControl)view.FindName("MonitorTabs")).SelectedIndex = 0;
                 PumpUntil(() => !footer.Text.Contains("读取异常"), "DI 再次成功采样后底栏没有清除 DI 提示。");
@@ -56,7 +76,18 @@ namespace MotionControl.OperatorPages.Checks
                 Require(!footer.Text.Contains("读取异常"), "更换监控页后仍引用旧页采样结果。");
                 Require(fake.BatchReads > 0 && fake.SingleReads > 0, "没有覆盖批量失败后的逐路读取。");
             }
-            finally { window.Close(); host.Close(); }
+            finally { fake.ReleaseOutputRead(); window.Close(); host.Close(); }
+        }
+
+        /// <summary>查找已生成的状态灯按钮，实际触发页面的 WPF 点击事件。</summary>
+        private static IEnumerable<Button> FindButtons(DependencyObject parent)
+        {
+            for (int index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(parent, index);
+                if (child is Button button) yield return button;
+                foreach (Button nested in FindButtons(child)) yield return nested;
+            }
         }
 
         /// <summary>让 WPF 调度轮询推进，超过限定时间则报告具体失败。</summary>
@@ -87,6 +118,14 @@ namespace MotionControl.OperatorPages.Checks
             public int BatchReads { get; private set; }
             /// <summary>累计逐路读取次数。</summary>
             public int SingleReads { get; private set; }
+            /// <summary>为并发检查暂停一次输出批量读取。</summary>
+            public bool HoldOutputReads { get; set; }
+            /// <summary>当前批量读取是否被测试暂停。</summary>
+            public bool OutputReadBlocked { get; private set; }
+            /// <summary>累计输出写入调用次数；本检查始终禁止写入。</summary>
+            public int OutputWrites { get; private set; }
+            /// <summary>等待测试明确释放的输出读取。</summary>
+            private TaskCompletionSource<IReadOnlyDictionary<int, bool>> _outputRead;
             /// <summary>返回四路输入和输出的模拟能力。</summary>
             public Task<MotionCardIoCapabilities> ReadIoCapabilitiesAsync(CancellationToken token)
             {
@@ -106,7 +145,7 @@ namespace MotionControl.OperatorPages.Checks
             /// <summary>输出始终只读成功。</summary>
             public Task<bool> ReadDigitalOutputChannelAsync(int channel, CancellationToken token) { return Task.FromResult(false); }
             /// <summary>测试页不允许执行输出写入。</summary>
-            public Task WriteDigitalOutputChannelAsync(int channel, bool high, CancellationToken token) { throw new InvalidOperationException("禁止写入输出。"); }
+            public Task WriteDigitalOutputChannelAsync(int channel, bool high, CancellationToken token) { OutputWrites++; throw new InvalidOperationException("禁止写入输出。"); }
             /// <summary>模拟批量输入失败，供页面回退到逐路读取。</summary>
             public Task<IReadOnlyDictionary<int, bool>> ReadDigitalInputChannelsAsync(IReadOnlyCollection<int> channels, CancellationToken token)
             {
@@ -117,7 +156,24 @@ namespace MotionControl.OperatorPages.Checks
             /// <summary>批量输出只读成功。</summary>
             public Task<IReadOnlyDictionary<int, bool>> ReadDigitalOutputChannelsAsync(IReadOnlyCollection<int> channels, CancellationToken token)
             {
+                if (HoldOutputReads)
+                {
+                    HoldOutputReads = false;
+                    OutputReadBlocked = true;
+                    _outputRead = new TaskCompletionSource<IReadOnlyDictionary<int, bool>>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    return _outputRead.Task;
+                }
                 return Task.FromResult<IReadOnlyDictionary<int, bool>>(channels.ToDictionary(channel => channel, channel => false));
+            }
+
+            /// <summary>释放被暂停的读取，返回完整输出状态而不产生写入。</summary>
+            public void ReleaseOutputRead()
+            {
+                HoldOutputReads = false;
+                if (_outputRead == null) return;
+                OutputReadBlocked = false;
+                _outputRead.TrySetResult(Enumerable.Range(0, 4).ToDictionary(channel => channel, channel => false));
+                _outputRead = null;
             }
         }
     }

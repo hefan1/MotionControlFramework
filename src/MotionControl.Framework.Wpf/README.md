@@ -14,6 +14,8 @@
 
 `Configuration/IoMappingConfigurationView` 编辑 `HardwareConfig/IoMapping.json` 中的逻辑 DI/DO 名称、控制卡标识、物理通道、有效电平和急停输入名称。此页面与轴映射页共用控制卡连接状态；断开时锁定编辑，检查和保存只修改配置文件，不会直接切换物理输出。
 
+在 IO 映射页的输出区选择“关联反馈”，可为已保存的输出选择多个已保存的输入；关系单独保存在 `Parameters/IoFeedbackAssociations.json`，不改变电平或设备动作。IO 监控的输出页按原有列表显示 DO，选中输出后在旁边显示对应 DI 的实际状态；跨卡通过逻辑 IO 读取，超时、失败和失效引用不会当作正常状态。输出灯点击时在手动保护内重新读取当前电平，再切换并读回。
+
 回零模式编号由具体适配器提供并在该适配器内校验；通用页面只显示连接实现返回的编号。轴参数用 `HomeModeAdapterType` 记录编号所属的 API 适配器，避免更换适配器后误用相同数字；旧配置中的 `HomeModeVendor` 只用于兼容迁移。需要额外回零方向或特殊参数的卡型，应由对应 Host/适配器配置负责，不能强塞进单一通用模式编号。当前 Host 只注册 ZMotion 总线仿真选项，其他厂商和实体卡适配器尚未接入。
 
 设备项目完成硬件配置校验并创建 `MachineRuntime`、`MotionCardGroup`、`ILogicalIo` 和 `MachineConfigurationStore` 后，由 Host 组合根分别创建两个手动页面并注入 `MainWindow`。轴页面还需传入本设备 `MachineId` 以保存示教位置。页面不负责选择或创建厂商驱动；轴动作和手动 DO 写入前会实时读取 Runtime 的联锁结果，操作执行期间 Runtime 会阻止启动、复位和断卡。急停有效、急停状态不可读、急停报警未复位或自动流程运行时都会拒绝普通手动动作；单轴受控停止走独立入口。阻止原因由中英文资源字典显示。
