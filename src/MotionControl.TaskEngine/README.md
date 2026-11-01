@@ -1,9 +1,8 @@
 # 任务模块：先从这些文件读起
 
-当前完成阶段 1 的定义/存储/校验、阶段 2 的纯软件仿真执行器，以及阶段 3 的资源仲裁和显式互锁。
-在此基础上已加入同卡轴组定位，各轴独立目标与速度，全部到位后继续。
-设备级入口也已加入：任务清单、独立循环/触发工位、可选初始化、统一复位启停、故障当前步骤恢复和连续生产监控。
-执行器只接收独立的 `SimulatedTaskDevice`，不连接控制器或 Host。运行监控 WPF 位于单独的 `MotionControl.TaskEngine.Wpf` 项目；完整的任务定义编辑器仍未开发。定义校验通过不等于允许实际设备运行。
+任务模块提供定义、存储、校验、执行、资源仲裁和设备级工位调度。执行器通过 `ITaskDevice` 访问设备：`InMemoryTaskDevice` 供离线检查使用，`MotionControl.TaskEngine.MachineDevice` 为正式 Host 提供设备接入。任务配置编辑器和运行监控在 `MotionControl.TaskEngine.Wpf`。
+
+正式 Host 已装配任务执行入口；设备任务的互锁节点和轴组插补尚不支持。下文按阶段介绍内存示例，不能把内存示例的功能或测试结果当作控制器功能已验证。任务驱动轴、DI、报警及连续循环，仍需正式 Host 端到端验证；定义校验通过不等于允许设备运行。
 
 ## 文件如何定位
 
@@ -14,7 +13,7 @@
 | `Validation` | 为什么任务不能保存，哪个节点或字段有问题 |
 | `Configuration` | JSON 如何读取，版本如何检查，旧文件如何保留 |
 | `Execution` | 顺序、并行、分支如何运行，怎样暂停/取消，错误在哪个节点 |
-| `Simulation` | 纯内存的轴、DI/DO、变量；没有真实设备服务 |
+| `Device/InMemory` | 纯内存的轴、DI/DO、变量；没有真实设备服务 |
 | `Resources` | 整组申请、冲突顺位、持有/等待/待确认诊断 |
 | `Machine` | 设备任务清单、独立工位循环、请求交接、整机复位启停和监控快照 |
 | `Samples` | 可直接阅读的示例任务；不会自动写入现场目录 |
@@ -105,7 +104,7 @@ TaskRun：Pause / Resume / Cancel / GetSnapshot / Completion
 
 ```csharp
 // 只创建内存模型；ConfigureAxis 不会向真实伺服写任何指令。
-var device = new SimulatedTaskDevice(catalog);
+var device = new InMemoryTaskDevice(catalog);
 device.ConfigureAxis("X", position: 0, enabled: true, homed: true);
 device.ConfigureAxis("Y", position: 0, enabled: true, homed: true);
 
@@ -121,12 +120,12 @@ if (result.State == TaskRunState.Failed)
     Console.WriteLine(result.Error.ToString());
 ```
 
-新增命名空间为 `MotionControl.TaskEngine.Execution`、`MotionControl.TaskEngine.Simulation`。示例逻辑名称必须在自己的目录中存在。主任务有子任务时，仍将其他定义作为 `Start` 的 `dependencies` 参数。
+新增命名空间为 `MotionControl.TaskEngine.Execution`、`MotionControl.TaskEngine.Device.InMemory`。示例逻辑名称必须在自己的目录中存在。主任务有子任务时，仍将其他定义作为 `Start` 的 `dependencies` 参数。
 
 ### 暂停、超时和取消
 
 - `Pause()` 冻结内存动作提交和活动时钟；`Resume()` 从内存冻结点继续。已接受的相对移动保留原来的绝对终点，修改目标变量不会改变这次动作。
-- 这是阶段 2 的内存冻结语义，不能直接用作实际卡的暂停，也没有替换 Host 的“暂停后复位再启动”规则。
+- 以上是内存设备的语义。正式 Host 的任务暂停会等待任务停步并请求真实轴受控停止，实际控制器链路仍需端到端验证。
 - 每个节点的 `TimeoutMs` 包含它的子动作；暂停时间不计入。等待通过异步轮询检查约每 10ms 的状态，不能承诺 Windows 的实时调度精度。延时应给总时限留出调度余量。
 - `Cancel()` 只是发出请求；必须等待 `Completion` 才表示分支全部退出、内存轴占用清理完毕。暂停期间同样可取消。
 - 失败优先保留触发并行取消的原始故障；因它退出的其他节点标为 Cancelled，主运行标为 Failed。
@@ -156,7 +155,7 @@ Move/Home 自动申请单根轴，MoveAxisGroup 一次申请整组轴，SetOutpu
 
 ## 阶段 3：资源范围怎样使用
 
-阅读顺序：`ResourceScopeNode` → `TaskNodeExecutor.Resources.cs` → `TaskResourceCoordinator` → `SimulatedTaskDevice.Interlocks.cs` / `SimulatedTaskDevice.Resources.cs`。
+阅读顺序：`ResourceScopeNode` → `TaskNodeExecutor.Resources.cs` → `TaskResourceCoordinator` → `Device/InMemory/InMemoryTaskDevice.Interlocks.cs` / `InMemoryTaskDevice.Resources.cs`。
 
 ```text
 登记完整资源组 → 等待冲突者退出 → 一次取得整组
@@ -193,7 +192,7 @@ Move/Home 自动申请单根轴，MoveAxisGroup 一次申请整组轴，SetOutpu
 
 ### 等待、暂停与诊断
 
-每个 `SimulatedTaskDevice` 有独立协调器；操作同一个实例的运行共用队列。完整组要么一起取得、要么全部等待；相冲突的较早等待者优先，互不冲突的申请可并行。暂停的等待者保留顺位，相冲突的后来者不能插队；取消或超时会移除等待记录。
+每个 `InMemoryTaskDevice` 有独立协调器；操作同一个实例的运行共用队列。完整组要么一起取得、要么全部等待；相冲突的较早等待者优先，互不冲突的申请可并行。暂停的等待者保留顺位，相冲突的后来者不能插队；取消或超时会移除等待记录。
 
 `device.ReadResources()` 返回只读副本：RequestId、RunId、TaskId、NodeId、ExecutionId、资源组、Waiting/Held/Blocked 和原因。任务节点的等待详情及超时错误同样保留互锁条件或阻塞者身份。
 
@@ -217,7 +216,7 @@ Console.WriteLine(reason);
 
 ## 轴组定位怎样使用
 
-阅读顺序：`Definitions/MoveAxisGroupNode.cs` → `TaskNodeExecutor.AxisGroups.cs` → `SimulatedTaskDevice.AxisGroups.cs`。相关方法分别负责定义、资源申请/目标解析，以及整组检查/逐轴推进/收尾。
+阅读顺序：`Definitions/MoveAxisGroupNode.cs` → `TaskNodeExecutor.AxisGroups.cs` → `Device/InMemory/InMemoryTaskDevice.AxisGroups.cs`。相关方法分别负责定义、资源申请/目标解析，以及内存设备中的整组检查/逐轴推进/收尾。
 
 ```csharp
 // 每根轴明确指定自己的目标和工艺参数；此定义交给现有 TaskExecutionEngine。
@@ -279,7 +278,7 @@ var move = new MoveAxisGroupNode
 // definitions 包含本次各工位及它们调用的子任务，不重复任务标识。
 var store = new TaskMachineConfigurationStore(new MachineConfigurationStore(configurationRoot));
 var configuration = store.Load(machineId, definitions, catalog);
-var device = new SimulatedTaskDevice(catalog);
+var device = new InMemoryTaskDevice(catalog);
 
 // 本例假定 X 在目录中；其他轴和信号也必须按测试场景明确配置。
 device.ConfigureAxis("X", position: 0, enabled: true, homed: true);
@@ -353,7 +352,7 @@ Reset 不统一要求轴已经使能或回零，免回零场景可不配置初�
 
 ## 后续阶段仍要做什么
 
-实际控制器的回零/位置参考、伺服、报警、限位、运动到位、停止确认，仍需设备适配层接入；内存模型通过不代表这些硬件行为已验证。
+设备任务已通过设备适配层接入轴与 IO 契约；实际控制器的回零/位置参考、伺服、报警、限位、运动到位和停止确认仍需按目标设备验证，内存模型通过不代表这些行为已验证。
 变量质量目前只覆盖已有 HasValue，采集周期/请求关联和数据新鲜度尚未接入。机械几何避让、实际区域清空验证、业务信号依赖图、相对定位重启恢复和并行分支检查点属于后续阶段。资源状态仅保留在当前内存设备内，重新创建设备或重启程序不会恢复 Blocked；禁止将此行为直接用于生产恢复。
 通讯、计算动作、子任务参数绑定暂不接受对应 kind，避免保存一个会被默默跳过的动作。
 

@@ -6,11 +6,11 @@
 
 - 目标运行时：.NET Framework 4.8。
 - 桌面界面：WPF。
-- 流程方式：设备项目使用 C# 编写工位流程步。
-- 可选任务模块：已完成任务定义、配置引用、JSON 保存读取、离线校验和纯软件仿真执行；支持顺序、分支、并行汇合、单轴/同卡轴组定位，以及共享轴/输出/区域的资源排队、显式互锁和异常待确认恢复。设备级入口已支持可选初始化、独立循环/请求触发工位、统一复位启动暂停、故障当前步骤恢复和监控快照，提供三工位三十周期连续交接样例。协调插补、实际卡接入后续分阶段实现。
-- 任务运行监控：已加入独立 WPF 项目，按工位显示任务步骤树与分类详情；轴、IO、变量详情可定位到现有映射/手动/变量页的具体对象。当前执行工作台仅运行内存仿真，实时整机变量共享、真实任务执行另行开发。
+- 流程方式：支持设备项目编写 C# 工位流程，也提供任务列表配置和执行入口；同一时刻只允许一个入口持有设备控制权。
+- 任务模块：提供任务定义、配置引用、保存读取、校验、步骤执行和设备级工位调度。正式 Host 已装配设备任务入口；设备任务的互锁节点和轴组插补尚不支持，必须明确报错。
+- 任务运行监控：按工位显示步骤与详情；正式 Host 可加载已应用的任务，关联设备运行时、轴、IO、变量和报警。当前端到端设备循环及任务暂停停轴仍需验证。
 - 任务配置与编辑初版：设置 → 任务配置，支持工位安排、任务库、分类步骤编辑、设备草稿、检查与带回滚的运行文件应用。独立预览参数为 `--task-editing-preview`，不创建控制卡服务。操作和文件说明见 [`Editing/README.md`](src/MotionControl.TaskEngine.Wpf/Editing/README.md)。
-- PDF 四个工作区已接入：设备总览、任务配置、分栏列表编辑、当前报警。总览与报警观察传统 Runtime；列表任务的运行入口仍为独立内存会话。使用 `--ui-workspace-preview` 查看独立四页示例，说明见 [`Operation/README.md`](src/MotionControl.Host.Wpf/Operation/README.md)。
+- 设备总览、任务配置、列表编辑和当前报警页面已接入；使用 `--ui-workspace-preview` 查看独立四页示例，说明见 [`Operation/README.md`](src/MotionControl.Host.Wpf/Operation/README.md)。
 - 设备模块：由 Host 显式引用并组合；本骨架中的 Equipment.Template 仅作新设备项目的结构参考，Host 不引用它。
 - 扩展模块：运动卡、通讯、存储和 MES 适配器按独立模块接入；雷赛、正运动和 ADLINK 原生 API 已拆成独立项目，正运动另有仅供 ZDevelop 仿真器使用的首版适配器。
 - 通用手动调试：已提供逻辑轴、DI/DO 手动页；设备专属动作留在设备项目。
@@ -37,7 +37,8 @@
 | `MotionControl.Framework.Contracts` | 框架与设备、驱动模块之间的稳定契约所在位置 |
 | `MotionControl.Framework.Runtime` | 单机运行状态、工位流程调度、报警、配置和追溯等通用运行时 |
 | `MotionControl.Framework.Wpf` | 通用 WPF 页面与控件，包括手动调试页面 |
-| `MotionControl.TaskEngine` | 独立任务定义、配置目录、校验、内存执行、资源协调及设备级多工位调度；目前仅操作内存仿真设备 |
+| `MotionControl.TaskEngine` | 任务定义、配置目录、校验、执行、资源协调及多工位调度，通过设备接口访问轴、IO 和变量 |
+| `MotionControl.TaskEngine.MachineDevice` | 将任务设备接口接到当前运动卡组、逻辑 IO、变量和设备运行时；不支持的操作明确报错 |
 | `MotionControl.TaskEngine.Wpf` | 任务运行监控、分类详情、列表编辑、工位配置、对象导航与独立预览；复用已有 WPF 滚动条资源 |
 | `MotionControl.TaskEngine.Checks` | 任务模块离线检查，不引用 Host、WPF 或厂商适配器 |
 | `MotionControl.TaskMonitor.Checks` | 任务监控树关联、内存仿真和 WPF 控件构造检查，不连接控制器 |
@@ -50,3 +51,20 @@
 开发时遵循根目录的 [`AGENTS.md`](AGENTS.md) 项目规则，尤其是“直白优先，默认不抽象”。详细依赖和模块边界见 [`docs/architecture.md`](docs/architecture.md)；厂商 API 来源及部署依赖见 [`docs/vendor-motion-card-apis.md`](docs/vendor-motion-card-apis.md)。
 
 任务模块的阅读顺序、使用示例和本阶段边界见 [`src/MotionControl.TaskEngine/README.md`](src/MotionControl.TaskEngine/README.md)。
+
+## 两条流程路径和维护入口
+
+| 要做的事情 | 从哪里开始 |
+| --- | --- |
+| 用 C# 增加工位流程 | 先看 [`DemoStationFlow.cs`](src/MotionControl.Equipment.Demo/DemoStationFlow.cs) 和 [`DemoEquipmentDefinition.cs`](src/MotionControl.Equipment.Demo/DemoEquipmentDefinition.cs)；设备项目负责工艺步骤和设备专属配置 |
+| 用任务列表配置流程 | 在 Host 的任务配置页安排工位和编辑任务；先保存草稿、检查，再更新任务文件。运行入口读取已应用的任务和工位配置；当前控制卡会话连接时不允许更新任务文件 |
+| 理解任务如何调用设备 | 从 [`TaskMonitorLauncher.cs`](src/MotionControl.Host.Wpf/Tasks/TaskMonitorLauncher.cs) 看加载与启停，再看 [`ITaskDevice`](src/MotionControl.TaskEngine/Device/ITaskDevice.cs) 和 [`MachineTaskDevice`](src/MotionControl.TaskEngine.MachineDevice/MachineTaskDevice.cs) |
+| 修改公共轴、IO 或报警行为 | 先找 `Framework.Contracts` 中的契约，再看 `Framework.Runtime` 对应功能；确认两条流程路径的影响 |
+| 修改正运动卡专有行为 | 在 `Adapters/MotionCards/ZMotion` 查找适配器和厂商 API；设备工艺使用逻辑名称与工程单位 |
+| 修改现场界面 | 先找 `Framework.Wpf` 或 `TaskEngine.Wpf` 的对应页面，再看 Host 的装配和导航 |
+
+`Parameters/Equipment.json` 可指定 `StationFlows`、`TaskEngine` 或 `None` 作为执行入口；任务会话申请控制权时，运行中的 C# 工位会阻止接管，关闭会话后归还接管前的入口。两条路径的流程定义各自维护，不会自动互相转换。配置入口本身不代表设备正在运行。
+
+代码工位示例当前是“定位 → 等待 DI → 输出脉冲 → 等待 DI 复位”；任务列表可以配置另一种步骤顺序。更改工艺时应先确认实际设备要求，不能将这两个示例当成完全相同的生产流程。
+
+正式 Host 的任务读取和未回零复位拦截已做窗口核对；任务驱动轴、DI、报警到连续循环，以及任务暂停时真实轴停稳，尚未完成端到端验证。正运动 Host 当前只连接 `VPLC5xx-Simu`，并不等于实体卡已经接入或设备完成验收。后续扩展优先围绕具体功能逐步调整，记录修改入口、跨模块影响和对应验证，避免仅为减少文件数而合并职责。
