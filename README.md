@@ -68,3 +68,45 @@
 代码工位示例当前是“定位 → 等待 DI → 输出脉冲 → 等待 DI 复位”；任务列表可以配置另一种步骤顺序。更改工艺时应先确认实际设备要求，不能将这两个示例当成完全相同的生产流程。
 
 正式 Host 的任务读取和未回零复位拦截已做窗口核对；任务驱动轴、DI、报警到连续循环，以及任务暂停时真实轴停稳，尚未完成端到端验证。正运动 Host 当前只连接 `VPLC5xx-Simu`，并不等于实体卡已经接入或设备完成验收。后续扩展优先围绕具体功能逐步调整，记录修改入口、跨模块影响和对应验证，避免仅为减少文件数而合并职责。
+
+## 新工程师：从一个上料流程开始
+
+先确认要维护哪一种流程：手写工位看设备项目；任务列表先看上位机里的任务配置和已应用版本。下面两个例子用于定位代码，不能直接当作设备的机械动作要求。
+
+### 路径一：C# 手写工位
+
+1. 打开 [`DemoStationFlow.cs`](src/MotionControl.Equipment.Demo/DemoStationFlow.cs)，从 `ExecuteCurrentStepAsync` 的步骤分派开始，顺着步骤 10、20、30、40 看定位、等待输入、输出脉冲和等待信号复位。关注每步完成后在哪里设置下一步，以及取消时输出怎样收尾。
+2. 看 [`DemoEquipmentDefinition.cs`](src/MotionControl.Equipment.Demo/DemoEquipmentDefinition.cs)，了解工位怎样根据设备配置创建、取得逻辑轴和 IO，以及检查引用。样例配置在 [`DemoStations.json`](src/MotionControl.Equipment.Demo/Samples/DemoStations.json)。
+3. 需要修改工艺时，在对应设备项目中修改工位及其设备参数；确认动作的超时、报警、暂停后重试和输出收尾。不要把具体设备的轴号或厂商 API 写进通用 Runtime。
+4. 查设备何时创建工位：从 [`App.xaml.cs`](src/MotionControl.Host.Wpf/App.xaml.cs) 的 `CreateEquipmentStationFlows` 跟到设备定义，再查 [`IStationFlow`](src/MotionControl.Framework.Contracts/Flow/IStationFlow.cs) 和 Runtime 的工位调度。`Equipment.Template` 是参考模板，不会自动成为当前设备。
+
+### 路径二：任务列表
+
+1. 在正式 Host 的“设置 → 任务配置”查看工位安排和任务步骤。保存草稿后先检查，再按页面条件更新任务文件；连接控制卡时目前不能更新运行文件，草稿可以保存。
+2. 在“监控 → 任务接入状态”读取已应用任务。读取不自动启动；随后分别执行任务复位和启动。关闭任务会话会归还该会话取得的设备控制权。
+3. 追踪代码：[`TaskConfigurationView.xaml.cs`](src/MotionControl.TaskEngine.Wpf/Editing/TaskConfigurationView.xaml.cs) 负责配置页操作，[`TaskWorkspaceStore.Apply.cs`](src/MotionControl.TaskEngine/Editing/TaskWorkspaceStore.Apply.cs) 负责应用过程；[`TaskMonitorLauncher.cs`](src/MotionControl.Host.Wpf/Tasks/TaskMonitorLauncher.cs) 负责正式 Host 的任务会话入口。
+4. 找步骤执行逻辑时，从 [`TaskNodeExecutor.cs`](src/MotionControl.TaskEngine/Execution/TaskNodeExecutor.cs) 按动作类型进入 `TaskNodeExecutor.Motion.cs`、`TaskNodeExecutor.Flow.cs` 或报警处理文件；设备动作经过 [`ITaskDevice.cs`](src/MotionControl.TaskEngine/Device/ITaskDevice.cs) 进入 `MachineTaskDevice`。仅修改编辑器不会自动实现一个新动作的执行。
+
+### 常见故障怎样找
+
+| 现象 | 先确认什么 | 代码入口 |
+| --- | --- | --- |
+| 任务检查提示引用不存在 | 当前设备目录是否已有同名逻辑轴、DI、DO、变量或报警；查看完整检查信息 | [`TaskDefinitionValidator.cs`](src/MotionControl.TaskEngine/Validation/TaskDefinitionValidator.cs)、[`TaskResourceCatalogLoader.cs`](src/MotionControl.TaskEngine/Catalog/TaskResourceCatalogLoader.cs) |
+| 修改步骤后运行结果未变 | 页面是否只保存了草稿、是否更新任务文件、任务会话是否重新读取 | [`TaskWorkspaceStore.cs`](src/MotionControl.TaskEngine/Editing/TaskWorkspaceStore.cs)、[`TaskMonitorSession.cs`](src/MotionControl.TaskEngine.Wpf/Simulation/TaskMonitorSession.cs) |
+| 不能启动、手动操作被拒绝 | 先看界面提示、当前执行入口及任务会话、报警和轴状态；未回零或读取失败应先处理 | [`MachineRuntime.cs`](src/MotionControl.Framework.Runtime/Machine/MachineRuntime.cs)、[`TaskMachineController.AxisReadiness.cs`](src/MotionControl.TaskEngine/Machine/TaskMachineController.AxisReadiness.cs) |
+| 原点、限位或轴动作异常 | 对照逻辑轴映射、控制器状态和报警；保留轴名、动作与原始错误码 | [`ZMotionCard.AxisOperations.cs`](src/Adapters/MotionCards/ZMotion/Adapter/ZMotionCard.AxisOperations.cs)、[`ZMotionCard.AxisStatus.cs`](src/Adapters/MotionCards/ZMotion/Adapter/ZMotionCard.AxisStatus.cs) |
+| 等待超时却没有预期报警 | 核对等待步骤关联、报警库和上层步骤时限，再查当前报警状态 | [`TaskNodeExecutor.Alarms.cs`](src/MotionControl.TaskEngine/Execution/TaskNodeExecutor.Alarms.cs)、[`MachineAlarmService.cs`](src/MotionControl.Framework.Runtime/Alarms/MachineAlarmService.cs) |
+
+## 构建和验证的边界
+
+Host 为 .NET Framework 4.8、WPF 项目，默认目标为 x64。Windows 开发环境需要能构建 .NET Framework 4.8 的工具链；正运动原生运行库的本机放置位置及位数要求见[适配器说明](src/Adapters/MotionCards/ZMotion/Adapter/README.md)。在仓库根目录构建正式 Host：
+
+```powershell
+dotnet build src/MotionControl.Host.Wpf/MotionControl.Host.Wpf.csproj -c Release
+```
+
+目标为 `src/MotionControl.Host.Wpf/bin/Release/net48/MotionControl.Host.Wpf.exe`。若文件被运行中的 Host 占用，先确认窗口和进程路径，再按项目规则安全退出该实例。不要通过改写用户的 Machine01 配置来解决构建问题。
+
+选择与改动相关的检查：任务定义或执行看 `tools/MotionControl.TaskEngine.Checks`，设备任务接入看 `tools/MotionControl.MachineDevice.Checks`，Runtime 看 `tools/MotionControl.ZMotionSimulatorCheck --runtime-regression`，操作页逻辑看 `tools/MotionControl.OperatorPages.Checks`。具体构建和运行命令可从 [`HANDOFF.md`](HANDOFF.md) 第 6 节查找；其历史结果和设备状态需要重新核对，不能直接当成当前状态。
+
+内存检查只证明检查覆盖的代码行为；正式界面需在正式 Host 实际操作并观察，控制器动作需核对所用控制器和信号状态。测试后保留 Machine01 的测试配置，停止轴并将本轮改动过的虚拟 IO 恢复安全值。现场硬件、接线和机械行为需要在对应设备上单独验证。

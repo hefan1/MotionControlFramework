@@ -33,7 +33,7 @@
 | --- | --- |
 | `Monitoring/TaskStationRow.cs` | 工位表格行及整机状态文字 |
 | `Monitoring/TaskStepTree.cs` | 任务定义与本轮执行调用的关联 |
-| `Simulation/TaskMonitorSession.cs` | 配置目录加载与独立模拟设备会话 |
+| `Simulation/TaskMonitorSession.cs` | 加载任务与工位配置并建立会话；可接收正式设备，也可创建独立内存设备 |
 | `Simulation/TaskMonitorExample.cs` | 纯内存演示任务和工位 |
 | `Views/TaskMonitorView.xaml` | 工位表、步骤树和详情页面布局 |
 | `Views/TaskMonitorView.*Details.cs` | 按动作类型展示参数、采样和页面关联 |
