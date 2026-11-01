@@ -41,7 +41,9 @@ namespace MotionControl.TaskEngine.Wpf.Views
             var diagnostic = row.Snapshot?.Diagnostics;
             DetailTitle.Text = row.Number + " · " + row.Name;
             DetailKind.Text = KindName(node);
-            string detail = (row.Snapshot?.State == TaskNodeState.Failed ? row.Detail : diagnostic?.Summary ?? row.Detail) ?? string.Empty;
+            string detail = (row.Snapshot?.State == TaskNodeState.Failed
+                || (node is WaitConditionNode && row.Snapshot?.State == TaskNodeState.Waiting)
+                ? row.Detail : diagnostic?.Summary ?? row.Detail) ?? string.Empty;
             if (_snapshot != null && _snapshot.State != TaskMachineState.Running)
                 detail = detail.Replace("（运动中）", "（设备未运行，目标未到位）")
                     .Replace("运动中：", "设备未运行，目标未到位：");

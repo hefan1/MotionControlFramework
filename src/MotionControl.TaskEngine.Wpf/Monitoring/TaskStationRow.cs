@@ -25,6 +25,8 @@ namespace MotionControl.TaskEngine.Wpf.Monitoring
         public string Action { get; private set; }
         /// <summary>当前等待和故障原因。</summary>
         public string Detail { get; private set; }
+        /// <summary>完整的原始等待或故障诊断，供维护人员悬停查看。</summary>
+        public string EngineeringDetail { get; private set; }
         /// <summary>成功周期数。</summary>
         public long Cycles => Snapshot.CompletedCycles;
         /// <summary>有对应文字的状态色。</summary>
@@ -44,13 +46,22 @@ namespace MotionControl.TaskEngine.Wpf.Monitoring
                 ? snapshot.Run?.Nodes.Where(node => node.State == TaskNodeState.Failed).ToList() : null;
             Action = failed != null && failed.Count > 0 ? string.Join(" / ", failed.Select(node => node.Name))
                 : leaves != null && leaves.Count > 0 ? string.Join(" / ", leaves.Select(node => node.Name)) : "—";
+            EngineeringDetail = failed != null && failed.Count > 0
+                ? string.Join("；", failed.Select(node => node.Detail)) : snapshot.Detail;
             Detail = failed != null && failed.Count > 0
-                ? string.Join("；", failed.Select(node => TaskOperatorText.Detail(node, text))) : snapshot.Detail;
+                ? string.Join("；", failed.Select(node => TaskOperatorText.Detail(node, text))) : TaskOperatorText.StationDetail(snapshot.Detail, text);
             if ((failed == null || failed.Count == 0) && leaves != null && leaves.Count > 0)
+            {
+                EngineeringDetail = string.Join("；", leaves.Select(node => node.Detail));
                 Detail = string.Join("；", leaves.Select(node => TaskOperatorText.Detail(node, text)));
+            }
             if (machineState != TaskMachineState.Running && !string.IsNullOrEmpty(Detail))
+            {
                 Detail = Detail.Replace("（运动中）", "（设备未运行，目标未到位）")
                     .Replace("运动中：", "设备未运行，目标未到位：");
+                EngineeringDetail = EngineeringDetail?.Replace("（运动中）", "（设备未运行，目标未到位）")
+                    .Replace("运动中：", "设备未运行，目标未到位：");
+            }
             string state = "等待"; Color = "#596B7D";
             if (snapshot.State == StationTaskState.Disabled) state = "未启用";
             else if (snapshot.State == StationTaskState.WaitingReset && machineState == TaskMachineState.Ready) state = "待启动";

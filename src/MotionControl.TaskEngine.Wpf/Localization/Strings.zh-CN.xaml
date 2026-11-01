@@ -157,6 +157,14 @@
  <sys:String x:Key="任务监控.等待并行步骤">等待并行步骤</sys:String>
  <sys:String x:Key="任务监控.等待多项">多项等待</sys:String>
  <sys:String x:Key="任务监控.等待输入详情格式">等待 DI“{0}”；期望={1}；当前={2}。</sys:String>
+ <sys:String x:Key="任务监控.等待条件满足">等待条件满足</sys:String>
+ <sys:String x:Key="任务监控.条件状态未知">条件状态未知，请检查相关信号</sys:String>
+ <sys:String x:Key="任务监控.交接信号状态未知">交接信号状态未知，请检查相关信号</sys:String>
+ <sys:String x:Key="任务监控.等待请求方复位信号">等待请求方复位信号</sys:String>
+ <sys:String x:Key="任务监控.等待完成信号复位">等待完成信号复位</sys:String>
+ <sys:String x:Key="任务监控.已收到请求，等待工位启动">已收到请求，等待工位启动</sys:String>
+ <sys:String x:Key="任务监控.等待请求信号">等待请求信号</sys:String>
+ <sys:String x:Key="任务监控.本工位已完成，等待请求方复位信号">本工位已完成，等待请求方复位信号</sys:String>
  <sys:String x:Key="任务监控.输入条件满足格式">输入条件已满足：“{0}”={1}。</sys:String>
  <sys:String x:Key="任务监控.等待输入超时格式">等待 DI 超时：“{0}”；期望={1}；超时前采样={2}；时限={3}。</sys:String>
  <sys:String x:Key="任务监控.秒格式">{0} 秒</sys:String>

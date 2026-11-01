@@ -188,6 +188,7 @@ namespace MotionControl.TaskMonitor.Checks
                 ExerciseMultipleStationFaultSelection(view, session, stationsGrid, causeButton);
                 ExerciseFiveStationLayout(application);
                 ExerciseTimeoutAlarmLocation(application);
+                ExerciseOperatorWaitDescriptions(application);
                 ExerciseOperatorControls(application);
                 ExerciseFaultRecoveryFromOperatorInput(application);
                 ExerciseIoMappingFocus(application);
@@ -770,6 +771,65 @@ namespace MotionControl.TaskMonitor.Checks
                 window.Close();
                 session.Machine.CloseAsync().GetAwaiter().GetResult();
             }
+        }
+
+        /// <summary>由真实工位执行快照验证等待提示、未知采样和工程诊断可追溯。</summary>
+        private static void ExerciseOperatorWaitDescriptions(Application application)
+        {
+            var catalog = new TaskResourceCatalog(new TaskAxisInfo[0], new string[0], new string[0],
+                new Dictionary<string, DeviceVariableType> { { "Press.Request", DeviceVariableType.Boolean },
+                    { "Press.Complete", DeviceVariableType.Boolean }, { "Load.Ready", DeviceVariableType.Boolean } },
+                new TaskTeachPoint[0], alarmDefinitions: new[] { new TaskAlarmInfo("WAIT_TIMEOUT", "等待超时",
+                    MachineAlarmKind.StopMachine, "检查条件。", "恢复后复位。") });
+            var device = new InMemoryTaskDevice(catalog);
+            device.SetVariable("Press.Request", "false"); device.SetVariable("Press.Complete", "false");
+            device.SetVariable("Load.Ready", "false");
+            var press = Definition("Press", Delay("work", 200));
+            var load = Definition("Load", new WaitConditionNode { Id = "wait", Name = "等待压装工位完成", TimeoutMs = 30000,
+                TimeoutAlarmCodes = new List<string> { "WAIT_TIMEOUT" }, Condition = new TaskCondition {
+                    Kind = TaskConditionKind.Compare, Comparison = TaskComparison.Equal,
+                    Left = new TaskValueBinding { Source = TaskValueSource.Variable, VariableName = "Load.Ready" }, Right = Boolean("true") } });
+            var config = new TaskMachineConfiguration { MachineId = "OperatorWait", Name = "等待提示检查",
+                Stations = new List<StationTaskConfiguration> {
+                    new StationTaskConfiguration { StationId = "press", Name = "压装工位", TaskId = "Press", Mode = StationTaskMode.OnRequest,
+                        RequestVariable = "Press.Request", CompletedVariable = "Press.Complete" },
+                    new StationTaskConfiguration { StationId = "load", Name = "上料工位", TaskId = "Load", Mode = StationTaskMode.Once } } };
+            var session = new TaskMonitorSession(config, new[] { press, load }, device, "等待提示检查", false);
+            var view = new TaskMonitorView(session);
+            try
+            {
+                session.Machine.Reset(); session.Machine.Start();
+                WaitWithDispatcher(() => session.Machine.GetSnapshot().Stations.Any(station => station.StationId == "press" && station.State == StationTaskState.WaitingRequest)
+                    && session.Machine.GetSnapshot().Stations.Any(station => station.StationId == "load" && station.Run?.Nodes.Any(node => node.NodeId == "wait" && node.Diagnostics != null) == true),
+                    5000, "工位未进入等待状态。");
+                view.Refresh();
+                var grid = (DataGrid)view.FindName("StationsGrid");
+                var pressRow = grid.Items.OfType<TaskStationRow>().Single(row => row.Id == "press");
+                var loadRow = grid.Items.OfType<TaskStationRow>().Single(row => row.Id == "load");
+                Assert(pressRow.Detail == "等待请求信号" && pressRow.EngineeringDetail.Contains("Press.Request=False"),
+                    "工位请求提示没有简化，或原始采样丢失。");
+                Assert(loadRow.Detail == "等待条件满足" && loadRow.EngineeringDetail.Contains("Load.Ready Equal"),
+                    "条件提示没有简化，或原始比较诊断丢失。");
+                grid.SelectedItem = loadRow; view.Refresh();
+                Assert(((TextBlock)view.FindName("DetailSummary")).Text == "等待条件满足"
+                    && ((DataGrid)view.FindName("ObservationTable")).Items.Count > 0,
+                    "步骤详情未给出简洁提示，或维护采样表丢失。");
+                device.SetVariable("Press.Request", null); device.SetVariable("Load.Ready", null);
+                WaitWithDispatcher(() => session.Machine.GetSnapshot().Stations.Single(station => station.StationId == "press").Detail.Contains("=未知")
+                    && session.Machine.GetSnapshot().Stations.Single(station => station.StationId == "load").Run.Nodes.Single(node => node.NodeId == "wait").Diagnostics.Decision == null,
+                    5000, "未知信号没有反映到运行快照。");
+                view.Refresh();
+                Assert(pressRow.Detail.Contains("未知") && loadRow.Detail.Contains("未知"), "未知信号被误显示为普通等待或有效信号。");
+                view.SetLanguage("en-US"); view.Refresh();
+                Assert(pressRow.Detail.Contains("unknown") && loadRow.Detail.Contains("unknown"), "未知状态没有随语言切换。");
+                view.SetLanguage("zh-CN"); device.SetVariable("Press.Request", "true");
+                WaitWithDispatcher(() => session.Machine.GetSnapshot().Stations.Single(station => station.StationId == "press").Detail.StartsWith("已完成，等待请求方清除 "),
+                    5000, "工位完成后没有进入等待请求复位阶段。");
+                view.Refresh();
+                Assert(pressRow.Detail == "本工位已完成，等待请求方复位信号"
+                    && pressRow.EngineeringDetail.Contains("Press.Request"), "完成后的交接提示不准确或原始信号丢失。");
+            }
+            finally { session.Machine.CloseAsync().GetAwaiter().GetResult(); }
         }
 
         /// <summary>用于只读定位检查的未连接控制卡替身。</summary>

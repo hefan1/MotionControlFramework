@@ -37,6 +37,9 @@ namespace MotionControl.TaskEngine.Wpf.Monitoring
         {
             if (snapshot == null) return string.Empty;
             var diagnostics = snapshot.Diagnostics;
+            if (snapshot.State == TaskNodeState.Waiting && snapshot.Detail != null
+                && snapshot.Detail.StartsWith("等待条件：", StringComparison.Ordinal) && diagnostics != null)
+                return text(diagnostics.Decision.HasValue ? "等待条件满足" : "条件状态未知");
             var observed = diagnostics?.Values.FirstOrDefault();
             if (observed != null && diagnostics.Summary != null
                 && diagnostics.Summary.StartsWith("等待输入：", StringComparison.Ordinal))
@@ -54,6 +57,41 @@ namespace MotionControl.TaskEngine.Wpf.Monitoring
                 return string.Format(text("等待输入详情格式"), observed.Name, expected, actual);
             }
             return snapshot.State == TaskNodeState.Failed ? RemoveExecutionIdentity(snapshot.Detail) : snapshot.Detail;
+        }
+
+        /// <summary>将请求握手阶段整理为简短提示，无法识别的原始说明保持原样。</summary>
+        internal static string StationDetail(string detail, Func<string, string> text)
+        {
+            if (string.IsNullOrEmpty(detail)) return detail;
+            const string prefix = "等待请求：";
+            if (detail.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                string[] parts = detail.Substring(prefix.Length).Split('；');
+                if (parts.Length != 2) return detail;
+                bool? request, completed;
+                if (!TrySignal(parts[0], out request) || !TrySignal(parts[1], out completed)) return detail;
+                if (!request.HasValue || !completed.HasValue) return text("交接信号状态未知");
+                if (completed.Value) return text(request.Value ? "等待请求方复位信号" : "等待完成信号复位");
+                return text(request.Value ? "已收到请求，等待工位启动" : "等待请求信号");
+            }
+            if (detail.StartsWith("已完成，等待请求方清除 ", StringComparison.Ordinal)
+                && detail.EndsWith(" 后复归完成信号。", StringComparison.Ordinal))
+                return text("本工位已完成，等待请求方复位信号");
+            return detail;
+        }
+
+        /// <summary>读取引擎请求明细末尾的布尔采样；未知不视为无效。</summary>
+        private static bool TrySignal(string part, out bool? value)
+        {
+            value = null;
+            int separator = part.LastIndexOf('=');
+            if (separator < 1) return false;
+            string sample = part.Substring(separator + 1);
+            if (sample == "未知") return true;
+            bool parsed;
+            if (!bool.TryParse(sample, out parsed)) return false;
+            value = parsed;
+            return true;
         }
 
         /// <summary>把布尔输入采样转换成有效、无效或未知。</summary>

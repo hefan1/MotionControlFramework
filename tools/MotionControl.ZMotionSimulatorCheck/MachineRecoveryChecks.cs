@@ -139,6 +139,57 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(
                     changedDocument.DeviceVariables.Single().CurrentValue == "OK",
                     "配置变化后误丢弃了可按名称和类型恢复的设备变量。");
+
+                var coordinator = new MachineRecoveryCoordinator(
+                    recoveryStore,
+                    new DeviceVariableStore(new[] { CreateDefinition("Vision.Result", "String", null, false) }),
+                    machineId);
+                string loadWarning;
+                coordinator.Load(out loadWarning);
+                Ensure(loadWarning.Contains("配置") && loadWarning.Contains("变化"),
+                    "配置变化后，加载阶段没有报告不能恢复的原因。");
+                string flowWarning;
+                bool resumed = coordinator.TryRestoreStationFlows(
+                    new IStationFlow[] { new RecoverableStationFlowForCheck("检测工位") }, out flowWarning);
+                Ensure(!resumed && string.IsNullOrEmpty(flowWarning),
+                    "同次启动的工位检查重复报告了加载阶段已说明的恢复原因。");
+                coordinator.TryRestoreStationFlows(
+                    new IStationFlow[] { new RecoverableStationFlowForCheck("检测工位") }, out flowWarning);
+                Ensure(flowWarning.Contains("配置") && flowWarning.Contains("变化"),
+                    "后续重新连接时错误地永久屏蔽了恢复原因。");
+
+                var mismatchCoordinator = new MachineRecoveryCoordinator(
+                    recoveryStore,
+                    new DeviceVariableStore(new[] { CreateDefinition("Vision.Result", "Number", "0", false) }),
+                    machineId);
+                mismatchCoordinator.Load(out loadWarning);
+                Ensure(loadWarning.Contains("Vision.Result") && loadWarning.Contains(Environment.NewLine),
+                    "变量类型变化时没有报告具体变量恢复问题。");
+                mismatchCoordinator.TryRestoreStationFlows(
+                    new IStationFlow[] { new RecoverableStationFlowForCheck("检测工位") }, out flowWarning);
+                Ensure(string.IsNullOrEmpty(flowWarning),
+                    "已包含详细变量错误的加载警告后，工位检查又重复报告同一恢复限制。");
+
+                // 旧版本可能保存了无续跑资格的工位步骤，但没有记录阻止续跑的原因。
+                document.CanResume = false;
+                document.EquipmentInitializationCompleted = false;
+                document.ResumeBlockedReason = null;
+                recoveryStore.Save(document);
+                var oldDocumentCoordinator = new MachineRecoveryCoordinator(
+                    recoveryStore,
+                    new DeviceVariableStore(new[] { CreateDefinition("Vision.Result", "String", null, false) }),
+                    machineId);
+                oldDocumentCoordinator.Load(out loadWarning);
+                Ensure(loadWarning.Contains("确认现场状态") && loadWarning.Contains("初始步骤"),
+                    "旧恢复文件缺少原因时，没有说明现场确认和从初始步骤开始。");
+                var oldDocumentFlow = new RecoverableStationFlowForCheck("检测工位");
+                resumed = oldDocumentCoordinator.TryRestoreStationFlows(
+                    new IStationFlow[] { oldDocumentFlow }, out flowWarning);
+                Ensure(!resumed && oldDocumentFlow.RecoveryStepNumber == 10 && string.IsNullOrEmpty(flowWarning),
+                    "旧恢复文件缺少原因时，误恢复了流程或重复提示同一限制。");
+                oldDocumentCoordinator.TryRestoreStationFlows(
+                    new IStationFlow[] { oldDocumentFlow }, out flowWarning);
+                Ensure(flowWarning == loadWarning, "后续检查未重新报告旧恢复文件的续跑限制。");
             }
             finally
             {
@@ -213,6 +264,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                     out warningMessage);
                 Ensure(!invalidStepRestored, "恢复到未知步骤时没有拒绝续跑。");
                 Ensure(stationA.RecoveryStepNumber == 10, "其中一个工位步骤无效时发生了部分恢复。");
+                Ensure(warningMessage.Contains("工位B"), "加载成功后新发现的工位恢复错误被错误地屏蔽。");
 
                 document.StationFlows[1].StepNumber = 20;
                 recoveryStore.Save(document);

@@ -1,0 +1,373 @@
+{
+  "schemaVersion": 1,
+  "taskId": "ClipScan",
+  "name": "扫码与交接",
+  "revision": 1,
+  "root": {
+    "kind": "Sequence",
+    "id": "ClipScanRoot",
+    "name": "扫码与交接",
+    "timeoutMs": 900000,
+    "children": [
+      {
+        "kind": "WaitInput",
+        "id": "feedReady",
+        "name": "等待测试载具到位",
+        "timeoutMs": 30000,
+        "inputName": "上料到位",
+        "expected": true,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "MoveAxis",
+        "id": "scanMove",
+        "name": "扫码工位定位",
+        "timeoutMs": 30000,
+        "axisName": "Load_X",
+        "mode": "Absolute",
+        "target": {
+          "source": "Constant",
+          "dataType": "Number",
+          "constant": "1"
+        },
+        "profile": {
+          "speed": 5,
+          "acceleration": 10,
+          "deceleration": 10
+        }
+      },
+      {
+        "kind": "SetOutput",
+        "id": "scanClamp",
+        "name": "测试夹具夹紧",
+        "timeoutMs": 30000,
+        "outputName": "夹具夹紧",
+        "value": true
+      },
+      {
+        "kind": "Delay",
+        "id": "scanRead",
+        "name": "读取测试码",
+        "timeoutMs": 30000,
+        "milliseconds": 300
+      },
+      {
+        "kind": "ConditionBranch",
+        "id": "sampleIdentity",
+        "name": "产生测试产品和载具标识",
+        "timeoutMs": 30000,
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Clip.NextA"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "true"
+          }
+        },
+        "whenTrue": {
+          "kind": "Sequence",
+          "id": "sampleA",
+          "name": "测试产品 A",
+          "timeoutMs": 900000,
+          "children": [
+            {
+              "kind": "SetVariable",
+              "id": "productA",
+              "name": "记录产品 A",
+              "timeoutMs": 30000,
+              "variableName": "Clip.Scan.Product",
+              "value": {
+                "source": "Constant",
+                "dataType": "String",
+                "constant": "SAMPLE-A"
+              }
+            },
+            {
+              "kind": "SetVariable",
+              "id": "carrierA",
+              "name": "记录载具 A",
+              "timeoutMs": 30000,
+              "variableName": "Clip.Scan.Carrier",
+              "value": {
+                "source": "Constant",
+                "dataType": "String",
+                "constant": "CARRIER-A"
+              }
+            },
+            {
+              "kind": "SetVariable",
+              "id": "resultA",
+              "name": "记录合格测试结果",
+              "timeoutMs": 30000,
+              "variableName": "Clip.Scan.Result",
+              "value": {
+                "source": "Constant",
+                "dataType": "String",
+                "constant": "OK"
+              }
+            },
+            {
+              "kind": "SetVariable",
+              "id": "nextB",
+              "name": "下次使用 B",
+              "timeoutMs": 30000,
+              "variableName": "Clip.NextA",
+              "value": {
+                "source": "Constant",
+                "dataType": "Boolean",
+                "constant": "false"
+              }
+            }
+          ]
+        },
+        "whenFalse": {
+          "kind": "Sequence",
+          "id": "sampleB",
+          "name": "测试产品 B",
+          "timeoutMs": 900000,
+          "children": [
+            {
+              "kind": "SetVariable",
+              "id": "productB",
+              "name": "记录产品 B",
+              "timeoutMs": 30000,
+              "variableName": "Clip.Scan.Product",
+              "value": {
+                "source": "Constant",
+                "dataType": "String",
+                "constant": "SAMPLE-B"
+              }
+            },
+            {
+              "kind": "SetVariable",
+              "id": "carrierB",
+              "name": "记录载具 B",
+              "timeoutMs": 30000,
+              "variableName": "Clip.Scan.Carrier",
+              "value": {
+                "source": "Constant",
+                "dataType": "String",
+                "constant": "CARRIER-B"
+              }
+            },
+            {
+              "kind": "SetVariable",
+              "id": "resultB",
+              "name": "记录不良测试结果",
+              "timeoutMs": 30000,
+              "variableName": "Clip.Scan.Result",
+              "value": {
+                "source": "Constant",
+                "dataType": "String",
+                "constant": "NG"
+              }
+            },
+            {
+              "kind": "SetVariable",
+              "id": "nextA",
+              "name": "下次使用 A",
+              "timeoutMs": 30000,
+              "variableName": "Clip.NextA",
+              "value": {
+                "source": "Constant",
+                "dataType": "Boolean",
+                "constant": "true"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "scanOccupied",
+        "name": "标记扫码工位有料",
+        "timeoutMs": 30000,
+        "variableName": "Clip.Scan.Occupied",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "true"
+        }
+      },
+      {
+        "kind": "SetOutput",
+        "id": "scanRelease",
+        "name": "测试夹具释放",
+        "timeoutMs": 30000,
+        "outputName": "夹具夹紧",
+        "value": false
+      },
+      {
+        "kind": "WaitInput",
+        "id": "feedClear",
+        "name": "等待上料信号复归",
+        "timeoutMs": 30000,
+        "inputName": "上料到位",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "MoveAxis",
+        "id": "scanReturn",
+        "name": "扫码工位返回",
+        "timeoutMs": 30000,
+        "axisName": "Load_X",
+        "mode": "Absolute",
+        "target": {
+          "source": "Constant",
+          "dataType": "Number",
+          "constant": "0"
+        },
+        "profile": {
+          "speed": 5,
+          "acceleration": 10,
+          "deceleration": 10
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "Clip.ScanWaitSlot",
+        "name": "等待上次接收信号复归",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Clip.SW.Accepted"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "false"
+          }
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.ScanOutProduct",
+        "name": "交接产品标识",
+        "timeoutMs": 30000,
+        "variableName": "Clip.SW.Product",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.Scan.Product"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.ScanOutCarrier",
+        "name": "交接载具标识",
+        "timeoutMs": 30000,
+        "variableName": "Clip.SW.Carrier",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.Scan.Carrier"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.ScanOutResult",
+        "name": "交接产品结果",
+        "timeoutMs": 30000,
+        "variableName": "Clip.SW.Result",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.Scan.Result"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.ScanSend",
+        "name": "请求下游接收载具",
+        "timeoutMs": 30000,
+        "variableName": "Clip.SW.Ready",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "true"
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "Clip.ScanWaitAck",
+        "name": "等待下游接收",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Clip.SW.Accepted"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "true"
+          }
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.ScanSendClear",
+        "name": "撤销交接请求",
+        "timeoutMs": 30000,
+        "variableName": "Clip.SW.Ready",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "Clip.ScanWaitAckClear",
+        "name": "等待接收信号复归",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Clip.SW.Accepted"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "false"
+          }
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.ScanReleased",
+        "name": "标记工位载具已交接",
+        "timeoutMs": 30000,
+        "variableName": "Clip.Scan.Occupied",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      }
+    ]
+  }
+}

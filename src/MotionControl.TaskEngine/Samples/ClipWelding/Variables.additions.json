@@ -1,0 +1,264 @@
+{
+  "schemaVersion": 1,
+  "variables": [
+    {
+      "name": "Clip.NextA",
+      "dataType": "Boolean",
+      "initialValue": "true",
+      "description": "样例扫码身份 A/B 交替",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.ReceiveEnabled",
+      "dataType": "Boolean",
+      "initialValue": "true",
+      "description": "样例下游接收允许；关闭用于测试堵料",
+      "allowOperatorWrite": true
+    },
+    {
+      "name": "Clip.Scan.Product",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.Scan Product",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.Scan.Carrier",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.Scan Carrier",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.Scan.Result",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.Scan Result",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.Weld.Product",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.Weld Product",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.Weld.Carrier",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.Weld Carrier",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.Weld.Result",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.Weld Result",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.Press.Product",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.Press Product",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.Press.Carrier",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.Press Carrier",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.Press.Result",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.Press Result",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.Inspect.Product",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.Inspect Product",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.Inspect.Carrier",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.Inspect Carrier",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.Inspect.Result",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.Inspect Result",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.SW.Product",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.SW Product",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.SW.Carrier",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.SW Carrier",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.SW.Result",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.SW Result",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.WP.Product",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.WP Product",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.WP.Carrier",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.WP Carrier",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.WP.Result",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.WP Result",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.PI.Product",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.PI Product",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.PI.Carrier",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.PI Carrier",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.PI.Result",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.PI Result",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.SW.Ready",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "Clip.SW.Ready",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.SW.Accepted",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "Clip.SW.Accepted",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.WP.Ready",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "Clip.WP.Ready",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.WP.Accepted",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "Clip.WP.Accepted",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.PI.Ready",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "Clip.PI.Ready",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.PI.Accepted",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "Clip.PI.Accepted",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.LastProduct",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.LastProduct",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.LastCarrier",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.LastCarrier",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.LastResult",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "Clip.LastResult",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.Scan.Occupied",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "Clip.Scan 当前载具有料",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.Weld.Occupied",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "Clip.Weld 当前载具有料",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.Press.Occupied",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "Clip.Press 当前载具有料",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.Inspect.Occupied",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "Clip.Inspect 当前载具有料",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.LastDestination",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "最近完成测试载具的结果去向",
+      "allowOperatorWrite": false
+    }
+  ]
+}

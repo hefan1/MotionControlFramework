@@ -1,0 +1,354 @@
+{
+  "schemaVersion": 1,
+  "taskId": "ClipInspect",
+  "name": "复检与下料",
+  "revision": 1,
+  "root": {
+    "kind": "Sequence",
+    "id": "ClipInspectRoot",
+    "name": "复检与下料",
+    "timeoutMs": 900000,
+    "children": [
+      {
+        "kind": "WaitCondition",
+        "id": "Clip.InspectWaitIn",
+        "name": "等待上游载具到位",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Clip.PI.Ready"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "true"
+          }
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.InspectCopyProduct",
+        "name": "读取产品标识",
+        "timeoutMs": 30000,
+        "variableName": "Clip.Inspect.Product",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.PI.Product"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.InspectCopyCarrier",
+        "name": "读取载具标识",
+        "timeoutMs": 30000,
+        "variableName": "Clip.Inspect.Carrier",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.PI.Carrier"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.InspectCopyResult",
+        "name": "读取产品结果",
+        "timeoutMs": 30000,
+        "variableName": "Clip.Inspect.Result",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.PI.Result"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.InspectOccupied",
+        "name": "标记工位有料",
+        "timeoutMs": 30000,
+        "variableName": "Clip.Inspect.Occupied",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "true"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.InspectAccept",
+        "name": "确认接收载具",
+        "timeoutMs": 30000,
+        "variableName": "Clip.PI.Accepted",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "true"
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "Clip.InspectWaitInClear",
+        "name": "等待上游撤销交接",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Clip.PI.Ready"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "false"
+          }
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.InspectAcceptClear",
+        "name": "接收完成复归",
+        "timeoutMs": 30000,
+        "variableName": "Clip.PI.Accepted",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      },
+      {
+        "kind": "WaitInput",
+        "id": "inspectReady",
+        "name": "轴运动前确认复检反馈已复位",
+        "timeoutMs": 30000,
+        "inputName": "下料到位",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "MoveAxis",
+        "id": "inspectMove",
+        "name": "复检测试定位",
+        "timeoutMs": 30000,
+        "axisName": "Unload_X",
+        "mode": "Absolute",
+        "target": {
+          "source": "Constant",
+          "dataType": "Number",
+          "constant": "1"
+        },
+        "profile": {
+          "speed": 5,
+          "acceleration": 10,
+          "deceleration": 10
+        }
+      },
+      {
+        "kind": "WaitInput",
+        "id": "inspectPrecheck",
+        "name": "复检输出前确认反馈仍已复位",
+        "timeoutMs": 30000,
+        "inputName": "下料到位",
+        "expected": false,
+        "timeoutAlarmCodes": ["DEMO_SENSOR_TIMEOUT"]
+      },
+      {
+        "kind": "SetOutput",
+        "id": "inspectOn",
+        "name": "复检测试动作",
+        "timeoutMs": 30000,
+        "outputName": "下料电磁阀",
+        "value": true
+      },
+      {
+        "kind": "WaitInput",
+        "id": "inspectDone",
+        "name": "等待复检测试反馈",
+        "timeoutMs": 30000,
+        "inputName": "下料到位",
+        "expected": true,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "Delay",
+        "id": "inspectHold",
+        "name": "复检测试保持",
+        "timeoutMs": 30000,
+        "milliseconds": 300
+      },
+      {
+        "kind": "SetOutput",
+        "id": "inspectOff",
+        "name": "复检测试动作关闭",
+        "timeoutMs": 30000,
+        "outputName": "下料电磁阀",
+        "value": false
+      },
+      {
+        "kind": "WaitInput",
+        "id": "inspectReset",
+        "name": "等待复检测试反馈复归",
+        "timeoutMs": 30000,
+        "inputName": "下料到位",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "MoveAxis",
+        "id": "inspectReturn",
+        "name": "复检测试返回等待位",
+        "timeoutMs": 30000,
+        "axisName": "Unload_X",
+        "mode": "Absolute",
+        "target": {
+          "source": "Constant",
+          "dataType": "Number",
+          "constant": "0"
+        },
+        "profile": {
+          "speed": 5,
+          "acceleration": 10,
+          "deceleration": 10
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "inspectWaitReceive",
+        "name": "等待下游接收载具",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Clip.ReceiveEnabled"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "true"
+          }
+        }
+      },
+      {
+        "kind": "ConditionBranch",
+        "id": "inspectRoute",
+        "name": "按测试结果选择载具去向",
+        "timeoutMs": 30000,
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Clip.Inspect.Result"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "String",
+            "constant": "OK"
+          }
+        },
+        "whenTrue": {
+          "kind": "Sequence",
+          "id": "routeOkSequence",
+          "name": "记录合格缓存（测试）",
+          "timeoutMs": 30000,
+          "children": [
+            {
+              "kind": "SetVariable",
+              "id": "routeOk",
+              "name": "记录合格缓存（测试）",
+              "timeoutMs": 30000,
+              "variableName": "Clip.LastDestination",
+              "value": {
+                "source": "Constant",
+                "dataType": "String",
+                "constant": "OK缓存"
+              }
+            }
+          ]
+        },
+        "whenFalse": {
+          "kind": "Sequence",
+          "id": "routeNgSequence",
+          "name": "记录不良缓存（测试）",
+          "timeoutMs": 30000,
+          "children": [
+            {
+              "kind": "SetVariable",
+              "id": "routeNg",
+              "name": "记录不良缓存（测试）",
+              "timeoutMs": 30000,
+              "variableName": "Clip.LastDestination",
+              "value": {
+                "source": "Constant",
+                "dataType": "String",
+                "constant": "NG缓存"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "lastProduct",
+        "name": "记录完成Product",
+        "timeoutMs": 30000,
+        "variableName": "Clip.LastProduct",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.Inspect.Product"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "lastCarrier",
+        "name": "记录完成Carrier",
+        "timeoutMs": 30000,
+        "variableName": "Clip.LastCarrier",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.Inspect.Carrier"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "lastResult",
+        "name": "记录完成Result",
+        "timeoutMs": 30000,
+        "variableName": "Clip.LastResult",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.Inspect.Result"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.InspectReleased",
+        "name": "标记工位载具已交接",
+        "timeoutMs": 30000,
+        "variableName": "Clip.Inspect.Occupied",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      }
+    ]
+  }
+}

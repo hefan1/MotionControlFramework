@@ -7,7 +7,7 @@
    <ResourceDictionary Source="../Localization/Strings.zh-CN.xaml"/>
   </ResourceDictionary.MergedDictionaries>
   <HierarchicalDataTemplate DataType="{x:Type rows:TaskStepRow}" ItemsSource="{Binding Children}">
-   <Grid Margin="0,5" ToolTip="{Binding Detail}">
+   <Grid Margin="0,5" ToolTip="{Binding EngineeringDetail}">
     <Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition Width="*" MinWidth="150"/><ColumnDefinition Width="74"/><ColumnDefinition Width="1.1*" MinWidth="110"/></Grid.ColumnDefinitions>
     <TextBlock Text="{Binding Number}" VerticalAlignment="Center"/>
     <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
@@ -40,7 +40,7 @@
      <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextTrimming" Value="CharacterEllipsis"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="ToolTip" Value="{Binding Action}"/></Style></DataGridTextColumn.ElementStyle>
     </DataGridTextColumn>
     <DataGridTextColumn Header="{DynamicResource 任务监控.等待或异常说明}" Binding="{Binding Detail}" Width="2*">
-     <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextTrimming" Value="CharacterEllipsis"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="ToolTip" Value="{Binding Detail}"/></Style></DataGridTextColumn.ElementStyle>
+     <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextTrimming" Value="CharacterEllipsis"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="ToolTip" Value="{Binding EngineeringDetail}"/></Style></DataGridTextColumn.ElementStyle>
     </DataGridTextColumn>
     <DataGridTextColumn Header="{DynamicResource 任务监控.完成次数}" Binding="{Binding Cycles}" Width="85"/>
    </DataGrid.Columns>

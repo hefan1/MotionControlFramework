@@ -1,0 +1,363 @@
+{
+  "schemaVersion": 1,
+  "taskId": "ClipWeld",
+  "name": "焊接与交接",
+  "revision": 1,
+  "root": {
+    "kind": "Sequence",
+    "id": "ClipWeldRoot",
+    "name": "焊接与交接",
+    "timeoutMs": 900000,
+    "children": [
+      {
+        "kind": "WaitCondition",
+        "id": "Clip.WeldWaitIn",
+        "name": "等待上游载具到位",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Clip.SW.Ready"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "true"
+          }
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.WeldCopyProduct",
+        "name": "读取产品标识",
+        "timeoutMs": 30000,
+        "variableName": "Clip.Weld.Product",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.SW.Product"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.WeldCopyCarrier",
+        "name": "读取载具标识",
+        "timeoutMs": 30000,
+        "variableName": "Clip.Weld.Carrier",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.SW.Carrier"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.WeldCopyResult",
+        "name": "读取产品结果",
+        "timeoutMs": 30000,
+        "variableName": "Clip.Weld.Result",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.SW.Result"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.WeldOccupied",
+        "name": "标记工位有料",
+        "timeoutMs": 30000,
+        "variableName": "Clip.Weld.Occupied",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "true"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.WeldAccept",
+        "name": "确认接收载具",
+        "timeoutMs": 30000,
+        "variableName": "Clip.SW.Accepted",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "true"
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "Clip.WeldWaitInClear",
+        "name": "等待上游撤销交接",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Clip.SW.Ready"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "false"
+          }
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.WeldAcceptClear",
+        "name": "接收完成复归",
+        "timeoutMs": 30000,
+        "variableName": "Clip.SW.Accepted",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      },
+      {
+        "kind": "WaitInput",
+        "id": "weldReady",
+        "name": "轴运动前确认焊接反馈已复位",
+        "timeoutMs": 30000,
+        "inputName": "压装完成",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "MoveAxis",
+        "id": "weldMove",
+        "name": "焊接测试定位",
+        "timeoutMs": 30000,
+        "axisName": "Press_Z",
+        "mode": "Absolute",
+        "target": {
+          "source": "Constant",
+          "dataType": "Number",
+          "constant": "1"
+        },
+        "profile": {
+          "speed": 5,
+          "acceleration": 10,
+          "deceleration": 10
+        }
+      },
+      {
+        "kind": "WaitInput",
+        "id": "weldPrecheck",
+        "name": "焊接输出前确认反馈仍已复位",
+        "timeoutMs": 30000,
+        "inputName": "压装完成",
+        "expected": false,
+        "timeoutAlarmCodes": ["DEMO_SENSOR_TIMEOUT"]
+      },
+      {
+        "kind": "SetOutput",
+        "id": "weldOn",
+        "name": "焊接测试动作",
+        "timeoutMs": 30000,
+        "outputName": "压头动作",
+        "value": true
+      },
+      {
+        "kind": "WaitInput",
+        "id": "weldDone",
+        "name": "等待焊接测试反馈",
+        "timeoutMs": 30000,
+        "inputName": "压装完成",
+        "expected": true,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "Delay",
+        "id": "weldHold",
+        "name": "焊接测试保持",
+        "timeoutMs": 30000,
+        "milliseconds": 300
+      },
+      {
+        "kind": "SetOutput",
+        "id": "weldOff",
+        "name": "焊接测试动作关闭",
+        "timeoutMs": 30000,
+        "outputName": "压头动作",
+        "value": false
+      },
+      {
+        "kind": "WaitInput",
+        "id": "weldReset",
+        "name": "等待焊接测试反馈复归",
+        "timeoutMs": 30000,
+        "inputName": "压装完成",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "MoveAxis",
+        "id": "weldReturn",
+        "name": "焊接测试返回等待位",
+        "timeoutMs": 30000,
+        "axisName": "Press_Z",
+        "mode": "Absolute",
+        "target": {
+          "source": "Constant",
+          "dataType": "Number",
+          "constant": "0"
+        },
+        "profile": {
+          "speed": 5,
+          "acceleration": 10,
+          "deceleration": 10
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "Clip.WeldWaitSlot",
+        "name": "等待上次接收信号复归",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Clip.WP.Accepted"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "false"
+          }
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.WeldOutProduct",
+        "name": "交接产品标识",
+        "timeoutMs": 30000,
+        "variableName": "Clip.WP.Product",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.Weld.Product"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.WeldOutCarrier",
+        "name": "交接载具标识",
+        "timeoutMs": 30000,
+        "variableName": "Clip.WP.Carrier",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.Weld.Carrier"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.WeldOutResult",
+        "name": "交接产品结果",
+        "timeoutMs": 30000,
+        "variableName": "Clip.WP.Result",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.Weld.Result"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.WeldSend",
+        "name": "请求下游接收载具",
+        "timeoutMs": 30000,
+        "variableName": "Clip.WP.Ready",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "true"
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "Clip.WeldWaitAck",
+        "name": "等待下游接收",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Clip.WP.Accepted"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "true"
+          }
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.WeldSendClear",
+        "name": "撤销交接请求",
+        "timeoutMs": 30000,
+        "variableName": "Clip.WP.Ready",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "Clip.WeldWaitAckClear",
+        "name": "等待接收信号复归",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Clip.WP.Accepted"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "false"
+          }
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.WeldReleased",
+        "name": "标记工位载具已交接",
+        "timeoutMs": 30000,
+        "variableName": "Clip.Weld.Occupied",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      }
+    ]
+  }
+}

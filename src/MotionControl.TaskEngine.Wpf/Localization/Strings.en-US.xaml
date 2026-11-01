@@ -157,6 +157,14 @@
  <sys:String x:Key="任务监控.等待并行步骤">Waiting for parallel steps</sys:String>
  <sys:String x:Key="任务监控.等待多项">Multiple waits</sys:String>
  <sys:String x:Key="任务监控.等待输入详情格式">Waiting for DI “{0}”; expected={1}; current={2}.</sys:String>
+ <sys:String x:Key="任务监控.等待条件满足">Waiting for condition</sys:String>
+ <sys:String x:Key="任务监控.条件状态未知">Condition unknown; check the related signals</sys:String>
+ <sys:String x:Key="任务监控.交接信号状态未知">Handshake status unknown; check the related signals</sys:String>
+ <sys:String x:Key="任务监控.等待请求方复位信号">Waiting for request reset</sys:String>
+ <sys:String x:Key="任务监控.等待完成信号复位">Waiting for completion reset</sys:String>
+ <sys:String x:Key="任务监控.已收到请求，等待工位启动">Request received; waiting for station start</sys:String>
+ <sys:String x:Key="任务监控.等待请求信号">Waiting for request</sys:String>
+ <sys:String x:Key="任务监控.本工位已完成，等待请求方复位信号">Station complete; waiting for request reset</sys:String>
  <sys:String x:Key="任务监控.输入条件满足格式">Input condition met: “{0}”={1}.</sys:String>
  <sys:String x:Key="任务监控.等待输入超时格式">DI wait timed out: “{0}”; expected={1}; sample before timeout={2}; limit={3}.</sys:String>
  <sys:String x:Key="任务监控.秒格式">{0} s</sys:String>

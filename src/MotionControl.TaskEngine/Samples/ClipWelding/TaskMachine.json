@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "machineId": "Machine01",
+  "name": "夹具焊接并行流转样例",
+  "revision": 1,
+  "namedResources": [],
+  "stations": [
+    {
+      "stationId": "ClipScan",
+      "name": "扫码工位",
+      "taskId": "ClipScan",
+      "enabled": true,
+      "mode": "Cyclic",
+      "cycleIntervalMs": 100
+    },
+    {
+      "stationId": "ClipWeld",
+      "name": "焊接工位",
+      "taskId": "ClipWeld",
+      "enabled": true,
+      "mode": "Cyclic",
+      "cycleIntervalMs": 100
+    },
+    {
+      "stationId": "ClipPress",
+      "name": "压合工位",
+      "taskId": "ClipPress",
+      "enabled": true,
+      "mode": "Cyclic",
+      "cycleIntervalMs": 100
+    },
+    {
+      "stationId": "ClipInspect",
+      "name": "复检工位",
+      "taskId": "ClipInspect",
+      "enabled": true,
+      "mode": "Cyclic",
+      "cycleIntervalMs": 100
+    }
+  ],
+  "initializationTaskId": "ClipInit"
+}

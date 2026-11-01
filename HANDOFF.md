@@ -2,7 +2,18 @@
 
 本文件记录正式 Host 两种设备流程及其软件控制器接入情况。接手时先读 `AGENTS.md`，再读本文件和第 7 节。计划文档 `docs/plans/2026-10-31-task-device-binding.md` 的部分步骤已调整，以实际代码和本文件为准。
 
-## 0. 2026-11-01 四工位验证与当前配置
+## 0. 2026-11-01 夹具焊接多工位与当前配置
+
+本节记录当前配置；下面“历史四工位验证”保留先前测试证据，其入口和版本不代表当前状态。
+
+- 当前 `Machine01/Parameters/Equipment.json` 为 `definition: WeldingExample`、`executionOwner: StationFlows`，控制器后端为 Virtual。任务运行清单已安装夹具焊接 R4。切换任务列表时先安全关闭 Host，将 Equipment.json 设置为 `definition: Demo`、`executionOwner: TaskEngine`；切回代码示例用 `WeldingExample`、`StationFlows`。按 `src/MotionControl.TaskEngine/Samples/ClipWelding/README.md` 核对映射和反馈；不要用旧草稿覆盖运行清单。
+- 配置目录：`C:\Users\ASUS\AppData\Local\MotionControlFramework\Configurations\Machine01`。安装样例前备份在 `Backups/ClipWelding-20261101-185625-93c902bc39e847d289ceb69fb7200ad2`，更新反馈步骤前备份在 `Backups/ClipWelding-feedback-20261101-190230`，切换到代码示例前的设备入口在 `Backups/Equipment-before-ClipCSharp-20261101-192227.json`。备份不会自动恢复。
+- 参考 BCW HIVE-BZ 的扫码、焊接、压合、复检及载具流转，分别实现任务列表和 C# 四工位示例，各站有单件缓存，下游堵塞逐站向上游传递。正式 Release Host 连接本机软件控制器：任务列表实测不同工位同时持有 A/B 测试件、堵料后计数停止；解除堵料、暂停复位及启动后复检计数从 24 增至 40。本轮任务列表的报警恢复由内存检查覆盖，未在正式 Host 注入报警。
+- C# 入口在正式 Host 实测四站并行及不同产品/载具编号；注入 DI7 反馈卡住后复检传感器超时报停、上游逐站等待，恢复反馈、复位并启动后复检计数从 23 增至至少 31，报警清除。暂停后轴监控显示全部轴停止；结束时 DO0–DO3、DI4–DI7 已核对为无效并关闭本轮 Host 与软件控制器。重新启动软件控制器后须重新准备轴和测试反馈。
+- 任务监控将等待状态整理成更直观的文字，原始诊断仍可查看。两个样例均在移动前与输出前检查旧完成反馈已复位，此为流程条件，不是原子联锁或安全回路。启动恢复重复提示已去重；没有续跑条件时仍禁止续跑。
+- 测试轴与 IO 沿用既有 Machine01 名称，并非焊机、扫码枪或视觉的实际映射；任务列表的 A/B 标识循环复用，OK/NG 和去向仅为预设变量；C# 编号只在本次会话有效。新会话清空测试载具/握手状态，不能用于现场带料启动或断电恢复。实际焊接、识别、检测、分拣、共享空间、安全回路、真实卡与现场机械尚未验证。具体步骤和边界见两个样例目录的 README。
+
+### 历史四工位验证（非当前入口）
 
 - 当前 `Machine01` 使用任务列表入口和本机软件控制器。运行清单 `Parameters/TaskMachine.json` 是版本 R3 的“上料 → 压装 → 检测 → 下料”四工位，使用 `Tasks/FourInit.json`、`FourLoad.json`、`FourPress.json`、`FourInspect.json`、`FourUnload.json`。原有的 `Tasks/Task_05d26ead.json` 和 `Drafts/TaskWorkspace.json` 保留；原草稿仍是旧单工位，来源与当前运行文件不一致，不能直接把旧草稿应用覆盖四工位运行文件。
 - 安装前的任务清单、变量和报警文件备份在 `C:\Users\ASUS\AppData\Local\MotionControlFramework\Configurations\Machine01\Backups\FourStation-20261101-160928-9ca2c6de5915454eb4bc788bee6b1bfd`。不要自动恢复这些文件；测试配置按 `AGENTS.md` 保留。
@@ -22,7 +33,7 @@
 | 构建 | MachineDevice 检查为 11 组、OperatorPages 检查为 18 组；TaskEngine 23/53/16 组、Runtime 35 项为历史记录，须按第 6 节重新确认 |
 | 正式 Host | 新一轮软件控制器测试前重新核对连接、轴和 IO；每次控制器进程重启后轴、IO 与供料场景状态均重置 |
 | 配置根 | `C:\Users\ASUS\AppData\Local\MotionControlFramework\Configurations\Machine01` |
-| 执行入口 | 当前 `Parameters/Equipment.json` 的 `executionOwner` 为 `TaskEngine`；四工位运行配置见第 0 节。C# 工位路径及其配置仍保留，切换入口后需重新加载 |
+| 执行入口 | 当前 `Parameters/Equipment.json` 选择 `WeldingExample` / `StationFlows`；任务列表夹具焊接配置也已保留，切换前须安全停机并按第 0 节核对 |
 | 控制器后端 | 当前 Machine01 的 `Parameters/ControllerBackend.json` 保留 `{"backend":"Virtual","port":18520}`；它不改写原有运动卡、轴和 IO 映射。未提供此文件时默认正运动 |
 
 正式 Host 已使用协议 2 软件控制器复测上料工位两种流程的正常循环、暂停、缺料报警和恢复，以及 C# 流程断线状态。任务列表故障恢复后继续循环至少 19 次，C# 故障恢复后至少 85 次。一键启动脚本已从未运行状态启动控制器和正式 Host。这些结论仅适用于软件控制器，不代表正运动 SDK 或实体设备验收。历史正运动联调中 Load_X 回零方向与有效电平尚未查清；切回正运动后仍须独立核对，不能把软件控制器的回零结果当作厂商结果。
@@ -103,7 +114,7 @@ $dotnet='C:\Program Files\dotnet\dotnet.exe'
 
 ## 7. 第一件事
 
-先核对第 0 节的 Machine01 四工位运行配置、旧草稿边界、后端和执行入口，再按 `src/MotionControl.TaskEngine/Samples/FourStation/README.md` 启动和检查。进程重启后重新确认伺服、回零和供料及反馈规则；继续按具体需求扩展设备场景，核对暂停时轴、DO 和报警状态。测试配置按项目规则保留，结束时安全停止所有轴并处理测试 IO。
+先核对第 0 节的 Machine01 夹具焊接配置、旧草稿边界、后端和执行入口，再按 `src/MotionControl.Equipment.Demo/WeldingExample/README.md` 或 `src/MotionControl.TaskEngine/Samples/ClipWelding/README.md` 启动和检查。进程重启后重新确认伺服、回零和供料及反馈规则；继续按具体需求扩展设备场景，核对暂停时轴、DO 和报警状态。测试配置按项目规则保留，结束时安全停止所有轴并处理测试 IO。
 
 如本轮目标是正运动 SDK 而非软件控制器，先确认 `ControllerBackend.json` 的选择，再调查前述 Load_X 回零有效电平与历史方向异常；相关状态未查清前不发回零或循环命令。
 

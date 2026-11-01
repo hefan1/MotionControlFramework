@@ -11,6 +11,10 @@ namespace MotionControl.Host.Wpf.Recovery
     /// <summary>协调单机变量恢复、工位步骤恢复、暂停保存和重新启动时的断点失效。</summary>
     public sealed class MachineRecoveryCoordinator
     {
+        /// <summary>旧恢复文件没有记录原因时，加载和工位检查共用的说明。</summary>
+        private const string MissingResumePointWarning =
+            "已恢复设备变量；当前没有有效的工位流程续跑点，请确认现场状态后再启动，流程将从当前程序的初始步骤开始。";
+
         /// <summary>负责设备恢复 JSON 文件读写和配置校验。</summary>
         private readonly MachineRecoveryStore _recoveryStore;
 
@@ -22,6 +26,9 @@ namespace MotionControl.Host.Wpf.Recovery
 
         /// <summary>当前进程加载或最近保存的设备恢复文档。</summary>
         private MachineRecoveryDocument _document;
+
+        /// <summary>本次加载已报告的恢复限制；仅供首次工位恢复检查去除重复提示。</summary>
+        private string _loadWarningMessage;
 
         /// <summary>创建绑定到单机配置和运行变量表的恢复协调器。</summary>
         public MachineRecoveryCoordinator(
@@ -50,6 +57,7 @@ namespace MotionControl.Host.Wpf.Recovery
         /// <summary>加载运行值，并按设备变量定义校验是否还能使用旧流程断点。</summary>
         public void Load(out string warningMessage)
         {
+            _loadWarningMessage = null;
             _document = _recoveryStore.Load(out warningMessage);
             if (_document == null)
             {
@@ -91,14 +99,18 @@ namespace MotionControl.Host.Wpf.Recovery
                 && _document.StationFlows.Count > 0)
             {
                 warningMessage = string.IsNullOrWhiteSpace(_document.ResumeBlockedReason)
-                    ? "已恢复设备变量；当前没有有效的工位流程续跑点，请确认现场状态后再启动。"
+                    ? MissingResumePointWarning
                     : _document.ResumeBlockedReason;
             }
+
+            _loadWarningMessage = warningMessage;
         }
 
-        /// <summary>核对全部工位步骤后一次性恢复，任何工位不匹配时都不做部分续跑。</summary>
+        /// <summary>核对全部工位步骤后一次性恢复；首次检查不重复报告加载阶段已说明的原因。</summary>
         public bool TryRestoreStationFlows(IStationFlow[] stationFlows, out string warningMessage)
         {
+            string loadWarningMessage = _loadWarningMessage;
+            _loadWarningMessage = null;
             warningMessage = string.Empty;
             if (_document == null)
             {
@@ -110,8 +122,14 @@ namespace MotionControl.Host.Wpf.Recovery
                 if (_document.StationFlows.Count > 0)
                 {
                     warningMessage = string.IsNullOrWhiteSpace(_document.ResumeBlockedReason)
-                        ? "已恢复设备变量，但工位没有有效的续跑点；流程将从当前程序的初始步骤开始。"
+                        ? MissingResumePointWarning
                         : _document.ResumeBlockedReason;
+                    if (string.Equals(loadWarningMessage, warningMessage, StringComparison.Ordinal)
+                        || (!string.IsNullOrWhiteSpace(loadWarningMessage)
+                            && loadWarningMessage.StartsWith(warningMessage + Environment.NewLine, StringComparison.Ordinal)))
+                    {
+                        warningMessage = string.Empty;
+                    }
                 }
 
                 return false;

@@ -1,0 +1,363 @@
+{
+  "schemaVersion": 1,
+  "taskId": "ClipPress",
+  "name": "压合与交接",
+  "revision": 1,
+  "root": {
+    "kind": "Sequence",
+    "id": "ClipPressRoot",
+    "name": "压合与交接",
+    "timeoutMs": 900000,
+    "children": [
+      {
+        "kind": "WaitCondition",
+        "id": "Clip.PressWaitIn",
+        "name": "等待上游载具到位",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Clip.WP.Ready"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "true"
+          }
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.PressCopyProduct",
+        "name": "读取产品标识",
+        "timeoutMs": 30000,
+        "variableName": "Clip.Press.Product",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.WP.Product"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.PressCopyCarrier",
+        "name": "读取载具标识",
+        "timeoutMs": 30000,
+        "variableName": "Clip.Press.Carrier",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.WP.Carrier"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.PressCopyResult",
+        "name": "读取产品结果",
+        "timeoutMs": 30000,
+        "variableName": "Clip.Press.Result",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.WP.Result"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.PressOccupied",
+        "name": "标记工位有料",
+        "timeoutMs": 30000,
+        "variableName": "Clip.Press.Occupied",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "true"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.PressAccept",
+        "name": "确认接收载具",
+        "timeoutMs": 30000,
+        "variableName": "Clip.WP.Accepted",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "true"
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "Clip.PressWaitInClear",
+        "name": "等待上游撤销交接",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Clip.WP.Ready"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "false"
+          }
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.PressAcceptClear",
+        "name": "接收完成复归",
+        "timeoutMs": 30000,
+        "variableName": "Clip.WP.Accepted",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      },
+      {
+        "kind": "WaitInput",
+        "id": "pressReady",
+        "name": "轴运动前确认压合反馈已复位",
+        "timeoutMs": 30000,
+        "inputName": "检测完成",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "MoveAxis",
+        "id": "pressMove",
+        "name": "压合测试定位",
+        "timeoutMs": 30000,
+        "axisName": "Camera_X",
+        "mode": "Absolute",
+        "target": {
+          "source": "Constant",
+          "dataType": "Number",
+          "constant": "1"
+        },
+        "profile": {
+          "speed": 5,
+          "acceleration": 10,
+          "deceleration": 10
+        }
+      },
+      {
+        "kind": "WaitInput",
+        "id": "pressPrecheck",
+        "name": "压合输出前确认反馈仍已复位",
+        "timeoutMs": 30000,
+        "inputName": "检测完成",
+        "expected": false,
+        "timeoutAlarmCodes": ["DEMO_SENSOR_TIMEOUT"]
+      },
+      {
+        "kind": "SetOutput",
+        "id": "pressOn",
+        "name": "压合测试动作",
+        "timeoutMs": 30000,
+        "outputName": "相机触发",
+        "value": true
+      },
+      {
+        "kind": "WaitInput",
+        "id": "pressDone",
+        "name": "等待压合测试反馈",
+        "timeoutMs": 30000,
+        "inputName": "检测完成",
+        "expected": true,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "Delay",
+        "id": "pressHold",
+        "name": "压合测试保持",
+        "timeoutMs": 30000,
+        "milliseconds": 300
+      },
+      {
+        "kind": "SetOutput",
+        "id": "pressOff",
+        "name": "压合测试动作关闭",
+        "timeoutMs": 30000,
+        "outputName": "相机触发",
+        "value": false
+      },
+      {
+        "kind": "WaitInput",
+        "id": "pressReset",
+        "name": "等待压合测试反馈复归",
+        "timeoutMs": 30000,
+        "inputName": "检测完成",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "MoveAxis",
+        "id": "pressReturn",
+        "name": "压合测试返回等待位",
+        "timeoutMs": 30000,
+        "axisName": "Camera_X",
+        "mode": "Absolute",
+        "target": {
+          "source": "Constant",
+          "dataType": "Number",
+          "constant": "0"
+        },
+        "profile": {
+          "speed": 5,
+          "acceleration": 10,
+          "deceleration": 10
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "Clip.PressWaitSlot",
+        "name": "等待上次接收信号复归",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Clip.PI.Accepted"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "false"
+          }
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.PressOutProduct",
+        "name": "交接产品标识",
+        "timeoutMs": 30000,
+        "variableName": "Clip.PI.Product",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.Press.Product"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.PressOutCarrier",
+        "name": "交接载具标识",
+        "timeoutMs": 30000,
+        "variableName": "Clip.PI.Carrier",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.Press.Carrier"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.PressOutResult",
+        "name": "交接产品结果",
+        "timeoutMs": 30000,
+        "variableName": "Clip.PI.Result",
+        "value": {
+          "source": "Variable",
+          "variableName": "Clip.Press.Result"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.PressSend",
+        "name": "请求下游接收载具",
+        "timeoutMs": 30000,
+        "variableName": "Clip.PI.Ready",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "true"
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "Clip.PressWaitAck",
+        "name": "等待下游接收",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Clip.PI.Accepted"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "true"
+          }
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.PressSendClear",
+        "name": "撤销交接请求",
+        "timeoutMs": 30000,
+        "variableName": "Clip.PI.Ready",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "Clip.PressWaitAckClear",
+        "name": "等待接收信号复归",
+        "timeoutMs": 180000,
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ],
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Clip.PI.Accepted"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "false"
+          }
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "Clip.PressReleased",
+        "name": "标记工位载具已交接",
+        "timeoutMs": 30000,
+        "variableName": "Clip.Press.Occupied",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      }
+    ]
+  }
+}
