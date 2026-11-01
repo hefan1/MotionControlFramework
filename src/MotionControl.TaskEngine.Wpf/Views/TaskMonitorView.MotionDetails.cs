@@ -22,7 +22,8 @@ namespace MotionControl.TaskEngine.Wpf.Views
             {
                 parameters.Add(Field("轴", command.AxisName));
                 parameters.Add(Field("动作", T(command.Command == TaskAxisCommand.Home ? "回零" : "确认停止")));
-                fields.Add(Field("执行范围", T("仅内存轴，不模拟厂商回零信号")));
+                if (_session.Device != null)
+                    fields.Add(Field("执行范围", T("仅内存轴，不模拟厂商回零信号")));
                 AxisReferences(command.AxisName, references);
             }
             else if (node is CoordinatedMoveNode) fields.Add(Field("执行范围", T("协调插补未接入")));

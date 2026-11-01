@@ -17,7 +17,7 @@ namespace MotionControl.TaskEngine.Wpf.Views
     /// <summary>只读运行监控页；界面刷新只读取快照，不推进设备动作。</summary>
     public partial class TaskMonitorView : UserControl
     {
-        /// <summary>所属窗口的独立内存会话。</summary>
+        /// <summary>提供当前任务定义、设备端口和整机状态的监控会话。</summary>
         private readonly TaskMonitorSession _session;
         /// <summary>稳定的工位行集合。</summary>
         private readonly ObservableCollection<TaskStationRow> _stations = new ObservableCollection<TaskStationRow>();

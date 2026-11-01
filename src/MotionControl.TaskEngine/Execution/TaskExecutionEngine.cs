@@ -12,7 +12,7 @@ using MotionControl.TaskEngine.Machine;
 
 namespace MotionControl.TaskEngine.Execution
 {
-    /// <summary>纯软件任务入口；只接受内存设备，没有真实运动卡注入入口。</summary>
+    /// <summary>任务执行入口；通过设备接口执行已校验的任务，设备实现负责实际动作与不支持能力的报错。</summary>
     public sealed class TaskExecutionEngine
     {
         /// <summary>先校验并冻结定义，再后台执行；返回值可暂停、恢复、取消和读取诊断。</summary>

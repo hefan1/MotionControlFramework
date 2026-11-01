@@ -15,7 +15,7 @@ using MotionControl.TaskEngine.Device.InMemory;
 
 namespace MotionControl.TaskEngine.Wpf.Simulation
 {
-    /// <summary>一个监控窗口独占一个内存会话；所有引用通过既有目录校验。</summary>
+    /// <summary>任务监控会话，持有任务定义、设备端口和整机控制器；可用于内存示例或正式设备。</summary>
     public sealed class TaskMonitorSession
     {
         /// <summary>本会话冻结的任务定义副本，页面不修改它们。</summary>
