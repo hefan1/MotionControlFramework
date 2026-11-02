@@ -7,6 +7,9 @@ namespace MotionControl.TaskEngine.Device.InMemory
     /// <summary>基于同一次内存设备状态检查显式互锁，不连接实际安全回路。</summary>
     public sealed partial class InMemoryTaskDevice
     {
+        /// <summary>内存设备支持资源范围条件，不连接实际安全回路。</summary>
+        public bool SupportsInterlockConditions => true;
+
         /// <summary>在设备锁内核对位置、输入和变量；未知或不满足都返回具体原因。</summary>
         public bool CheckInterlock(TaskInterlock interlock, TaskCondition legacyCondition, out string reason)
         {

@@ -18,7 +18,7 @@ namespace MotionControl.Preparation.Checks
         /// <summary>执行全部检查并返回失败退出码。</summary>
         private static int Main()
         {
-            try { RunAsync().GetAwaiter().GetResult(); Console.WriteLine("设备准备：8 组检查通过（仅内部逻辑检查）。"); return 0; }
+            try { RunAsync().GetAwaiter().GetResult(); Console.WriteLine("设备准备：11 组检查通过（仅内部逻辑检查）。"); return 0; }
             catch (Exception error) { Console.Error.WriteLine(error); return 1; }
         }
 
@@ -33,6 +33,114 @@ namespace MotionControl.Preparation.Checks
             await TaskEntryGuardAsync();
             await StopFailureRemainsExclusiveAsync();
             await CompletionCancellationAndLateProgressAsync();
+            await UntrustedRecoveryBlocksAutomationAsync();
+            await RunMarkerFailureBlocksBothOwnersAsync();
+            await PreparationMarkerLifecycleAsync();
+        }
+
+        /// <summary>准备记录先于动作；成功或受控停稳后结束，执行/停轴/保存失败时保持。</summary>
+        private static async Task PreparationMarkerLifecycleAsync()
+        {
+            var success = new Fixture();
+            success.Runtime.ConfigurePreparations(new[] { new Preparation("A", success) });
+            int begins = 0, ends = 0;
+            success.Runtime.SetPreparationRecordCallbacks(() => { Ensure(success.Log.Count == 0, "动作先于准备标记"); begins++; }, () => ends++);
+            await success.ConnectAsync();
+            await success.Runtime.PrepareAsync(null, CancellationToken.None);
+            Ensure(begins == 1 && ends == 1 && success.Runtime.IsPrepared, "准备成功未提交安全结束记录");
+
+            var cancelled = new Fixture();
+            cancelled.Runtime.ConfigurePreparations(new[] { new Preparation("Slow", cancelled) { WaitUntilStopped = true } });
+            bool marked = false, cleared = false;
+            cancelled.Runtime.SetPreparationRecordCallbacks(() => marked = true, () => { Ensure(!cancelled.Axis.Moving, "轴未停稳就清标记"); cleared = true; });
+            await cancelled.ConnectAsync();
+            Task run = cancelled.Runtime.PrepareAsync(null, CancellationToken.None);
+            await WaitAsync(() => cancelled.Axis.Moving);
+            Ensure(marked && !cleared, "运行中的准备未保留标记");
+            await cancelled.Runtime.StopPreparationAsync(CancellationToken.None);
+            try { await run; } catch (OperationCanceledException) { }
+            Ensure(cleared && !cancelled.Runtime.IsPreparing, "受控停止后未保存安全结束记录");
+
+            var concurrent = new Fixture();
+            concurrent.Runtime.ConfigurePreparations(new[] { new Preparation("Slow", concurrent) { WaitUntilStopped = true } });
+            concurrent.Axis.StopGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            int clearCount = 0;
+            concurrent.Runtime.SetPreparationRecordCallbacks(() => { }, () => Interlocked.Increment(ref clearCount));
+            await concurrent.ConnectAsync();
+            Task concurrentRun = concurrent.Runtime.PrepareAsync(null, CancellationToken.None);
+            await WaitAsync(() => concurrent.Axis.Moving);
+            Task stopOne = concurrent.Runtime.StopPreparationAsync(CancellationToken.None);
+            Task stopTwo = concurrent.Runtime.StopPreparationAsync(CancellationToken.None);
+            await WaitAsync(() => concurrent.Axis.StopCount > 0);
+            Ensure(clearCount == 0 && concurrent.Runtime.IsPreparing, "并发停止仍在收尾时提前清除标记。");
+            concurrent.Axis.StopGate.TrySetResult(true);
+            await Task.WhenAll(stopOne, stopTwo);
+            try { await concurrentRun; } catch (OperationCanceledException) { }
+            Ensure(clearCount == 1 && !concurrent.Runtime.IsPreparing, "并发停止收尾后标记没有恰好清除一次。");
+
+            var failed = new Fixture();
+            failed.Runtime.ConfigurePreparations(new[] { new Preparation("A", failed) { ReadyPose = false } });
+            bool failedMarked = false, incorrectlyCleared = false;
+            failed.Runtime.SetPreparationRecordCallbacks(() => failedMarked = true, () => incorrectlyCleared = true);
+            await failed.ConnectAsync();
+            await RejectAsync(() => failed.Runtime.PrepareAsync(null, CancellationToken.None), "准备失败未报错");
+            Ensure(failedMarked && !incorrectlyCleared && failed.Runtime.State == MachineRunState.Alarmed, "准备失败错误清除了记录");
+
+            var markError = new Fixture();
+            markError.Runtime.ConfigurePreparations(new[] { new Preparation("A", markError) });
+            markError.Runtime.SetPreparationRecordCallbacks(() => { throw new InvalidOperationException("磁盘错误"); }, () => { });
+            await markError.ConnectAsync();
+            await RejectAsync(() => markError.Runtime.PrepareAsync(null, CancellationToken.None), "标记写失败允许准备");
+            Ensure(markError.Log.Count == 0 && !markError.Runtime.IsPreparing, "标记写失败后设备已执行准备");
+
+            var clearError = new Fixture();
+            clearError.Runtime.ConfigurePreparations(new[] { new Preparation("A", clearError) });
+            clearError.Runtime.SetPreparationRecordCallbacks(() => { }, () => { throw new InvalidOperationException("记录保存失败"); });
+            await clearError.ConnectAsync();
+            await RejectAsync(() => clearError.Runtime.PrepareAsync(null, CancellationToken.None), "结束记录写失败未报错");
+            Ensure(!clearError.Runtime.IsPrepared && clearError.Runtime.State == MachineRunState.Alarmed, "结束记录失败仍显示已准备");
+        }
+
+        /// <summary>运行标记写入失败必须发生在两个执行入口下达生产动作之前。</summary>
+        private static async Task RunMarkerFailureBlocksBothOwnersAsync()
+        {
+            foreach (var owner in new[] { MachineControlOwner.StationFlows, MachineControlOwner.TaskEngine })
+            {
+                var fixture = new Fixture(owner);
+                int attempts = 0;
+                fixture.Runtime.SetBeforeAutomaticRun(() => { attempts++; throw new InvalidOperationException("运行记录写入失败"); });
+                await fixture.ConnectAsync();
+                await fixture.Runtime.ResetAsync(CancellationToken.None);
+                if (owner == MachineControlOwner.StationFlows)
+                    await RejectAsync(() => fixture.Runtime.StartAsync(CancellationToken.None), "标记写入失败仍允许 C# 生产");
+                else
+                    await RejectAsync(() => fixture.Runtime.BeginTaskEngineRunAsync(CancellationToken.None), "标记写入失败仍允许任务生产");
+                Ensure(attempts == 1 && fixture.Flow.Executions == 0 && fixture.Runtime.State != MachineRunState.Running,
+                    "标记写入失败后状态或工位被启动。");
+            }
+        }
+
+        /// <summary>不可信恢复数据应阻止两个执行入口和准备，但不阻止手动排查。</summary>
+        private static async Task UntrustedRecoveryBlocksAutomationAsync()
+        {
+            foreach (var owner in new[] { MachineControlOwner.StationFlows, MachineControlOwner.TaskEngine })
+            {
+                var fixture = new Fixture(owner);
+                fixture.Runtime.ConfigurePreparations(new[] { new Preparation("A", fixture) });
+                fixture.Runtime.SetRecoveryBlockReason("测试恢复记录损坏");
+                await fixture.ConnectAsync();
+                await fixture.Runtime.ResetAsync(CancellationToken.None);
+                Ensure((await fixture.Runtime.GetAutomaticStartBlockReasonAsync(CancellationToken.None)).Contains("恢复记录损坏"), "启动提示遗漏恢复原因");
+                await RejectAsync(() => fixture.Runtime.PrepareAsync(null, CancellationToken.None), "恢复损坏时允许回零");
+                if (owner == MachineControlOwner.StationFlows)
+                    await RejectAsync(() => fixture.Runtime.StartAsync(CancellationToken.None), "恢复损坏时允许C#启动");
+                else
+                    await RejectAsync(() => fixture.Runtime.BeginTaskEngineRunAsync(CancellationToken.None), "恢复损坏时允许任务启动");
+                bool manual = false;
+                var result = await fixture.Runtime.RunManualOperationAsync(() => { manual = true; return Task.CompletedTask; }, CancellationToken.None);
+                Ensure(result == ManualOperationBlockReason.None && manual, "恢复门禁错误阻断手动排查");
+                await fixture.Runtime.DisconnectAsync(CancellationToken.None);
+            }
         }
 
         /// <summary>按依赖准备后不自动生产，正常暂停不回初始位，手动操作撤销准备资格。</summary>
@@ -169,6 +277,8 @@ namespace MotionControl.Preparation.Checks
         private static async Task StopFailureRemainsExclusiveAsync()
         {
             var fixture = new Fixture();
+            bool recordCleared = false;
+            fixture.Runtime.SetPreparationRecordCallbacks(() => { }, () => recordCleared = true);
             fixture.Runtime.ConfigurePreparations(new[] { new Preparation("Slow", fixture) { WaitUntilStopped = true } });
             await fixture.ConnectAsync();
             Task run = fixture.Runtime.PrepareAsync(null, CancellationToken.None);
@@ -177,6 +287,7 @@ namespace MotionControl.Preparation.Checks
             await RejectAsync(() => fixture.Runtime.StopPreparationAsync(CancellationToken.None), "停轴错误被忽略");
             await RejectAsync(() => run, "停止失败未反映到准备结果");
             Ensure(fixture.Runtime.IsPreparing && !fixture.Runtime.IsPrepared, "停止未确认却归还了设备占用");
+            Ensure(!recordCleared, "停稳未确认却清除了准备记录");
             await RejectAsync(() => fixture.Runtime.ResetAsync(CancellationToken.None), "停止未确认时仍可复位");
             fixture.Axis.StopFails = false;
             await fixture.Runtime.StopPreparationAsync(CancellationToken.None);
@@ -233,8 +344,8 @@ namespace MotionControl.Preparation.Checks
             /// <summary>被检查的通用运行时。</summary>
             internal readonly MachineRuntime Runtime;
             /// <summary>创建无硬件环境。</summary>
-            internal Fixture() { Runtime = new MachineRuntime(new MotionCardGroup(new[] { new Card(Axis) }), new[] { Flow },
-                new MachineAlarmService(), Safety, pauseTimeout: TimeSpan.FromSeconds(1), safetyPollInterval: TimeSpan.FromMilliseconds(10)); }
+            internal Fixture(MachineControlOwner owner = MachineControlOwner.StationFlows) { Runtime = new MachineRuntime(new MotionCardGroup(new[] { new Card(Axis) }), new[] { Flow },
+                new MachineAlarmService(), Safety, pauseTimeout: TimeSpan.FromSeconds(1), safetyPollInterval: TimeSpan.FromMilliseconds(10), controlOwner: owner); }
             /// <summary>连接内存卡，不做物理动作。</summary>
             internal Task ConnectAsync() { return Runtime.ConnectAsync(CancellationToken.None); }
         }
@@ -304,6 +415,8 @@ namespace MotionControl.Preparation.Checks
             internal int StopCount;
             /// <summary>模拟驱动停止命令失败。</summary>
             internal bool StopFails;
+            /// <summary>延迟停止完成，验证多个停止请求的收尾。</summary>
+            internal TaskCompletionSource<bool> StopGate;
             /// <summary>返回可靠状态或明确抛出读取错误。</summary>
             public Task<AxisStatus> ReadStatusAsync(CancellationToken token)
             { if (ReadError) throw new InvalidOperationException("轴状态不可读"); return Task.FromResult(new AxisStatus(0, 0, true, Moving, true, false, false, false, false, false, null, false)); }
@@ -321,7 +434,7 @@ namespace MotionControl.Preparation.Checks
             public Task StartJogAsync(MotionDirection direction, AxisMotionProfile profile, CancellationToken token) { return Task.CompletedTask; }
             /// <summary>记录停止并使运动反馈变为停止。</summary>
             public Task StopAsync(AxisStopMode mode, CancellationToken token)
-            { StopCount++; if (StopFails) throw new InvalidOperationException("测试停止失败"); Moving = false; return Task.CompletedTask; }
+            { StopCount++; if (StopFails) throw new InvalidOperationException("测试停止失败"); Moving = false; return StopGate == null ? Task.CompletedTask : StopGate.Task; }
             /// <summary>没有实际驱动报警。</summary>
             public Task ResetAlarmAsync(CancellationToken token) { return Task.CompletedTask; }
         }

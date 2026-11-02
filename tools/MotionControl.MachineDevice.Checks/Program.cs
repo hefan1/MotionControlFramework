@@ -16,9 +16,11 @@ using MotionControl.Framework.Runtime.Variables;
 using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Device;
+using MotionControl.TaskEngine.Device.InMemory;
 using MotionControl.TaskEngine.Execution;
 using MotionControl.TaskEngine.MachineDevice;
 using MotionControl.TaskEngine.Machine;
+using MotionControl.TaskEngine.Resources;
 
 namespace MotionControl.MachineDevice.Checks
 {
@@ -40,9 +42,146 @@ namespace MotionControl.MachineDevice.Checks
             Run("工位流程空闲时接管并在归还后恢复入口", ClaimTakesOverWhenStationFlowsAreIdle, ref failures);
             Run("任务复位拦截未回零的定位轴", TaskResetRequiresPositioningAxesHomed, ref failures);
             Run("任务回零诊断按设备反馈区分等待和完成", TaskHomeDiagnosticsFollowDeviceCompletion, ref failures);
+            Run("资源恢复复核现场状态且只放行一次", ResourceRecoveryRequiresRecheck, ref failures);
+            Run("资源恢复要求运行时实际持有控制权", RecoveryRequiresActualClaim, ref failures);
+            Run("设备互锁有条件时拒绝执行", InterlockRejectsConfiguredConditions, ref failures);
+            Run("进入与退出互锁在任务接管前拒绝", InterlocksRejectedBeforeTaskControl, ref failures);
+            Run("隔离资源阻止关闭会话且恢复后可重试", BlockedResourcesPreventClose, ref failures);
 
-            Console.WriteLine("真机任务设备检查：共 11 组，失败 " + failures + "。未连接控制器。");
+            Console.WriteLine("真机任务设备检查：共 16 组，失败 " + failures + "。未连接控制器。");
             return failures == 0 ? 0 : 1;
+        }
+
+        /// <summary>无条件范围正常通过；任何互锁或旧退出条件均明确拒绝。</summary>
+        private static void InterlockRejectsConfiguredConditions()
+        {
+            var device = CreateDevice(new FakeAxis("X"), new FakeLogicalIo(), out _, out _);
+            string reason;
+            Ensure(device.CheckInterlock(null, null, out reason), "未配置条件时阻止正常范围执行。");
+            ExpectMessage(() => device.CheckInterlock(new TaskInterlock(), null, out _), "暂不支持");
+            ExpectMessage(() => device.CheckInterlock(null, new TaskCondition(), out _), "暂不支持");
+        }
+
+        /// <summary>进入或退出互锁均在设备接管前拒绝，不能等正文执行后才发现不支持。</summary>
+        private static void InterlocksRejectedBeforeTaskControl()
+        {
+            var axis = new FakeAxis("X");
+            var device = CreateDevice(axis, new FakeLogicalIo(), out _, out MachineRuntime runtime);
+            Ensure(!TaskExecutionEngine.SupportsInterlockConditions(new object()), "旧设备未声明互锁能力却被当作支持。");
+            Ensure(!TaskExecutionEngine.SupportsInterlockConditions(device), "实际设备错误声明支持互锁。");
+            Ensure(TaskExecutionEngine.SupportsInterlockConditions(new InMemoryTaskDevice(device.Catalog)), "内存设备互锁能力未被识别。");
+            var scope = new ResourceScopeNode { Id = "scope", Name = "区域", Resources = new List<string> { "Axis:X" },
+                Body = new SequenceNode { Id = "body", Name = "正文", Children = new List<TaskNode>
+                    { new DelayNode { Id = "delay", Name = "等待", Milliseconds = 1 } } } };
+            var task = new TaskDefinition { TaskId = "InterlockCheck", Name = "互锁检查",
+                Root = new SequenceNode { Id = "root", Name = "步骤", Children = new List<TaskNode> { scope } } };
+            var configuration = new TaskMachineConfiguration { MachineId = "InterlockCheck", Name = "互锁检查",
+                Stations = new List<StationTaskConfiguration> { new StationTaskConfiguration {
+                    StationId = "S1", Name = "工位", TaskId = task.TaskId, Enabled = true, Mode = StationTaskMode.Once } } };
+            var condition = new TaskInterlock();
+            condition.Inputs.Add(new TaskInputInterlock { InputName = "Sensor", Expected = true });
+            scope.EntryInterlock = condition;
+            ExpectMessage(() => new TaskMachineController(configuration, new[] { task }, device, runtime.AlarmService), "暂不支持");
+            scope.EntryInterlock = null;
+            scope.ExitInterlock = condition;
+            ExpectMessage(() => new TaskMachineController(configuration, new[] { task }, device, runtime.AlarmService), "暂不支持");
+            Ensure(runtime.ControlOwner == MachineControlOwner.None && axis.MoveCalls == 0,
+                "不支持的任务已接管或发出轴动作。");
+        }
+
+        /// <summary>核对被隔离资源的现场条件、未知值、读取失败和两次采样变化均不会误放行。</summary>
+        private static void ResourceRecoveryRequiresRecheck()
+        {
+            var axis = new FakeAxis("X");
+            var io = new FakeLogicalIo();
+            var device = CreateDevice(axis, io, out DeviceVariableStore variables, out _);
+            var interlock = new TaskInterlock();
+            interlock.Inputs.Add(new TaskInputInterlock { InputName = "Sensor", Expected = true });
+            interlock.Axes.Add(new TaskAxisInterlock { AxisName = "X", MinimumPosition = 0, MaximumPosition = 0 });
+            var request = device.Resources.Enqueue("run", "task", "工位", "node", "步骤", "call", new[] { "Axis:X" }, interlock);
+            string reason;
+            Ensure(device.Resources.TryAcquire(request, out reason), reason);
+            device.Resources.Block(request, "未退出");
+            string id = device.ReadResources().Single().RequestId;
+            Ensure(!device.TryRecoverResources(id, "", out reason), "缺少现场确认也放行。");
+            Ensure(!device.TryRecoverResources(id, "现场已核实", out reason) && reason.Contains("控制权"), "未持有控制权时放行。");
+            device.ClaimMachine(null);
+            io.ReadError = new InvalidOperationException("采样失败");
+            Ensure(!device.TryRecoverResources(id, "现场已核实", out reason) && reason.Contains("采样失败"), "读失败被放行。");
+            io.ReadError = null;
+            Ensure(!device.TryRecoverResources(id, "现场已核实", out reason) && reason.Contains("Sensor"), "输入不满足被放行。");
+            io.InputValue = true;
+            io.FlipAfterRead = true;
+            Ensure(!device.TryRecoverResources(id, "现场已核实", out reason), "两次采样期间条件变化仍放行。");
+            Ensure(device.ReadResources().Count == 1, "检查失败移除了隔离记录。");
+            io.FlipAfterRead = false;
+            io.InputValue = true;
+            device.RegisterRun("仍在运行", null);
+            Ensure(!device.TryRecoverResources(id, "现场已核实", out reason) && reason.Contains("运行"), "任务运行未退出被放行。");
+            device.UnregisterRun("仍在运行");
+            ExpectMessage(() => device.ReleaseMachine(null), "待确认");
+            axis.ReadError = new InvalidOperationException("轴反馈不可读");
+            Ensure(!device.TryRecoverResources(id, "现场已核实", out reason) && reason.Contains("不可读"), "轴反馈读取失败被放行。");
+            axis.ReadError = null;
+            axis.ServoEnabled = false;
+            Ensure(!device.TryRecoverResources(id, "现场已核实", out reason), "退出轴未使能被放行。");
+            axis.ServoEnabled = true;
+            Ensure(device.TryRecoverResources(id, "现场已核实", out reason), reason);
+            Ensure(!device.TryRecoverResources(id, "重复确认", out reason), "旧凭证重复放行。");
+
+            var variableCondition = new TaskCondition { Kind = TaskConditionKind.Compare,
+                Left = new TaskValueBinding { Source = TaskValueSource.Variable, VariableName = "Unknown" },
+                Comparison = TaskComparison.Equal,
+                Right = new TaskValueBinding { Source = TaskValueSource.Constant, DataType = DeviceVariableType.Boolean, Constant = "true" } };
+            var second = device.Resources.Enqueue("run2", "task", "工位", "node", "步骤", "call", new[] { "Axis:X" }, null, variableCondition);
+            Ensure(device.Resources.TryAcquire(second, out reason), reason);
+            device.Resources.Block(second, "未退出");
+            string secondId = device.ReadResources().Single().RequestId;
+            Ensure(!device.TryRecoverResources(secondId, "现场已核实", out reason), "未知变量被放行。");
+            variables.SetBoolean("Unknown", true);
+            Ensure(device.TryRecoverResources(secondId, "现场已核实", out reason), reason);
+            device.ReleaseMachine(null);
+        }
+
+        /// <summary>关闭任务会话时保留待确认区域，现场核实后允许重试关闭并归还控制权。</summary>
+        private static void BlockedResourcesPreventClose()
+        {
+            var device = CreateDevice(new FakeAxis("X"), new FakeLogicalIo(), out _, out MachineRuntime runtime);
+            var task = new TaskDefinition { TaskId = "CloseCheck", Name = "关闭检查",
+                Root = new SequenceNode { Id = "sequence", Name = "步骤", Children = new List<TaskNode>
+                    { new DelayNode { Id = "delay", Name = "等待", Milliseconds = 1 } } } };
+            var configuration = new TaskMachineConfiguration { MachineId = "CloseCheck", Name = "关闭检查",
+                Stations = new List<StationTaskConfiguration> { new StationTaskConfiguration {
+                    StationId = "S1", Name = "工位", TaskId = task.TaskId, Enabled = true, Mode = StationTaskMode.Once } } };
+            var controller = new TaskMachineController(configuration, new[] { task }, device, runtime.AlarmService);
+            string reason;
+            var request = device.Resources.Enqueue("run", "task", "工位", "node", "步骤", "call", new[] { "Axis:X" });
+            Ensure(device.Resources.TryAcquire(request, out reason), reason);
+            device.Resources.Block(request, "未退出");
+            string id = device.ReadResources().Single().RequestId;
+            ExpectMessage(() => controller.CloseAsync().GetAwaiter().GetResult(), "待确认");
+            Ensure(runtime.ControlOwner == MachineControlOwner.TaskEngine && device.ReadResources().Count == 1,
+                "关闭失败后丢失控制权或隔离记录。");
+            ExpectMessage(() => device.ClaimMachine(new object()), "占用");
+            Ensure(device.TryRecoverResources(id, "现场已核实", out reason), reason);
+            controller.CloseAsync().GetAwaiter().GetResult();
+            Ensure(runtime.ControlOwner == MachineControlOwner.None, "恢复后重试关闭仍未归还控制权。");
+        }
+
+        /// <summary>即使设备保留旧会话标记，运行时已失去实际控制权时也不能解除隔离。</summary>
+        private static void RecoveryRequiresActualClaim()
+        {
+            var device = CreateDevice(new FakeAxis("X"), new FakeLogicalIo(), out _, out MachineRuntime runtime);
+            device.ClaimMachine(null);
+            var request = device.Resources.Enqueue("run", "task", "工位", "node", "步骤", "call", new[] { "Axis:X" });
+            string reason;
+            Ensure(device.Resources.TryAcquire(request, out reason), reason);
+            device.Resources.Block(request, "未退出");
+            string id = device.ReadResources().Single().RequestId;
+            runtime.ReleaseTaskEngineControl(device);
+            Ensure(!device.TryRecoverResources(id, "现场已核实", out reason) && reason.Contains("控制权"),
+                "运行时已失去控制权时错误解除隔离。");
+            Ensure(device.ReadResources().Count == 1, "控制权失效后丢失隔离记录。");
         }
 
         /// <summary>运行一项检查，捕获异常并计入失败。</summary>
@@ -451,6 +590,9 @@ namespace MotionControl.MachineDevice.Checks
             /// <summary>是否已回零。</summary>
             internal bool Homed { get; set; }
 
+            /// <summary>模拟读取轴状态失败。</summary>
+            internal Exception ReadError { get; set; }
+
             /// <summary>是否模拟驱动器不响应取消，用于验证补发受控停止。</summary>
             internal bool IgnoresCancellation { get; set; }
 
@@ -476,6 +618,7 @@ namespace MotionControl.MachineDevice.Checks
             /// <summary>读取当前状态快照。</summary>
             public Task<AxisStatus> ReadStatusAsync(CancellationToken cancellationToken)
             {
+                if (ReadError != null) throw ReadError;
                 return Task.FromResult(new AxisStatus(Position, 0, ServoEnabled, Moving, Homed,
                     false, false, false, false, false, null, false));
             }
@@ -558,6 +701,11 @@ namespace MotionControl.MachineDevice.Checks
             /// <summary>读取 DI 时抛出的异常；为空表示正常返回假值。</summary>
             internal Exception ReadError { get; set; }
 
+            /// <summary>当前测试输入状态。</summary>
+            internal bool InputValue { get; set; }
+            /// <summary>首次读取后切换信号，用于检查复核期间变化。</summary>
+            internal bool FlipAfterRead { get; set; }
+
             /// <summary>读取 DI；注入错误时抛出原始异常。</summary>
             public Task<bool> ReadInputAsync(string inputName, CancellationToken cancellationToken)
             {
@@ -566,7 +714,9 @@ namespace MotionControl.MachineDevice.Checks
                     throw ReadError;
                 }
 
-                return Task.FromResult(false);
+                bool value = InputValue;
+                if (FlipAfterRead) InputValue = !InputValue;
+                return Task.FromResult(value);
             }
 
             /// <summary>读取 DO，固定返回假值。</summary>

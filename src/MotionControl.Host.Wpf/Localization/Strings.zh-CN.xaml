@@ -61,9 +61,11 @@
     <sys:String x:Key="启动">▶ 启动</sys:String>
     <sys:String x:Key="暂停">Ⅱ 暂停</sys:String>
     <sys:String x:Key="停止">■ 停止</sys:String>
+    <sys:String x:Key="顶部停止保留工步">保留工步</sys:String>
+    <sys:String x:Key="顶部受控停止说明">停止，保留工步</sys:String>
     <sys:String x:Key="自动启动提示">复位就绪后启动已配置的自动工位。</sys:String>
-    <sys:String x:Key="自动暂停提示">受控暂停全部自动工位并保留当前工步；继续运行前需整机复位，再按启动。</sys:String>
-    <sys:String x:Key="自动停止提示">停止也会受控暂停全部自动工位并保留当前工步；现场确认安全后，整机复位再按启动。</sys:String>
+    <sys:String x:Key="自动暂停提示">受控暂停全部自动工位并保留当前工步；继续运行前按报警复位，再按启动。</sys:String>
+    <sys:String x:Key="自动停止提示">停止会受控暂停全部自动工位并保留当前工步；现场确认安全后，按报警复位再启动。</sys:String>
     <sys:String x:Key="自动流程命令失败标题">自动流程命令失败</sys:String>
     <sys:String x:Key="工位流程状态说明">查看当前执行入口的运行信息和报警。</sys:String>
     <sys:String x:Key="流程页.待启动步骤">待启动步骤</sys:String>
@@ -734,6 +736,7 @@
     <sys:String x:Key="任务配置先断开会话">当前控制卡会话仍连接。请先在轴映射页断开会话，再更新任务文件；不会自动断开，草稿可随时保存。</sys:String>
     <sys:String x:Key="设备总览页面说明">查看设备状态、运行信息和报警。</sys:String>
     <sys:String x:Key="当前报警页面说明">查看故障位置、条件与处理指导；刷新和导航不会复位报警。</sys:String>
+    <sys:String x:Key="历史报警页面说明">查看报警发生、条件恢复与复位记录。</sys:String>
     <sys:String x:Key="关联页面尚未就绪">当前运行时尚未提供此页面，请先检查连接。此次跳转未执行任何设备操作。</sys:String>
     <sys:String x:Key="返回操作页">返回操作页</sys:String>
     <sys:String x:Key="IO反馈关联">关联反馈</sys:String>

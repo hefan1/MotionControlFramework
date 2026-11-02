@@ -11,7 +11,7 @@ using MotionControl.TaskEngine.Resources;
 namespace MotionControl.TaskEngine.Device.InMemory
 {
     /// <summary>任务引擎专用的独立内存设备；没有控制卡、网络或原生 DLL 入口。</summary>
-    public sealed partial class InMemoryTaskDevice : ITaskDevice
+    public sealed partial class InMemoryTaskDevice : ITaskDevice, ITaskInterlockSupport
     {
         /// <summary>保护内存设备状态；只在短小的读写期间持有。</summary>
         private readonly object _sync = new object();

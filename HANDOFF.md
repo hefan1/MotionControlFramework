@@ -6,7 +6,7 @@
 
 本节记录当前配置；下面“历史四工位验证”保留先前测试证据，其入口和版本不代表当前状态。
 
-- 当前 `Machine01/Parameters/Equipment.json` 为 `definition: WeldingExample`、`executionOwner: StationFlows`，控制器后端为 Virtual。任务运行清单已安装夹具焊接 R4。切换任务列表时先安全关闭 Host，将 Equipment.json 设置为 `definition: Demo`、`executionOwner: TaskEngine`；切回代码示例用 `WeldingExample`、`StationFlows`。按 `src/MotionControl.TaskEngine/Samples/ClipWelding/README.md` 核对映射和反馈；不要用旧草稿覆盖运行清单。
+- 当前 `Machine01/Parameters/Equipment.json` 为 `definition: WeldingExample`、`executionOwner: TaskEngine`，控制器后端为 Virtual。任务运行清单已安装夹具焊接 R4。切换代码流程前须安全关闭 Host，并将执行入口切换为 `StationFlows`；重新打开时先核对实际配置及恢复记录。按 `src/MotionControl.TaskEngine/Samples/ClipWelding/README.md` 核对映射和反馈；不要用旧草稿覆盖运行清单。
 - 配置目录：`C:\Users\ASUS\AppData\Local\MotionControlFramework\Configurations\Machine01`。安装样例前备份在 `Backups/ClipWelding-20261101-185625-93c902bc39e847d289ceb69fb7200ad2`，更新反馈步骤前备份在 `Backups/ClipWelding-feedback-20261101-190230`，切换到代码示例前的设备入口在 `Backups/Equipment-before-ClipCSharp-20261101-192227.json`。备份不会自动恢复。
 - 参考 BCW HIVE-BZ 的扫码、焊接、压合、复检及载具流转，分别实现任务列表和 C# 四工位示例，各站有单件缓存，下游堵塞逐站向上游传递。正式 Release Host 连接本机软件控制器：任务列表实测不同工位同时持有 A/B 测试件、堵料后计数停止；解除堵料、暂停复位及启动后复检计数从 24 增至 40。本轮任务列表的报警恢复由内存检查覆盖，未在正式 Host 注入报警。
 - C# 入口在正式 Host 实测四站并行及不同产品/载具编号；注入 DI7 反馈卡住后复检传感器超时报停、上游逐站等待，恢复反馈、复位并启动后复检计数从 23 增至至少 31，报警清除。暂停后轴监控显示全部轴停止；结束时 DO0–DO3、DI4–DI7 已核对为无效并关闭本轮 Host 与软件控制器。重新启动软件控制器后须重新准备轴和测试反馈。
@@ -30,10 +30,10 @@
 |---|---|
 | 基线提交 | 以 `git log` 为准；本轮软件控制器相关改动和提交状态以 `git status --short` 为准 |
 | 工作区 | 正式 Host 具备正运动及独立软件控制器两种后端；精确状态以 `git status --short` 为准 |
-| 构建 | MachineDevice 检查为 11 组、OperatorPages 检查为 18 组；TaskEngine 23/53/16 组、Runtime 35 项为历史记录，须按第 6 节重新确认 |
+| 构建 | MachineDevice 检查为 16 组、OperatorPages 检查为 18 组；TaskEngine 23/53/16 组、Runtime 37 项；具体范围见第 6 节 |
 | 正式 Host | 新一轮软件控制器测试前重新核对连接、轴和 IO；每次控制器进程重启后轴、IO 与供料场景状态均重置 |
 | 配置根 | `C:\Users\ASUS\AppData\Local\MotionControlFramework\Configurations\Machine01` |
-| 执行入口 | 当前 `Parameters/Equipment.json` 选择 `WeldingExample` / `StationFlows`；任务列表夹具焊接配置也已保留，切换前须安全停机并按第 0 节核对 |
+| 执行入口 | 当前 `Parameters/Equipment.json` 选择 `WeldingExample` / `TaskEngine`；切换前须安全停机并按第 0 节核对 |
 | 控制器后端 | 当前 Machine01 的 `Parameters/ControllerBackend.json` 保留 `{"backend":"Virtual","port":18520}`；它不改写原有运动卡、轴和 IO 映射。未提供此文件时默认正运动 |
 
 正式 Host 已使用协议 2 软件控制器复测上料工位两种流程的正常循环、暂停、缺料报警和恢复，以及 C# 流程断线状态。任务列表故障恢复后继续循环至少 19 次，C# 故障恢复后至少 85 次。一键启动脚本已从未运行状态启动控制器和正式 Host。这些结论仅适用于软件控制器，不代表正运动 SDK 或实体设备验收。历史正运动联调中 Load_X 回零方向与有效电平尚未查清；切回正运动后仍须独立核对，不能把软件控制器的回零结果当作厂商结果。
@@ -75,13 +75,13 @@
 
 - **协议 2 正式 Host 回归**：两种路径的正常循环、暂停与缺料报警恢复，以及 C# 断线状态已有屏幕验证。其他机型、现场硬件和故障场景仍需独立验证。
 - **Load_X 回零方向与有效电平**：历史模式 3 运行时从 0 向负方向移动并在 -90 mm 受控停止。2026-11-01 重启控制器后，Host 显示轴 1 在 0 mm 且未回零，DI8 切换可使 Host 原点状态变化并已恢复；控制器输入表显示 DI8 为 `datum_in(1)` 且输入反转关闭。厂商手册对不同控制器族的有效电平有区别，历史负向动作是否为反找尚未确认。不要为了继续流程重复回零；先核实该控制器的原点有效状态和模式行为。
-- **互锁节点**：`MachineTaskDevice.CheckInterlock` 仍抛 `NotSupportedException`，需要设计并实现框架级安全语义。
+- **任务互锁**：设备侧互锁条件暂不支持并明确拒绝；现有同步读卡可能阻塞任务运行锁，不能据此宣称暂停实时可靠。须改造状态读取和任务锁、验证厂商调用超时与停轴后，再接入设备互锁；硬件安全回路须独立。资源隔离尚未跨进程持久化。
 
 ## 5. 已知坑（先读再动手）
 
 1. **端口是同步的，设备是异步的**。`MachineTaskDevice` 用 `Wait()`（`GetAwaiter().GetResult()`）桥接，根因是 `TaskRun.StepAsync` 在持锁状态下执行同步动作。这发生在执行器后台线程，**不要在 UI 线程调用这些同步方法**。彻底解决要把端口改异步并改运行锁，风险大，需单独立项。
 2. **轴未回零会被拒绝**：`BeginMove` 要求 `ServoEnabled` 且 `Homed`。软件控制器的回零是软件零位；正运动 VPLC 历史 DATUM 模式 3 的方向与输入有效状态尚未确认，切回后须先查清，再发回零或循环指令。
-3. **轴组/互锁是明确不支持**，不要在 Host 里把它们包装成能用。
+3. **轴组插补及设备侧互锁条件明确不支持**；任务内存模型的互锁能力不代表实际设备支持，禁止包装成连续安全监控。
 4. **git 不在 PATH**：用 `C:\Users\ASUS\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\git\cmd\git.exe`。
 5. **配置根有两处**：带包名的容器上下文解析到 `...\Packages\OpenAI.Codex_2p2nqsd0c76g0\LocalCache\Local\...`，普通会话解析到 `C:\Users\ASUS\AppData\Local\...`。真实现场配置已迁到后者，前者是历史残留。
 6. **运行中的 Host 锁 `bin\Release\net48`**：重建前先正常关闭；关闭被"设备流程仍在运行/报警处理中"拒绝时，按 `AGENTS.md` 的记录流程处理。
@@ -93,7 +93,7 @@ $env:DOTNET_CLI_HOME='F:\Work\运动控制框架\.dotnet-cli-home'
 cd F:\Work\运动控制框架\MotionControlFramework
 $dotnet='C:\Program Files\dotnet\dotnet.exe'
 
-# 1) 真机任务设备检查：期望 11 组，失败 0
+# 1) 真机任务设备检查：期望 16 组，失败 0（使用假设备，不代表实体卡验收）
 & $dotnet build tools/MotionControl.MachineDevice.Checks/MotionControl.MachineDevice.Checks.csproj -c Release -o tmp/check-md -v:q
 & .\tmp\check-md\MotionControl.MachineDevice.Checks.exe
 
@@ -101,7 +101,7 @@ $dotnet='C:\Program Files\dotnet\dotnet.exe'
 & $dotnet build tools/MotionControl.TaskEngine.Checks/MotionControl.TaskEngine.Checks.csproj -c Release -o tmp/check-te -v:q
 & .\tmp\check-te\MotionControl.TaskEngine.Checks.exe
 
-# 3) Runtime 回归：期望 35 项全部通过（33 Runtime + 1 工位配置 + 1 ZMotion）
+# 3) Runtime 回归：期望 37 项全部通过（35 Runtime + 1 工位配置 + 1 ZMotion）
 & $dotnet build tools/MotionControl.ZMotionSimulatorCheck/MotionControl.ZMotionSimulatorCheck.csproj -c Release -o tmp/check-rt -v:q
 & .\tmp\check-rt\MotionControl.ZMotionSimulatorCheck.exe --runtime-regression
 
@@ -133,3 +133,13 @@ $dotnet='C:\Program Files\dotnet\dotnet.exe'
 - 为验证无料条件下的任务列表路径，使用独立配置副本 `tmp/preparation-operator-20261102`，不复制原 `Runtime` 目录。正式 Host 在该副本中完成两个工位准备，四工位循环至各 12 次，并验证暂停、复位、续跑及排空。DI5 保持有效时等待可受控停止；再次等待超时产生报警；恢复 DI5、复位并重试后两个工位准备成功。
 - 本轮退出前确认 DO0–3 和 DI4–7 为 false、供料关闭，并关闭 Host 与软件控制器。原 Machine01 当前保留任务列表入口及原恢复数据；上述隔离配置不是默认配置。
 - 本轮验证使用软件模型，其软件零位、运动与反馈不能证明实体设备的原点输入、回零方向、限位、安全回路、伺服或现场工艺正确。任务生产初始化 `ClipInit` 会清理样例交接变量，不支持带料恢复；有料时应先按设备工艺处理并核对记录，不能以运行初始化替代清料确认。
+
+## 10. 2026-11-02 运行入口、报警历史与恢复保护
+
+- 正式 Host 顶部控制兼容 C# 流程和任务列表；顶部停止是受控暂停并保留工步，任务运行页“停止并关闭”才结束任务会话。两种入口仍使用通用框架和各自设备定义，不把焊接工艺写入框架核心。
+- 增加报警发生、条件恢复和复位的历史记录及查询页面。历史目录位于各设备配置的 `Runtime/AlarmHistory`；写入失败会提示、保留进程内待写项并在重连时重试。磁盘持续不可用或程序突然退出时，内存中的未写记录仍可能丢失，不能当作可靠审计数据库。
+- 自动生产和设备准备开始前创建持久标记；准备安全收尾或受控暂停并成功保存后才移除。重启发现遗留标记、损坏或不完整恢复文件时，保留原记录并阻止准备和生产。当前没有经现场核实、权限控制和审计的恢复入口；不能靠直接删除标记或覆盖快照假装完成现场恢复。
+- 资源隔离在当前任务会话内阻止归还控制权，恢复检查要求持有控制权；正式 Host 尚无解除隔离入口，隔离记录也没有跨进程持久化。设备侧有条件互锁暂不支持，加载时提前拒绝；同步读卡和任务锁可能拖延暂停，需单独改造和验证，硬件安全链必须独立。
+- 最新 Release 正式 Host 使用 `tmp/operator-unified-20261102` 隔离副本和软件控制器：焊接、压合准备完成，四工位各完成 20 个循环后受控暂停；运行中标记存在、成功暂停后消除。较早构建同场景各完成 24 次并检查报警和恢复。正式 Host 的历史报警页显示发生、条件恢复和复位，并可查看输入与详情。
+- 使用另外两份隔离副本验证恢复文件损坏和遗留运行标记：设备准备和生产被拦截、原因显示在界面，恢复文件哈希前后不变；标记也保留。隔离测试不修改默认 Machine01 的配置或恢复记录。结束时在 Host 确认轴停止、DI4–7 与 DO0–3 无效，已关闭本轮 Host 和软件控制器。
+- 内部检查：MachineDevice 16 组、TaskEngine 23/53/16 组、Runtime 37 项、OperatorPages 18 组、设备准备 11 组及报警历史检查通过。构建的 NuGet 漏洞数据查询有 SSL 警告。内部假设备和软件控制器的结果不代表真实控制卡、电气、机械或现场安全验收。

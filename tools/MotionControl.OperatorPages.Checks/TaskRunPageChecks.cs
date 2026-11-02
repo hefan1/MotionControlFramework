@@ -63,7 +63,8 @@ namespace MotionControl.OperatorPages.Checks
                 Require(monitor.Visibility == Visibility.Collapsed, "心跳恢复前旧会话被重新当作实时状态。");
                 type.GetField("_session", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(page, null);
                 var setContext = type.GetMethod("SetMachineContextAsync", BindingFlags.Instance | BindingFlags.NonPublic);
-                ((Task)setContext.Invoke(page, new object[] { runtime, group, null, null })).GetAwaiter().GetResult();
+                // 反射调用不自动填充可选参数；第五项表示当前设备未配置 C# 准备项。
+                ((Task)setContext.Invoke(page, new object[] { runtime, group, null, null, null })).GetAwaiter().GetResult();
                 Require(empty.Text.Contains("尚未读取") && monitor.Visibility == Visibility.Collapsed, "重新建立上下文后未检查会话状态。");
 
                 var setSuccess = type.GetMethod("SetSuccessText", BindingFlags.Instance | BindingFlags.NonPublic);

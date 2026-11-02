@@ -99,13 +99,13 @@ namespace MotionControl.TaskEngine.Resources
         }
 
         /// <summary>查找待确认记录；它只保存身份和冻结的退出条件。</summary>
-        public TaskResourceRequest FindBlocked(string id)
+        internal TaskResourceRequest FindBlocked(string id)
         {
             lock (_sync) return _requests.FirstOrDefault(request => request.Id == id && request.State == TaskResourceState.Blocked);
         }
 
         /// <summary>设备完成退出条件复核后移除同一条记录，旧凭证不能释放新申请。</summary>
-        public bool Recover(TaskResourceRequest request)
+        internal bool Recover(TaskResourceRequest request)
         {
             lock (_sync) return request.State == TaskResourceState.Blocked && _requests.Remove(request);
         }

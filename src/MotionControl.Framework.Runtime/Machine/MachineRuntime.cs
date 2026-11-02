@@ -174,6 +174,19 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>供界面读取；状态变化可能发生在流程后台线程。</summary>
         public event EventHandler StatusChanged;
 
+        /// <summary>Host 提供的运行前持久标记；失败必须阻止进入生产，不执行设备动作。</summary>
+        private Action _beforeAutomaticRun;
+
+        /// <summary>连接前接入运行前持久标记；为空时保持未配置持久化的旧设备行为。</summary>
+        public void SetBeforeAutomaticRun(Action action)
+        {
+            if (State != MachineRunState.Disconnected) throw new InvalidOperationException("只能在连接前设置生产运行记录。");
+            _beforeAutomaticRun = action;
+        }
+
+        /// <summary>在发出自动动作之前持久化运行标记；错误向调用者报告并阻止启动。</summary>
+        private void RecordBeforeAutomaticRun() { _beforeAutomaticRun?.Invoke(); }
+
         /// <summary>报警列表变化时通知界面刷新。</summary>
         public event EventHandler AlarmsChanged;
 
@@ -255,9 +268,24 @@ namespace MotionControl.Framework.Runtime.Machine
             get { return _flowScheduler.HasPendingInitialization; }
         }
 
+        /// <summary>恢复记录不可信时拦截自动生产和工位准备；不影响手动排查。</summary>
+        public string RecoveryBlockReason { get; private set; }
+
+        /// <summary>连接前安装恢复校验结果，不能在设备运行期间更改此门禁。</summary>
+        public void SetRecoveryBlockReason(string reason)
+        {
+            if (State != MachineRunState.Disconnected) throw new InvalidOperationException("只能在连接前设置恢复检查结果。");
+            RecoveryBlockReason = string.IsNullOrWhiteSpace(reason) ? null : reason;
+        }
+
+        /// <summary>恢复数据不可信时禁止开始自动动作。</summary>
+        private void EnsureRecoveryTrusted()
+        { if (RecoveryBlockReason != null) throw new InvalidOperationException("设备恢复信息未确认，不能准备或启动：" + RecoveryBlockReason); }
+
         /// <summary>读取自动启动拦截原因，供操作页在启动前显示具体就绪条件。</summary>
         public async Task<string> GetAutomaticStartBlockReasonAsync(CancellationToken cancellationToken)
         {
+            if (RecoveryBlockReason != null) return "设备恢复信息未确认，不能准备或启动：" + RecoveryBlockReason;
             if (State != MachineRunState.Ready)
             {
                 return null;
@@ -603,6 +631,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 }
 
                 EnsureState(MachineRunState.Ready, "启动前必须先成功复位设备。");
+                EnsureRecoveryTrusted();
                 await EnsurePreparationsReadyForStartAsync(cancellationToken).ConfigureAwait(false);
                 EnsureNoManualOperationsInProgress("启动自动流程");
                 if (!IsEmergencyStopMonitoringConfigured())
@@ -630,6 +659,7 @@ namespace MotionControl.Framework.Runtime.Machine
                             _flowScheduler.HasPendingInitialization,
                             cancellationToken)
                         .ConfigureAwait(false);
+                    RecordBeforeAutomaticRun();
                     SetRunningIfNoStopAlarm();
                     StartEmergencyStopMonitor();
                     var runTask = _flowScheduler.Start();

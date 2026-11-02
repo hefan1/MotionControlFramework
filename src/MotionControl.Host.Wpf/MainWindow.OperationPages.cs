@@ -14,8 +14,13 @@ namespace MotionControl.Host.Wpf
         private EquipmentOverviewView _equipmentOverviewPage;
         /// <summary>当前报警页，和总览使用相同 Runtime。</summary>
         private CurrentAlarmsView _currentAlarmsPage;
+        /// <summary>历史报警与当前报警共用一个设备日志来源。</summary>
+        private AlarmHistoryView _alarmHistoryPage;
         /// <summary>设备定义与任务列表共用的工位回零页面。</summary>
         private EquipmentPreparationView _equipmentPreparationPage;
+        /// <summary>将当前设备的报警历史交给报警页面，写入器由应用管理。</summary>
+        internal void SetAlarmHistory(MotionControl.Framework.Runtime.Alarms.AlarmHistoryJournal history)
+        { _currentAlarmsPage.SetHistory(history); _alarmHistoryPage.SetHistory(history); }
         /// <summary>从总览或报警进入关联页面后的返回目标。</summary>
         private string _operationReturnPage;
         /// <summary>返回目标所在分区，避免任务配置等非操作页被错误映射到首页。</summary>
@@ -43,6 +48,7 @@ namespace MotionControl.Host.Wpf
         {
             _equipmentOverviewPage = new EquipmentOverviewView();
             _currentAlarmsPage = new CurrentAlarmsView();
+            _alarmHistoryPage = new AlarmHistoryView();
             _equipmentPreparationPage = new EquipmentPreparationView(EnsurePreparationConfigurationAsync, NavigatePreparationPage);
             _equipmentOverviewPage.NavigationRequested += OperationNavigationRequested;
             _currentAlarmsPage.NavigationRequested += OperationNavigationRequested;
@@ -60,6 +66,8 @@ namespace MotionControl.Host.Wpf
             }
             if (_currentSectionKey == "Alarms" && _currentPageResourceKey == "当前报警")
             { page = _currentAlarmsPage; description = "当前报警页面说明"; }
+            if (_currentSectionKey == "Alarms" && _currentPageResourceKey == "历史报警")
+            { page = _alarmHistoryPage; description = "历史报警页面说明"; }
             if (_currentSectionKey == "Home" && _currentPageResourceKey == "设备准备")
             { page = _equipmentPreparationPage; description = "设备准备页面说明"; }
             if (page == null) return false;
@@ -82,7 +90,7 @@ namespace MotionControl.Host.Wpf
             }
             SetOperationReturnTarget(_currentSectionKey, _currentPageResourceKey);
             _currentPageResourceKey = e.Page;
-            string section = e.Page == "当前报警" ? "Alarms"
+            string section = e.Page == "当前报警" || e.Page == "历史报警" ? "Alarms"
                 : e.Page == "设备准备" ? "Home"
                 : e.Page == "轴映射配置" ? "Settings"
                 : e.Page == "轴手动" ? "Manual"

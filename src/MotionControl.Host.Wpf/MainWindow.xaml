@@ -124,11 +124,17 @@
                             Style="{StaticResource MachineCommandButton}"
                             Click="MachinePauseButton_Click"
                             ToolTip="{DynamicResource 自动暂停提示}" />
-                    <Button x:Name="MachineStopButton" Content="{DynamicResource 停止}"
+                    <Button x:Name="MachineStopButton"
                             Background="#E99691"
                             Style="{StaticResource MachineCommandButton}"
                             Click="MachineStopButton_Click"
-                            ToolTip="{DynamicResource 自动停止提示}" />
+                            ToolTip="{DynamicResource 自动停止提示}"
+                            AutomationProperties.Name="{DynamicResource 顶部受控停止说明}">
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock Text="{DynamicResource 停止}" FontSize="14" HorizontalAlignment="Center" />
+                            <TextBlock Text="{DynamicResource 顶部停止保留工步}" FontSize="11" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                     <Button x:Name="MachineResetButton"
                             Content="{DynamicResource 整机复位}"
                             Background="#F4D78B"

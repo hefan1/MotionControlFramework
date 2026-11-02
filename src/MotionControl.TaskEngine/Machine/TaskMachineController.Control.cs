@@ -297,12 +297,12 @@ namespace MotionControl.TaskEngine.Machine
                 }
         }
 
-        /// <summary>关闭前先等待终止收尾，再归还设备所有权；可重复调用，不阻塞 UI 线程。</summary>
+        /// <summary>关闭前等待终止收尾并归还所有权；失败后允许排除原因并再次关闭。</summary>
         public Task CloseAsync()
         {
             lock (_sync)
             {
-                if (_closeTask == null) _closeTask = CloseCoreAsync();
+                if (_closeTask == null || _closeTask.IsFaulted || _closeTask.IsCanceled) _closeTask = CloseCoreAsync();
                 return _closeTask;
             }
         }
@@ -313,8 +313,8 @@ namespace MotionControl.TaskEngine.Machine
             await AbortAsync().ConfigureAwait(false);
             lock (_sync)
             {
-                AlarmService.StopAlarmRaised -= AlarmService_StopAlarmRaised;
                 _device.ReleaseMachine(this);
+                AlarmService.StopAlarmRaised -= AlarmService_StopAlarmRaised;
                 _lifetime.Dispose();
                 _state = TaskMachineState.Closed;
             }

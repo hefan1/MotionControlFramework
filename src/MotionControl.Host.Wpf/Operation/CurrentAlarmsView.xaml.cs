@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Threading;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Runtime.Machine;
+using MotionControl.Framework.Runtime.Alarms;
 
 namespace MotionControl.Host.Wpf.Operation
 {
@@ -16,6 +17,8 @@ namespace MotionControl.Host.Wpf.Operation
         public event EventHandler<OperatorNavigationEventArgs> NavigationRequested;
         /// <summary>与顶部按钮共用的当前 Runtime。</summary>
         private MachineRuntime _runtime;
+        /// <summary>与当前设备报警服务绑定的历史日志；未接入时历史按钮不可用。</summary>
+        private AlarmHistoryJournal _history;
         /// <summary>仅独立预览传入的明确示例。</summary>
         private OperationSnapshot _preview;
         /// <summary>当前展示的完整软件状态。</summary>
@@ -32,6 +35,7 @@ namespace MotionControl.Host.Wpf.Operation
         public CurrentAlarmsView()
         {
             InitializeComponent();
+            HistoryButton.IsEnabled = false;
             _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
             _timer.Tick += TimerTick; Loaded += ViewLoaded; Unloaded += ViewUnloaded;
             UpdateHeaders(); RefreshDisplay();
@@ -39,6 +43,13 @@ namespace MotionControl.Host.Wpf.Operation
         /// <summary>切换运行时并丢弃旧来源的选择，不能把旧报警视为新设备报警。</summary>
         public void SetRuntime(MachineRuntime runtime)
         { _runtime = runtime; _preview = null; _selectedKey = null; RefreshDisplay(true); }
+        /// <summary>绑定当前设备的后台历史记录器，界面不负责其生命周期。</summary>
+        public void SetHistory(AlarmHistoryJournal history)
+        { _history = history; HistoryButton.IsEnabled = history != null; }
+
+        /// <summary>进入历史报警工作区，不复位或清除当前报警。</summary>
+        private void History_Click(object sender, RoutedEventArgs e)
+        { NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("历史报警")); }
         /// <summary>独立示例必须明确标记，正常 Host 不自动补入任何报警。</summary>
         public void SetPreview(OperationSnapshot snapshot)
         {

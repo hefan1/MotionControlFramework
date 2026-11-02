@@ -105,6 +105,51 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>当前是否已装载一个整机任务会话。</summary>
         internal bool HasTaskSession { get { return _session != null; } }
 
+        /// <summary>任务命令正在读写或等待停稳，顶部按钮应避免并发提交。</summary>
+        internal bool IsCommandInProgress { get { return _commandInProgress; } }
+
+        /// <summary>任务入口是否已读取并处于可启动状态；实际启动仍由 Runtime 和任务执行器再次检查。</summary>
+        internal bool CanStartFromHost
+        {
+            get { return IsControllerConnected() && _session != null && !_commandInProgress
+                && _runtime != null && _runtime.State == MachineRunState.Ready && _runtime.IsPrepared
+                && string.IsNullOrWhiteSpace(_runtime.RecoveryBlockReason)
+                && _session.Machine.GetSnapshot().State == TaskMachineState.Ready; }
+        }
+
+        /// <summary>任务生产运行中才允许从顶部发起保留工步的受控暂停。</summary>
+        internal bool CanPauseFromHost
+        {
+            get { return _session != null && !_commandInProgress
+                && _runtime != null && _runtime.State == MachineRunState.Running
+                && _session.Machine.GetSnapshot().State == TaskMachineState.Running; }
+        }
+
+        /// <summary>设备已就绪但任务仍等待复位时，顶部复位也应可用。</summary>
+        internal bool NeedsResetFromHost
+        {
+            get
+            {
+                if (_session == null || _commandInProgress || _runtime == null || _runtime.IsPreparing) return false;
+                var state = _session.Machine.GetSnapshot().State;
+                return state == TaskMachineState.NeedsReset || state == TaskMachineState.Paused || state == TaskMachineState.Faulted;
+            }
+        }
+
+        /// <summary>说明任务入口尚不能从顶部启动的原因；仅查询状态，不发设备命令。</summary>
+        internal string GetHostStartBlockReason()
+        {
+            if (!string.IsNullOrWhiteSpace(_runtime?.RecoveryBlockReason))
+                return "设备恢复信息未确认，不能准备或启动：" + _runtime.RecoveryBlockReason;
+            if (_session == null) return "请先进入任务运行页读取当前任务。";
+            if (_commandInProgress) return "任务命令正在执行，请稍候。";
+            if (_runtime != null && !_runtime.IsPrepared) return "请先在设备准备页完成工位回零。";
+            var state = _session.Machine.GetSnapshot().State;
+            if (state == TaskMachineState.NeedsReset || state == TaskMachineState.Paused || state == TaskMachineState.Faulted)
+                return "请先处理现场状态并按报警复位。";
+            return state == TaskMachineState.Ready ? null : "任务当前不能启动，请查看任务运行状态。";
+        }
+
         /// <summary>创建任务运行入口；不在此处连接控制卡或启动任务。</summary>
         internal TaskMonitorLauncher(MachineConfigurationStore store, string machineId, MainWindow host)
         {
@@ -365,34 +410,61 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>先让 Runtime 建立安全运行状态和急停监控，再启动任务工位。</summary>
         private async void StartTask_Click(object sender, RoutedEventArgs e)
         {
-            await RunCommandAsync(async () =>
+            await RunCommandAsync(StartTaskCoreAsync, "任务启动失败", "任务运行复位建议").ConfigureAwait(true);
+        }
+
+        /// <summary>任务页和顶部启动复用同一流程，先建立运行安全监控，再启动实际任务。</summary>
+        private async Task StartTaskCoreAsync()
+        {
+            RequireTaskSession();
+            await _runtime.BeginTaskEngineRunAsync(CancellationToken.None).ConfigureAwait(true);
+            try
             {
-                RequireTaskSession();
-                await _runtime.BeginTaskEngineRunAsync(CancellationToken.None).ConfigureAwait(true);
-                try
-                {
-                    _session.Machine.Start();
-                    _runtime.ConfirmTaskEngineProductionStarted();
-                }
-                catch (Exception startError)
-                {
-                    await _runtime.FinishTaskEngineRunAsync(true, startError).ConfigureAwait(true);
-                    throw;
-                }
-                SetSuccessText("任务执行已启动");
-            }, "任务启动失败", "任务运行复位建议").ConfigureAwait(true);
+                _session.Machine.Start();
+                _runtime.ConfirmTaskEngineProductionStarted();
+            }
+            catch (Exception startError)
+            {
+                await _runtime.FinishTaskEngineRunAsync(true, startError).ConfigureAwait(true);
+                throw;
+            }
+            SetSuccessText("任务执行已启动");
         }
 
         /// <summary>请求所有任务停步并等待真实轴受控停稳，再更新整机状态。</summary>
         private async void PauseTask_Click(object sender, RoutedEventArgs e)
         {
-            await RunCommandAsync(async () =>
+            await RunCommandAsync(PauseTaskCoreAsync, "任务暂停失败", "任务运行复位建议").ConfigureAwait(true);
+        }
+
+        /// <summary>受控停轴并保留任务工步，供任务页及顶部暂停、停止共用。</summary>
+        private async Task PauseTaskCoreAsync()
+        {
+            RequireTaskSession();
+            await _session.Machine.PauseAsync().ConfigureAwait(true);
+            await _runtime.FinishTaskEngineRunAsync(false, null).ConfigureAwait(true);
+            SetSuccessText("任务执行已暂停");
+        }
+
+        /// <summary>从顶部执行任务启动或暂停；任务页的并发保护和诊断状态共用。</summary>
+        internal async Task RunFromHostAsync(bool start)
+        {
+            if (_commandInProgress) throw new InvalidOperationException("任务命令正在执行，请等待完成。");
+            _commandInProgress = true;
+            UpdateCommandAvailability();
+            try
             {
-                RequireTaskSession();
-                await _session.Machine.PauseAsync().ConfigureAwait(true);
-                await _runtime.FinishTaskEngineRunAsync(false, null).ConfigureAwait(true);
-                SetSuccessText("任务执行已暂停");
-            }, "任务暂停失败", "任务运行复位建议").ConfigureAwait(true);
+                if (start) await StartTaskCoreAsync().ConfigureAwait(true);
+                else await PauseTaskCoreAsync().ConfigureAwait(true);
+                ClearError();
+            }
+            finally
+            {
+                _commandInProgress = false;
+                UpdateRunStatus();
+                UpdateCommandAvailability();
+                _host.RefreshMachineStateDisplay();
+            }
         }
 
         /// <summary>取消并等待全部任务动作收尾，然后关闭会话并归还设备控制权。</summary>
@@ -540,10 +612,12 @@ namespace MotionControl.Host.Wpf.Tasks
                 && taskState != TaskMachineState.Running && taskState != TaskMachineState.Pausing
                 && _runtime.State != MachineRunState.Running && _runtime.State != MachineRunState.Pausing && !_runtime.IsPreparing;
             _startButton.IsEnabled = connected && taskState == TaskMachineState.Ready && !_commandInProgress
-                && _runtime.State == MachineRunState.Ready && _runtime.IsPrepared;
+                && _runtime.State == MachineRunState.Ready && _runtime.IsPrepared
+                && string.IsNullOrWhiteSpace(_runtime.RecoveryBlockReason);
             _pauseButton.IsEnabled = taskState == TaskMachineState.Running && !_commandInProgress;
             _stopButton.IsEnabled = _session != null && !_commandInProgress && !_runtime.IsPreparing;
             UpdateNextAction(connected, taskState);
+            _host.RefreshMachineStateDisplay();
         }
 
         /// <summary>统一串行执行页面命令并在失败时保留完整诊断。</summary>
@@ -657,6 +731,9 @@ namespace MotionControl.Host.Wpf.Tasks
                 _nextAction.Text = PageText("正在处理，请稍候。", "Processing, please wait.");
             else if (!connected)
                 _nextAction.Text = string.Empty;
+            else if (!string.IsNullOrWhiteSpace(_runtime.RecoveryBlockReason))
+                _nextAction.Text = PageText("设备恢复信息未确认，不能准备或启动：", "Recovery information is not verified; preparation and start are blocked: ")
+                    + _runtime.RecoveryBlockReason;
             else if (_runtime.IsPreparing)
                 _nextAction.Text = PageText("设备回零正在执行；可在设备准备页查看进度或停止。", "Preparation is running. View progress or stop on the preparation page.");
             else if (!_runtime.IsPrepared)

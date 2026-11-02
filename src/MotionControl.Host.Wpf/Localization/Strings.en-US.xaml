@@ -54,9 +54,11 @@
     <sys:String x:Key="启动">▶ Start</sys:String>
     <sys:String x:Key="暂停">Ⅱ Pause</sys:String>
     <sys:String x:Key="停止">■ Stop</sys:String>
+    <sys:String x:Key="顶部停止保留工步">Keep step</sys:String>
+    <sys:String x:Key="顶部受控停止说明">Stop, keep step</sys:String>
     <sys:String x:Key="自动启动提示">Start the configured station after the machine is ready.</sys:String>
-    <sys:String x:Key="自动暂停提示">Pause all automatic stations in a controlled manner and retain their current steps. Reset the machine before pressing Start to continue.</sys:String>
-    <sys:String x:Key="自动停止提示">Stop also pauses all automatic stations in a controlled manner and retains their current steps. Confirm the equipment is safe, then reset the machine and press Start to continue.</sys:String>
+    <sys:String x:Key="自动暂停提示">Pause all automatic stations in a controlled manner and retain their current steps. Reset alarms before pressing Start to continue.</sys:String>
+    <sys:String x:Key="自动停止提示">Stop pauses all automatic stations in a controlled manner and retains their current steps. Confirm the equipment is safe, reset alarms, and press Start to continue.</sys:String>
     <sys:String x:Key="自动流程命令失败标题">Automatic Sequence Command Failed</sys:String>
     <sys:String x:Key="工位流程状态说明">View run information and alarms for the current control mode.</sys:String>
     <sys:String x:Key="流程页.待启动步骤">Next steps before Start</sys:String>
@@ -724,6 +726,7 @@
     <sys:String x:Key="任务配置先断开会话">The controller session is connected. Disconnect it on the axis mapping page before updating task files. It will not disconnect automatically; drafts can still be saved.</sys:String>
     <sys:String x:Key="设备总览页面说明">View equipment status, run information, and alarms.</sys:String>
     <sys:String x:Key="当前报警页面说明">View the location, condition and handling guidance. Refreshing does not reset alarms.</sys:String>
+    <sys:String x:Key="历史报警页面说明">Review alarm occurrences, recovered conditions, and reset records.</sys:String>
     <sys:String x:Key="关联页面尚未就绪">This page is not available from the current Runtime. Check the connection. No device action was performed.</sys:String>
     <sys:String x:Key="返回操作页">Back to operation</sys:String>
     <sys:String x:Key="IO反馈关联">Feedback links</sys:String>

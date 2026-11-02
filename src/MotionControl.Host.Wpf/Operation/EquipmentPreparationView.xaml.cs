@@ -115,22 +115,27 @@ namespace MotionControl.Host.Wpf.Operation
             }
             else _rows.Clear();
             bool preparing = _runtime != null && _runtime.IsPreparing;
+            bool recoveryBlocked = _runtime != null && !string.IsNullOrWhiteSpace(_runtime.RecoveryBlockReason);
             int completed = snapshots == null ? 0 : snapshots.Count(item => item.IsPrepared);
             SummaryText.Text = !connected ? T("连接设备后查看准备状态")
                 : preparing ? T("正在准备设备")
+                : recoveryBlocked ? T("设备恢复信息未确认")
                 : _rows.Count == 0 ? T("当前未配置工位回零")
                 : completed == _rows.Count ? T("配置工位已准备完成")
                 : string.Format(T("已准备 {0} / {1} 个工位"), completed, _rows.Count);
             GuidanceText.Text = preparing ? T("按设备定义的顺序执行，完成后等待启动；需要中断时按停止回零。")
+                : recoveryBlocked ? T("请联系维护人员核对现场及恢复记录，确认前不能回零或启动。")
                 : T("回零会使机构运动。确认工位与物料状态后操作；完成后仍需核对其他启动条件，再启动生产。");
             var failed = snapshots?.FirstOrDefault(item => item.State == StationPreparationState.Failed);
-            ErrorText.Text = string.IsNullOrWhiteSpace(_error) ? string.Empty
+            ErrorText.Text = recoveryBlocked ? _runtime.RecoveryBlockReason
+                : string.IsNullOrWhiteSpace(_error) ? string.Empty
                 : failed == null || _error.Contains(failed.StationName) ? _error : failed.StationName + "：" + _error;
             DiagnosticText.Text = _diagnostic ?? string.Empty;
             DiagnosticExpander.Visibility = string.IsNullOrWhiteSpace(_diagnostic) ? Visibility.Collapsed : Visibility.Visible;
-            bool canPrepare = connected && _configurationLoaded && !preparing && !_commandInProgress
+            bool canPrepare = connected && _configurationLoaded && !preparing && !recoveryBlocked && !_commandInProgress
                 && (_runtime.State == MachineRunState.Ready || _runtime.State == MachineRunState.ResetRequired || _runtime.State == MachineRunState.Paused);
             PrepareAllButton.IsEnabled = canPrepare && _rows.Count > 0;
+            PrepareAllButton.Opacity = PrepareAllButton.IsEnabled ? 1.0 : 0.5;
             PrepareSelectedButton.IsEnabled = canPrepare && StationsGrid.SelectedItem != null;
             StopPreparationButton.IsEnabled = preparing;
             var selected = StationsGrid.SelectedItem as PreparationRow;

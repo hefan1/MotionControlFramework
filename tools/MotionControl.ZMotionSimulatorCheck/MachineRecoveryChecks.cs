@@ -22,7 +22,33 @@ namespace MotionControl.ZMotionSimulatorCheck
             CheckDeviceVariableValuesRestoreByNameAndType();
             CheckRecoveryFileRoundTripAndConfigurationChange();
             CheckCoordinatorRestoresOnlyKnownStepsAndInvalidatesOnStart();
+            CheckUntrustedRecoveryDoesNotOverwrite();
             return Task.CompletedTask;
+        }
+
+        /// <summary>损坏、错误设备或缺失变量时保留恢复原件，首次无文件不阻止运行。</summary>
+        private static void CheckUntrustedRecoveryDoesNotOverwrite()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "RecoveryUntrusted_" + Guid.NewGuid().ToString("N"));
+            var store = new MachineConfigurationStore(root);
+            var source = new MachineRecoveryStore(store, "Machine01");
+            Func<MachineRecoveryCoordinator> create = () => new MachineRecoveryCoordinator(source,
+                new DeviceVariableStore(new[] { CreateDefinition("Part.Occupied", "Boolean", "false", false) }), "Machine01");
+            string warning;
+            var first = create(); first.Load(out warning);
+            Ensure(first.RecoveryBlockReason == null, "首次无恢复文件不应拦截。");
+            string directory = Path.Combine(store.GetMachineDirectory("Machine01"), "Runtime");
+            Directory.CreateDirectory(directory);
+            string file = Path.Combine(directory, "RecoverySnapshot.json");
+            foreach (string text in new[] { "{无效", "{\"schemaVersion\":2}", "{\"schemaVersion\":1,\"machineId\":\"Other\",\"deviceVariables\":[],\"stationFlows\":[]}",
+                "{\"schemaVersion\":1,\"machineId\":\"Machine01\",\"deviceVariables\":[],\"stationFlows\":[]}" })
+            {
+                File.WriteAllText(file, text, new UTF8Encoding(false));
+                var coordinator = create(); coordinator.Load(out warning);
+                Ensure(!string.IsNullOrEmpty(coordinator.RecoveryBlockReason), "不可信恢复文件没有触发门禁。");
+                coordinator.SaveForShutdown(null, false);
+                Ensure(File.ReadAllText(file) == text, "不可信恢复文件被退出保存覆盖。");
+            }
         }
 
         /// <summary>确认变量当前值、有效标记和更新时间跨新 Store 实例恢复。</summary>
@@ -283,16 +309,24 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(stationA.RecoveryStepNumber == 20 && stationB.RecoveryStepNumber == 20,
                     "协调器没有恢复全部工位步骤。");
 
+                string savedPath = Path.Combine(configurationStore.GetMachineDirectory(machineId), "Runtime", "RecoverySnapshot.json");
+                string beforeShutdown = File.ReadAllText(savedPath);
                 validCoordinator.InvalidateBeforeAutomaticRun();
+                Ensure(File.ReadAllText(savedPath) == beforeShutdown, "生产启动前覆盖了原恢复记录。");
                 validCoordinator.SaveForShutdown(null, false);
+                Ensure(File.ReadAllText(savedPath) == beforeShutdown, "未受控停稳的关闭覆盖了原恢复记录。");
                 var shutdownVariableStore = new DeviceVariableStore(variableDefinitions);
                 var shutdownCoordinator = new MachineRecoveryCoordinator(
                     recoveryStore,
                     shutdownVariableStore,
                     machineId);
                 shutdownCoordinator.Load(out warningMessage);
+                Ensure(!string.IsNullOrWhiteSpace(shutdownCoordinator.RecoveryBlockReason)
+                    && shutdownCoordinator.RecoveryBlockReason.Contains("未确认安全停止"), "意外退出后的运行标记未阻止重新启动。");
                 Ensure(shutdownVariableStore.GetString("Vision.Result") == "OK",
                     "软件关闭保存后，新 Store 实例没有从恢复 JSON 载入变量值。");
+                shutdownCoordinator.SaveForShutdown(null, false);
+                Ensure(File.ReadAllText(savedPath) == beforeShutdown, "重启后的不可信记录被关闭操作覆盖。");
 
                 var restartedCoordinator = new MachineRecoveryCoordinator(
                     recoveryStore,

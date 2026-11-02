@@ -12,6 +12,29 @@ namespace MotionControl.Framework.Runtime.Machine
     /// <summary>独立的工位准备操作。这里只负责顺序、状态和命令互斥，具体工艺由准备项提供。</summary>
     public sealed partial class MachineRuntime
     {
+        /// <summary>准备动作开始前记录不确定现场；由 Host 配置。</summary>
+        private Action _beforePreparation;
+        /// <summary>准备成功或受控停稳后提交现场记录；由 Host 配置。</summary>
+        private Action _afterSafePreparation;
+        /// <summary>本次准备已创建记录且尚未完成安全收尾。</summary>
+        private bool _preparationRecordPending;
+
+        /// <summary>连接前接入准备动作的持久标记；两个回调必须成对提供。</summary>
+        public void SetPreparationRecordCallbacks(Action before, Action afterSafe)
+        {
+            if (State != MachineRunState.Disconnected) throw new InvalidOperationException("只能在连接前配置准备记录。");
+            if ((before == null) != (afterSafe == null)) throw new ArgumentException("准备记录回调必须成对提供。");
+            _beforePreparation = before;
+            _afterSafePreparation = afterSafe;
+        }
+
+        /// <summary>调用方持有整机命令锁时提交安全结束记录，失败保留待核对标记。</summary>
+        private void CompletePreparationRecord()
+        {
+            if (!_preparationRecordPending) return;
+            _afterSafePreparation();
+            _preparationRecordPending = false;
+        }
         /// <summary>保护准备项、只读快照和后台操作引用。</summary>
         private readonly object _preparationSync = new object();
         /// <summary>已经按依赖排序的准备项，不包含任何设备专用名称。</summary>
@@ -89,6 +112,7 @@ namespace MotionControl.Framework.Runtime.Machine
             try
             {
                 EnsureNoPreparationInProgress("启动另一项准备");
+                EnsureRecoveryTrusted();
                 lock (_preparationSync)
                     if (_preparationProductionStarted)
                         throw new InvalidOperationException("当前生产会话已运行，不能重新回零；请保留当前工步继续生产，或结束会话并核对在制品后重新准备。");
@@ -108,6 +132,11 @@ namespace MotionControl.Framework.Runtime.Machine
                 {
                     selected = SelectPreparations(stationId);
                     if (selected.Length == 0) throw new InvalidOperationException("当前入口未配置对应的工位准备流程。");
+                }
+                // 持久标记必须在设备步骤、使能或轴运动之前创建；写失败不进入准备状态。
+                if (_beforePreparation != null) { _beforePreparation(); _preparationRecordPending = true; }
+                lock (_preparationSync)
+                {
                     _preparing = true;
                     _preparationStopUnconfirmed = false;
                     _preparationProductionStarted = false;
@@ -174,14 +203,28 @@ namespace MotionControl.Framework.Runtime.Machine
             }
             finally
             {
-                lock (_preparationSync)
+                Exception finishError = null;
+                await _commandLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                try
                 {
-                    _preparationStopRequests--;
-                    if (_preparationStopRequests == 0 && !_preparationStopUnconfirmed && operation.IsCompleted)
-                        _preparing = false;
+                    bool lastStop;
+                    lock (_preparationSync)
+                    {
+                        _preparationStopRequests--;
+                        lastStop = _preparationStopRequests == 0 && !_preparationStopUnconfirmed && operation.IsCompleted;
+                    }
+                    if (lastStop && !operation.IsFaulted && !_alarmService.HasLatchedStopAlarm && State != MachineRunState.Alarmed)
+                    {
+                        try { CompletePreparationRecord(); }
+                        catch (Exception error) { finishError = error; }
+                    }
+                    lock (_preparationSync) if (lastStop) _preparing = false;
+                    if (finishError != null) SetStatus(MachineRunState.Alarmed, finishError);
                 }
+                finally { _commandLock.Release(); }
                 RaisePreparationChanged();
                 RaiseStatusChanged();
+                if (finishError != null) throw new InvalidOperationException("准备安全结束记录保存失败，请联系维护人员。", finishError);
             }
         }
 
@@ -309,7 +352,6 @@ namespace MotionControl.Framework.Runtime.Machine
                             stoppedAtCompletion = true;
                         }
                         _preparationStopUnconfirmed |= stopUnconfirmed;
-                        _preparing = _preparationStopUnconfirmed || _preparationStopRequests != 0;
                         _preparationCancellation = null;
                     }
                     if (stoppedAtCompletion && active != null)
@@ -317,6 +359,22 @@ namespace MotionControl.Framework.Runtime.Machine
                         InvalidatePreparationAndDependents(active.StationId, "准备完成确认前收到停止请求。");
                         SetPreparationSnapshot(active, StationPreparationState.Stopped, "回零已停止", "检查现场后重新执行工位回零。");
                     }
+                    bool canCompleteRecord;
+                    lock (_preparationSync) canCompleteRecord = failure == null && !_preparationStopUnconfirmed && _preparationStopRequests == 0;
+                    if (canCompleteRecord && !_alarmService.HasLatchedStopAlarm && State != MachineRunState.Alarmed)
+                    {
+                        try { CompletePreparationRecord(); }
+                        catch (Exception recordError)
+                        {
+                            failure = new InvalidOperationException("准备安全结束记录保存失败，请联系维护人员。", recordError);
+                            if (active != null)
+                            {
+                                InvalidatePreparationAndDependents(active.StationId, "准备记录未能保存。");
+                                SetPreparationSnapshot(active, StationPreparationState.Failed, "准备失败", failure.Message);
+                            }
+                        }
+                    }
+                    lock (_preparationSync) _preparing = _preparationStopUnconfirmed || _preparationStopRequests != 0;
                     if (failure != null || _alarmService.HasLatchedStopAlarm || State == MachineRunState.Alarmed)
                         SetStatus(MachineRunState.Alarmed, failure ?? LastError);
                     else SetStatus(stopped ? MachineRunState.ResetRequired : MachineRunState.Ready, null);

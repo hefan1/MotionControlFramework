@@ -20,6 +20,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 if (ControlOwner != MachineControlOwner.TaskEngine)
                     throw new InvalidOperationException("当前设备控制权不属于图形化任务执行入口。");
                 EnsureOneOfStates(new[] { MachineRunState.Ready }, "设备必须先复位到就绪状态，再启动任务。");
+                EnsureRecoveryTrusted();
                 await EnsurePreparationsReadyForStartAsync(cancellationToken).ConfigureAwait(false);
                 if (_flowScheduler.IsRunning)
                     throw new InvalidOperationException("C# 工位流程仍在运行，任务执行入口不能启动。");
@@ -39,6 +40,7 @@ namespace MotionControl.Framework.Runtime.Machine
                         throw new InvalidOperationException("逻辑轴存在报警，不能启动任务：" + axis.Name + "，" + status.AlarmMessage);
                 }
 
+                RecordBeforeAutomaticRun();
                 SetRunningIfNoStopAlarm();
                 enteredRunning = true;
                 StartEmergencyStopMonitor();

@@ -374,17 +374,19 @@ namespace MotionControl.OperatorPages.Checks
             var pause = (string)chinese["自动暂停提示"];
             var stop = (string)chinese["自动停止提示"];
             Assert(pause.Contains("受控暂停") && pause.Contains("保留当前工步")
-                && pause.Contains("整机复位") && pause.Contains("启动"), "中文暂停提示没有说明保留工步和恢复顺序。");
-            Assert(stop.Contains("也会受控暂停") && stop.Contains("保留当前工步")
-                && stop.Contains("现场确认安全") && stop.Contains("整机复位"), "中文停止提示没有说明当前处理方式和现场确认步骤。");
+                && pause.Contains("报警复位") && pause.Contains("启动"), "中文暂停提示没有说明保留工步和恢复顺序。");
+            Assert(stop.Contains("受控暂停") && stop.Contains("保留当前工步")
+                && stop.Contains("现场确认安全") && stop.Contains("报警复位"), "中文停止提示没有说明当前处理方式和现场确认步骤。");
+            Assert((string)chinese["顶部停止保留工步"] == "保留工步", "顶部停止按钮没有明确显示保留工步。");
 
             var english = new ResourceDictionary { Source = new Uri("/MotionControl.Host.Wpf;component/Localization/Strings.en-US.xaml", UriKind.Relative) };
             var englishPause = (string)english["自动暂停提示"];
             var englishStop = (string)english["自动停止提示"];
             Assert(englishPause.Contains("controlled manner") && englishPause.Contains("retain")
-                && englishPause.Contains("Reset the machine") && englishPause.Contains("Start"), "English pause guidance omits step retention or recovery order.");
-            Assert(englishStop.Contains("Stop also pauses") && englishStop.Contains("retains")
-                && englishStop.Contains("Confirm the equipment is safe") && englishStop.Contains("reset the machine"), "English stop guidance omits the current behavior or equipment check.");
+                && englishPause.Contains("Reset alarms") && englishPause.Contains("Start"), "English pause guidance omits step retention or recovery order.");
+            Assert(englishStop.Contains("Stop pauses") && englishStop.Contains("retains")
+                && englishStop.Contains("Confirm the equipment is safe") && englishStop.Contains("reset alarms"), "English stop guidance omits the current behavior or equipment check.");
+            Assert((string)english["顶部停止保留工步"] == "Keep step", "The stop button does not indicate retained steps in English.");
         }
         /// <summary>版本与草稿来自实际文件，多轴表只显示选中轴参数，切换后逐轴保存。</summary>
         private static void EditorIntegration()

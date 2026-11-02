@@ -675,7 +675,7 @@ namespace MotionControl.Host.Wpf
             applicationDictionaries.Add(languageResources);
         }
 
-        /// <summary>从顶部启动按钮调用当前 Runtime 的自动工位流程。</summary>
+        /// <summary>从顶部启动当前选择的执行入口，复用各自的安全检查。</summary>
         private async void MachineStartButton_Click(object sender, RoutedEventArgs e)
         {
             MachineRuntime runtime = _machineRuntime;
@@ -688,7 +688,13 @@ namespace MotionControl.Host.Wpf
             UpdateMachineStateDisplay();
             try
             {
-                await runtime.StartAsync(CancellationToken.None);
+                if (runtime.ControlOwner == MachineControlOwner.TaskEngine)
+                {
+                    var launcher = _taskMonitorPage as Tasks.TaskMonitorLauncher;
+                    if (launcher == null) throw new InvalidOperationException("任务运行入口尚未就绪。");
+                    await launcher.RunFromHostAsync(true);
+                }
+                else await runtime.StartAsync(CancellationToken.None);
             }
             catch (Exception error)
             {
@@ -713,7 +719,7 @@ namespace MotionControl.Host.Wpf
             await PauseMachineAsync("暂停");
         }
 
-        /// <summary>演示工位的停止按钮也请求受控停止，步骤保留供复位后重试。</summary>
+        /// <summary>顶部停止执行受控暂停，保留当前工步供复位后继续。</summary>
         private async void MachineStopButton_Click(object sender, RoutedEventArgs e)
         {
             await PauseMachineAsync("停止");
@@ -733,6 +739,12 @@ namespace MotionControl.Host.Wpf
             try
             {
                 if (runtime.IsPreparing) await runtime.StopPreparationAsync(CancellationToken.None);
+                else if (runtime.ControlOwner == MachineControlOwner.TaskEngine)
+                {
+                    var launcher = _taskMonitorPage as Tasks.TaskMonitorLauncher;
+                    if (launcher == null) throw new InvalidOperationException("任务运行入口尚未就绪。");
+                    await launcher.RunFromHostAsync(false);
+                }
                 else await runtime.PauseAsync(CancellationToken.None);
             }
             catch (Exception error)
@@ -823,24 +835,31 @@ namespace MotionControl.Host.Wpf
             MachineResetButton.SetResourceReference(
                 ContentControl.ContentProperty,
                 _isResetting ? "整机复位中" : "整机复位");
+            var taskLauncher = _taskMonitorPage as Tasks.TaskMonitorLauncher;
+            bool taskOwner = _machineRuntime != null && _machineRuntime.ControlOwner == MachineControlOwner.TaskEngine;
             MachineResetButton.IsEnabled = !_isResetting
                 && !_isMachineCommandRunning
                 && _machineRuntime != null
+                && (!taskOwner || taskLauncher?.IsCommandInProgress != true)
                 && (state == MachineRunState.ResetRequired
                     || state == MachineRunState.Paused
-                    || state == MachineRunState.Alarmed);
+                    || state == MachineRunState.Alarmed
+                    || (state == MachineRunState.Ready && taskOwner && taskLauncher?.NeedsResetFromHost == true));
             MachineStartButton.IsEnabled = !_isResetting && !_isMachineCommandRunning
-                && _machineRuntime != null && _machineRuntime.StationFlows.Count > 0
-                && _machineRuntime.ControlOwner == MachineControlOwner.StationFlows
+                && _machineRuntime != null
                 && state == MachineRunState.Ready
                 && _automaticStartReadinessKnown
-                && string.IsNullOrWhiteSpace(_automaticStartBlockReason);
+                && string.IsNullOrWhiteSpace(_automaticStartBlockReason)
+                && (taskOwner ? taskLauncher?.CanStartFromHost == true
+                    : _machineRuntime.ControlOwner == MachineControlOwner.StationFlows && _machineRuntime.StationFlows.Count > 0);
             MachinePauseButton.IsEnabled = !_isMachineCommandRunning
                 && _machineRuntime != null
-                && ((_machineRuntime.ControlOwner == MachineControlOwner.StationFlows && actualState == MachineRunState.Running) || _machineRuntime.IsPreparing);
+                && ((_machineRuntime.ControlOwner == MachineControlOwner.StationFlows && actualState == MachineRunState.Running)
+                    || (taskOwner && taskLauncher?.CanPauseFromHost == true) || _machineRuntime.IsPreparing);
             MachineStopButton.IsEnabled = !_isMachineCommandRunning
                 && _machineRuntime != null
-                && ((_machineRuntime.ControlOwner == MachineControlOwner.StationFlows && (actualState == MachineRunState.Running || actualState == MachineRunState.Pausing)) || _machineRuntime.IsPreparing);
+                && ((_machineRuntime.ControlOwner == MachineControlOwner.StationFlows && (actualState == MachineRunState.Running || actualState == MachineRunState.Pausing))
+                    || (taskOwner && taskLauncher?.CanPauseFromHost == true) || _machineRuntime.IsPreparing);
         }
 
         /// <summary>把同一份启动就绪结果同步到设备总览和流程状态页。</summary>
@@ -909,6 +928,14 @@ namespace MotionControl.Host.Wpf
         private async Task RefreshAutomaticStartReadinessAsync()
         {
             MachineRuntime runtime = _machineRuntime;
+            if (runtime != null && runtime.State == MachineRunState.Ready && runtime.ControlOwner == MachineControlOwner.TaskEngine)
+            {
+                var launcher = _taskMonitorPage as Tasks.TaskMonitorLauncher;
+                _automaticStartBlockReason = launcher == null ? "任务运行入口尚未就绪。" : launcher.GetHostStartBlockReason();
+                _automaticStartReadinessKnown = true;
+                UpdateMachineStateDisplay();
+                return;
+            }
             if (runtime == null || runtime.State != MachineRunState.Ready || runtime.StationFlows.Count == 0)
             {
                 _automaticStartBlockReason = null;

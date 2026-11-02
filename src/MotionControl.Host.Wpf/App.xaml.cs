@@ -79,6 +79,14 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>协调单机变量、工位步骤和应用生命周期的恢复处理。</summary>
         private MachineRecoveryCoordinator _machineRecoveryCoordinator;
+        /// <summary>当前设备报警历史写入器，随控制器连接创建并在断开时收尾。</summary>
+        private AlarmHistoryJournal _alarmHistoryJournal;
+        /// <summary>未确认写入完成的旧会话；断卡或重连期间保留在内存中以便重试。</summary>
+        private readonly List<AlarmHistoryJournal> _unfinishedAlarmHistories = new List<AlarmHistoryJournal>();
+        /// <summary>避免断卡与重连重复并发收尾同一个历史写入器。</summary>
+        private readonly HashSet<AlarmHistoryJournal> _closingAlarmHistories = new HashSet<AlarmHistoryJournal>();
+        /// <summary>应用退出时由退出路径统一等待并报告历史收尾结果。</summary>
+        private bool _exitingApplication;
 
         /// <summary>启动时发现的恢复限制或恢复文件问题，供主窗口显示。</summary>
         private string _recoveryWarningMessage;
@@ -496,6 +504,7 @@ namespace MotionControl.Host.Wpf
                 }
 
                 _machineRuntime = null;
+                CloseAlarmHistory();
                 _machineSafetyStatus = null;
                 _manualMotionDebugPage = null;
                 _manualIoDebugPage = null;
@@ -530,6 +539,9 @@ namespace MotionControl.Host.Wpf
                 SafetyInterlockConfigurationDocument controlInputConfiguration;
                 _machineSafetyStatus = CreateSafetyStatus(connectedLogicalIo, out controlInputConfiguration);
                 var alarmService = new MachineAlarmService();
+                CloseAlarmHistory();
+                _alarmHistoryJournal = new AlarmHistoryJournal(alarmService, _configurationStore, MachineId);
+                _mainWindow.SetAlarmHistory(_alarmHistoryJournal);
                 IStationFlow[] stationFlows;
                 IReadOnlyList<IStationPreparation> preparations;
                 try
@@ -563,6 +575,11 @@ namespace MotionControl.Host.Wpf
                     controlOwner: HostEquipmentSelection.ResolveExecutionOwner(_configurationStore, MachineId));
                 createdRuntime.RequestInitializationRecovery(
                     _machineRecoveryCoordinator.HasCompletedInitializationCheckpoint);
+                // 恢复数据不可信时保留原文件，并阻止自动准备和生产；手动排查仍可用。
+                createdRuntime.SetRecoveryBlockReason(_machineRecoveryCoordinator.RecoveryBlockReason);
+                createdRuntime.SetBeforeAutomaticRun(_machineRecoveryCoordinator.InvalidateBeforeAutomaticRun);
+                createdRuntime.SetPreparationRecordCallbacks(_machineRecoveryCoordinator.MarkBeforePreparation,
+                    _machineRecoveryCoordinator.SaveAfterSafePreparation);
                 createdRuntime.ConfigurePreparations(preparations);
                 await createdRuntime.ConnectAsync(CancellationToken.None);
 
@@ -592,6 +609,7 @@ namespace MotionControl.Host.Wpf
                 }
 
                 _machineRuntime = null;
+                CloseAlarmHistory();
                 _machineSafetyStatus = null;
                 _manualMotionDebugPage = null;
                 _manualIoDebugPage = null;
@@ -627,12 +645,6 @@ namespace MotionControl.Host.Wpf
             MachineRuntime runtime = sender as MachineRuntime;
             if (runtime == null || _machineRecoveryCoordinator == null)
             {
-                return;
-            }
-
-            if (runtime.State == MachineRunState.Running)
-            {
-                _machineRecoveryCoordinator.InvalidateBeforeAutomaticRun();
                 return;
             }
 
@@ -1078,9 +1090,76 @@ namespace MotionControl.Host.Wpf
                 }
             }
 
+            _exitingApplication = true;
+            CloseAlarmHistory();
+            FinishAlarmHistoryAtExit();
             ReleaseSingleInstanceMutex();
 
             base.OnExit(e);
+        }
+
+        /// <summary>解除页面引用，后台收尾并保留未写入对象；不让磁盘等待阻断设备停机。</summary>
+        private void CloseAlarmHistory()
+        {
+            _mainWindow?.SetAlarmHistory(null);
+            var history = _alarmHistoryJournal;
+            _alarmHistoryJournal = null;
+            if (history != null) _unfinishedAlarmHistories.Add(history);
+            if (_exitingApplication) return;
+            foreach (var item in _unfinishedAlarmHistories.ToArray())
+            {
+                if (_closingAlarmHistories.Add(item)) FinishAlarmHistoryAsync(item, !ReferenceEquals(item, history));
+            }
+        }
+
+        /// <summary>断卡和重连时在后台等待历史写入，不占用界面线程或延迟停机。</summary>
+        private async void FinishAlarmHistoryAsync(AlarmHistoryJournal history, bool retry)
+        {
+            try
+            {
+                var result = await Task.Run(() => retry
+                    ? history.RetryPending(TimeSpan.FromSeconds(3))
+                    : history.Close(TimeSpan.FromSeconds(3)));
+                if (_exitingApplication) return;
+                if (result.IsComplete) _unfinishedAlarmHistories.Remove(history);
+                else ShowAlarmHistoryWarning(result.Error, result.PendingCount, result.WriterStopped, false);
+            }
+            catch (Exception error)
+            {
+                Trace.TraceError("报警历史收尾异常：" + error);
+                if (!_exitingApplication) ShowAlarmHistoryWarning(error.Message, history.GetPendingSnapshot().Count, false, false);
+            }
+            finally { _closingAlarmHistories.Remove(history); }
+        }
+
+        /// <summary>关闭程序时控制卡已断开，最后等待并报告所有未完成历史。</summary>
+        private void FinishAlarmHistoryAtExit()
+        {
+            foreach (var history in _unfinishedAlarmHistories.ToArray())
+            {
+                try
+                {
+                    var result = history.Close(TimeSpan.FromSeconds(3));
+                    if (!result.IsComplete && result.WriterStopped) result = history.RetryPending(TimeSpan.FromSeconds(3));
+                    if (result.IsComplete) _unfinishedAlarmHistories.Remove(history);
+                    else ShowAlarmHistoryWarning(result.Error, result.PendingCount, result.WriterStopped, true);
+                }
+                catch (Exception error)
+                {
+                    Trace.TraceError("退出时报警历史收尾异常：" + error);
+                    ShowAlarmHistoryWarning(error.Message, history.GetPendingSnapshot().Count, false, true);
+                }
+            }
+        }
+
+        /// <summary>明确说明历史未确认保存及退出后内存记录可能丢失，不干预设备停机。</summary>
+        private static void ShowAlarmHistoryWarning(string error, int pending, bool stopped, bool exiting)
+        {
+            string status = stopped ? "未写入 " + pending + " 条。" : "后台写入尚未确认结束，当前待写 " + pending + " 条。";
+            string action = exiting ? "程序退出后内存中的未写记录可能丢失。请检查磁盘并联系维护人员。"
+                : "记录暂保留在本程序内存中；检查磁盘后重新连接可重试，程序退出后仍可能丢失。";
+            MessageBox.Show("报警历史可能不完整。" + status + "\n" + (error ?? "未提供具体错误。") + "\n" + action,
+                "报警历史保存异常", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
 
         /// <summary>应用退出时释放本进程持有的单实例互斥锁。</summary>

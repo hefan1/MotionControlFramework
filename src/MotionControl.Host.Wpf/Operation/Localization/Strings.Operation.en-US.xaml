@@ -2,7 +2,7 @@
  <sys:String x:Key="操作页.任务运行">Task operation</sys:String>
  <sys:String x:Key="操作页.当前未启用自动运行">Automatic operation is not enabled. Manual setup is available.</sys:String>
  <sys:String x:Key="操作页.查看任务运行">View task operation</sys:String>
- <sys:String x:Key="操作页.任务入口操作提示">Use the task operation page to review station steps and reset, start, or pause tasks.</sys:String>
+ <sys:String x:Key="操作页.任务入口操作提示">Use the buttons above to reset, start, or pause the equipment. View station steps on the task operation page.</sys:String>
  <sys:String x:Key="操作页.任务会话状态待查看">Open task operation to check whether tasks are loaded and view the current step.</sys:String>
  <sys:String x:Key="操作页.任务已读取请查看运行状态">Tasks are loaded. Open task operation to review stations, steps, and alarms.</sys:String>
  <sys:String x:Key="操作页.任务未读取请先读取">Tasks are not loaded. Open task operation and load the current tasks.</sys:String>
@@ -57,7 +57,7 @@
  <sys:String x:Key="操作页.查看流程确认当前步骤；等待传感器时到 IO 监控的 DI 页按信号名核对">Check the current step in Flow Status. When it waits for a sensor, check the same signal name on the DI tab of I/O Monitor.</sys:String>
  <sys:String x:Key="操作页.请在流程状态核对当前步骤；等待输入时到 IO 监控的 DI 页按信号名检查；如有报警，先处理后再复位">Check the current step in Flow Status. When it waits for an input, check the same signal name on the DI tab of I/O Monitor. Resolve any alarm before resetting.</sys:String>
  <sys:String x:Key="操作页.工位状态与处理建议">Station state and next action</sys:String>
- <sys:String x:Key="操作页.等待整机复位时的处理建议">The machine is waiting for reset. This is the machine state; it does not mean this station is moving. Confirm the emergency stop is released and every axis is stopped, then use Machine Reset above. If start conditions remain unmet, follow the specific reason shown on the overview.</sys:String>
+ <sys:String x:Key="操作页.等待整机复位时的处理建议">The machine is waiting for reset. This is the machine state; it does not mean this station is moving. Confirm the emergency stop is released and every axis is stopped, then use Reset Alarms above. If start conditions remain unmet, follow the specific reason shown on the overview.</sys:String>
  <sys:String x:Key="操作页.存在停机报警时的复位建议">The machine is waiting for reset with a stop alarm active. Open Current Alarms for its source and recovery guidance. Reset only after the condition clears and the area is safe.</sys:String>
  <sys:String x:Key="操作页.启动条件未满足时的建议">The machine is reset, but Start is blocked by the following condition. Resolve it and check again:</sys:String>
  <sys:String x:Key="操作页.正在检查启动条件时的建议">The system is checking axis, emergency stop and interlock readiness. Check the Start button again shortly.</sys:String>
@@ -135,6 +135,8 @@
  <sys:String x:Key="操作页.准备状态">Preparation status</sys:String>
  <sys:String x:Key="操作页.连接设备后查看准备状态">Connect the controller to view preparation status</sys:String>
  <sys:String x:Key="操作页.正在准备设备">Preparing equipment</sys:String>
+ <sys:String x:Key="操作页.设备恢复信息未确认">Recovery information needs review</sys:String>
+ <sys:String x:Key="操作页.请联系维护人员核对现场及恢复记录，确认前不能回零或启动。">Contact maintenance to check the equipment and recovery records before homing or starting.</sys:String>
  <sys:String x:Key="操作页.当前未配置工位回零">No station preparation configured</sys:String>
  <sys:String x:Key="操作页.配置工位已准备完成">Configured stations are prepared</sys:String>
  <sys:String x:Key="操作页.已准备 {0} / {1} 个工位">Prepared {0} / {1} stations</sys:String>

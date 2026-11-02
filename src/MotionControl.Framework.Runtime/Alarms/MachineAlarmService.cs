@@ -28,6 +28,26 @@ namespace MotionControl.Framework.Runtime.Alarms
         /// <summary>报警新增、条件变化或清除后触发，供界面刷新报警列表。</summary>
         public event EventHandler AlarmsChanged;
 
+        /// <summary>报警状态变化时只允许快速入队；磁盘操作必须在后台完成。</summary>
+        internal event Action<AlarmHistoryEntry> HistoryRecorded;
+
+        /// <summary>在报警锁内订阅历史，保证订阅与事件入队之间没有竞争。</summary>
+        internal void AttachHistory(Action<AlarmHistoryEntry> handler)
+        { lock (_sync) HistoryRecorded += handler; }
+
+        /// <summary>等待正在入队的事件结束后解除订阅，供历史收尾使用。</summary>
+        internal void DetachHistory(Action<AlarmHistoryEntry> handler)
+        { lock (_sync) HistoryRecorded -= handler; }
+
+        /// <summary>持报警锁生成完整事件，保证快速发生和恢复不会被快照轮询遗漏。</summary>
+        private void RecordHistory(MachineAlarmRecord alarm, string action)
+        {
+            var handler = HistoryRecorded;
+            if (handler == null) return;
+            try { handler(AlarmHistoryEntry.Create(alarm, action)); }
+            catch (Exception error) { System.Diagnostics.Trace.TraceError("报警历史入队失败：" + error); }
+        }
+
         /// <summary>返回按报警来源和代码排序的当前报警只读快照。</summary>
         public IReadOnlyCollection<MachineAlarmRecord> Alarms
         {
@@ -182,6 +202,7 @@ namespace MotionControl.Framework.Runtime.Alarms
                             now,
                             inputName);
                         sourceAlarms.Add(definition.Code, newAlarm);
+                        RecordHistory(newAlarm, "发生");
                         sourceConditions.Add(definition.Code, new Dictionary<string, string>(StringComparer.Ordinal) { { conditionKey, detail } });
                         alarmsChanged = true;
                         if (definition.Kind == MachineAlarmKind.StopMachine)
@@ -202,6 +223,7 @@ namespace MotionControl.Framework.Runtime.Alarms
 
                     if (!anyConditionActive && definition.Kind == MachineAlarmKind.NonStop)
                     {
+                        RecordHistory(existingAlarm, "条件恢复并自动清除");
                         sourceAlarms.Remove(definition.Code);
                         sourceConditions.Remove(definition.Code);
 
@@ -227,6 +249,8 @@ namespace MotionControl.Framework.Runtime.Alarms
                                 associatedInput,
                                 ambiguous);
                             sourceAlarms[definition.Code] = changedAlarm;
+                            if (existingAlarm.ConditionActive != anyConditionActive)
+                                RecordHistory(changedAlarm, anyConditionActive ? "条件再次成立" : "条件恢复，等待复位");
                             alarmsChanged = true;
                         }
                     }
@@ -258,6 +282,7 @@ namespace MotionControl.Framework.Runtime.Alarms
 
                 foreach (var alarm in recoveredStopAlarms)
                 {
+                    RecordHistory(alarm, "报警复位");
                     var sourceAlarms = _alarmsBySource[alarm.SourceName];
                     sourceAlarms.Remove(alarm.Definition.Code);
                     _conditionsBySource[alarm.SourceName].Remove(alarm.Definition.Code);

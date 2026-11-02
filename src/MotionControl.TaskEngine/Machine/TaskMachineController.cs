@@ -70,7 +70,7 @@ namespace MotionControl.TaskEngine.Machine
             _library = original.Select(task => TaskDefinitionJson.Deserialize(TaskDefinitionJson.Serialize(task)))
                 .ToDictionary(task => task.TaskId, StringComparer.OrdinalIgnoreCase);
             // 传入的是本次执行库；未实现能力在任何工位启动前明确拒绝。
-            foreach (TaskDefinition task in _library.Values) TaskExecutionEngine.RequireSupported(task.TaskId, task.Root);
+            foreach (TaskDefinition task in _library.Values) TaskExecutionEngine.RequireSupported(task.TaskId, task.Root, device);
             _stations = _configuration.Stations.Select(station => new StationExecutionControl(this, station)).ToList();
             if (_configuration.InitializationTaskId != null)
                 _initialization = new StationExecutionControl(this, new StationTaskConfiguration {

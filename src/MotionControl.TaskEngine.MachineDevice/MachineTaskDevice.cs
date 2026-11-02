@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.IO;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Contracts.Variables;
@@ -10,6 +11,7 @@ using MotionControl.Framework.Runtime.Machine;
 using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Device;
+using MotionControl.TaskEngine.Execution;
 using MotionControl.TaskEngine.Resources;
 
 namespace MotionControl.TaskEngine.MachineDevice
@@ -17,9 +19,9 @@ namespace MotionControl.TaskEngine.MachineDevice
     /// <summary>
     /// 用真实运动控制卡驱动任务执行的设备实现：轴动作走 IAxis、DI/DO 走 ILogicalIo、
     /// 变量走 IDeviceVariableStore，整机控制权通过 MachineRuntime 统一仲裁。
-    /// 轴组插补和互锁节点尚未接入，调用时明确报错，不退化执行。
+    /// 轴组插补和有条件的资源范围互锁尚未接入，调用时明确报错，不退化执行。
     /// </summary>
-    public sealed partial class MachineTaskDevice : ITaskDevice
+    public sealed partial class MachineTaskDevice : ITaskDevice, ITaskInterlockSupport
     {
         /// <summary>未指定所有者时使用的匿名所有权标记，保证同一实例内的所有权比对稳定。</summary>
         private static readonly object AnonymousOwner = new object();
@@ -153,12 +155,18 @@ namespace MotionControl.TaskEngine.MachineDevice
                 AcceptedCommands(name));
         }
 
-        /// <summary>真机互锁节点尚未接入；明确拒绝，避免用未验证的判断放行动作。</summary>
+        /// <summary>设备侧有条件互锁尚未实现，任务加载时须提前拒绝。</summary>
+        public bool SupportsInterlockConditions => false;
+
+        /// <summary>无条件时允许继续；有条件时明确拒绝，避免同步读设备阻塞任务运行锁。</summary>
         public bool CheckInterlock(TaskInterlock interlock, TaskCondition legacyCondition, out string reason)
         {
-            throw new NotSupportedException(
-                "真机任务暂不支持互锁节点：任务定义中的进入/退出互锁尚未接入设备侧判断。"
-                + "请先在任务配置中移除互锁，或等待该能力接入后再运行。");
+            if (interlock == null && legacyCondition == null)
+            {
+                reason = "未配置条件。";
+                return true;
+            }
+            throw new NotSupportedException("设备任务暂不支持配置进入或退出互锁；请勿运行该资源范围。");
         }
 
         /// <summary>读取当前资源占用与待确认区域。</summary>
@@ -167,25 +175,86 @@ namespace MotionControl.TaskEngine.MachineDevice
             return _resources.Read();
         }
 
-        /// <summary>人工核实后恢复一个待确认资源区域。</summary>
+        /// <summary>仅在任务已退出、人工核实且退出条件通过两次现场采样后解除隔离；不提供连续安全监控。</summary>
         public bool TryRecoverResources(string requestId, string confirmation, out string reason)
         {
-            TaskResourceRequest request = _resources.FindBlocked(requestId);
-            if (request == null)
+            lock (_sync)
             {
-                reason = "找不到待确认的资源区域：" + requestId + "。";
-                return false;
+                TaskResourceRequest request = _resources.FindBlocked(requestId);
+                if (request == null) { reason = "找不到待确认的资源区域：" + requestId + "。"; return false; }
+                if (string.IsNullOrWhiteSpace(confirmation)) { reason = "恢复资源区域必须提供现场确认说明。"; return false; }
+                if (_machineOwner == null || !_runtime.IsTaskEngineControlClaimed || _runtime.ControlOwner != MachineControlOwner.TaskEngine)
+                { reason = "任务会话未持有设备控制权，不能复核或解除资源隔离。"; return false; }
+                if (!_motionCards.IsConnected)
+                { reason = "控制器未连接，不能确认资源退出条件。"; return false; }
+                if (_activeRuns.Count != 0 || _runtime.IsPreparing || _runtime.State == MachineRunState.Running || _runtime.State == MachineRunState.Pausing)
+                { reason = "任务或设备仍在运行或收尾，不能解除资源隔离。"; return false; }
+                try
+                {
+                    // 设备状态可能变化；两次检查均成功才尝试移除原凭证。仍不能代替连续硬件互锁。
+                    if (!CheckResourceRecovery(request, out reason) || !CheckResourceRecovery(request, out reason)) return false;
+                    if (!_resources.Recover(request)) { reason = "资源状态已改变，请重新读取后核实。"; return false; }
+                    reason = "已解除待确认状态；确认说明：" + confirmation + "。旧任务不会自动重启。";
+                    return true;
+                }
+                catch (Exception error)
+                {
+                    reason = "无法确认资源退出条件，保留隔离：" + error.Message;
+                    return false;
+                }
             }
+        }
 
-            if (string.IsNullOrWhiteSpace(confirmation))
+        /// <summary>读取全部资源轴和配置的退出条件；任何读取失败或未知值都不得放行。</summary>
+        private bool CheckResourceRecovery(TaskResourceRequest request, out string reason)
+        {
+            foreach (string name in request.Names)
             {
-                reason = "恢复资源区域必须提供现场确认说明。";
-                return false;
+                if (!name.StartsWith("Axis:", StringComparison.OrdinalIgnoreCase)) continue;
+                string axisName = name.Substring(5);
+                AxisStatus state = Wait(_motionCards.GetAxis(axisName).ReadStatusAsync(CancellationToken.None));
+                if (state == null || state.Moving || double.IsNaN(state.Position) || double.IsInfinity(state.Position)
+                    || double.IsNaN(state.Velocity) || double.IsInfinity(state.Velocity)
+                    || Math.Abs(state.Velocity) > 0.001 || state.AlarmActive)
+                { reason = "轴尚未确认停稳或仍有报警：" + axisName; return false; }
             }
-
-            bool recovered = _resources.Recover(request);
-            reason = recovered ? null : "资源区域仍被占用或确认不匹配。";
-            return recovered;
+            TaskInterlock interlock = request.ExitInterlock;
+            if (interlock != null)
+            {
+                if (interlock.Axes == null || interlock.Inputs == null) { reason = "退出条件配置不完整。"; return false; }
+                foreach (TaskAxisInterlock item in interlock.Axes)
+                {
+                    if (item == null || string.IsNullOrWhiteSpace(item.AxisName) || !item.MinimumPosition.HasValue || !item.MaximumPosition.HasValue
+                        || double.IsNaN(item.MinimumPosition.Value) || double.IsInfinity(item.MinimumPosition.Value)
+                        || double.IsNaN(item.MaximumPosition.Value) || double.IsInfinity(item.MaximumPosition.Value)
+                        || item.MinimumPosition.Value > item.MaximumPosition.Value
+                        || !request.Names.Contains("Axis:" + item.AxisName, StringComparer.OrdinalIgnoreCase))
+                    { reason = "退出轴条件配置不完整。"; return false; }
+                    AxisStatus state = Wait(_motionCards.GetAxis(item.AxisName).ReadStatusAsync(CancellationToken.None));
+                    if (state == null || state.Moving || state.AlarmActive || !state.ServoEnabled
+                        || double.IsNaN(state.Position) || double.IsInfinity(state.Position)
+                        || double.IsNaN(state.Velocity) || double.IsInfinity(state.Velocity) || Math.Abs(state.Velocity) > 0.001
+                        || (item.RequireHomed && (!state.Homed || state.RequiresHomingAfterLimitAlarm))
+                        || state.Position < item.MinimumPosition.Value || state.Position > item.MaximumPosition.Value)
+                    { reason = "退出轴状态或位置不满足：" + item.AxisName; return false; }
+                }
+                foreach (TaskInputInterlock input in interlock.Inputs)
+                {
+                    if (input == null || !input.Expected.HasValue || string.IsNullOrWhiteSpace(input.InputName))
+                    { reason = "退出输入条件配置不完整。"; return false; }
+                    bool? value = ReadInput(input.InputName);
+                    if (!value.HasValue || value.Value != input.Expected.Value)
+                    { reason = "退出输入不满足：" + input.InputName + "，当前=" + (value.HasValue ? value.Value.ToString() : "未知"); return false; }
+                }
+            }
+            TaskCondition condition = interlock?.Condition ?? request.ExitCondition;
+            if (condition != null)
+            {
+                bool result;
+                if (!TaskConditionEvaluator.TryEvaluate(condition, Catalog, _variables.GetSnapshot(), out result, out reason) || !result) return false;
+            }
+            reason = "退出条件已采样确认。";
+            return true;
         }
 
         /// <summary>在同一快照中读取请求和完成值；未知值不当作 false，变量未配置时明确报错。</summary>
@@ -249,6 +318,8 @@ namespace MotionControl.TaskEngine.MachineDevice
                     throw new InvalidOperationException("任务设备所有权不匹配，不能由当前对象归还。");
                 if (_activeRuns.Count != 0)
                     throw new InvalidOperationException("仍有任务运行未收尾，不能归还设备命令权。");
+                if (_resources.Read().Any(resource => resource.State == TaskResourceState.Blocked))
+                    throw new InvalidOperationException("存在待确认的资源区域，不能关闭任务会话或归还设备控制权；请先核实并解除隔离。");
                 _runtime.ReleaseTaskEngineControl(this);
                 _machineOwner = null;
             }

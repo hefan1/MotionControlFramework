@@ -30,6 +30,14 @@ namespace MotionControl.Host.Wpf.Recovery
         /// <summary>本次加载已报告的恢复限制；仅供首次工位恢复检查去除重复提示。</summary>
         private string _loadWarningMessage;
 
+        /// <summary>仅标记由当前进程创建；重启后遗留标记不能自动清除。</summary>
+        private bool _ownsRunMarker;
+        /// <summary>串行化运行标记及检查点的创建、保存和移除。</summary>
+        private readonly object _runRecordSync = new object();
+
+        /// <summary>恢复数据不可信时的运行拦截原因；空值表示文件不存在或恢复完整。</summary>
+        public string RecoveryBlockReason { get; private set; }
+
         /// <summary>创建绑定到单机配置和运行变量表的恢复协调器。</summary>
         public MachineRecoveryCoordinator(
             MachineRecoveryStore recoveryStore,
@@ -58,9 +66,21 @@ namespace MotionControl.Host.Wpf.Recovery
         public void Load(out string warningMessage)
         {
             _loadWarningMessage = null;
+            RecoveryBlockReason = null;
+            try
+            {
+                if (_recoveryStore.HasUnfinishedAutomaticRun())
+                    RecoveryBlockReason = "上次设备运行或准备动作未确认安全停止，设备与在制品状态未知。请联系维护人员核对现场和恢复记录；禁止直接清除运行标记。";
+            }
+            catch (Exception error)
+            {
+                RecoveryBlockReason = "无法核查上次运行标记，请联系维护人员检查存储：" + error.Message;
+            }
             _document = _recoveryStore.Load(out warningMessage);
             if (_document == null)
             {
+                if (!string.IsNullOrWhiteSpace(warningMessage) && RecoveryBlockReason == null) RecoveryBlockReason = warningMessage;
+                if (RecoveryBlockReason != null) warningMessage = RecoveryBlockReason;
                 return;
             }
 
@@ -72,6 +92,7 @@ namespace MotionControl.Host.Wpf.Recovery
                 _document.CanResume = false;
                 _document.ResumeBlockedReason = "恢复文件包含空的设备变量记录，流程续跑已关闭。";
                 warningMessage = _document.ResumeBlockedReason;
+                if (RecoveryBlockReason == null) RecoveryBlockReason = warningMessage;
             }
 
             var savedVariables = validCheckpoints
@@ -85,14 +106,21 @@ namespace MotionControl.Host.Wpf.Recovery
                     false))
                 .ToList();
             IReadOnlyList<string> variableWarnings = _variableStore.RestoreCurrentValues(savedVariables);
-            if (variableWarnings.Count > 0)
+            var missingNames = _variableStore.GetSnapshot()
+                .Where(item => !savedVariables.Any(saved => string.Equals(saved.Name, item.Name, StringComparison.OrdinalIgnoreCase)))
+                .Select(item => item.Name).ToList();
+            var recoveryWarnings = variableWarnings.ToList();
+            if (missingNames.Count > 0)
+                recoveryWarnings.Add("恢复文件缺少当前设备变量：" + string.Join("、", missingNames) + "。");
+            if (recoveryWarnings.Count > 0)
             {
                 _document.CanResume = false;
                 _document.EquipmentInitializationCompleted = false;
                 _document.ResumeBlockedReason =
                     "部分设备变量未能按当前定义恢复；为避免在不完整数据上续跑，流程恢复已关闭。";
                 warningMessage = _document.ResumeBlockedReason
-                    + Environment.NewLine + string.Join(Environment.NewLine, variableWarnings);
+                    + Environment.NewLine + string.Join(Environment.NewLine, recoveryWarnings);
+                if (RecoveryBlockReason == null) RecoveryBlockReason = warningMessage;
             }
             else if (!_document.CanResume
                 && string.IsNullOrWhiteSpace(warningMessage)
@@ -103,6 +131,12 @@ namespace MotionControl.Host.Wpf.Recovery
                     : _document.ResumeBlockedReason;
             }
 
+            if (RecoveryBlockReason != null)
+            {
+                _document.CanResume = false;
+                _document.EquipmentInitializationCompleted = false;
+                warningMessage = RecoveryBlockReason;
+            }
             _loadWarningMessage = warningMessage;
         }
 
@@ -190,34 +224,78 @@ namespace MotionControl.Host.Wpf.Recovery
         /// <summary>在整机受控暂停后保存当前有效变量值和各工位步骤。</summary>
         public void SavePausedCheckpoint(MachineRuntime runtime)
         {
-            var document = CreateDocumentWithCurrentVariables(runtime);
-            CaptureStationFlowCheckpoints(document, runtime);
-            SaveDocument(document);
+            lock (_runRecordSync)
+            {
+                if (runtime == null || runtime.State != MachineRunState.Paused || runtime.IsPreparing)
+                    throw new InvalidOperationException("只有设备已受控暂停且准备已退出，才能保存暂停记录。");
+                var document = CreateDocumentWithCurrentVariables(runtime);
+                CaptureStationFlowCheckpoints(document, runtime);
+                SaveDocument(document);
+                if (_ownsRunMarker && string.IsNullOrWhiteSpace(RecoveryBlockReason))
+                {
+                    _recoveryStore.ClearAutomaticRunMarker();
+                    _ownsRunMarker = false;
+                }
+            }
         }
 
-        /// <summary>自动流程真正进入运行状态前使旧暂停断点失效，防止异常退出时使用过期步骤。</summary>
+        /// <summary>在自动流程进入运行状态前同步写入独立标记，不覆盖既有恢复记录。</summary>
         public void InvalidateBeforeAutomaticRun()
         {
-            var document = CreateDocumentWithCurrentVariables(null);
-            document.CanResume = false;
-            document.ResumeBlockedReason = "自动流程已重新启动；上次暂停断点已失效，需要再次暂停后才能生成新断点。";
-            SaveDocument(document);
+            lock (_runRecordSync)
+            {
+                if (!string.IsNullOrWhiteSpace(RecoveryBlockReason)) throw new InvalidOperationException(RecoveryBlockReason);
+                if (_ownsRunMarker) throw new InvalidOperationException("上次运行尚未完成安全暂停和恢复记录保存，不能再次启动。");
+                _recoveryStore.MarkAutomaticRun();
+                _ownsRunMarker = true;
+            }
+        }
+
+        /// <summary>准备动作开始前使用同一持久标记，意外退出后保留旧恢复证据。</summary>
+        public void MarkBeforePreparation() { InvalidateBeforeAutomaticRun(); }
+
+        /// <summary>准备成功或受控停稳后保存当前变量，并撤销可能过时的旧流程断点。</summary>
+        public void SaveAfterSafePreparation()
+        {
+            lock (_runRecordSync)
+            {
+                if (!_ownsRunMarker || !string.IsNullOrWhiteSpace(RecoveryBlockReason))
+                    throw new InvalidOperationException("准备记录尚未建立或恢复信息不可信，不能解除标记。");
+                var document = CreateDocumentWithCurrentVariables(null);
+                document.CanResume = false;
+                document.ResumeBlockedReason = "设备准备已改变现场状态；旧工位断点不能直接续跑，请按设备工艺核对。";
+                SaveDocument(document);
+                _recoveryStore.ClearAutomaticRunMarker();
+                _ownsRunMarker = false;
+            }
         }
 
         /// <summary>软件关闭前保存最新变量值；仅在整机已暂停时创建新的流程续跑点。</summary>
         public void SaveForShutdown(MachineRuntime runtime, bool machineIsPaused)
         {
-            var document = CreateDocumentWithCurrentVariables(runtime);
-            if (machineIsPaused)
+            lock (_runRecordSync)
             {
-                CaptureStationFlowCheckpoints(document, runtime);
-            }
-            else
-            {
-                PreserveStationFlowCheckpoints(document);
-            }
+                if (machineIsPaused && (runtime == null || runtime.State != MachineRunState.Paused || runtime.IsPreparing))
+                    throw new InvalidOperationException("设备尚未确认暂停，不能保存暂停记录。");
+                // 未完成安全暂停时保留独立标记和原记录，不能把当前不确定状态写成可恢复。
+                if (_ownsRunMarker && !machineIsPaused) return;
+                var document = CreateDocumentWithCurrentVariables(runtime);
+                if (machineIsPaused)
+                {
+                    CaptureStationFlowCheckpoints(document, runtime);
+                }
+                else
+                {
+                    PreserveStationFlowCheckpoints(document);
+                }
 
-            SaveDocument(document);
+                SaveDocument(document);
+                if (_ownsRunMarker && machineIsPaused && string.IsNullOrWhiteSpace(RecoveryBlockReason))
+                {
+                    _recoveryStore.ClearAutomaticRunMarker();
+                    _ownsRunMarker = false;
+                }
+            }
         }
 
         /// <summary>创建包含当前全部设备变量状态的新恢复文档。</summary>
@@ -338,6 +416,8 @@ namespace MotionControl.Host.Wpf.Recovery
         /// <summary>先成功写入恢复文件，再替换当前进程中的恢复文档。</summary>
         private void SaveDocument(MachineRecoveryDocument document)
         {
+            // 不用缺损恢复结果覆盖原证据；修复必须由现场人员明确处理。
+            if (!string.IsNullOrWhiteSpace(RecoveryBlockReason)) return;
             _recoveryStore.Save(document);
             _document = document;
         }
