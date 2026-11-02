@@ -58,12 +58,13 @@ namespace MotionControl.TaskEngine.Device
         /// <summary>按进度推进本次动作；真实设备可以忽略进度，以反馈位置为准。</summary>
         void AdvanceMove(ITaskAxisMove move, double progress);
 
-        /// <summary>本次动作是否已完成到位；真实设备按反馈位置与到位容差判定。</summary>
+        /// <summary>本次动作是否已完成到位且停稳；true 必须依据设备反馈确认停止，不能确认时返回 false 或报错。</summary>
         bool IsMoveComplete(ITaskAxisMove move, double progress);
 
         /// <summary>
         /// 结束一次单轴动作并释放占用。completed 为 false 时表示取消或失败，
-        /// 实现方必须让轴受控停止并等待停稳，不得把中途位置当作到位。
+        /// 实现方必须让轴受控停止并等待停稳，不得把中途位置当作到位。若停止失败但旧动作仍在异步收尾，
+        /// 必须抛出包含待收尾任务的 TaskMoveCleanupPendingException；其他异常只能在没有未报告后台收尾时返回。
         /// </summary>
         Task EndMoveAsync(ITaskAxisMove move, bool completed, CancellationToken cancellationToken);
 

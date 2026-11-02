@@ -25,7 +25,7 @@ using MotionControl.TaskEngine.Resources;
 namespace MotionControl.MachineDevice.Checks
 {
     /// <summary>检查真机任务设备的行为边界；不连接控制器，用假轴和假 IO 验证语义。</summary>
-    internal static class Program
+    internal static partial class Program
     {
         /// <summary>逐项运行检查并统计失败组数。</summary>
         private static int Main()
@@ -47,8 +47,16 @@ namespace MotionControl.MachineDevice.Checks
             Run("设备互锁有条件时拒绝执行", InterlockRejectsConfiguredConditions, ref failures);
             Run("进入与退出互锁在任务接管前拒绝", InterlocksRejectedBeforeTaskControl, ref failures);
             Run("隔离资源阻止关闭会话且恢复后可重试", BlockedResourcesPreventClose, ref failures);
+            Run("停止先于状态读取且调用令牌取消仍发出", StopBeforeStatusRead, ref failures);
+            Run("动作接收失败或空凭证立即隔离", BeginFailureIsIsolated, ref failures);
+            Run("停止失败隔离临时轴与父范围", EndFailureIsIsolated, ref failures);
+            Run("收尾回调重复及迟到不会停止新动作", LateStopDoesNotTouchNextMove, ref failures);
+            Run("正常收尾未完成时暂停等待且故障隔离", PauseWaitsForNormalEnd, ref failures);
+            Run("原动作迟到收尾期间禁止设备恢复和归还", PendingAxisBlocksRecovery, ref failures);
+            Run("设备凭证跨设备及迟到调用保护", DeviceMoveTokenOwnership, ref failures);
+            Run("命令前拒绝与命令后异常严格区分", PreflightDoesNotMaskStartedMotion, ref failures);
 
-            Console.WriteLine("真机任务设备检查：共 16 组，失败 " + failures + "。未连接控制器。");
+            Console.WriteLine("真机任务设备检查：共 24 组，失败 " + failures + "。未连接控制器。");
             return failures == 0 ? 0 : 1;
         }
 
@@ -599,8 +607,32 @@ namespace MotionControl.MachineDevice.Checks
             /// <summary>模拟读取轴状态失败。</summary>
             internal Exception ReadError { get; set; }
 
+            /// <summary>可注入的停止命令错误。</summary>
+            internal Exception StopError { get; set; }
+
+            /// <summary>在模拟命令下发后注入启动异常。</summary>
+            internal Exception StartError { get; set; }
+
+            /// <summary>轴状态反馈速度，用于模拟未知速度。</summary>
+            internal double ReportedVelocity { get; set; }
+
+            /// <summary>可选状态读取阻塞，用于测试命令前轴预留。</summary>
+            internal TaskCompletionSource<bool> StatusGate { get; set; }
+
+            /// <summary>状态读取已进入的通知。</summary>
+            internal readonly ManualResetEventSlim StatusEntered = new ManualResetEventSlim(false);
+
+            /// <summary>状态读取次数。</summary>
+            internal int StatusReadCount;
+
             /// <summary>是否模拟驱动器不响应取消，用于验证补发受控停止。</summary>
             internal bool IgnoresCancellation { get; set; }
+
+            /// <summary>非空时延迟完成取消，用于检查后台收尾期间的资源隔离。</summary>
+            internal TaskCompletionSource<bool> CancellationGate { get; set; }
+
+            /// <summary>非空时延迟显式停止调用返回。</summary>
+            internal TaskCompletionSource<bool> StopGate { get; set; }
 
             /// <summary>为真机任务检查保持回零进行中，直到检查显式完成或取消。</summary>
             internal bool DeferHomeCompletion { get; set; }
@@ -622,11 +654,14 @@ namespace MotionControl.MachineDevice.Checks
             }
 
             /// <summary>读取当前状态快照。</summary>
-            public Task<AxisStatus> ReadStatusAsync(CancellationToken cancellationToken)
+            public async Task<AxisStatus> ReadStatusAsync(CancellationToken cancellationToken)
             {
+                Interlocked.Increment(ref StatusReadCount);
+                StatusEntered.Set();
+                if (StatusGate != null) await StatusGate.Task.ConfigureAwait(false);
                 if (ReadError != null) throw ReadError;
-                return Task.FromResult(new AxisStatus(Position, 0, ServoEnabled, Moving, Homed,
-                    false, false, false, false, false, null, false));
+                return new AxisStatus(Position, ReportedVelocity, ServoEnabled, Moving, Homed,
+                    false, false, false, false, false, null, false);
             }
 
             /// <summary>测试替身不模拟伺服使能，直接返回。</summary>
@@ -664,12 +699,28 @@ namespace MotionControl.MachineDevice.Checks
                 _target = position;
                 Moving = true;
                 _motion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                if (StartError != null) throw StartError;
                 if (!IgnoresCancellation)
                 {
-                    cancellationToken.Register(() => { Moving = false; _homeInProgress = false; _motion.TrySetCanceled(); });
+                    TaskCompletionSource<bool> currentMotion = _motion;
+                    cancellationToken.Register(() =>
+                    {
+                        if (CancellationGate != null) _ = CompleteDelayedCancellationAsync(currentMotion, CancellationGate.Task);
+                        else { Moving = false; _homeInProgress = false; currentMotion.TrySetCanceled(); }
+                    });
                 }
 
                 return _motion.Task;
+            }
+
+            /// <summary>模拟厂商动作任务迟到执行停止并结束取消。</summary>
+            private async Task CompleteDelayedCancellationAsync(TaskCompletionSource<bool> motion, Task gate)
+            {
+                await gate.ConfigureAwait(false);
+                StopCalls++;
+                Moving = false;
+                _homeInProgress = false;
+                motion.TrySetCanceled();
             }
 
             /// <summary>相对定位按当前位置换算成绝对目标。</summary>
@@ -685,13 +736,14 @@ namespace MotionControl.MachineDevice.Checks
             }
 
             /// <summary>停止动作：结束当前运动任务并保留中途位置。</summary>
-            public Task StopAsync(AxisStopMode stopMode, CancellationToken cancellationToken)
+            public async Task StopAsync(AxisStopMode stopMode, CancellationToken cancellationToken)
             {
                 StopCalls++;
+                if (StopGate != null) await StopGate.Task.ConfigureAwait(false);
+                if (StopError != null) throw StopError;
                 Moving = false;
                 _homeInProgress = false;
                 _motion?.TrySetCanceled();
-                return Task.CompletedTask;
             }
 
             /// <summary>测试替身没有轴报警可清。</summary>

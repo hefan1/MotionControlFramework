@@ -47,6 +47,7 @@ namespace MotionControl.TaskEngine.Execution
                 while (true)
                 {
                     ITaskAxisMove operation = null;
+                    MotionFinish finish = null;
                     IDisposable pauseStopRegistration = null;
                     bool restartAfterPause = false;
                     int stoppedForPause = 0;
@@ -59,19 +60,34 @@ namespace MotionControl.TaskEngine.Execution
                             double target = 0;
                             bool acceptedBefore = !home && scope.AcceptedAxisTargets.TryGetValue(axisName, out target);
                             if (!home && !acceptedBefore) target = TaskRuntimeValues.Number(ReadRequired(node.Target));
-                            operation = _device.BeginMove(axisName, target, !home && !acceptedBefore && node.Mode == TaskMoveMode.Relative, home, home ? null : ToAxisProfile(node.Profile));
+                            try
+                            {
+                                operation = _device.BeginMove(axisName, target, !home && !acceptedBefore && node.Mode == TaskMoveMode.Relative, home, home ? null : ToAxisProfile(node.Profile));
+                                if (operation == null) throw new InvalidOperationException("设备未返回轴动作凭证：" + axisName);
+                            }
+                            catch (TaskMoveRejectedBeforeCommandException)
+                            {
+                                // 设备明确保证没有发出命令，可以按普通前置条件失败处理。
+                                throw;
+                            }
+                            catch (Exception error)
+                            {
+                                // 驱动可能已发命令，异常或空凭证都不能证明轴安全。
+                                MotionFinish.BlockUnconfirmed(_device, acquired ?? scope.ResourceLease, axisName, error);
+                                throw;
+                            }
+                            finish = new MotionFinish(_device, operation, acquired ?? scope.ResourceLease, axisName);
+                            MotionFinish acceptedFinish = finish;
+                            pauseStopRegistration = _run.RegisterPauseStopAction(() =>
+                            {
+                                Interlocked.Exchange(ref stoppedForPause, 1);
+                                return acceptedFinish.EndAsync(false);
+                            });
                             if (!home) scope.AcceptedAxisTargets[axisName] = operation.Target;
                             started = _run.ActiveMilliseconds;
                             // 100ms 仅用于内存设备推进；实际设备以动作反馈判断回零完成。
                             duration = home ? 100 : Math.Abs(operation.Target - operation.Start) / node.Profile.Speed * 1000;
                             if (double.IsInfinity(duration) || double.IsNaN(duration)) throw new InvalidOperationException("运动时长超出有限范围。");
-                            pauseStopRegistration = _run.RegisterPauseStopAction(() =>
-                            {
-                                ITaskAxisMove activeMove = operation;
-                                if (activeMove == null) return Task.CompletedTask;
-                                Interlocked.Exchange(ref stoppedForPause, 1);
-                                return _device.EndMoveAsync(activeMove, false, CancellationToken.None);
-                            });
                         }).ConfigureAwait(false);
 
                         while (operation != null)
@@ -102,11 +118,6 @@ namespace MotionControl.TaskEngine.Execution
                                         : "正在等待轴回零完成。");
                                     _run.Report(scope, TaskNodeState.Moving, "正在等待轴 " + axisName + " 回零完成。");
                                 }
-                                if (completed)
-                                {
-                                    pauseStopRegistration.Dispose();
-                                    pauseStopRegistration = null;
-                                }
                             }).ConfigureAwait(false);
 
                             if (restartAfterPause)
@@ -118,9 +129,8 @@ namespace MotionControl.TaskEngine.Execution
 
                             if (completed)
                             {
-                                ITaskAxisMove finished = operation;
                                 operation = null;
-                                await _device.EndMoveAsync(finished, true, scope.Token).ConfigureAwait(false);
+                                await finish.EndAsync(true).ConfigureAwait(false);
                                 break;
                             }
 
@@ -137,7 +147,7 @@ namespace MotionControl.TaskEngine.Execution
                     {
                         pauseStopRegistration?.Dispose();
                         if (operation != null)
-                            await _device.EndMoveAsync(operation, false, CancellationToken.None).ConfigureAwait(false);
+                            await finish.EndAsync(false).ConfigureAwait(false);
                     }
 
                     if (!restartAfterPause) break;

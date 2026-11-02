@@ -51,6 +51,15 @@ namespace MotionControl.TaskEngine.MachineDevice
         /// <summary>尚未收尾的任务运行编号。</summary>
         private readonly HashSet<string> _activeRuns = new HashSet<string>(StringComparer.Ordinal);
 
+        /// <summary>已发出或可能发出、但原轴动作尚未结束的凭证；防止旧异步停止影响新动作。</summary>
+        private readonly HashSet<MachineAxisMove> _unsettledMoves = new HashSet<MachineAxisMove>();
+
+        /// <summary>已发出但尚未返回的停止调用；同一动作并发收尾时分别计数。</summary>
+        private readonly Dictionary<MachineAxisMove, int> _pendingStops = new Dictionary<MachineAxisMove, int>();
+
+        /// <summary>已预留但仍在读取前置状态的轴，禁止并发下发及归还控制权。</summary>
+        private readonly HashSet<string> _beginningAxes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>当前独占本设备的对象；为空表示没有整机控制者。</summary>
         private object _machineOwner;
 
@@ -181,6 +190,11 @@ namespace MotionControl.TaskEngine.MachineDevice
             var resources = _resources.Read();
             if (resources.Any(item => item.State == TaskResourceState.Blocked)) return TaskResourceRecoveryState.Blocked;
             if (resources.Any(item => item.State == TaskResourceState.Held)) return TaskResourceRecoveryState.Held;
+            lock (_sync)
+            {
+                RemoveSettledMoves();
+                if (_unsettledMoves.Count != 0 || _pendingStops.Count != 0 || _beginningAxes.Count != 0) return TaskResourceRecoveryState.Held;
+            }
             return TaskResourceRecoveryState.Clear;
         }
 
@@ -196,6 +210,9 @@ namespace MotionControl.TaskEngine.MachineDevice
                 { reason = "任务会话未持有设备控制权，不能复核或解除资源隔离。"; return false; }
                 if (!_motionCards.IsConnected)
                 { reason = "控制器未连接，不能确认资源退出条件。"; return false; }
+                RemoveSettledMoves();
+                if (_unsettledMoves.Any(move => !move.IsQuiescent) || _pendingStops.Count != 0 || _beginningAxes.Count != 0)
+                { reason = "轴动作或取消收尾仍未结束，不能解除资源隔离。"; return false; }
                 if (_activeRuns.Count != 0 || _runtime.IsPreparing || _runtime.State == MachineRunState.Running || _runtime.State == MachineRunState.Pausing)
                 { reason = "任务或设备仍在运行或收尾，不能解除资源隔离。"; return false; }
                 try
@@ -203,6 +220,9 @@ namespace MotionControl.TaskEngine.MachineDevice
                     // 设备状态可能变化；两次检查均成功才尝试移除原凭证。仍不能代替连续硬件互锁。
                     if (!CheckResourceRecovery(request, out reason) || !CheckResourceRecovery(request, out reason)) return false;
                     if (!_resources.Recover(request)) { reason = "资源状态已改变，请重新读取后核实。"; return false; }
+                    // 仅在现场条件复核成功后退休该范围内已退出但曾收尾失败的动作。
+                    _unsettledMoves.RemoveWhere(move => move.IsQuiescent
+                        && request.Names.Contains("Axis:" + move.AxisName, StringComparer.OrdinalIgnoreCase));
                     reason = "已解除待确认状态；确认说明：" + confirmation + "。旧任务不会自动重启。";
                     return true;
                 }
@@ -327,6 +347,9 @@ namespace MotionControl.TaskEngine.MachineDevice
                     throw new InvalidOperationException("任务设备所有权不匹配，不能由当前对象归还。");
                 if (_activeRuns.Count != 0)
                     throw new InvalidOperationException("仍有任务运行未收尾，不能归还设备命令权。");
+                RemoveSettledMoves();
+                if (_unsettledMoves.Count != 0 || _pendingStops.Count != 0 || _beginningAxes.Count != 0)
+                    throw new InvalidOperationException("轴动作或取消收尾仍未结束，不能归还设备命令权。");
                 if (_resources.Read().Any(resource => resource.State == TaskResourceState.Held || resource.State == TaskResourceState.Blocked))
                     throw new InvalidOperationException("存在仍被占用或待确认的资源区域，不能关闭任务会话或归还设备控制权；请先核实并解除隔离。");
                 _runtime.ReleaseTaskEngineControl(this);
@@ -356,6 +379,12 @@ namespace MotionControl.TaskEngine.MachineDevice
             {
                 _activeRuns.Remove(runId);
             }
+        }
+
+        /// <summary>在设备锁内清理原动作及设备收尾均已结束的凭证；未知动作继续保留。</summary>
+        private void RemoveSettledMoves()
+        {
+            _unsettledMoves.RemoveWhere(move => move.IsSettled);
         }
 
         /// <summary>读取一根轴已接受的动作次数；未记录时返回零。</summary>

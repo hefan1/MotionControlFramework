@@ -46,11 +46,21 @@ namespace MotionControl.TaskEngine.Device.InMemory
         {
             lock (_sync)
             {
-                InMemoryAxis axis = FindAxis(name);
-                if (axis.Operation != null) throw new InvalidOperationException("轴被其他动作占用：" + name);
-                CheckReady(name, axis, home);
-                double end = home ? 0 : relative ? axis.Position + target : target;
-                CheckPosition(name, end);
+                InMemoryAxis axis;
+                double end;
+                try
+                {
+                    axis = FindAxis(name);
+                    if (axis.Operation != null) throw new InvalidOperationException("轴被其他动作占用：" + name);
+                    CheckReady(name, axis, home);
+                    end = home ? 0 : relative ? axis.Position + target : target;
+                    CheckPosition(name, end);
+                }
+                catch (Exception error) when (error is ArgumentException || error is InvalidOperationException)
+                {
+                    // 此处仅做内存检查，尚未建立动作，不会发出设备命令。
+                    throw new TaskMoveRejectedBeforeCommandException(error.Message, error);
+                }
                 var move = new InMemoryAxisMove(name, axis.Position, end, home);
                 axis.Operation = move;
                 axis.AcceptedCommands++;

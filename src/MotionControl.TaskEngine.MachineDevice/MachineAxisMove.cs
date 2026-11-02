@@ -15,6 +15,13 @@ namespace MotionControl.TaskEngine.MachineDevice
         /// <summary>本次动作的取消源；收尾后不再使用。</summary>
         private readonly CancellationTokenSource _cancellation = new CancellationTokenSource();
 
+        /// <summary>动作产生的设备；其他设备不能使用此凭证。</summary>
+        private readonly MachineTaskDevice _owner;
+        /// <summary>保护动作的单次收尾结果。</summary>
+        private readonly object _endSync = new object();
+        /// <summary>首次调用创建的收尾任务，迟到调用只能等待它。</summary>
+        private Task _endTask;
+
         /// <summary>本次动作占用的逻辑轴。</summary>
         internal IAxis Axis { get; }
 
@@ -34,13 +41,52 @@ namespace MotionControl.TaskEngine.MachineDevice
         public bool IsHome { get; }
 
         /// <summary>保存固定参数和轴入口，不启动动作。</summary>
-        internal MachineAxisMove(string axisName, double start, double target, bool home, IAxis axis)
+        internal MachineAxisMove(MachineTaskDevice owner, string axisName, double start, double target, bool home, IAxis axis)
         {
+            _owner = owner ?? throw new ArgumentNullException(nameof(owner));
             AxisName = axisName;
             Start = start;
             Target = target;
             IsHome = home;
             Axis = axis;
+        }
+
+        /// <summary>确认凭证属于当前设备实例。</summary>
+        internal bool BelongsTo(MachineTaskDevice owner) { return ReferenceEquals(_owner, owner); }
+
+        /// <summary>原动作与首次收尾均已退出；失败时仍须现场确认后才可退休。</summary>
+        internal bool IsQuiescent
+        {
+            get { lock (_endSync) return Completion != null && Completion.IsCompleted && _endTask != null && _endTask.IsCompleted; }
+        }
+
+        /// <summary>原动作已退出且首次收尾成功时，凭证才能自动退休。</summary>
+        internal bool IsSettled
+        {
+            get { lock (_endSync) return Completion != null && Completion.IsCompleted && _endTask != null && _endTask.Status == TaskStatus.RanToCompletion; }
+        }
+
+        /// <summary>只创建一次收尾；正常完成必须已经由设备报告成功。</summary>
+        internal Task EndOnce(bool completed, Func<Task> end)
+        {
+            TaskCompletionSource<bool> result;
+            lock (_endSync)
+            {
+                if (_endTask != null) return _endTask;
+                if (completed && (Completion == null || !Completion.IsCompleted || Completion.IsCanceled || Completion.IsFaulted))
+                    throw new InvalidOperationException("轴动作未确认成功，不能按完成收尾：" + AxisName);
+                result = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _endTask = result.Task;
+            }
+            _ = CompleteEndAsync(end, result);
+            return result.Task;
+        }
+
+        /// <summary>发布唯一收尾任务的完成或原始错误。</summary>
+        private static async Task CompleteEndAsync(Func<Task> end, TaskCompletionSource<bool> result)
+        {
+            try { await end().ConfigureAwait(false); result.TrySetResult(true); }
+            catch (Exception error) { result.TrySetException(error); }
         }
 
         /// <summary>启动真实轴动作；回零使用轴配置中的回零参数，定位使用给定速度曲线。</summary>

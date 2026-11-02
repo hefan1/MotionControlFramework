@@ -59,12 +59,13 @@ namespace MotionControl.TaskEngine.Resources
             }
         }
 
-        /// <summary>正文未完成退出确认时隔离整组，保留原所有者和原因。</summary>
+        /// <summary>正文未完成退出确认时隔离整组；重复隔离保留首次原因。</summary>
         internal void Block(TaskResourceRequest request, string reason)
         {
             lock (_sync)
             {
                 RequirePresent(request);
+                if (request.State == TaskResourceState.Blocked) return;
                 if (request.State != TaskResourceState.Held) throw new InvalidOperationException("只有已占用资源可以转为待确认。");
                 request.State = TaskResourceState.Blocked;
                 request.Detail = reason;

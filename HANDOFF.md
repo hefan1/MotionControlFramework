@@ -30,7 +30,7 @@
 |---|---|
 | 基线提交 | 以 `git log` 为准；本轮软件控制器相关改动和提交状态以 `git status --short` 为准 |
 | 工作区 | 正式 Host 具备正运动及独立软件控制器两种后端；精确状态以 `git status --short` 为准 |
-| 构建 | MachineDevice 检查为 16 组、OperatorPages 检查为 19 组；TaskEngine 23/53/16 组、Runtime 38 项；具体范围见第 6 节 |
+| 构建 | MachineDevice 检查为 24 组、OperatorPages 检查为 19 组；TaskEngine 23/53/16 组、Runtime 38 项；具体范围见第 6 节 |
 | 正式 Host | 新一轮软件控制器测试前重新核对连接、轴和 IO；每次控制器进程重启后轴、IO 与供料场景状态均重置 |
 | 配置根 | `C:\Users\ASUS\AppData\Local\MotionControlFramework\Configurations\Machine01` |
 | 执行入口 | 当前 `Parameters/Equipment.json` 选择 `WeldingExample` / `TaskEngine`；切换前须安全停机并按第 0 节核对 |
@@ -93,7 +93,7 @@ $env:DOTNET_CLI_HOME='F:\Work\运动控制框架\.dotnet-cli-home'
 cd F:\Work\运动控制框架\MotionControlFramework
 $dotnet='C:\Program Files\dotnet\dotnet.exe'
 
-# 1) 真机任务设备检查：期望 16 组，失败 0（使用假设备，不代表实体卡验收）
+# 1) 真机任务设备检查：期望 24 组，失败 0（使用假设备，不代表实体卡验收）
 & $dotnet build tools/MotionControl.MachineDevice.Checks/MotionControl.MachineDevice.Checks.csproj -c Release -o tmp/check-md -v:q
 & .\tmp\check-md\MotionControl.MachineDevice.Checks.exe
 
@@ -149,3 +149,5 @@ $dotnet='C:\Program Files\dotnet\dotnet.exe'
 - 任务资源仍被持有、隔离或无法确认时，保留运行标记及原恢复快照，不能通过关闭任务会话遗失当前隔离。正常持有资源的暂停可在同一会话继续；隔离或未知状态禁止重启生产和设备准备。重启后的标记只提供整机拦截，不含具体资源名称与退出条件，正式 Host 尚无现场解除隔离或经身份认证的标记处理入口。
 - 设备准备页可展开只读维护诊断，显示实际设备配置下的恢复快照和运行标记路径，并提示维护人员核对现场；不会改变原始记录或解除运行限制。
 - 等待 DI 的同步读卡仍可能持有任务运行锁，卡住时会拖延整机暂停。曾试验移出锁，但并发审查发现迟到读卡故障可能发生在暂停保存与标记清除之后，故该试验未保留。需要先建立在途调用收尾与暂停的明确屏障，再重新验证；厂商原生锁、永久阻塞时超时及实体安全链仍需单独解决。
+- 暂停并发复核还发现：同步设备调用异常释放运行锁后、故障上报之前，暂停可能先保存检查点；轴完成确认和资源清理也有锁外收尾，外部设备若自行实现轴组，目前没有对应暂停停轴登记。完整修复需让动作、在途调用、故障和暂停保存使用可验证的收尾协议，并处理厂商驱动锁；这些均不能仅用超时包装或假设备结果代替现场验证。
+- 已修复此前停止路径先读状态、收尾失败仍释放临时轴的问题：优先请求受控停止，失败保留隔离，动作与停止调用未收尾时禁止释放控制权；动作凭证去重并防止过期调用影响新动作，同轴预留覆盖开始前读状态。正式 Host 配合软件控制器复测四工位各 18 次，结束后轴及测试 IO 均已复位。持有资源时保留运行标记只能提供重启拦截，不能证明当前轴已停稳；其他设备调用的暂停完成与故障上报竞态、厂商 SDK 内锁及真实机械行为仍待闭环。

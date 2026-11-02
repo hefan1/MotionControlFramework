@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Motion;
@@ -23,38 +24,57 @@ namespace MotionControl.TaskEngine.MachineDevice
         /// </summary>
         public ITaskAxisMove BeginMove(string name, double target, bool relative, bool home, AxisMotionProfile profile)
         {
-            IAxis axis = _motionCards.GetAxis(name);
-            AxisStatus status = Wait(axis.ReadStatusAsync(CancellationToken.None));
-            if (!status.ServoEnabled)
+            if (string.IsNullOrWhiteSpace(name)) throw new TaskMoveRejectedBeforeCommandException("轴名称不能为空。", null);
+            lock (_sync)
             {
-                throw new InvalidOperationException("轴未使能，不能接受任务动作：" + name + "。");
+                RemoveSettledMoves();
+                if (_beginningAxes.Contains(name) || _unsettledMoves.Any(item => string.Equals(item.AxisName, name, StringComparison.OrdinalIgnoreCase)))
+                    throw new TaskMoveRejectedBeforeCommandException("该轴上一动作尚未完成收尾：" + name, null);
+                _beginningAxes.Add(name);
             }
-
-            if (status.AlarmActive)
+            try
             {
-                throw new InvalidOperationException("轴存在报警，不能接受任务动作：" + name + "，" + status.AlarmMessage);
-            }
+                IAxis axis;
+                AxisStatus status;
+                double end;
+                try
+                {
+                    axis = _motionCards.GetAxis(name);
+                    status = Wait(axis.ReadStatusAsync(CancellationToken.None));
+                    if (!status.ServoEnabled) throw new InvalidOperationException("轴未使能，不能接受任务动作：" + name + "。");
+                    if (status.AlarmActive) throw new InvalidOperationException("轴存在报警，不能接受任务动作：" + name + "，" + status.AlarmMessage);
+                    if (!home && !status.Homed) throw new InvalidOperationException("轴尚未回零，不能接受定位动作：" + name + "。");
+                    if (!home && profile == null) throw new ArgumentNullException(nameof(profile), "定位动作必须提供速度和加减速度。");
+                    end = home ? 0 : relative ? status.Position + target : target;
+                    if (!home) CheckTravel(name, end);
+                }
+                catch (Exception error)
+                {
+                    // 此边界仅查询状态和校验参数，尚未调用回零或运动命令。
+                    throw new TaskMoveRejectedBeforeCommandException(error.Message, error);
+                }
 
-            if (!home && !status.Homed)
+                var move = new MachineAxisMove(this, name, status.Position, end, home, axis);
+                // 下发前登记；同步异常或空任务无法证明原动作结束，故继续保留凭证。
+                lock (_sync) _unsettledMoves.Add(move);
+                try { move.StartMotion(profile); }
+                catch (Exception error)
+                {
+                    // 调用厂商运动入口后无法证明命令未下发，即使内层异常名字表示前置拒绝也不能放行。
+                    throw new InvalidOperationException("轴命令启动失败，设备状态未知：" + name + "，" + error.Message, error);
+                }
+                if (move.Completion == null) throw new InvalidOperationException("轴动作未返回收尾任务：" + name);
+                move.Completion.ContinueWith(_ =>
+                {
+                    lock (_sync) RemoveSettledMoves();
+                }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                RecordAcceptedCommand(name);
+                return move;
+            }
+            finally
             {
-                throw new InvalidOperationException("轴尚未回零，不能接受定位动作：" + name + "。");
+                lock (_sync) _beginningAxes.Remove(name);
             }
-
-            if (!home && profile == null)
-            {
-                throw new ArgumentNullException(nameof(profile), "定位动作必须提供速度和加减速度。");
-            }
-
-            double end = home ? 0 : relative ? status.Position + target : target;
-            if (!home)
-            {
-                CheckTravel(name, end);
-            }
-
-            var move = new MachineAxisMove(name, status.Position, end, home, axis);
-            move.StartMotion(profile);
-            RecordAcceptedCommand(name);
-            return move;
         }
 
         /// <summary>真机位置来自反馈，这里不需要按进度推算位置。</summary>
@@ -63,7 +83,7 @@ namespace MotionControl.TaskEngine.MachineDevice
             RequireMachineMove(move);
         }
 
-        /// <summary>动作任务结束时才算到位；驱动故障在这里抛出原始异常。</summary>
+        /// <summary>动作任务结束且反馈速度停稳才算到位；未知反馈和驱动故障不能算成功。</summary>
         public bool IsMoveComplete(ITaskAxisMove move, double progress)
         {
             MachineAxisMove machine = RequireMachineMove(move);
@@ -73,31 +93,74 @@ namespace MotionControl.TaskEngine.MachineDevice
             }
 
             machine.ThrowIfFailed();
-            return true;
+            AxisStatus status = Wait(machine.Axis.ReadStatusAsync(CancellationToken.None));
+            if (status == null || double.IsNaN(status.Velocity) || double.IsInfinity(status.Velocity))
+                throw new InvalidOperationException("轴速度状态未知，不能确认停止：" + machine.AxisName + "。");
+            return !status.Moving && Math.Abs(status.Velocity) <= 0.001;
         }
 
         /// <summary>
         /// 收尾一次单轴动作。未完成时必须先让轴受控停止并确认停稳，
         /// 不能把中途位置当作到位，也不能让轴在任务已退出后继续运动。
         /// </summary>
-        public async Task EndMoveAsync(ITaskAxisMove move, bool completed, CancellationToken cancellationToken)
+        public Task EndMoveAsync(ITaskAxisMove move, bool completed, CancellationToken cancellationToken)
         {
             MachineAxisMove machine = RequireMachineMove(move);
+            Task ending = machine.EndOnce(completed, () => EndMoveCoreAsync(machine, completed));
+            ending.ContinueWith(_ => { lock (_sync) RemoveSettledMoves(); }, CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            return ending;
+        }
+
+        /// <summary>执行首次收尾；调用方取消不能中断停止与停稳确认。</summary>
+        private async Task EndMoveCoreAsync(MachineAxisMove machine, bool completed)
+        {
             if (completed)
             {
                 await machine.SettleAsync().ConfigureAwait(false);
+                await WaitUntilStoppedAsync(machine, CancellationToken.None).ConfigureAwait(false);
                 return;
             }
 
-            machine.RequestCancel();
-            AxisStatus status = await machine.Axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
-            if (status.Moving)
+            lock (_sync)
             {
-                await machine.Axis.StopAsync(AxisStopMode.Controlled, cancellationToken).ConfigureAwait(false);
+                int count;
+                _pendingStops.TryGetValue(machine, out count);
+                _pendingStops[machine] = count + 1;
             }
+            try
+            {
+                // 先请求停止，不把读状态作为停止前提；调用方取消也不能取消这次停止。
+                Task stop;
+                try { stop = machine.Axis.StopAsync(AxisStopMode.Controlled, CancellationToken.None)
+                    ?? Task.FromException(new InvalidOperationException("停止操作未返回任务。")); }
+                catch (Exception error) { stop = Task.FromException(error); }
+                Exception cancelError = null;
+                try { machine.RequestCancel(); }
+                catch (Exception error) { cancelError = error; }
+                try { await stop.ConfigureAwait(false); }
+                catch (Exception error)
+                {
+                    Exception failure = cancelError == null ? error : new AggregateException("停止和取消均失败。", error, cancelError);
+                    throw new TaskMoveCleanupPendingException("轴停止失败：" + machine.AxisName + "，" + failure.Message,
+                        failure, machine.SettleAsync());
+                }
+                if (cancelError != null)
+                    throw new TaskMoveCleanupPendingException("停止已发送，但取消轴动作失败：" + machine.AxisName + "，" + cancelError.Message,
+                        cancelError, machine.SettleAsync());
 
-            await machine.SettleAsync().ConfigureAwait(false);
-            await WaitUntilStoppedAsync(machine, CancellationToken.None).ConfigureAwait(false);
+                await machine.SettleAsync().ConfigureAwait(false);
+                await WaitUntilStoppedAsync(machine, CancellationToken.None).ConfigureAwait(false);
+            }
+            finally
+            {
+                lock (_sync)
+                {
+                    int count = _pendingStops[machine];
+                    if (count == 1) _pendingStops.Remove(machine);
+                    else _pendingStops[machine] = count - 1;
+                }
+            }
         }
 
         /// <summary>确认轴当前没有运动；仍在运动时明确报错，不伪造停止结果。</summary>
@@ -150,7 +213,9 @@ namespace MotionControl.TaskEngine.MachineDevice
             while (true)
             {
                 AxisStatus status = await move.Axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
-                if (!status.Moving)
+                if (status == null || double.IsNaN(status.Velocity) || double.IsInfinity(status.Velocity))
+                    throw new InvalidOperationException("轴速度状态未知，不能确认停止：" + move.AxisName + "。");
+                if (!status.Moving && Math.Abs(status.Velocity) <= 0.001)
                 {
                     return;
                 }
@@ -166,10 +231,10 @@ namespace MotionControl.TaskEngine.MachineDevice
         }
 
         /// <summary>只接受本设备产生的动作凭证；其他实现的凭证属于接线错误。</summary>
-        private static MachineAxisMove RequireMachineMove(ITaskAxisMove move)
+        private MachineAxisMove RequireMachineMove(ITaskAxisMove move)
         {
             var machine = move as MachineAxisMove;
-            if (machine == null)
+            if (machine == null || !machine.BelongsTo(this))
             {
                 throw new ArgumentException("动作凭证不属于本任务设备。", nameof(move));
             }
