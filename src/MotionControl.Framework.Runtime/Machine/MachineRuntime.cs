@@ -285,6 +285,9 @@ namespace MotionControl.Framework.Runtime.Machine
                     return "急停输入仍处于触发状态，设备不能启动。";
                 }
 
+                string preparationReason = GetPreparationStartBlockReason();
+                if (preparationReason != null) return preparationReason;
+
                 await _flowScheduler
                     .EnsureAxesReadyForAutomaticStartAsync(
                         _flowScheduler.HasPendingInitialization,
@@ -319,6 +322,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 try
                 {
                     _flowScheduler.ResetForNewConnection();
+                    InvalidatePreparations("控制器已重新连接，请重新确认工位准备。");
                     await _motionCards.ConnectAsync(cancellationToken).ConfigureAwait(false);
                     SetStatus(MachineRunState.ResetRequired, null);
                     StartControlInputMonitor();
@@ -341,6 +345,7 @@ namespace MotionControl.Framework.Runtime.Machine
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                EnsureNoPreparationInProgress("断开控制卡");
                 if (State == MachineRunState.Running || State == MachineRunState.Pausing || _flowScheduler.IsRunning)
                 {
                     throw new InvalidOperationException("工位流程仍在运行或等待停止，不能断开控制卡。");
@@ -358,6 +363,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 {
                     await StopControlInputMonitorAsync().ConfigureAwait(false);
                     await _motionCards.DisconnectAsync(cancellationToken).ConfigureAwait(false);
+                    InvalidatePreparations("控制器已断开，准备状态无效。");
                     SetStatus(MachineRunState.Disconnected, null);
                 }
                 catch (Exception disconnectError)
@@ -378,6 +384,7 @@ namespace MotionControl.Framework.Runtime.Machine
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                EnsureNoPreparationInProgress("报警复位");
                 EnsureOneOfStates(
                     new[] { MachineRunState.ResetRequired, MachineRunState.Paused, MachineRunState.Alarmed },
                     "设备当前状态不允许复位。");
@@ -500,6 +507,8 @@ namespace MotionControl.Framework.Runtime.Machine
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                EnsureNoPreparationInProgress("切换任务执行入口");
+                EnsureNoManualOperationsInProgress("切换任务执行入口");
                 lock (_controlOwnerLock)
                 {
                     if (_taskEngineOwner != null)
@@ -547,27 +556,33 @@ namespace MotionControl.Framework.Runtime.Machine
         public void ReleaseTaskEngineControl(object owner)
         {
             if (owner == null) throw new ArgumentNullException(nameof(owner));
-            lock (_controlOwnerLock)
+            if (!_commandLock.Wait(0)) throw new InvalidOperationException("设备命令仍在执行，不能关闭任务会话。");
+            try
             {
-                if (_controlOwner != MachineControlOwner.TaskEngine)
+                EnsureNoPreparationInProgress("关闭任务会话");
+                lock (_controlOwnerLock)
                 {
-                    return;
+                    if (_controlOwner != MachineControlOwner.TaskEngine)
+                    {
+                        return;
+                    }
+
+                    if (!ReferenceEquals(_taskEngineOwner, owner))
+                        throw new InvalidOperationException("任务执行入口的所有者不匹配，不能归还。");
+
+                    var currentState = State;
+                    if (currentState == MachineRunState.Running || currentState == MachineRunState.Pausing)
+                    {
+                        throw new InvalidOperationException(
+                            "设备正在运行，不能归还任务执行入口；请先停止任务并确认所有轴已停止。当前状态："
+                            + currentState + "。");
+                    }
+
+                    _controlOwner = _ownerBeforeTaskEngine;
+                    _taskEngineOwner = null;
                 }
-
-                if (!ReferenceEquals(_taskEngineOwner, owner))
-                    throw new InvalidOperationException("任务执行入口的所有者不匹配，不能归还。");
-
-                var currentState = State;
-                if (currentState == MachineRunState.Running || currentState == MachineRunState.Pausing)
-                {
-                    throw new InvalidOperationException(
-                        "设备正在运行，不能归还任务执行入口；请先停止任务并确认所有轴已停止。当前状态："
-                        + currentState + "。");
-                }
-
-                _controlOwner = _ownerBeforeTaskEngine;
-                _taskEngineOwner = null;
             }
+            finally { _commandLock.Release(); }
         }
 
         /// <summary>执行可选设备初始化后，从各工位保留的当前步骤启动设备流程。</summary>
@@ -588,6 +603,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 }
 
                 EnsureState(MachineRunState.Ready, "启动前必须先成功复位设备。");
+                await EnsurePreparationsReadyForStartAsync(cancellationToken).ConfigureAwait(false);
                 EnsureNoManualOperationsInProgress("启动自动流程");
                 if (!IsEmergencyStopMonitoringConfigured())
                 {
@@ -617,6 +633,7 @@ namespace MotionControl.Framework.Runtime.Machine
                     SetRunningIfNoStopAlarm();
                     StartEmergencyStopMonitor();
                     var runTask = _flowScheduler.Start();
+                    MarkPreparationProductionStarted();
                     _flowObserverTask = ObserveFlowRunAsync(runTask);
 
                     if (_alarmService.HasLatchedStopAlarm)
@@ -650,6 +667,11 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>请求各工位暂停，并在时限内等待所有流程退出当前步骤。</summary>
         public async Task PauseAsync(CancellationToken cancellationToken)
         {
+            if (IsPreparing)
+            {
+                await StopPreparationAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {

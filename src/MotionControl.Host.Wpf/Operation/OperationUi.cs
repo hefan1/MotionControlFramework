@@ -26,6 +26,7 @@ namespace MotionControl.Host.Wpf.Operation
             switch (state)
             {
                 case MachineRunState.Running: return "设备运行中";
+                case MachineRunState.Preparing: return "正在准备设备";
                 case MachineRunState.Ready: return "设备已就绪";
                 case MachineRunState.Pausing: return "设备暂停中";
                 case MachineRunState.Paused: return "设备已暂停";

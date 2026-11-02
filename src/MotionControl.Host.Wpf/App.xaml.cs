@@ -15,6 +15,7 @@ using MotionControl.Framework.Contracts.Equipment;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.IO;
 using MotionControl.Framework.Contracts.Motion;
+using MotionControl.Framework.Contracts.Preparation;
 using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Runtime.Machine;
@@ -530,14 +531,16 @@ namespace MotionControl.Host.Wpf
                 _machineSafetyStatus = CreateSafetyStatus(connectedLogicalIo, out controlInputConfiguration);
                 var alarmService = new MachineAlarmService();
                 IStationFlow[] stationFlows;
+                IReadOnlyList<IStationPreparation> preparations;
                 try
                 {
                     stationFlows = CreateEquipmentStationFlows(
-                        motionCards, connectedLogicalIo, alarmService);
+                        motionCards, connectedLogicalIo, alarmService, out preparations);
                 }
                 catch (Exception error)
                 {
                     stationFlows = new IStationFlow[0];
+                    preparations = new IStationPreparation[0];
                     MessageBox.Show(
                         "设备工位配置无法启用，自动流程已关闭；轴手动和 IO 手动仍可使用。\n"
                         + error.Message,
@@ -560,17 +563,19 @@ namespace MotionControl.Host.Wpf
                     controlOwner: HostEquipmentSelection.ResolveExecutionOwner(_configurationStore, MachineId));
                 createdRuntime.RequestInitializationRecovery(
                     _machineRecoveryCoordinator.HasCompletedInitializationCheckpoint);
+                createdRuntime.ConfigurePreparations(preparations);
                 await createdRuntime.ConnectAsync(CancellationToken.None);
 
                 _machineRuntime = createdRuntime;
                 _machineRuntime.StatusChanged += MachineRuntime_RecoveryStatusChanged;
-                _mainWindow.SetMachineRuntime(createdRuntime);
                 _deviceVariablePage.SetMachineRuntime(createdRuntime);
                 _flowStatusPage = new FlowStatusView(createdRuntime, () => _taskMonitorLauncher != null && _taskMonitorLauncher.HasTaskSession);
                 _mainWindow.SetFlowStatusPage(_flowStatusPage);
                 RefreshManualDebugPages(createdRuntime, motionCards, connectedLogicalIo);
                 await _taskMonitorLauncher.SetMachineContextAsync(
-                    createdRuntime, motionCards, connectedLogicalIo, _deviceVariableStore);
+                    createdRuntime, motionCards, connectedLogicalIo, _deviceVariableStore, preparations);
+                // 任务上下文先就位，再让可见的设备准备页读取对应入口，避免误用上一会话。
+                _mainWindow.SetMachineRuntime(createdRuntime);
             }
             catch (Exception error)
             {
@@ -651,6 +656,7 @@ namespace MotionControl.Host.Wpf
                 ? (MachineRunState?)null
                 : _machineRuntime.State;
             if (runtimeState == MachineRunState.Running
+                || runtimeState == MachineRunState.Preparing
                 || runtimeState == MachineRunState.Pausing
                 || runtimeState == MachineRunState.Alarmed)
             {
@@ -755,7 +761,8 @@ namespace MotionControl.Host.Wpf
         private IStationFlow[] CreateEquipmentStationFlows(
             MotionCardGroup motionCards,
             ILogicalIo logicalIo,
-            IMachineAlarmService alarmService)
+            IMachineAlarmService alarmService,
+            out IReadOnlyList<IStationPreparation> preparations)
         {
             IEquipmentDefinition equipment = HostEquipmentSelection.ResolveEquipmentDefinition(_configurationStore, MachineId);
             var context = new HostEquipmentContext(
@@ -768,7 +775,10 @@ namespace MotionControl.Host.Wpf
                 motionCards,
                 logicalIo,
                 alarmService);
-            return equipment.CreateStationFlows(context).ToArray();
+            IStationFlow[] flows = equipment.CreateStationFlows(context).ToArray();
+            var provider = equipment as IEquipmentPreparationProvider;
+            preparations = provider == null ? new IStationPreparation[0] : provider.CreatePreparations(context, flows);
+            return flows;
         }
 
         /// <summary>为首次运行的设备目录按设备定义预置报警，框架不内置任何设备的报警代码。</summary>

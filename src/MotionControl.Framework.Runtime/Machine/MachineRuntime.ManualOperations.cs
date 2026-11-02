@@ -165,6 +165,7 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>根据整机状态返回当前是否允许手动轴或 IO 操作。</summary>
         private ManualOperationBlockReason GetManualOperationStateBlockReason()
         {
+            if (IsPreparing) return ManualOperationBlockReason.AutomaticFlowActive;
             if (IsTaskEngineControlClaimed)
             {
                 return ManualOperationBlockReason.TaskExecutionEntryClaimed;
@@ -196,6 +197,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 if (blockReason == ManualOperationBlockReason.None)
                 {
                     Interlocked.Increment(ref _activeManualOperationCount);
+                    InvalidatePreparations("已执行手动轴或 IO 操作，请重新核对工位准备。");
                 }
 
                 return blockReason;

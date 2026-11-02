@@ -112,7 +112,7 @@
     <sys:String x:Key="数据库未接入">数据库 未接入</sys:String>
     <sys:String x:Key="MES未配置">MES 未配置</sys:String>
     <sys:String x:Key="设备状态标题">设备状态：</sys:String>
-    <sys:String x:Key="整机复位">整机复位</sys:String>
+    <sys:String x:Key="整机复位">报警复位</sys:String>
     <sys:String x:Key="整机复位中">正在复位</sys:String>
     <sys:String x:Key="整机复位提示">确认急停已释放、所有轴已停止后，复位整机报警和轴报警。</sys:String>
     <sys:String x:Key="整机复位失败标题">整机复位失败</sys:String>
@@ -751,4 +751,7 @@
     <sys:String x:Key="IO反馈保存失败">保存失败：{0}</sys:String>
     <sys:String x:Key="IO反馈读取失败">无法读取已保存的 IO 映射或反馈关联：{0}</sys:String>
     <sys:String x:Key="IO反馈刷新失败">关联已保存，但监控页面刷新失败：{0}。请重新打开监控页。</sys:String>
+ <sys:String x:Key="设备准备">设备准备</sys:String>
+ <sys:String x:Key="设备准备页面说明">按设备定义准备工位；完成后由操作员启动生产。</sys:String>
+ <sys:String x:Key="状态准备中">设备准备中</sys:String>
 </ResourceDictionary>

@@ -74,10 +74,10 @@ namespace MotionControl.Framework.Runtime.Machine
         {
             try
             {
-                while (State == MachineRunState.Running)
+                while (State == MachineRunState.Running || State == MachineRunState.Preparing)
                 {
                     await Task.Delay(_safetyPollInterval, cancellationToken).ConfigureAwait(false);
-                    if (State != MachineRunState.Running)
+                    if (State != MachineRunState.Running && State != MachineRunState.Preparing)
                     {
                         return;
                     }

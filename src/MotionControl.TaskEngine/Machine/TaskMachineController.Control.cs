@@ -45,6 +45,7 @@ namespace MotionControl.TaskEngine.Machine
         private void ValidateResetConditions(bool requireAxisAlarmsCleared)
         {
             RequireOpen();
+            if (_preparationActive) throw new InvalidOperationException("工位准备正在执行，请先停止回零再复位。");
             if (_state == TaskMachineState.Running || _state == TaskMachineState.Pausing)
                 throw new InvalidOperationException("请先暂停整机并确认所有轴已停稳，再复位。");
             if (_activeStopAlarms.Count != 0) throw new InvalidOperationException("停机条件仍有效：" + string.Join("；", _activeStopAlarms.Values));
@@ -58,7 +59,7 @@ namespace MotionControl.TaskEngine.Machine
                 {
                     // Runtime 随后会清除轴报警；报警存在时先不以伺服状态阻止该清除步骤。
                     if (!axis.Enabled && string.IsNullOrWhiteSpace(axis.Alarm))
-                        throw new InvalidOperationException("任务使用的轴尚未使能：" + name + "。请在轴手动页面使能后再复位任务。");
+                        throw new InvalidOperationException("任务使用的轴尚未使能：" + name + "。请先结束任务会话；如有报警，先处理原因并复位，再到轴手动页面使能，最后重新读取任务。");
                     if (!axis.Homed) throw new InvalidOperationException("任务使用的轴尚未回零：" + name + "。请在轴手动页面回零后再复位任务。");
                 }
             }
@@ -81,6 +82,7 @@ namespace MotionControl.TaskEngine.Machine
             {
                 RequireOpen();
                 if (_state != TaskMachineState.Ready) throw new InvalidOperationException("必须先复位到就绪状态再启动。");
+                EnsurePreparationCompletedForStart();
                 _state = TaskMachineState.Running;
                 foreach (StationExecutionControl station in AllStations())
                 {
@@ -247,6 +249,7 @@ namespace MotionControl.TaskEngine.Machine
         /// <summary>把全部周期许可和正在执行的运行冻结；调用方已持有整机锁。</summary>
         private TaskRun[] PauseAll(TaskMachineState state)
         {
+            _preparationRun?.Cancel();
             if (_state == TaskMachineState.Running) _runningPermit = NewSignal();
             _state = state;
             TaskRun[] runs = AllStations().Select(station => station.CurrentRun).Where(run => run != null).ToArray();
@@ -276,7 +279,7 @@ namespace MotionControl.TaskEngine.Machine
                 _state = TaskMachineState.Stopped;
                 _lifetime.Cancel();
                 foreach (StationExecutionControl station in AllStations()) station.CurrentRun?.Cancel();
-                _abortTask = FinishAbortAsync(Task.WhenAll(_workers));
+                _abortTask = FinishAbortAsync(Task.WhenAll(_workers.Concat(new[] { _preparationSettled?.Task ?? Task.CompletedTask })));
                 return _abortTask;
             }
         }

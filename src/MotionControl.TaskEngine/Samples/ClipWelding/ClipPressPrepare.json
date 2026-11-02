@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "taskId": "ClipPressPrepare",
+  "name": "压合工位回零",
+  "revision": 1,
+  "root": {
+    "kind": "Sequence", "id": "PressPrepare", "name": "压合工位准备", "timeoutMs": 90000,
+    "children": [
+      { "kind": "SetOutput", "id": "PressOutputOff", "name": "确认压合动作输出关闭", "timeoutMs": 5000, "outputName": "相机触发", "value": false },
+      { "kind": "WaitInput", "id": "PressFeedbackClear", "name": "等待压合完成反馈复位", "timeoutMs": 10000, "inputName": "检测完成", "expected": false, "timeoutAlarmCodes": ["DEMO_SENSOR_TIMEOUT"] },
+      { "kind": "AxisCommand", "id": "PressHome", "name": "压合轴回零", "timeoutMs": 60000, "axisName": "Camera_X", "command": "Home" },
+      { "kind": "MoveAxis", "id": "PressStandby", "name": "压合轴返回待机位置", "timeoutMs": 10000, "axisName": "Camera_X", "mode": "Absolute", "target": { "source": "Constant", "dataType": "Number", "constant": "0" }, "profile": { "speed": 5, "acceleration": 50, "deceleration": 50 } }
+    ]
+  }
+}

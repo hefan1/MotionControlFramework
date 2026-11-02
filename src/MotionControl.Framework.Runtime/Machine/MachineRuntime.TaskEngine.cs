@@ -12,12 +12,15 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>确认任务执行入口持有设备并启动运行期间的急停监控。</summary>
         public async Task BeginTaskEngineRunAsync(CancellationToken cancellationToken)
         {
+            bool enteredRunning = false;
+            bool startedSafetyMonitor = false;
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 if (ControlOwner != MachineControlOwner.TaskEngine)
                     throw new InvalidOperationException("当前设备控制权不属于图形化任务执行入口。");
                 EnsureOneOfStates(new[] { MachineRunState.Ready }, "设备必须先复位到就绪状态，再启动任务。");
+                await EnsurePreparationsReadyForStartAsync(cancellationToken).ConfigureAwait(false);
                 if (_flowScheduler.IsRunning)
                     throw new InvalidOperationException("C# 工位流程仍在运行，任务执行入口不能启动。");
                 EnsureNoManualOperationsInProgress("启动任务");
@@ -37,14 +40,16 @@ namespace MotionControl.Framework.Runtime.Machine
                 }
 
                 SetRunningIfNoStopAlarm();
+                enteredRunning = true;
                 StartEmergencyStopMonitor();
+                startedSafetyMonitor = true;
             }
             catch (Exception startError)
             {
-                await StopEmergencyStopMonitorAsync().ConfigureAwait(false);
+                if (startedSafetyMonitor) await StopEmergencyStopMonitorAsync().ConfigureAwait(false);
                 if (_alarmService.HasLatchedStopAlarm)
                     SetStatus(MachineRunState.Alarmed, startError);
-                else if (State == MachineRunState.Running)
+                else if (enteredRunning && State == MachineRunState.Running)
                     SetStatus(MachineRunState.Ready, startError);
                 throw;
             }
@@ -52,6 +57,17 @@ namespace MotionControl.Framework.Runtime.Machine
             {
                 _commandLock.Release();
             }
+        }
+
+        /// <summary>任务执行器实际接受生产启动后确认会话已进入生产；仅打开运行保护不算生产开始。</summary>
+        public void ConfirmTaskEngineProductionStarted()
+        {
+            if (ControlOwner != MachineControlOwner.TaskEngine || IsPreparing)
+                throw new InvalidOperationException("当前没有可确认的任务生产启动。");
+            MachineRunState state = State;
+            if (state != MachineRunState.Running && state != MachineRunState.Pausing && state != MachineRunState.Alarmed)
+                throw new InvalidOperationException("任务尚未取得运行状态，不能确认生产已开始。");
+            MarkPreparationProductionStarted();
         }
 
         /// <summary>任务暂停或终止并停稳后，更新整机状态并停止急停轮询。</summary>

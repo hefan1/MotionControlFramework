@@ -5,6 +5,7 @@ using MotionControl.Framework.Runtime.Variables;
 using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Configuration;
 using MotionControl.TaskEngine.MachineDevice;
+using MotionControl.TaskEngine.MachineDevice.Preparation;
 using MotionControl.TaskEngine.Wpf.Simulation;
 
 namespace MotionControl.Host.Wpf.Tasks
@@ -19,7 +20,19 @@ namespace MotionControl.Host.Wpf.Tasks
             var namedResources = new TaskMachineConfigurationStore(store).LoadNamedResources(machineId);
             var catalog = new TaskResourceCatalogLoader(store).Load(machineId, namedResources);
             var device = new MachineTaskDevice(catalog, motionCards, logicalIo, variables, runtime);
-            return TaskMonitorSession.LoadMachine(store, machineId, device, runtime.AlarmService);
+            TaskMonitorSession session = TaskMonitorSession.LoadMachine(store, machineId, device, runtime.AlarmService);
+            try
+            {
+                var preparations = TaskStationPreparationLoader.Load(store, machineId, session.Machine, device, session.Library);
+                runtime.ConfigurePreparations(preparations);
+                return session;
+            }
+            catch
+            {
+                // 配置失败必须归还会话控制权；不留下无法操作的半加载会话。
+                session.Machine.CloseAsync().GetAwaiter().GetResult();
+                throw;
+            }
         }
     }
 }

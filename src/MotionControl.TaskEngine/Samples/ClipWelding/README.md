@@ -46,7 +46,39 @@ $clipCommand = '.\tools\MotionControl.VirtualController\ControllerCommand.ps1'
 
 结束时在 Host 停止任务，确认所有轴停止、DO0–DO3 关闭；停止供料并移除三组测试反馈，确认 DI4–DI7 恢复安全值。故障暂停可能保持某些输出，不能假定停止即关闭夹具或气缸。
 
-## 检查
+## 焊接与压合工位准备
+
+`ClipWeldPrepare.json` 和 `ClipPressPrepare.json` 是独立准备任务，生产任务正文和 `ClipInit` 不变。
+`StationPreparation.json` 安装为 `Machine01/Parameters/StationPreparation.json`，只引用现有任务、轴、IO 与占料变量。
+先关闭正式 Host，再对已经安装本样例的设备执行：
+
+```powershell
+& '.\src\MotionControl.TaskEngine\Samples\ClipWelding\InstallPreparation.ps1' -ConfigurationRoot "$env:LOCALAPPDATA\MotionControlFramework\Configurations"
+```
+
+安装只增加两个准备任务及独立准备清单，不改变设备入口、不清空变量或载具、不应用旧草稿；同名文件内容不同时拒绝覆盖。
+准备清单字段：`id/name/taskId` 表示工位和所用任务；`dependencies` 指定必须先准备且仍在规定姿态的工位；
+`axes` 指定回零后待机位置和允许误差（沿用轴工程单位）；`inputs/outputs` 指定期望逻辑状态；
+`emptyVariables` 指定必须明确为 false 的占料变量，仅检查，不写入。
+
+焊接使用现有 `Press_Z`、`压头动作` 和 `压装完成`，先确认动作输出关闭、等待完成反馈复位，再回零并停到 0 mm；
+压合使用 `Camera_X`、`相机触发` 和 `检测完成`，依赖焊接准备成功且仍在让位位置，再执行同类准备。
+这是两个测试工位的回零与让位演示，名称沿用既有映射，不代表真实压合机构或焊接工艺。
+`Load_X` 和 `Unload_X` 仍需按已有轴手动入口准备，不能把这两个工位准备通过理解为全设备已经可以生产。
+任务准备不负责伺服使能；读取任务之前先在轴手动页确认相关轴已使能且停稳。若已读取任务后发现未使能，先结束任务会话，再使能并重新读取任务。
+
+正式 Host 读取当前任务后，在设备准备页执行整机或单工位准备；完成后停留在准备结果，由操作员另按启动。
+准备过程中停止会取消当前准备任务并等待轴退出；重试从准备任务头重新检查，生产步骤和载具记录保持不变。
+本会话已经开始生产后禁止重新回零，必须先按设备工艺处理在制品并结束生产会话。旧完成记录不会跨连接自动当作当前准备成功。
+在制品检查失败时不可通过清变量来绕过；本样例不实现实体设备的排空或断电带料恢复。
+
+内部检查使用仓库任务文件与独立内存设备，不操作现场配置：
+
+```powershell
+dotnet run --project tools/MotionControl.TaskPreparation.Checks -c Release
+```
+
+## 多工位生产检查
 
 将样例安装到隔离的 Machine01 配置副本后，可运行：
 

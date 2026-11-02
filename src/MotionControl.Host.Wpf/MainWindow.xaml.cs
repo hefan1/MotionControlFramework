@@ -32,7 +32,7 @@ namespace MotionControl.Host.Wpf
         /// <summary>按导航分区保存左侧子页面的中文资源键。</summary>
         private readonly Dictionary<string, string[]> _pagesBySection = new Dictionary<string, string[]>
         {
-            { "Home", new[] { "设备总览", "运行日志" } },
+            { "Home", new[] { "设备总览", "设备准备", "运行日志" } },
             { "Statistics", new[] { "产量统计", "节拍统计", "运行统计" } },
             { "Monitor", new[] { "轴监控", "IO监控", "流程状态", "任务接入状态", "设备变量" } },
             { "Manual", new[] { "轴手动", "IO手动", "气缸手动", "通讯调试" } },
@@ -391,6 +391,7 @@ namespace MotionControl.Host.Wpf
                 || machineRuntime.State != MachineRunState.Ready;
             _equipmentOverviewPage.SetRuntime(machineRuntime);
             _currentAlarmsPage.SetRuntime(machineRuntime);
+            _equipmentPreparationPage.SetRuntime(machineRuntime);
             if (_machineRuntime != null)
             {
                 _machineRuntime.StatusChanged += MachineRuntime_StatusChanged;
@@ -630,6 +631,7 @@ namespace MotionControl.Host.Wpf
             UpdateMotionCardFooter();
             _equipmentOverviewPage.SetLanguage(languageCode);
             _currentAlarmsPage.SetLanguage(languageCode);
+            _equipmentPreparationPage.SetLanguage(languageCode);
             UpdateWindowTitle();
             UpdateMachineStateDisplay();
 
@@ -730,7 +732,8 @@ namespace MotionControl.Host.Wpf
             UpdateMachineStateDisplay();
             try
             {
-                await runtime.PauseAsync(CancellationToken.None);
+                if (runtime.IsPreparing) await runtime.StopPreparationAsync(CancellationToken.None);
+                else await runtime.PauseAsync(CancellationToken.None);
             }
             catch (Exception error)
             {
@@ -792,6 +795,8 @@ namespace MotionControl.Host.Wpf
                     return "状态已暂停";
                 case MachineRunState.Alarmed:
                     return "状态报警";
+                case MachineRunState.Preparing:
+                    return "状态准备中";
                 default:
                     return "状态未连接";
             }
@@ -821,7 +826,6 @@ namespace MotionControl.Host.Wpf
             MachineResetButton.IsEnabled = !_isResetting
                 && !_isMachineCommandRunning
                 && _machineRuntime != null
-                && !_machineRuntime.IsTaskEngineControlClaimed
                 && (state == MachineRunState.ResetRequired
                     || state == MachineRunState.Paused
                     || state == MachineRunState.Alarmed);
@@ -832,11 +836,11 @@ namespace MotionControl.Host.Wpf
                 && _automaticStartReadinessKnown
                 && string.IsNullOrWhiteSpace(_automaticStartBlockReason);
             MachinePauseButton.IsEnabled = !_isMachineCommandRunning
-                && _machineRuntime != null && _machineRuntime.ControlOwner == MachineControlOwner.StationFlows
-                && actualState == MachineRunState.Running;
+                && _machineRuntime != null
+                && ((_machineRuntime.ControlOwner == MachineControlOwner.StationFlows && actualState == MachineRunState.Running) || _machineRuntime.IsPreparing);
             MachineStopButton.IsEnabled = !_isMachineCommandRunning
-                && _machineRuntime != null && _machineRuntime.ControlOwner == MachineControlOwner.StationFlows
-                && (actualState == MachineRunState.Running || actualState == MachineRunState.Pausing);
+                && _machineRuntime != null
+                && ((_machineRuntime.ControlOwner == MachineControlOwner.StationFlows && (actualState == MachineRunState.Running || actualState == MachineRunState.Pausing)) || _machineRuntime.IsPreparing);
         }
 
         /// <summary>把同一份启动就绪结果同步到设备总览和流程状态页。</summary>
@@ -873,7 +877,9 @@ namespace MotionControl.Host.Wpf
             UpdateMachineStateDisplay();
             try
             {
-                await runtime.ResetAsync(CancellationToken.None);
+                var launcher = _taskMonitorPage as Tasks.TaskMonitorLauncher;
+                if (runtime.IsTaskEngineControlClaimed && launcher != null) await launcher.ResetFromHostAsync();
+                else await runtime.ResetAsync(CancellationToken.None);
             }
             catch (Exception error)
             {

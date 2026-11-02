@@ -78,6 +78,15 @@ namespace MotionControl.Host.Wpf
             Activate();
         }
 
+        /// <summary>进入统一设备准备页，页面读取配置但不自动回零。</summary>
+        internal void ShowEquipmentPreparation()
+        {
+            SetOperationReturnTarget(_currentSectionKey, _currentPageResourceKey);
+            _currentPageResourceKey = "设备准备";
+            NavigateToSection("Home");
+            Activate();
+        }
+
         /// <summary>从任务接入状态页查看当前工位步骤。</summary>
         public void ShowFlowStatus()
         {

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "taskId": "ClipWeldPrepare",
+  "name": "焊接工位回零",
+  "revision": 1,
+  "root": {
+    "kind": "Sequence", "id": "WeldPrepare", "name": "焊接工位准备", "timeoutMs": 90000,
+    "children": [
+      { "kind": "SetOutput", "id": "WeldOutputOff", "name": "确认焊接动作输出关闭", "timeoutMs": 5000, "outputName": "压头动作", "value": false },
+      { "kind": "WaitInput", "id": "WeldFeedbackClear", "name": "等待焊接完成反馈复位", "timeoutMs": 10000, "inputName": "压装完成", "expected": false, "timeoutAlarmCodes": ["DEMO_SENSOR_TIMEOUT"] },
+      { "kind": "AxisCommand", "id": "WeldHome", "name": "焊接轴回零", "timeoutMs": 60000, "axisName": "Press_Z", "command": "Home" },
+      { "kind": "MoveAxis", "id": "WeldStandby", "name": "焊接轴返回让位位置", "timeoutMs": 10000, "axisName": "Press_Z", "mode": "Absolute", "target": { "source": "Constant", "dataType": "Number", "constant": "0" }, "profile": { "speed": 5, "acceleration": 50, "deceleration": 50 } }
+    ]
+  }
+}

@@ -83,6 +83,10 @@ namespace MotionControl.Equipment.Demo.WeldingExample
         public long CompletedCycles { get { lock (_sync) return _completed; } }
         /// <summary>此测试示例尚不统计周期时间。</summary>
         public TimeSpan? LastCycleDuration { get { return null; } }
+        /// <summary>供设备准备工厂核对同一设备实例的工位顺序。</summary>
+        internal int StationIndex { get { return _index; } }
+        /// <summary>与本工位共用的在制品状态；准备操作只能检查，不能清空。</summary>
+        internal WeldingCarrierLine CarrierLine { get { return _line; } }
 
         /// <summary>执行当前一步；暂停取消保留步骤和载具，绝对定位恢复后重新发送原目标。</summary>
         public async Task ExecuteCurrentStepAsync(CancellationToken cancellationToken)
@@ -92,6 +96,7 @@ namespace MotionControl.Equipment.Demo.WeldingExample
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                _line.MarkProductionStarted();
                 switch (step)
                 {
                     case 10:

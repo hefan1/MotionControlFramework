@@ -19,9 +19,21 @@
 
 ## 正式 Host 检查
 
-1. 核对后端为 Virtual、上表轴与 IO 映射、无旧 Host 会话、相关输出关闭；以正式 Release Host 和本项目软件控制器测试。可用 `tools/MotionControl.VirtualController/StartLoadDemo.ps1` 启动软件控制器、DI4/DO0 上料规则和正式 Host；该脚本只校验上料映射，不校验其余三组反馈映射。
+1. 核对后端为 Virtual、上表轴与 IO 映射、无旧 Host 会话、相关输出关闭；以正式 Release Host 和本项目软件控制器测试。准备期间停止供料，DI4 必须无效。`StartLoadDemo.ps1` 会自动启用上料规则，使用该脚本后须先停止供料并在 Host 确认 DI4 无效，再操作设备准备。
 2. 在 Host 的 IO 页面核对状态，并按上表确认后分别使用 `ControllerCommand.ps1 -Action ConfigureFeedback -OutputChannel 1 -InputChannel 5`、`-OutputChannel 2 -InputChannel 6`、`-OutputChannel 3 -InputChannel 7` 建立其余三组测试反馈；完成后复核相关输入与输出。避免覆盖已有测试规则。
-3. 在 Host 检查四轴伺服、回零和行程，按实际测试步骤复位、启动；在“流程状态”观察四站当前步骤和各自测试产品/载具编号。`DI7` 反馈保持无效可模拟复检等待，上游会逐站等待下游空位；恢复反馈后继续流转。
+3. 先在轴手动页完成扫码 Load_X 和复检 Unload_X 的使能和回零，这两站尚未提供模组准备；再在 Host“设备准备”完成焊接、压合工位回零，核对 Press_Z、Camera_X 已回零并停在 0 mm。手动轴或 IO 操作会使已完成的准备资格失效，应在设备准备之前处理。随后开启软件控制器供料规则、核对四轴行程、复位并启动；在“流程状态”观察四站当前步骤和各自测试产品/载具编号。`DI7` 反馈保持无效可模拟复检等待，上游会逐站等待下游空位；恢复反馈后继续流转。
 4. 暂停、故障或退出前先观察轴和输出；结束时在 Host 停止流程、确认轴停止并按测试场景关闭仍有效输出，再停止上料规则、移除三项反馈并复核 DI 安全值。不得用该过程代替实体设备的安全回路和现场工艺验证。
 
-内部检查：`dotnet run --project tools/MotionControl.WeldingExample.Checks -c Release`；其受控假设备检查并行、堵塞、暂停恢复和旧反馈有效时禁止运动及输出，不代表正式 Host 屏幕或控制器验证。
+内部检查：`dotnet run --project tools/MotionControl.WeldingExample.Checks -c Release`；其受控假设备检查并行、堵塞、暂停恢复、旧反馈拦截及设备准备，不代表正式 Host 屏幕或控制器验证。
+
+## 工位准备代码定位
+
+- `WeldingExampleEquipmentDefinition.CreatePreparations` 通过框架的可选 `IEquipmentPreparationProvider` 提供两个准备流程。框架不知道焊接、压合的名称、轴和 IO；依赖关系也保留在此设备项目。
+- `WeldingStationPreparation` 是本测试设备的具体顺序：只读前置检查 → 连续 1.5 秒反馈复位确认 → 轴使能 → 按适配器参数回零 → 返回 0 mm 待机位 → 实时验收。压合依赖焊接准备完成，并在动作前再次读取焊接轴的停稳、坐标参考、0 mm 位置及对应 IO。
+- `WeldingCarrierLine` 记录当前会话是否执行过生产及载具占用。准备不能清空此状态；生产执行过即拒绝重新准备，避免把暂停现场当作空机。本例不支持带料回零或断电在制品恢复。
+
+准备开始要求 DI4 无料、对应动作 DO 关闭、完成 DI 无效、轴停稳无报警且硬限位可确认；不会擅自关闭夹具输出来制造条件。准备后可正常供料，最终就绪检查不要求 DI4 无效。IO 读取错误直接报告；输入/输出检查与运动命令不是原子安全联锁，不能替代真实机构的安全功能。
+
+单次准备最长 20 秒；失败或取消均请求相关轴受控停止并确认，准备保持未完成。失败原因处理后可重试；每次重试从前置检查开始，不能把中断回零当作已完成。停止失败同时保留原始故障和停止错误，不伪报停稳。准备成功只代表这两个测试模组满足规定条件，不自动启动生产，也不代表其他工位已经准备好。
+
+维护其他设备时，应在该设备项目编写对应的 `IStationPreparation`，使用逻辑轴/IO 和明确步骤。不要把本示例的 0 mm、1.5 秒、工位依赖或输出处理方式搬入通用 Runtime。

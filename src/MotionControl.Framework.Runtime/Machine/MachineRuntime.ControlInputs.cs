@@ -173,7 +173,7 @@ namespace MotionControl.Framework.Runtime.Machine
                         hasResetBaseline = false;
                     }
 
-                    if (pauseEdge && State == MachineRunState.Running)
+                    if (pauseEdge && (State == MachineRunState.Running || IsPreparing))
                     {
                         try
                         {

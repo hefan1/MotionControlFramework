@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "stations": [
+    {
+      "id": "ClipWeld", "name": "焊接工位", "taskId": "ClipWeldPrepare", "dependencies": [],
+      "axes": [{ "name": "Press_Z", "position": 0, "tolerance": 0.01 }],
+      "inputs": [{ "name": "压装完成", "expected": false }],
+      "outputs": [{ "name": "压头动作", "expected": false }],
+      "emptyVariables": ["Clip.Weld.Occupied", "Clip.Press.Occupied"]
+    },
+    {
+      "id": "ClipPress", "name": "压合工位", "taskId": "ClipPressPrepare", "dependencies": ["ClipWeld"],
+      "axes": [{ "name": "Camera_X", "position": 0, "tolerance": 0.01 }],
+      "inputs": [{ "name": "检测完成", "expected": false }],
+      "outputs": [{ "name": "相机触发", "expected": false }],
+      "emptyVariables": ["Clip.Weld.Occupied", "Clip.Press.Occupied"]
+    }
+  ]
+}

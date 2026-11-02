@@ -9,7 +9,7 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>运动卡已连接，必须先执行复位。</summary>
         ResetRequired,
 
-        /// <summary>复位完成，允许启动。</summary>
+        /// <summary>复位或准备完成；生产启动仍须通过当前入口的前提检查。</summary>
         Ready,
 
         /// <summary>整机自动流程正在运行，可能正在执行设备初始化或并行工位步骤。</summary>
@@ -22,6 +22,9 @@ namespace MotionControl.Framework.Runtime.Machine
         Paused,
 
         /// <summary>运行或复位出现故障，需要处理并复位。</summary>
-        Alarmed
+        Alarmed,
+
+        /// <summary>正在执行独立设备准备；完成后等待操作员启动生产。</summary>
+        Preparing
     }
 }

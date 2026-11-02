@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>MotionControl.TaskPreparation.Checks</AssemblyName>
+    <RootNamespace>MotionControl.TaskPreparation.Checks</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\MotionControl.TaskEngine.MachineDevice\MotionControl.TaskEngine.MachineDevice.csproj" />
+  </ItemGroup>
+</Project>

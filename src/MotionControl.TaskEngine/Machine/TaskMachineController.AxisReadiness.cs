@@ -17,6 +17,8 @@ namespace MotionControl.TaskEngine.Machine
 
             if (!string.IsNullOrWhiteSpace(_configuration.InitializationTaskId))
                 CollectTaskAxes(_configuration.InitializationTaskId, positioningAxes, homeCommandAxes, visitedTasks);
+            foreach (string preparationTaskId in _preparationChecks.Keys)
+                CollectTaskAxes(preparationTaskId, positioningAxes, homeCommandAxes, visitedTasks);
             foreach (StationExecutionControl station in _stations.Where(item => item.Configuration.Enabled))
                 CollectTaskAxes(station.Configuration.TaskId, positioningAxes, homeCommandAxes, visitedTasks);
 

@@ -105,7 +105,7 @@
     <sys:String x:Key="数据库未接入">Database: not connected</sys:String>
     <sys:String x:Key="MES未配置">MES: not configured</sys:String>
     <sys:String x:Key="设备状态标题">Machine State:</sys:String>
-    <sys:String x:Key="整机复位">Reset Machine</sys:String>
+    <sys:String x:Key="整机复位">Reset Alarms</sys:String>
     <sys:String x:Key="整机复位中">Resetting</sys:String>
     <sys:String x:Key="整机复位提示">Confirm the emergency stop is released and all axes are stopped before resetting machine and axis alarms.</sys:String>
     <sys:String x:Key="整机复位失败标题">Machine Reset Failed</sys:String>
@@ -741,4 +741,7 @@
     <sys:String x:Key="IO反馈保存失败">Save failed: {0}</sys:String>
     <sys:String x:Key="IO反馈读取失败">Unable to read saved I/O mappings or feedback links: {0}</sys:String>
     <sys:String x:Key="IO反馈刷新失败">Links were saved, but the monitor could not refresh: {0}. Reopen the monitor.</sys:String>
+ <sys:String x:Key="设备准备">Equipment preparation</sys:String>
+ <sys:String x:Key="设备准备页面说明">Prepare stations in the configured order. Production starts separately.</sys:String>
+ <sys:String x:Key="状态准备中">Preparing</sys:String>
 </ResourceDictionary>

@@ -11,6 +11,27 @@ namespace MotionControl.Equipment.Demo.WeldingExample
         private readonly string[] _carriers = new string[4];
         /// <summary>本次连接中生成的测试编号，不是实际扫码枪结果。</summary>
         private long _nextNumber;
+        /// <summary>本会话已经执行生产步骤；再次准备必须明确处理生产状态，不能清空载具绕过。</summary>
+        private bool _productionStarted;
+
+        /// <summary>记录生产流程已启动，正常暂停及报警复位不清除此记录。</summary>
+        internal void MarkProductionStarted()
+        {
+            lock (_sync) _productionStarted = true;
+        }
+
+        /// <summary>回零前核对本会话没有执行生产且没有载具；不改变产品与工步。</summary>
+        internal void EnsureCanPrepare()
+        {
+            lock (_sync)
+            {
+                foreach (string carrier in _carriers)
+                    if (carrier != null)
+                        throw new InvalidOperationException("设备中仍有在制品，请先处理载具；工位回零不会清空生产数据。");
+                if (_productionStarted)
+                    throw new InvalidOperationException("本次会话已经执行生产，请先确认工件及工步恢复方案；不能重新回零覆盖暂停现场。");
+            }
+        }
 
         /// <summary>扫码工位为空时生成唯一测试产品及载具标识。</summary>
         internal string StartProduct()

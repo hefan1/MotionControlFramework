@@ -20,7 +20,7 @@ namespace MotionControl.WeldingExample.Checks
         /// <summary>以同步入口等待异步检查并返回进程状态。</summary>
         private static int Main()
         {
-            try { RunAsync().GetAwaiter().GetResult(); CheckStaleFeedbackAsync().GetAwaiter().GetResult(); CheckFeedbackDuringMotionAsync().GetAwaiter().GetResult(); Console.WriteLine("代码工位并行、堵塞、暂停恢复和旧反馈拦截通过；仅内部检查。"); return 0; }
+            try { RunAsync().GetAwaiter().GetResult(); CheckStaleFeedbackAsync().GetAwaiter().GetResult(); CheckFeedbackDuringMotionAsync().GetAwaiter().GetResult(); PreparationChecks.RunAsync().GetAwaiter().GetResult(); Console.WriteLine("代码工位并行、堵塞、暂停恢复、旧反馈拦截及设备准备检查通过；仅内部检查。"); return 0; }
             catch (Exception error) { Console.Error.WriteLine(error); return 1; }
         }
 

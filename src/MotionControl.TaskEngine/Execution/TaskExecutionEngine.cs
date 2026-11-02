@@ -19,7 +19,14 @@ namespace MotionControl.TaskEngine.Execution
         public TaskRun Start(TaskDefinition definition, ITaskDevice device,
             IEnumerable<TaskDefinition> dependencies = null, CancellationToken cancellationToken = default(CancellationToken))
         {
-            return StartCore(definition, device, dependencies, null, cancellationToken, null);
+            return StartCore(definition, device, dependencies, null, cancellationToken, null, null);
+        }
+
+        /// <summary>在已有整机命令权内执行一次准备任务；不会创建或恢复生产工位。</summary>
+        internal TaskRun StartPreparation(TaskDefinition definition, ITaskDevice device,
+            IEnumerable<TaskDefinition> dependencies, object owner, CancellationToken cancellationToken)
+        {
+            return StartCore(definition, device, dependencies, null, cancellationToken, null, owner);
         }
 
         /// <summary>整机控制器专用入口，先暂停再发布，确保全机启动许可生效前不接受动作。</summary>
@@ -27,13 +34,13 @@ namespace MotionControl.TaskEngine.Execution
             IEnumerable<TaskDefinition> dependencies, StationExecutionControl station, CancellationToken token,
             IMachineAlarmService alarmService)
         {
-            return StartCore(definition, device, dependencies, station, token, alarmService);
+            return StartCore(definition, device, dependencies, station, token, alarmService, station.Machine);
         }
 
         /// <summary>统一校验和冻结；设备所有权登记成功后才安排后台执行。</summary>
         private TaskRun StartCore(TaskDefinition definition, ITaskDevice device,
             IEnumerable<TaskDefinition> dependencies, StationExecutionControl station, CancellationToken cancellationToken,
-            IMachineAlarmService alarmService)
+            IMachineAlarmService alarmService, object owner)
         {
             if (device == null) throw new ArgumentNullException(nameof(device));
             var dependencyList = new List<TaskDefinition>();
@@ -52,7 +59,7 @@ namespace MotionControl.TaskEngine.Execution
             foreach (TaskDefinition task in library.Values) RequireSupported(task.TaskId, task.Root);
 
             var run = new TaskRun(frozen.TaskId, frozen.Revision);
-            try { device.RegisterRun(run.RunId, station?.Machine); }
+            try { device.RegisterRun(run.RunId, owner); }
             catch { run.Cancel(); run.Finish(null); throw; }
             if (station != null) run.Pause();
             // 不把取消令牌传给 Task.Run：即使立即取消，也必须进入后台的统一收尾路径。

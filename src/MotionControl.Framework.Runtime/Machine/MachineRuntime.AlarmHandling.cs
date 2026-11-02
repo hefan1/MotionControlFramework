@@ -60,6 +60,12 @@ namespace MotionControl.Framework.Runtime.Machine
             }
 
             var alarmError = CreateStopAlarmError(eventArgs.Alarm, null);
+            if (IsPreparing)
+            {
+                SetStatus(MachineRunState.Alarmed, alarmError);
+                _ = StopPreparationAfterAlarmAsync();
+                return;
+            }
             var shouldPauseFlows = false;
             bool taskEngineOwnsDevice = ControlOwner == MachineControlOwner.TaskEngine;
 

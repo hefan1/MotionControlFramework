@@ -5,11 +5,12 @@ using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Configuration;
 using MotionControl.Framework.Contracts.Equipment;
 using MotionControl.Framework.Contracts.Flow;
+using MotionControl.Framework.Contracts.Preparation;
 
 namespace MotionControl.Equipment.Demo.WeldingExample
 {
     /// <summary>夹具焊接测试线的代码流程定义；四轴、四组 IO 均为测试映射，不代表参考设备接线。</summary>
-    public sealed class WeldingExampleEquipmentDefinition : IEquipmentDefinition
+    public sealed class WeldingExampleEquipmentDefinition : IEquipmentDefinition, IEquipmentPreparationProvider
     {
         /// <summary>正式 Host 配置中选择的设备定义名。</summary>
         public string EquipmentName { get { return "WeldingExample"; } }
@@ -54,6 +55,25 @@ namespace MotionControl.Equipment.Demo.WeldingExample
                     inputs[index], outputs[index], line, context.AlarmService, alarm));
             }
             return flows.AsReadOnly();
+        }
+
+        /// <summary>提供本设备的焊接和压合回零，通用框架只读取工位名、依赖及执行结果。</summary>
+        public IReadOnlyList<IStationPreparation> CreatePreparations(IEquipmentContext context, IReadOnlyList<IStationFlow> stationFlows)
+        {
+            if (context == null) throw new ArgumentNullException(nameof(context));
+            if (stationFlows == null) throw new ArgumentNullException(nameof(stationFlows));
+            WeldingTestBackend backend = context.LoadJson<WeldingTestBackend>("Parameters/ControllerBackend.json");
+            if (backend == null || !string.Equals(backend.Backend, "Virtual", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("焊接测试准备仅允许软件控制器，不允许连接实际设备执行。");
+            WeldingStationFlow[] flows = stationFlows.OfType<WeldingStationFlow>().ToArray();
+            if (flows.Length != 4 || flows.Select(flow => flow.StationIndex).Distinct().Count() != 4
+                || flows.Any(flow => !ReferenceEquals(flow.CarrierLine, flows[0].CarrierLine)))
+                throw new InvalidOperationException("焊接准备必须绑定当前四个工位的同一载具状态。");
+            var welding = new WeldingStationPreparation("ClipWeld", "焊接工位", context.GetAxis("Press_Z"),
+                context.LogicalIo, "压装完成", "压头动作", flows[0].CarrierLine, null);
+            var pressing = new WeldingStationPreparation("ClipPress", "压合工位", context.GetAxis("Camera_X"),
+                context.LogicalIo, "检测完成", "相机触发", flows[0].CarrierLine, welding);
+            return new IStationPreparation[] { welding, pressing };
         }
 
         /// <summary>只读取已有的设备后端名称，用于防止测试工艺误接实际控制器。</summary>

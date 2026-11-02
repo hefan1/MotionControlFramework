@@ -10,6 +10,7 @@ using System.Windows.Threading;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.IO;
+using MotionControl.Framework.Contracts.Preparation;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Runtime.Machine;
 using MotionControl.Framework.Runtime.Variables;
@@ -83,10 +84,14 @@ namespace MotionControl.Host.Wpf.Tasks
         private MotionCardGroup _motionCards;
         /// <summary>连接后的逻辑 IO。</summary>
         private ILogicalIo _logicalIo;
+        /// <summary>连接上下文每次更换或失效时递增，阻止异步读取的旧会话挂入新连接。</summary>
+        private long _machineContextVersion;
         /// <summary>与 Host 其他页面共用的设备变量存储。</summary>
         private DeviceVariableStore _variables;
         /// <summary>当前任务运行会话；创建时取得设备控制权。</summary>
         private TaskMonitorSession _session;
+        /// <summary>归还任务控制权后恢复设备原准备定义，防止跳过 C# 准备条件。</summary>
+        private IReadOnlyList<IStationPreparation> _equipmentPreparations = new IStationPreparation[0];
         /// <summary>当前正式设备任务监控视图。</summary>
         private TaskMonitorView _monitor;
         /// <summary>定时刷新任务状态和报警，并把任务故障反馈到 Runtime。</summary>
@@ -122,6 +127,7 @@ namespace MotionControl.Host.Wpf.Tasks
             _pauseButton = AddCommandButton(toolbar, "任务执行暂停", PauseTask_Click);
             _stopButton = AddCommandButton(toolbar, "任务执行停止", StopTask_Click);
             AddButton(toolbar, "设备总览", EquipmentOverview_Click);
+            AddButton(toolbar, "设备准备", EquipmentPreparation_Click);
             AddButton(toolbar, "流程状态", FlowStatus_Click);
             header.Children.Add(toolbar);
             root.Children.Add(header);
@@ -203,10 +209,12 @@ namespace MotionControl.Host.Wpf.Tasks
 
         /// <summary>提供连接后的设备实例；断开前必须先安全结束任务会话。</summary>
         internal async Task SetMachineContextAsync(MachineRuntime runtime, MotionCardGroup motionCards,
-            ILogicalIo logicalIo, DeviceVariableStore variables)
+            ILogicalIo logicalIo, DeviceVariableStore variables, IReadOnlyList<IStationPreparation> preparations = null)
         {
+            _machineContextVersion++;
             if (_session != null) await CloseTaskSessionAsync().ConfigureAwait(true);
             _runtime = runtime; _motionCards = motionCards; _logicalIo = logicalIo; _variables = variables;
+            _equipmentPreparations = preparations ?? new IStationPreparation[0];
             _controllerConnectionLost = runtime == null;
             if (runtime == null)
             {
@@ -230,6 +238,7 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>控制器异常断开后立即隐藏旧任务画面；新上下文建立后才重新确认状态。</summary>
         internal void MarkControllerConnectionLost()
         {
+            _machineContextVersion++;
             _controllerConnectionLost = true;
             RefreshConnectionDisplay();
         }
@@ -254,6 +263,8 @@ namespace MotionControl.Host.Wpf.Tasks
         private void RefreshCatalog_Click(object sender, RoutedEventArgs e) { RefreshCatalog(); }
         /// <summary>打开实际展示设备运行状态的总览页。</summary>
         private void EquipmentOverview_Click(object sender, RoutedEventArgs e) { _host.ShowEquipmentOverview(); }
+        /// <summary>进入同一 Runtime 的设备准备页面，不重建任务会话。</summary>
+        private void EquipmentPreparation_Click(object sender, RoutedEventArgs e) { _host.ShowEquipmentPreparation(); }
         /// <summary>打开实际展示工位步骤的流程状态页。</summary>
         private void FlowStatus_Click(object sender, RoutedEventArgs e) { _host.ShowFlowStatus(); }
 
@@ -266,11 +277,42 @@ namespace MotionControl.Host.Wpf.Tasks
                 return;
             }
 
-            await RunCommandAsync(async () =>
+            await RunCommandAsync(LoadTaskSessionAsync, "任务装载失败", "任务配置检查建议").ConfigureAwait(true);
+        }
+
+        /// <summary>设备准备页复用当前正式任务会话，避免额外执行器争用控制卡。</summary>
+        internal async Task EnsureTaskSessionAsync()
+        {
+            if (_session != null) return;
+            if (_commandInProgress) throw new InvalidOperationException("任务命令正在执行，请稍后再进入设备准备。");
+            _commandInProgress = true;
+            try { await LoadTaskSessionAsync(); }
+            finally { _commandInProgress = false; UpdateCommandAvailability(); }
+        }
+
+        /// <summary>读取运行配置并建立同一设备会话；仅装配，不发送轴或 IO 命令。</summary>
+        private async Task LoadTaskSessionAsync()
+        {
+            if (!IsControllerConnected() || _logicalIo == null || _variables == null)
+                throw new InvalidOperationException("请先连接控制器，再读取设备准备配置。");
+            if (_session != null) return;
             {
                 var runtime = _runtime;
+                var motionCards = _motionCards;
+                var logicalIo = _logicalIo;
+                var variables = _variables;
+                long contextVersion = _machineContextVersion;
                 TaskMonitorSession loaded = await Task.Run(() => HostTaskSessionLoader.Load(
-                    _store, _machineId, _motionCards, _logicalIo, _variables, runtime)).ConfigureAwait(true);
+                    _store, _machineId, motionCards, logicalIo, variables, runtime)).ConfigureAwait(true);
+
+                if (contextVersion != _machineContextVersion || !ReferenceEquals(runtime, _runtime)
+                    || !ReferenceEquals(motionCards, _motionCards) || !ReferenceEquals(logicalIo, _logicalIo)
+                    || !ReferenceEquals(variables, _variables) || !IsControllerConnected())
+                {
+                    // 旧装载只归还自己取得的控制权，不走会恢复当前 Runtime 准备定义的公共关闭入口。
+                    await loaded.Machine.CloseAsync().ConfigureAwait(true);
+                    throw new InvalidOperationException("设备连接在任务读取期间发生变化，本次读取已取消；请在当前连接中重新读取任务。");
+                }
 
                 _session = loaded;
                 _monitor = new TaskMonitorView(loaded);
@@ -288,7 +330,22 @@ namespace MotionControl.Host.Wpf.Tasks
                 UpdateRunStatus();
                 UpdateCommandAvailability();
                 _host.RefreshMachineStateDisplay();
-            }, "任务装载失败", "任务配置检查建议").ConfigureAwait(true);
+            }
+        }
+
+        /// <summary>顶部报警复位复用任务侧条件核对，不绕过任务故障锁存。</summary>
+        internal async Task ResetFromHostAsync()
+        {
+            if (_commandInProgress) throw new InvalidOperationException("任务命令正在执行，请等待完成。");
+            _commandInProgress = true;
+            try
+            {
+                RequireTaskSession();
+                await _session.Machine.ValidateResetPrerequisitesAsync();
+                if (_runtime.State != MachineRunState.Ready) await _runtime.ResetAsync(CancellationToken.None);
+                await _session.Machine.ResetAsync();
+            }
+            finally { _commandInProgress = false; UpdateCommandAvailability(); }
         }
 
         /// <summary>复位运动卡、Runtime 报警与任务整机状态；复位后仍需操作员按启动。</summary>
@@ -312,7 +369,11 @@ namespace MotionControl.Host.Wpf.Tasks
             {
                 RequireTaskSession();
                 await _runtime.BeginTaskEngineRunAsync(CancellationToken.None).ConfigureAwait(true);
-                try { _session.Machine.Start(); }
+                try
+                {
+                    _session.Machine.Start();
+                    _runtime.ConfirmTaskEngineProductionStarted();
+                }
                 catch (Exception startError)
                 {
                     await _runtime.FinishTaskEngineRunAsync(true, startError).ConfigureAwait(true);
@@ -355,11 +416,12 @@ namespace MotionControl.Host.Wpf.Tasks
             if (session == null) return;
             TaskMachineState state = session.Machine.GetSnapshot().State;
             if (state == TaskMachineState.Running || state == TaskMachineState.Pausing
-                || _runtime?.State == MachineRunState.Running || _runtime?.State == MachineRunState.Pausing)
+                || _runtime?.State == MachineRunState.Running || _runtime?.State == MachineRunState.Pausing || _runtime?.IsPreparing == true)
                 throw new InvalidOperationException("任务仍在运行或等待停轴；先在任务运行页暂停或停止并确认安全状态。");
 
             _stateTimer.Stop();
             await session.Machine.CloseAsync().ConfigureAwait(true);
+            _runtime?.ConfigurePreparations(_equipmentPreparations);
             _session = null;
             _monitor = null;
             _monitorContent.Content = null;
@@ -473,14 +535,14 @@ namespace MotionControl.Host.Wpf.Tasks
             bool connected = IsControllerConnected()
                 && _logicalIo != null && _variables != null;
             TaskMachineState? taskState = _session == null ? (TaskMachineState?)null : _session.Machine.GetSnapshot().State;
-            _loadButton.IsEnabled = connected && _session == null && !_commandInProgress;
+            _loadButton.IsEnabled = connected && _session == null && !_commandInProgress && !_runtime.IsPreparing;
             _resetButton.IsEnabled = connected && taskState.HasValue && !_commandInProgress
                 && taskState != TaskMachineState.Running && taskState != TaskMachineState.Pausing
-                && _runtime.State != MachineRunState.Running && _runtime.State != MachineRunState.Pausing;
+                && _runtime.State != MachineRunState.Running && _runtime.State != MachineRunState.Pausing && !_runtime.IsPreparing;
             _startButton.IsEnabled = connected && taskState == TaskMachineState.Ready && !_commandInProgress
-                && _runtime.State == MachineRunState.Ready;
+                && _runtime.State == MachineRunState.Ready && _runtime.IsPrepared;
             _pauseButton.IsEnabled = taskState == TaskMachineState.Running && !_commandInProgress;
-            _stopButton.IsEnabled = _session != null && !_commandInProgress;
+            _stopButton.IsEnabled = _session != null && !_commandInProgress && !_runtime.IsPreparing;
             UpdateNextAction(connected, taskState);
         }
 
@@ -595,6 +657,10 @@ namespace MotionControl.Host.Wpf.Tasks
                 _nextAction.Text = PageText("正在处理，请稍候。", "Processing, please wait.");
             else if (!connected)
                 _nextAction.Text = string.Empty;
+            else if (_runtime.IsPreparing)
+                _nextAction.Text = PageText("设备回零正在执行；可在设备准备页查看进度或停止。", "Preparation is running. View progress or stop on the preparation page.");
+            else if (!_runtime.IsPrepared)
+                _nextAction.Text = PageText("先在设备准备页完成工位回零，再复位并启动生产。", "Prepare the stations before resetting and starting production.");
             else if (!state.HasValue)
                 _nextAction.Text = _runtime.State == MachineRunState.Running || _runtime.State == MachineRunState.Pausing
                     ? PageText("设备正在运行或停轴，请先确认停稳，再读取任务。", "Wait for the equipment to stop before loading tasks.")

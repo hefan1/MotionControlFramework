@@ -135,9 +135,12 @@ namespace MotionControl.Host.Wpf.Operation
                 : T(_isCardConnected && noNamedAxes
                     ? "先配置设备轴映射再进行手动调试"
                     : NextAction(snapshot));
+            bool preparationRequired = _runtime != null && !_runtime.IsPreparing && !_runtime.IsPrepared
+                && displayState != MachineRunState.Running && displayState != MachineRunState.Pausing;
             bool axisActionRequired = startBlocked
                 && _automaticStartBlockReason.IndexOf("逻辑轴", StringComparison.OrdinalIgnoreCase) >= 0;
-            AutomaticStartActionButton.Visibility = axisActionRequired ? Visibility.Visible : Visibility.Collapsed;
+            AutomaticStartActionButton.Content = T(preparationRequired ? "设备准备" : "打开轴手动");
+            AutomaticStartActionButton.Visibility = preparationRequired || axisActionRequired ? Visibility.Visible : Visibility.Collapsed;
             ConnectionStatusPanel.Visibility = _preview != null || (_isCardConnected && !noNamedAxes)
                 ? Visibility.Collapsed : Visibility.Visible;
             ConnectionStateText.Text = T(_isCardConnected ? "设备轴映射未完成" : "控制卡未连接");
@@ -218,6 +221,7 @@ namespace MotionControl.Host.Wpf.Operation
         /// <summary>依据整机状态和自动工位配置提示可执行的下一步，不从动作文字猜测复位或回零结果。</summary>
         private static string NextAction(OperationSnapshot snapshot)
         {
+            if (snapshot.State == MachineRunState.Preparing) return "正在准备设备，完成后等待启动；需要中断时按停止";
             if (!snapshot.HasRuntime) return "连接后查看就绪条件，启停使用顶部按钮";
             if (snapshot.Stations.Count == 0)
             {
@@ -302,9 +306,10 @@ namespace MotionControl.Host.Wpf.Operation
         /// <summary>打开真实任务运行页，不自动读取任务或启动设备。</summary>
         private void OpenTaskRun_Click(object sender, RoutedEventArgs e)
         { NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("任务接入状态")); }
-        /// <summary>从启动拦截提示直接打开轴手动页，便于完成回零或处理轴状态。</summary>
+        /// <summary>从启动拦截提示进入设备准备；其他轴问题仍使用原有轴手动页面。</summary>
         private void OpenAxisManual_Click(object sender, RoutedEventArgs e)
-        { NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("轴手动")); }
+        { NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs(
+            _runtime != null && !_runtime.IsPrepared ? "设备准备" : "轴手动")); }
         /// <summary>跳转到轴映射页查看控制卡连接参数和失败原因，不执行连接或运动。</summary>
         private void ConnectionSettings_Click(object sender, RoutedEventArgs e)
         { NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("轴映射配置")); }
