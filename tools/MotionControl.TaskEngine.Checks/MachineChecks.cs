@@ -36,6 +36,9 @@ namespace MotionControl.TaskEngine.Checks
                 { "节点超时与区域退出恢复", TimeoutAndExitRecovery },
                 { "父步骤超时不重放及规模超限终止", ParentTimeoutAndExpansionLimit },
                 { "外部停机条件锁存", StopAlarm },
+                { "暂停停轴期间并发报警优先锁存", PauseFaultRace },
+                { "日志写入失败和取消的结算窗口禁止复位", JournalFailureSettlementBlocksReset },
+                { "在途确认与输出异常隔离后才允许暂停", PauseWaitsForDeviceOperations },
                 { "请求提前撤销不重做动作", EarlyRequestWithdrawal },
                 { "整机所有权及终止关闭", OwnershipAndAbort }
             };

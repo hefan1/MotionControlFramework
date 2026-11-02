@@ -107,6 +107,35 @@ namespace MotionControl.TaskEngine.Checks
             machine.Start(); await Until(() => State(machine, "loop").CompletedCycles > cycles, "复位启动后未恢复。");
         }
 
+        /// <summary>停轴尚未完成时插入报警，验证暂停和故障并发完成后不能停留在暂停状态。</summary>
+        private static async Task PauseFaultRace()
+        {
+            var device = Device();
+            var delay = new DelayNode { Id = "wait", Name = "等待", Milliseconds = 30000 };
+            var machine = Machine(device, new[] { TaskDefinition("Wait", delay) }, Station("wait", "Wait", StationTaskMode.Once));
+            machine.Reset(); machine.Start();
+            await Until(() => State(machine, "wait").Run != null, "任务未开始。");
+
+            // 通过内部登记插入可控的停轴等待，复现真实设备停轴尚未完成的竞态。
+            var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            var stations = (System.Collections.IEnumerable)typeof(TaskMachineController).GetField("_stations", flags).GetValue(machine);
+            object station = stations.Cast<object>().Single();
+            var run = (TaskRun)station.GetType().GetProperty("CurrentRun", flags).GetValue(station);
+            var stopped = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var registration = (IDisposable)typeof(TaskRun).GetMethod("RegisterPauseStopAction", flags)
+                .Invoke(run, new object[] { new Func<Task>(() => stopped.Task) });
+            try
+            {
+                Task pause = machine.PauseAsync();
+                Task alarm = machine.SetStopAlarmAsync("RACE", "暂停中出现停机报警", true);
+                CheckAssert.True(!pause.IsCompleted && !alarm.IsCompleted, "未等待停轴即完成暂停或报警处理。");
+                stopped.TrySetResult(true);
+                await Wait(Task.WhenAll(pause, alarm));
+                CheckAssert.True(machine.GetSnapshot().State == TaskMachineState.Faulted, "并发报警被暂停状态覆盖。");
+            }
+            finally { stopped.TrySetResult(true); registration.Dispose(); }
+        }
+
         /// <summary>整机持有设备时禁止混用入口，终止等待动作停止，范围保留待确认，关闭后才归还所有权。</summary>
         private static async Task OwnershipAndAbort()
         {

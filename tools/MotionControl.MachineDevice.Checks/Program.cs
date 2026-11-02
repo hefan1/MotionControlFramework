@@ -47,6 +47,10 @@ namespace MotionControl.MachineDevice.Checks
             Run("设备互锁有条件时拒绝执行", InterlockRejectsConfiguredConditions, ref failures);
             Run("进入与退出互锁在任务接管前拒绝", InterlocksRejectedBeforeTaskControl, ref failures);
             Run("隔离资源阻止关闭会话且恢复后可重试", BlockedResourcesPreventClose, ref failures);
+            Run("资源记录持久化、异常重启与写失败拦截", ResourceJournalChecks, ref failures);
+            Run("安全关闭后清理资源记录，失败保留控制权", ResourceJournalCloseChecks, ref failures);
+            Run("输出写入或回读失败隔离资源", FailedOutputIsIsolated, ref failures);
+            Run("工位输出故障先隔离父范围再进入复位等待", StationOutputFaultBlocksBeforeRecovery, ref failures);
             Run("停止先于状态读取且调用令牌取消仍发出", StopBeforeStatusRead, ref failures);
             Run("动作接收失败或空凭证立即隔离", BeginFailureIsIsolated, ref failures);
             Run("停止失败隔离临时轴与父范围", EndFailureIsIsolated, ref failures);
@@ -56,7 +60,7 @@ namespace MotionControl.MachineDevice.Checks
             Run("设备凭证跨设备及迟到调用保护", DeviceMoveTokenOwnership, ref failures);
             Run("命令前拒绝与命令后异常严格区分", PreflightDoesNotMaskStartedMotion, ref failures);
 
-            Console.WriteLine("真机任务设备检查：共 24 组，失败 " + failures + "。未连接控制器。");
+            Console.WriteLine("真机任务设备检查：共 28 组，失败 " + failures + "。未连接控制器。");
             return failures == 0 ? 0 : 1;
         }
 
@@ -503,7 +507,7 @@ namespace MotionControl.MachineDevice.Checks
             FakeLogicalIo io,
             out DeviceVariableStore variables,
             out MachineRuntime runtime,
-            bool withStationFlow = false)
+            bool withStationFlow = false, TaskResourceJournal journal = null)
         {
             TaskResourceCatalog catalog = new TaskResourceCatalog(
                 new[] { new TaskAxisInfo("X", "CardA", "mm", -100, 100) },
@@ -534,7 +538,7 @@ namespace MotionControl.MachineDevice.Checks
                 ? new IStationFlow[] { new WaitingStationFlow() }
                 : new IStationFlow[0];
             runtime = new MachineRuntime(group, flows, new MachineAlarmService(), new FakeSafetyStatus());
-            return new MachineTaskDevice(catalog, group, io, variables, runtime);
+            return new MachineTaskDevice(catalog, group, io, variables, runtime, journal);
         }
 
         /// <summary>检查使用的固定速度曲线。</summary>
@@ -756,6 +760,14 @@ namespace MotionControl.MachineDevice.Checks
         /// <summary>可控的逻辑 IO 替身，可注入读取失败。</summary>
         private sealed class FakeLogicalIo : ILogicalIo
         {
+            /// <summary>注入输出写入错误，模拟指令结果不确定。</summary>
+            internal Exception WriteError { get; set; }
+            /// <summary>注入输出反馈错误。</summary>
+            internal Exception OutputReadError { get; set; }
+            /// <summary>模拟驱动接收命令后的实际输出状态。</summary>
+            internal bool OutputValue { get; private set; }
+            /// <summary>记录驱动收到的输出命令次数。</summary>
+            internal int OutputWrites;
             /// <summary>读取 DI 时抛出的异常；为空表示正常返回假值。</summary>
             internal Exception ReadError { get; set; }
 
@@ -780,12 +792,16 @@ namespace MotionControl.MachineDevice.Checks
             /// <summary>读取 DO，固定返回假值。</summary>
             public Task<bool> ReadOutputAsync(string outputName, CancellationToken cancellationToken)
             {
-                return Task.FromResult(false);
+                if (OutputReadError != null) throw OutputReadError;
+                return Task.FromResult(OutputValue);
             }
 
             /// <summary>写入 DO，检查中不保存状态。</summary>
             public Task WriteOutputAsync(string outputName, bool value, CancellationToken cancellationToken)
             {
+                Interlocked.Increment(ref OutputWrites);
+                OutputValue = value;
+                if (WriteError != null) throw WriteError;
                 return Task.CompletedTask;
             }
         }

@@ -417,6 +417,20 @@ namespace MotionControl.Framework.Runtime.Machine
                 catch (Exception disconnectError)
                 {
                     SetStatus(MachineRunState.Alarmed, disconnectError);
+                    // 断卡失败后仍有卡连接时，恢复现场按钮轮询；重新建立输入基线，
+                    // 不把断卡期间已经有效的电平误当成新的按钮上升沿。
+                    if (_motionCards.Cards.Any(card => card.IsConnected))
+                    {
+                        try
+                        {
+                            StartControlInputMonitor();
+                        }
+                        catch (Exception monitorError)
+                        {
+                            throw new AggregateException("断卡失败，且现场按钮监控恢复失败，请检查现场。",
+                                disconnectError, monitorError);
+                        }
+                    }
                     throw;
                 }
             }

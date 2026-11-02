@@ -100,6 +100,8 @@ namespace MotionControl.Host.Wpf.Tasks
         private bool _faultStatusSyncing;
         /// <summary>防止多个任务按钮同时操作设备。</summary>
         private bool _commandInProgress;
+        /// <summary>Host 恢复记录的启动保护检查，仅查询，不改变记录。</summary>
+        private readonly Func<string> _recoveryStartBlockReason;
         /// <summary>连接异常丢失后须重新建立设备上下文，不能把旧任务监控当作实时状态。</summary>
         private bool _controllerConnectionLost;
         /// <summary>当前是否已装载一个整机任务会话。</summary>
@@ -114,6 +116,7 @@ namespace MotionControl.Host.Wpf.Tasks
             get { return IsControllerConnected() && _session != null && !_commandInProgress
                 && _runtime != null && _runtime.State == MachineRunState.Ready && _runtime.IsPrepared
                 && string.IsNullOrWhiteSpace(_runtime.RecoveryBlockReason)
+                && string.IsNullOrWhiteSpace(_recoveryStartBlockReason?.Invoke())
                 && _session.Machine.GetSnapshot().State == TaskMachineState.Ready; }
         }
 
@@ -141,6 +144,8 @@ namespace MotionControl.Host.Wpf.Tasks
         {
             if (!string.IsNullOrWhiteSpace(_runtime?.RecoveryBlockReason))
                 return "设备恢复信息未确认，不能准备或启动：" + _runtime.RecoveryBlockReason;
+            string recoveryReason = _recoveryStartBlockReason?.Invoke();
+            if (!string.IsNullOrWhiteSpace(recoveryReason)) return recoveryReason;
             if (_session == null) return "请先进入任务运行页读取当前任务。";
             if (_commandInProgress) return "任务命令正在执行，请稍候。";
             if (_runtime != null && !_runtime.IsPrepared) return "请先在设备准备页完成工位回零。";
@@ -151,9 +156,9 @@ namespace MotionControl.Host.Wpf.Tasks
         }
 
         /// <summary>创建任务运行入口；不在此处连接控制卡或启动任务。</summary>
-        internal TaskMonitorLauncher(MachineConfigurationStore store, string machineId, MainWindow host)
+        internal TaskMonitorLauncher(MachineConfigurationStore store, string machineId, MainWindow host, Func<string> recoveryStartBlockReason = null)
         {
-            _store = store; _machineId = machineId; _host = host;
+            _store = store; _machineId = machineId; _host = host; _recoveryStartBlockReason = recoveryStartBlockReason;
             var root = new Grid { Margin = new Thickness(14, 8, 14, 12), Background = System.Windows.Media.Brushes.Transparent };
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -442,6 +447,13 @@ namespace MotionControl.Host.Wpf.Tasks
         {
             RequireTaskSession();
             await _session.Machine.PauseAsync().ConfigureAwait(true);
+            TaskMachineSnapshot snapshot = _session.Machine.GetSnapshot();
+            if (snapshot.State == TaskMachineState.Faulted)
+            {
+                string message = snapshot.Faults.LastOrDefault()?.Message ?? "暂停期间任务发生故障。";
+                await _runtime.FinishTaskEngineRunAsync(true, new InvalidOperationException(message)).ConfigureAwait(true);
+                throw new InvalidOperationException(message);
+            }
             await _runtime.FinishTaskEngineRunAsync(false, null).ConfigureAwait(true);
             SetSuccessText("任务执行已暂停");
         }
@@ -541,7 +553,8 @@ namespace MotionControl.Host.Wpf.Tasks
             RefreshAlarms();
             TaskMachineSnapshot snapshot = _session.Machine.GetSnapshot();
             if (!_faultStatusSyncing && snapshot.State == TaskMachineState.Faulted
-                && (_runtime?.State == MachineRunState.Running || _runtime?.State == MachineRunState.Pausing))
+                && (_runtime?.State == MachineRunState.Running || _runtime?.State == MachineRunState.Pausing
+                    || _runtime?.State == MachineRunState.Paused))
             {
                 _faultStatusSyncing = true;
                 try
@@ -585,6 +598,13 @@ namespace MotionControl.Host.Wpf.Tasks
                 return;
             }
 
+            if (snapshot.State == TaskMachineState.Ready
+                && !string.IsNullOrWhiteSpace(_recoveryStartBlockReason?.Invoke()))
+            {
+                _runStatus.Text = PageText("任务暂不能启动，请查看下方处理提示。", "Task start is blocked; see the guidance below.");
+                return;
+            }
+
             _runStatus.Text = string.Format(GetText("任务执行运行状态"),
                 _monitor?.T(snapshot.State.ToString()) ?? snapshot.State.ToString(),
                 GetText(MainWindow.GetMachineStateResourceKey(_runtime?.State ?? MachineRunState.Disconnected)));
@@ -613,7 +633,8 @@ namespace MotionControl.Host.Wpf.Tasks
                 && _runtime.State != MachineRunState.Running && _runtime.State != MachineRunState.Pausing && !_runtime.IsPreparing;
             _startButton.IsEnabled = connected && taskState == TaskMachineState.Ready && !_commandInProgress
                 && _runtime.State == MachineRunState.Ready && _runtime.IsPrepared
-                && string.IsNullOrWhiteSpace(_runtime.RecoveryBlockReason);
+                && string.IsNullOrWhiteSpace(_runtime.RecoveryBlockReason)
+                && string.IsNullOrWhiteSpace(_recoveryStartBlockReason?.Invoke());
             _pauseButton.IsEnabled = taskState == TaskMachineState.Running && !_commandInProgress;
             _stopButton.IsEnabled = _session != null && !_commandInProgress && !_runtime.IsPreparing;
             UpdateNextAction(connected, taskState);
@@ -734,6 +755,9 @@ namespace MotionControl.Host.Wpf.Tasks
             else if (!string.IsNullOrWhiteSpace(_runtime.RecoveryBlockReason))
                 _nextAction.Text = PageText("设备恢复信息未确认，不能准备或启动：", "Recovery information is not verified; preparation and start are blocked: ")
                     + _runtime.RecoveryBlockReason;
+            else if (_runtime.State != MachineRunState.Running && _runtime.State != MachineRunState.Pausing
+                && !string.IsNullOrWhiteSpace(_recoveryStartBlockReason?.Invoke()))
+                _nextAction.Text = _recoveryStartBlockReason();
             else if (_runtime.IsPreparing)
                 _nextAction.Text = PageText("设备回零正在执行；可在设备准备页查看进度或停止。", "Preparation is running. View progress or stop on the preparation page.");
             else if (!_runtime.IsPrepared)

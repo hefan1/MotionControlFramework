@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using MotionControl.TaskEngine.Definitions;
 
 namespace MotionControl.TaskEngine.Resources
@@ -27,6 +28,10 @@ namespace MotionControl.TaskEngine.Resources
         internal TaskResourceState State { get; set; }
         /// <summary>只在协调器锁内修改的隔离原因。</summary>
         internal string Detail { get; set; }
+        /// <summary>后台写入资源记录；仅在协调器锁内访问。</summary>
+        internal Task JournalWrite { get; set; }
+        /// <summary>排队期间已取消，等待后台写入完成后才能安全移除。</summary>
+        internal bool ReleaseRequested { get; set; }
         /// <summary>启动时冻结的退出互锁，用于异常后的重新确认。</summary>
         internal TaskInterlock ExitInterlock { get; }
         /// <summary>兼容旧定义的退出条件。</summary>

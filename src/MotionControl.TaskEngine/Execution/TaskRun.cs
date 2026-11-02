@@ -12,6 +12,8 @@ namespace MotionControl.TaskEngine.Execution
     {
         /// <summary>保护控制状态和内存动作提交。</summary>
         private readonly object _sync = new object();
+        /// <summary>串行提交同次运行的步骤动作；设备调用不能持有运行状态锁。</summary>
+        private readonly SemaphoreSlim _stepGate = new SemaphoreSlim(1, 1);
         /// <summary>仅统计实际运行的单调时钟，暂停时停止。</summary>
         private readonly Stopwatch _clock = Stopwatch.StartNew();
         /// <summary>本次运行的取消源，收尾后释放。</summary>
@@ -26,6 +28,14 @@ namespace MotionControl.TaskEngine.Execution
         private TaskCompletionSource<bool> _pauseStopCompletion = NewSignal();
         /// <summary>本轮暂停是否已开始执行停止动作。</summary>
         private bool _pauseStopsStarted;
+        /// <summary>已经进入运行许可、但仍在设备操作或错误隔离收尾中的数量。</summary>
+        private int _inFlightOperations;
+        /// <summary>最后一项在途设备操作或错误隔离结束后完成；替换时持有运行锁。</summary>
+        private TaskCompletionSource<bool> _inFlightSettled;
+        /// <summary>当前在途批次中迟到停轴回调的错误；最后一个操作结束时上报。</summary>
+        private Exception _inFlightStopFailure;
+        /// <summary>本会话停轴失败或无法确认时锁存，不能因任务完成或异常结束直接复位。</summary>
+        private bool _pauseStopUnconfirmed;
         /// <summary>终态结果；异步唤醒调用方，避免在运行锁内回调。</summary>
         private readonly TaskCompletionSource<TaskRunSnapshot> _completion =
             new TaskCompletionSource<TaskRunSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -55,6 +65,22 @@ namespace MotionControl.TaskEngine.Execution
         internal double ActiveMilliseconds { get { lock (_sync) return _clock.Elapsed.TotalMilliseconds; } }
         /// <summary>读取当前运行是否处于暂停门控内。</summary>
         internal bool IsPaused { get { lock (_sync) return _state == TaskRunState.Paused; } }
+        /// <summary>暂停时仍有动作、错误隔离或受控停止未完成，不能复位或释放安全记录。</summary>
+        internal bool HasUnsettledPauseOperations
+        {
+            get
+            {
+                lock (_sync)
+                    return _pauseStopUnconfirmed || _inFlightOperations != 0
+                        || (_state == TaskRunState.Paused && _pauseStopCompletion.Task.Status != TaskStatus.RanToCompletion);
+            }
+        }
+
+        /// <summary>锁存本会话未确认状态；只有结束会话并重新核实才能继续。</summary>
+        internal void MarkUnconfirmedPauseFailure()
+        {
+            lock (_sync) _pauseStopUnconfirmed = true;
+        }
 
         /// <summary>创建独立控制状态，不触碰设备。</summary>
         internal TaskRun(string taskId, int revision)
@@ -86,11 +112,13 @@ namespace MotionControl.TaskEngine.Execution
         {
             Func<Task>[] actions = null;
             Task completion;
+            Task settled;
             lock (_sync)
             {
                 if (_state == TaskRunState.Running) BeginPause();
                 if (_state != TaskRunState.Paused) return Task.CompletedTask;
                 completion = _pauseStopCompletion.Task;
+                settled = _inFlightOperations == 0 ? Task.CompletedTask : _inFlightSettled.Task;
                 if (!_pauseStopsStarted)
                 {
                     _pauseStopsStarted = true;
@@ -100,18 +128,78 @@ namespace MotionControl.TaskEngine.Execution
             }
 
             if (actions != null && actions.Length > 0) _ = CompletePauseStopsAsync(actions);
-            return completion;
+            return Task.WhenAll(completion, settled);
+        }
+
+        /// <summary>登记在运行许可内开始、但可能在锁外完成的操作；暂停需等待它及错误隔离结束。</summary>
+        internal IDisposable RegisterInFlightOperation()
+        {
+            lock (_sync)
+            {
+                if (_inFlightOperations++ == 0) { _inFlightSettled = NewSignal(); _inFlightStopFailure = null; }
+                return new InFlightRegistration(this);
+            }
+        }
+
+        /// <summary>完成一项登记；最后一项结束时通知当前暂停周期。</summary>
+        private void CompleteInFlightOperation()
+        {
+            lock (_sync)
+            {
+                if (_inFlightOperations <= 0) throw new InvalidOperationException("在途操作登记不匹配。");
+                if (--_inFlightOperations == 0)
+                {
+                    if (_inFlightStopFailure == null) _inFlightSettled.TrySetResult(true);
+                    else _inFlightSettled.TrySetException(_inFlightStopFailure);
+                }
+            }
+        }
+
+        /// <summary>登记凭证只允许完成一次，可跨 await 保留。</summary>
+        private sealed class InFlightRegistration : IDisposable
+        {
+            /// <summary>登记所属运行；原子清空避免重复结束。</summary>
+            private TaskRun _run;
+            /// <summary>保存所属运行。</summary>
+            internal InFlightRegistration(TaskRun run) { _run = run; }
+            /// <summary>通知所属运行本项已完全收尾。</summary>
+            public void Dispose() { Interlocked.Exchange(ref _run, null)?.CompleteInFlightOperation(); }
         }
 
         /// <summary>为当前轴动作登记暂停时的受控停止；节点离开动作后释放登记。</summary>
         internal IDisposable RegisterPauseStopAction(Func<Task> stopAction)
         {
             if (stopAction == null) throw new ArgumentNullException(nameof(stopAction));
+            IDisposable late = null;
             lock (_sync)
             {
-                _pauseStopActions.Add(stopAction);
-                return new PauseStopRegistration(this, stopAction);
+                if (_state == TaskRunState.Paused)
+                    late = RegisterInFlightOperation();
+                else _pauseStopActions.Add(stopAction);
             }
+            // 暂停已经开始时，轴动作可能刚刚下发并迟到登记；立即停止并让在途屏障等待结果。
+            if (late != null) _ = CompleteLatePauseStopAsync(stopAction, late);
+            return new PauseStopRegistration(this, stopAction);
+        }
+
+        /// <summary>暂停期间迟到的停轴动作立即启动；失败随在途屏障传播，不能假定停稳。</summary>
+        private async Task CompleteLatePauseStopAsync(Func<Task> stopAction, IDisposable registration)
+        {
+            try
+            {
+                Task stop = stopAction();
+                if (stop == null) throw new InvalidOperationException("停轴回调未返回收尾任务。");
+                await stop.ConfigureAwait(false);
+            }
+            catch (Exception error)
+            {
+                lock (_sync)
+                {
+                    _inFlightStopFailure = _inFlightStopFailure ?? error;
+                    _pauseStopUnconfirmed = true;
+                }
+            }
+            finally { registration.Dispose(); }
         }
 
         /// <summary>在受控停止完成后等待操作员恢复，期间任务活动时钟保持冻结。</summary>
@@ -167,18 +255,29 @@ namespace MotionControl.TaskEngine.Execution
             }
         }
 
-        /// <summary>仅在运行时提交一个短小的内存动作；暂停等待和取消均不占用锁。</summary>
+        /// <summary>在运行许可下串行提交步骤；登记后在状态锁外调用设备，暂停等待在途操作收尾。</summary>
         internal async Task StepAsync(Action action, CancellationToken token)
         {
             while (true)
             {
-                Task resume;
-                lock (_sync)
+                Task resume = null;
+                IDisposable active = null;
+                await _stepGate.WaitAsync(token).ConfigureAwait(false);
+                try
                 {
-                    token.ThrowIfCancellationRequested();
-                    if (_state != TaskRunState.Paused) { action(); return; }
-                    resume = _resume.Task;
+                    lock (_sync)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        if (_state != TaskRunState.Paused) active = RegisterInFlightOperation();
+                        else resume = _resume.Task;
+                    }
+                    if (active != null)
+                    {
+                        action();
+                        return;
+                    }
                 }
+                finally { active?.Dispose(); _stepGate.Release(); }
                 var cancelled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 using (token.Register(() => cancelled.TrySetCanceled()))
                     await Task.WhenAny(resume, cancelled.Task).ConfigureAwait(false);
@@ -224,6 +323,7 @@ namespace MotionControl.TaskEngine.Execution
             }
             catch (Exception error)
             {
+                lock (_sync) _pauseStopUnconfirmed = true;
                 _pauseStopCompletion.TrySetException(error);
             }
         }

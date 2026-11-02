@@ -168,10 +168,15 @@ namespace MotionControl.Host.Wpf
         public async Task DisconnectAsync(CancellationToken cancellationToken)
         {
             if (_card == null) return;
-            foreach (IAxis axis in _card.Axes)
+            // Runtime 可能已经在同一断卡流程中安全断开底层卡；此时只清理
+            // Host 的连接上下文，不能再向已断开的控制器读取轴状态。
+            if (_card.IsConnected)
             {
-                AxisStatus status = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
-                if (status.Moving) throw new InvalidOperationException("逻辑轴 '" + axis.Name + "' 仍在运动，不能断开连接。");
+                foreach (IAxis axis in _card.Axes)
+                {
+                    AxisStatus status = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
+                    if (status.Moving) throw new InvalidOperationException("逻辑轴 '" + axis.Name + "' 仍在运动，不能断开连接。");
+                }
             }
             await _card.DisconnectAsync(cancellationToken).ConfigureAwait(false);
             _card = null;

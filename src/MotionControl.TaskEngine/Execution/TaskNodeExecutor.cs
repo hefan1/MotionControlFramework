@@ -58,6 +58,7 @@ namespace MotionControl.TaskEngine.Execution
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
                     if (registered) _run.Report(scope, TaskNodeState.Cancelled, "已取消，节点清理完成。");
+                    scope.CompleteFailureHandoff();
                     throw;
                 }
                 catch (Exception error)
@@ -69,8 +70,24 @@ namespace MotionControl.TaskEngine.Execution
                         registered = true;
                     }
                     if (registered) _run.Report(scope, TaskNodeState.Failed, failure.Message);
-                    if (_station == null || !registered || _run.ExpansionLimitHit) throw failure;
-                    await _station.RecoverAsync(scope, failure).ConfigureAwait(false);
+                    if (_station == null)
+                    {
+                        scope.CompleteFailureHandoff();
+                        throw failure;
+                    }
+                    if (!registered || _run.ExpansionLimitHit)
+                    {
+                        // 规模上限等不可恢复故障必须先锁存工位，再放行可能并发的暂停屏障。
+                        Task failedStop;
+                        try { failedStop = _station.Machine.ReportWorkerFailureAsync(_station, failure); }
+                        finally { scope.CompleteFailureHandoff(); }
+                        await failedStop.ConfigureAwait(false);
+                        throw failure;
+                    }
+                    Task recovery;
+                    try { recovery = _station.RecoverAsync(scope, failure); }
+                    finally { scope.CompleteFailureHandoff(); }
+                    await recovery.ConfigureAwait(false);
                     _station.Machine.MarkNodeRecovered(_station);
                 }
             }

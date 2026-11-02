@@ -87,6 +87,8 @@ namespace MotionControl.Host.Wpf
         private readonly HashSet<AlarmHistoryJournal> _closingAlarmHistories = new HashSet<AlarmHistoryJournal>();
         /// <summary>应用退出时由退出路径统一等待并报告历史收尾结果。</summary>
         private bool _exitingApplication;
+        /// <summary>关闭窗口时正在等待控制卡安全断开，避免重复提交关窗请求。</summary>
+        private bool _shutdownDisconnectInProgress;
 
         /// <summary>启动时发现的恢复限制或恢复文件问题，供主窗口显示。</summary>
         private string _recoveryWarningMessage;
@@ -231,6 +233,7 @@ namespace MotionControl.Host.Wpf
                 _configurationStore,
                 MachineId);
             _mainWindow = new MainWindow();
+            _mainWindow.SetRecoveryStartBlockReason(() => _machineRecoveryCoordinator.GetAutomaticStartBlockReason(_machineRuntime));
             _mainWindow.SetRecoveryEvidenceDirectory(_configurationStore.GetMachineDirectory(MachineId));
             if (simulationRoot != null) _mainWindow.SetSimulationConfiguration(simulationRoot);
             _mainWindow.Loaded += MainWindow_Loaded;
@@ -241,7 +244,8 @@ namespace MotionControl.Host.Wpf
             _mainWindow.SetSafetyInterlockConfigurationPage(_safetyInterlockPage);
             _mainWindow.SetAlarmCatalogConfigurationPage(_alarmCatalogPage);
             _mainWindow.SetDeviceVariablePage(_deviceVariablePage);
-            _taskMonitorLauncher = new Tasks.TaskMonitorLauncher(_configurationStore, MachineId, _mainWindow);
+            _taskMonitorLauncher = new Tasks.TaskMonitorLauncher(_configurationStore, MachineId, _mainWindow,
+                () => _machineRecoveryCoordinator.GetAutomaticStartBlockReason(_machineRuntime));
             _mainWindow.SetTaskMonitorPage(_taskMonitorLauncher);
             _taskConfigurationPage = new MotionControl.TaskEngine.Wpf.Editing.TaskConfigurationView(
                 _configurationStore,
@@ -460,6 +464,12 @@ namespace MotionControl.Host.Wpf
         /// <summary>连接状态变化后同步整机运行时、连接状态和映射对应的手动调试页。</summary>
         private async void AxisMappingPage_CardConnectionChanged(object sender, EventArgs e)
         {
+            await SynchronizeCardConnectionAsync();
+        }
+
+        /// <summary>同步连接状态；关窗断卡也须等待页面与运行时完成清理。</summary>
+        private async Task SynchronizeCardConnectionAsync()
+        {
             if (_mainWindow == null)
             {
                 return;
@@ -663,8 +673,13 @@ namespace MotionControl.Host.Wpf
         }
 
         /// <summary>关闭前阻止设备仍在运行或报警处理中，并保存当前变量与可续跑状态。</summary>
-        private void MainWindow_Closing(object sender, CancelEventArgs e)
+        private async void MainWindow_Closing(object sender, CancelEventArgs e)
         {
+            if (_shutdownDisconnectInProgress)
+            {
+                e.Cancel = true;
+                return;
+            }
             MachineRunState? runtimeState = _machineRuntime == null
                 ? (MachineRunState?)null
                 : _machineRuntime.State;
@@ -679,6 +694,70 @@ namespace MotionControl.Host.Wpf
                     "暂不能关闭软件",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
+                return;
+            }
+
+            // 先通过任务运行页的停止动作完成异步收尾。即使当前没有被占用的资源，
+            // 执行器仍可能有尚未结算的设备调用，不能先保存恢复记录再在 OnExit 尝试关闭。
+            if (_taskMonitorLauncher != null
+                && (_taskMonitorLauncher.HasTaskSession || _taskMonitorLauncher.IsCommandInProgress))
+            {
+                e.Cancel = true;
+                MessageBox.Show(
+                    "任务会话尚未关闭或命令仍在执行。请先在任务运行页点击“停止并关闭”，等待收尾完成后再关闭软件。",
+                    "暂不能关闭软件",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            // 现场 DI 与整机命令可能并发。复用轴映射页的安全断卡顺序，并等待
+            // Host 完成连接状态同步后再保存；断卡期间不禁用停止按钮。
+            if ((_cardConnection != null && _cardConnection.IsConnected)
+                || (runtimeState.HasValue && runtimeState != MachineRunState.Disconnected))
+            {
+                e.Cancel = true;
+                if (_machineRuntime == null)
+                {
+                    MessageBox.Show("设备运行时尚未就绪，无法确认安全断卡。请在轴映射页检查连接状态后重试。",
+                        "暂不能关闭软件", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                if (!_taskEditsCloseConfirmed)
+                {
+                    if (_taskConfigurationPage != null && !_taskConfigurationPage.ConfirmClose()) return;
+                    if (_alarmCatalogPage != null && !_alarmCatalogPage.ConfirmClose()) return;
+                    _taskEditsCloseConfirmed = true;
+                }
+
+                _shutdownDisconnectInProgress = true;
+                try
+                {
+                    await DisconnectMachineBeforeCardAsync(CancellationToken.None);
+                    await _cardConnection.DisconnectAsync(CancellationToken.None);
+                    await SynchronizeCardConnectionAsync();
+                }
+                catch (Exception error)
+                {
+                    // 底层可能已断开而连接服务收尾失败，窗口继续使用前先同步实际状态。
+                    if (_cardConnection != null && !_cardConnection.IsConnected)
+                    {
+                        try { await SynchronizeCardConnectionAsync(); }
+                        catch (Exception syncError) { Trace.TraceError("关窗断卡后同步失败：" + syncError); }
+                    }
+                    _taskEditsCloseConfirmed = false;
+                    MessageBox.Show("控制卡未能安全断开，软件暂不关闭。请检查设备状态后重试。\n" + error.Message,
+                        "暂不能关闭软件", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                finally
+                {
+                    _shutdownDisconnectInProgress = false;
+                }
+
+                // 等待期间操作员可能编辑配置；重新检查未保存内容。
+                _taskEditsCloseConfirmed = false;
+                _mainWindow.Close();
                 return;
             }
 
@@ -1051,17 +1130,10 @@ namespace MotionControl.Host.Wpf
                 _softwareConnectionTimer.Stop();
                 _softwareConnectionTimer.Tick -= SoftwareConnectionTimer_Tick;
             }
-            if (_taskMonitorLauncher != null)
-            {
-                try
-                {
-                    _taskMonitorLauncher.CloseTaskSessionAsync().GetAwaiter().GetResult();
-                }
-                catch (Exception taskCloseError)
-                {
-                    Trace.TraceWarning("应用退出时关闭任务执行会话失败：" + taskCloseError.Message);
-                }
-            }
+            // 正常关闭在主窗口关闭事件已要求任务收尾。系统强制退出时不能在 UI
+            // 线程同步等待异步会话关闭；保留运行标记，让下次启动要求核对现场。
+            if (_taskMonitorLauncher != null && _taskMonitorLauncher.HasTaskSession)
+                Trace.TraceWarning("应用退出时任务会话尚未关闭，保留现有恢复记录以供下次核查。");
 
             if (_machineRuntime != null)
             {

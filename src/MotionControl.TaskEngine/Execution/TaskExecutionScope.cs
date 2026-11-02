@@ -34,6 +34,8 @@ namespace MotionControl.TaskEngine.Execution
         private readonly TaskExecutionScope _parent;
         /// <summary>本节点的绝对活动时间截止值，单位毫秒。</summary>
         private double _deadline;
+        /// <summary>步骤内异常从运行许可传递至故障锁存期间保留的在途凭证。</summary>
+        private IDisposable _failureHandoff;
         /// <summary>已接受的运动绝对终点；故障重进当前节点时不重复叠加相对位移。</summary>
         internal Dictionary<string, double> AcceptedAxisTargets { get; } = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
 
@@ -65,14 +67,39 @@ namespace MotionControl.TaskEngine.Execution
         {
             return Run.StepAsync(() =>
             {
-                TaskExecutionScope owner = this;
-                for (TaskExecutionScope parent = _parent; parent != null; parent = parent._parent)
-                    if (parent._deadline <= owner._deadline) owner = parent;
-                if (Run.ActiveMilliseconds >= owner._deadline)
-                    throw owner.Error("执行超时，活动时限 " + owner.Node.TimeoutMs + " ms。" + WaitDetail,
-                        new TimeoutException("节点及其子动作未在活动时限内完成。"));
-                action();
+                IDisposable handoff = Run.RegisterInFlightOperation();
+                try
+                {
+                    TaskExecutionScope owner = this;
+                    for (TaskExecutionScope parent = _parent; parent != null; parent = parent._parent)
+                        if (parent._deadline <= owner._deadline) owner = parent;
+                    if (Run.ActiveMilliseconds >= owner._deadline)
+                        throw owner.Error("执行超时，活动时限 " + owner.Node.TimeoutMs + " ms。" + WaitDetail,
+                            new TimeoutException("节点及其子动作未在活动时限内完成。"));
+                    action();
+                }
+                catch
+                {
+                    _failureHandoff = handoff;
+                    handoff = null;
+                    throw;
+                }
+                finally { handoff?.Dispose(); }
             }, Token);
+        }
+
+        /// <summary>故障已进入整机暂停或异常已被明确处理后，允许暂停等待其余在途操作。</summary>
+        internal void CompleteFailureHandoff()
+        {
+            Interlocked.Exchange(ref _failureHandoff, null)?.Dispose();
+        }
+
+        /// <summary>把锁外异步操作失败的在途凭证交给节点故障处理，避免暂停先于故障锁存完成。</summary>
+        internal void RetainFailureHandoff(IDisposable handoff)
+        {
+            if (handoff == null) return;
+            // 同一节点可能先发生动作失败、随后又发生收尾失败；已有故障凭证足以阻止暂停提前完成。
+            if (Interlocked.CompareExchange(ref _failureHandoff, handoff, null) != null) handoff.Dispose();
         }
 
         /// <summary>只在整机复位启动恢复后给当前活动调用链新时限，不改变已完成节点和固定终点。</summary>

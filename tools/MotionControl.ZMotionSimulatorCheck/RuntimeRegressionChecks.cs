@@ -62,6 +62,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("轴仍在运动时拒绝整机复位", ResetIsRejectedWhileAxisIsMovingAsync, failures);
             await RunCheckAsync("急停状态通过配置的逻辑 DI 读取", EmergencyStopStatusUsesConfiguredInputAsync, failures);
             await RunCheckAsync("现场按钮按上升沿执行复位、启动、暂停并在 DI 故障恢复后要求复位", PhysicalButtonInputsFollowSafeSequenceAsync, failures);
+            await RunCheckAsync("断卡失败后现场按钮监控恢复且不误触发", ControlInputsResumeAfterFailedDisconnectAsync, failures);
             await RunCheckAsync("设备硬件配置关联和急停输入校验", HardwareConfigurationValidationAsync, failures);
             await RunCheckAsync("通用框架程序集不引用厂商适配器或原生 API", SharedFrameworkAssembliesDoNotReferenceVendorAdaptersAsync, failures);
             await RunCheckAsync("正运动轴号超出控制器范围时在连接前被拒绝", ZMotionAxisNumberOutsideControllerRangeIsRejectedAsync, failures);
@@ -69,11 +70,53 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("设备变量跨进程恢复及配置变化保护", MachineRecoveryChecks.RunAsync, failures);
             await RunCheckAsync("自动运行异常退出标记及受控暂停保存", RunMarkerSurvivesUntilSafePauseAsync, failures);
             await RunCheckAsync("设备准备异常退出标记及安全停止", PreparationMarkerSurvivesUntilSafeStopAsync, failures);
-            await RunCheckAsync("任务占用及隔离跨重启保护与同会话续跑", TaskResourceMarkerSurvivesPauseAsync, failures);
+            await RunCheckAsync("任务暂停保留证据并禁止未确认的续跑", TaskResourceMarkerSurvivesPauseAsync, failures);
+            await RunCheckAsync("任务故障复位及会话关闭后保留未确认运行标记", FaultMarkerBlocksUnsafeRestartAsync, failures);
             return failures.AsReadOnly();
         }
 
-        /// <summary>正常持有资源允许原会话续跑；隔离或未知时阻止续跑并保留跨进程标记。</summary>
+        /// <summary>尚无全路径收尾证据时，故障复位或另开会话不能绕过原运行标记。</summary>
+        private static async Task FaultMarkerBlocksUnsafeRestartAsync()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "TaskFaultMarker_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var configuration = new MachineConfigurationStore(root);
+                var store = new MachineRecoveryStore(configuration, "Machine01");
+                var coordinator = new MachineRecoveryCoordinator(store, new DeviceVariableStore(new DeviceVariableDefinition[0]), "Machine01");
+                coordinator.Load(out string warning);
+                var runtime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { new FakeMotionCard("CardA", new FakeAxis("X")) }),
+                    new IStationFlow[0], new MachineAlarmService(), new FakeSafetyStatus(), controlOwner: MachineControlOwner.TaskEngine);
+                var owner = new RecoveryResourceOwner();
+                runtime.SetBeforeAutomaticRun(() => coordinator.InvalidateBeforeAutomaticRun(runtime));
+                await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+                await runtime.AcquireTaskEngineControlAsync(owner, CancellationToken.None).ConfigureAwait(false);
+                await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+                Ensure(coordinator.GetAutomaticStartBlockReason(runtime) == null, "首次启动前错误显示恢复保护。");
+                await runtime.BeginTaskEngineRunAsync(CancellationToken.None).ConfigureAwait(false);
+                await runtime.FinishTaskEngineRunAsync(true, new InvalidOperationException("输入等待超时")).ConfigureAwait(false);
+                await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+                try
+                {
+                    await runtime.BeginTaskEngineRunAsync(CancellationToken.None).ConfigureAwait(false);
+                    throw new InvalidOperationException("故障收尾未确认却允许续跑。");
+                }
+                catch (InvalidOperationException error) when (error.Message.Contains("联系维护人员")) { }
+                Ensure(store.HasUnfinishedAutomaticRun(), "故障复位后错误清除了运行标记。");
+                runtime.ReleaseTaskEngineControl(owner);
+                var nextOwner = new RecoveryResourceOwner();
+                await runtime.AcquireTaskEngineControlAsync(nextOwner, CancellationToken.None).ConfigureAwait(false);
+                await ExpectExceptionAsync<InvalidOperationException>(() => runtime.BeginTaskEngineRunAsync(CancellationToken.None)).ConfigureAwait(false);
+                Ensure(store.HasUnfinishedAutomaticRun(), "新任务会话错误清除了旧标记。");
+                var afterRestart = new MachineRecoveryCoordinator(store, new DeviceVariableStore(new DeviceVariableDefinition[0]), "Machine01");
+                afterRestart.Load(out warning);
+                Ensure(!string.IsNullOrWhiteSpace(afterRestart.RecoveryBlockReason), "进程重启未阻止未经确认的任务运行。");
+                runtime.ReleaseTaskEngineControl(nextOwner);
+            }
+            finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+        }
+
+        /// <summary>尚无完整收尾屏障时，即使资源为空，同会话和跨进程也不得把暂停视为安全。</summary>
         private static async Task TaskResourceMarkerSurvivesPauseAsync()
         {
             string root = Path.Combine(Path.GetTempPath(), "TaskResourceMarker_" + Guid.NewGuid().ToString("N"));
@@ -95,21 +138,28 @@ namespace MotionControl.ZMotionSimulatorCheck
                 await runtime.AcquireTaskEngineControlAsync(owner, CancellationToken.None).ConfigureAwait(false);
                 await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
                 await runtime.BeginTaskEngineRunAsync(CancellationToken.None).ConfigureAwait(false);
-                owner.State = TaskResourceRecoveryState.Held;
+                owner.State = TaskResourceRecoveryState.Clear;
                 await runtime.FinishTaskEngineRunAsync(false, null).ConfigureAwait(false);
-                Ensure(store.HasUnfinishedAutomaticRun() && File.ReadAllText(path) == original, "暂停时占用资源丢失了标记或覆盖旧记录。");
+                Ensure(store.HasUnfinishedAutomaticRun() && File.ReadAllText(path) == original, "暂停时资源为空却丢失了标记或覆盖旧记录。");
+                string readinessReason = coordinator.GetAutomaticStartBlockReason(runtime);
+                Ensure(!string.IsNullOrWhiteSpace(readinessReason) && readinessReason.Contains("维护人员"), "暂停后启动按钮缺少保护原因和处理方向。");
+                Ensure(store.HasUnfinishedAutomaticRun() && File.ReadAllText(path) == original, "查询启动原因不应更改恢复记录。");
                 var restarted = new MachineRecoveryCoordinator(store, new DeviceVariableStore(new DeviceVariableDefinition[0]), "Machine01");
                 restarted.Load(out warning);
                 Ensure(!string.IsNullOrWhiteSpace(restarted.RecoveryBlockReason), "占用资源时重启没有拦截。");
                 coordinator.SaveForShutdown(runtime, true);
                 Ensure(store.HasUnfinishedAutomaticRun() && File.ReadAllText(path) == original, "关闭时覆盖占用资源的保护记录。");
+                runtime.ReleaseTaskEngineControl(owner);
+                coordinator.SaveForShutdown(runtime, true);
+                Ensure(store.HasUnfinishedAutomaticRun() && File.ReadAllText(path) == original, "会话释放后错误清除了尚未结算的任务标记。");
+                await runtime.AcquireTaskEngineControlAsync(owner, CancellationToken.None).ConfigureAwait(false);
                 await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
-                await runtime.BeginTaskEngineRunAsync(CancellationToken.None).ConfigureAwait(false);
-                Ensure(store.HasUnfinishedAutomaticRun(), "同会话恢复丢失运行标记。");
+                await ExpectExceptionAsync<InvalidOperationException>(() => runtime.BeginTaskEngineRunAsync(CancellationToken.None)).ConfigureAwait(false);
+                Ensure(store.HasUnfinishedAutomaticRun(), "资源为空时错误允许续跑或丢失运行标记。");
+                owner.State = TaskResourceRecoveryState.Held;
+                await ExpectExceptionAsync<InvalidOperationException>(() => runtime.BeginTaskEngineRunAsync(CancellationToken.None)).ConfigureAwait(false);
+                Ensure(store.HasUnfinishedAutomaticRun(), "占用资源时错误允许续跑或丢失运行标记。");
                 owner.State = TaskResourceRecoveryState.Blocked;
-                await runtime.FinishTaskEngineRunAsync(false, null).ConfigureAwait(false);
-                Ensure(store.HasUnfinishedAutomaticRun(), "隔离资源时错误移除了标记。");
-                await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
                 await ExpectExceptionAsync<InvalidOperationException>(() => runtime.BeginTaskEngineRunAsync(CancellationToken.None)).ConfigureAwait(false);
                 Ensure(store.HasUnfinishedAutomaticRun(), "隔离资源尝试启动后丢失了标记。");
                 owner.State = TaskResourceRecoveryState.Unknown;
@@ -1327,6 +1377,36 @@ namespace MotionControl.ZMotionSimulatorCheck
         }
 
         /// <summary>模拟现场按钮 DI，验证上升沿、复位后启动、停止暂停和读取故障恢复。</summary>
+        private static async Task ControlInputsResumeAfterFailedDisconnectAsync()
+        {
+            var io = new FakeLogicalIo();
+            io.SetInput("现场复位", true);
+            var axis = new FakeAxis("X");
+            var card = new FakeMotionCard("Card", axis);
+            var runtime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { card }),
+                new IStationFlow[0], new MachineAlarmService(), new FakeSafetyStatus(),
+                safetyPollInterval: TimeSpan.FromMilliseconds(10), controlInputIo: io, resetInputName: "现场复位");
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            axis.IsMoving = true;
+            try
+            {
+                await ExpectExceptionAsync<InvalidOperationException>(() => runtime.DisconnectAsync(CancellationToken.None)).ConfigureAwait(false);
+                Ensure(card.IsConnected && runtime.State == MachineRunState.Alarmed, "断卡失败后应保留连接并进入报警。");
+                axis.IsMoving = false;
+                await Task.Delay(100).ConfigureAwait(false);
+                Ensure(runtime.State == MachineRunState.Alarmed, "监控恢复时不应把已有效的复位电平当作新按键。");
+                io.SetInput("现场复位", false);
+                await Task.Delay(80).ConfigureAwait(false);
+                io.SetInput("现场复位", true);
+                await WaitForStateAsync(runtime, MachineRunState.Ready).ConfigureAwait(false);
+            }
+            finally
+            {
+                axis.IsMoving = false;
+                await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+        }
+
         private static async Task PhysicalButtonInputsFollowSafeSequenceAsync()
         {
             var logicalIo = new FakeLogicalIo();

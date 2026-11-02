@@ -11,6 +11,7 @@ namespace MotionControl.TaskEngine.Checks
         private static int Main(string[] args)
         {
             if (args.Length == 1 && args[0] == "--production-demo") return MachineChecks.RunProductionDemo();
+            if (args.Length == 1 && args[0] == "--machine-checks") return MachineChecks.RunAll() == 0 ? 0 : 1;
             if (args.Length == 3 && args[0] == "--four-station-demo") return MachineChecks.RunFourStationDemo(args[1], args[2]);
             if (args.Length == 3 && args[0] == "--clip-welding-demo") return MachineChecks.RunClipWeldingDemo(args[1], args[2]);
             if (args.Length == 3 && args[0] == "--validate-machine") return MachineChecks.ValidateTaskMachine(args[1], args[2]);

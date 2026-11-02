@@ -15,6 +15,8 @@ namespace MotionControl.TaskEngine.Machine
     /// <summary>复位、启动、暂停、终止与故障锁存的具体顺序。</summary>
     public sealed partial class TaskMachineController
     {
+        /// <summary>等待暂停收尾的界面操作时限；超时只报告未确认，绝不当作轴已停稳。</summary>
+        private static readonly TimeSpan PauseSettlementTimeout = TimeSpan.FromSeconds(12);
         /// <summary>在 Runtime 清除轴报警前检查任务侧复位条件，不改变运行状态。</summary>
         public void ValidateResetPrerequisites()
         {
@@ -48,6 +50,9 @@ namespace MotionControl.TaskEngine.Machine
             if (_preparationActive) throw new InvalidOperationException("工位准备正在执行，请先停止回零再复位。");
             if (_state == TaskMachineState.Running || _state == TaskMachineState.Pausing)
                 throw new InvalidOperationException("请先暂停整机并确认所有轴已停稳，再复位。");
+            if (AllStations().Any(station => station.CurrentRun != null && station.CurrentRun.HasUnsettledPauseOperations)
+                || _device.Resources.HasPendingJournalWrites)
+                throw new InvalidOperationException("任务仍有未完成的设备操作或资源记录，不能确认安全；请等待收尾并检查现场。");
             if (_activeStopAlarms.Count != 0) throw new InvalidOperationException("停机条件仍有效：" + string.Join("；", _activeStopAlarms.Values));
             var axesRequiringHome = new HashSet<string>(GetAxesRequiringPreHome(), StringComparer.OrdinalIgnoreCase);
             foreach (string name in _device.Catalog.Axes.Keys)
@@ -133,7 +138,8 @@ namespace MotionControl.TaskEngine.Machine
             {
                 await StopPausedRunsAsync(runs).ConfigureAwait(false);
                 lock (_sync)
-                    if (_state == TaskMachineState.Pausing) _state = TaskMachineState.Paused;
+                    if (_state == TaskMachineState.Pausing)
+                        _state = _faults.Count == 0 ? TaskMachineState.Paused : TaskMachineState.Faulted;
             }
             catch (Exception stopError)
             {
@@ -159,10 +165,19 @@ namespace MotionControl.TaskEngine.Machine
         public async Task SetStopAlarmAsync(string code, string message, bool active)
         {
             TaskRun[] runs = SetStopAlarmCore(code, message, active, true, TaskMachineState.Pausing);
-            await StopPausedRunsAsync(runs).ConfigureAwait(false);
+            try { await StopPausedRunsAsync(runs).ConfigureAwait(false); }
+            catch (Exception error)
+            {
+                lock (_sync)
+                {
+                    _state = TaskMachineState.Faulted;
+                    AddFault(new TaskMachineFault("ALARM_STOP_FAILED", "停机报警收尾未确认：" + error.Message, null));
+                }
+                throw;
+            }
             if (active)
                 lock (_sync)
-                    if (_state == TaskMachineState.Pausing) _state = TaskMachineState.Faulted;
+                    if (_state == TaskMachineState.Pausing || _state == TaskMachineState.Paused) _state = TaskMachineState.Faulted;
         }
 
         /// <summary>只记录报警快照，报警条件状态仍由共享设备报警服务负责。</summary>
@@ -173,7 +188,7 @@ namespace MotionControl.TaskEngine.Machine
             {
                 await StopPausedRunsAsync(runs).ConfigureAwait(false);
                 lock (_sync)
-                    if (_state == TaskMachineState.Pausing) _state = TaskMachineState.Faulted;
+                    if (_state == TaskMachineState.Pausing || _state == TaskMachineState.Paused) _state = TaskMachineState.Faulted;
             }
             catch (Exception error)
             {
@@ -236,7 +251,7 @@ namespace MotionControl.TaskEngine.Machine
             {
                 await StopPausedRunsAsync(runs).ConfigureAwait(false);
                 lock (_sync)
-                    if (_state == TaskMachineState.Pausing) _state = TaskMachineState.Faulted;
+                    if (_state == TaskMachineState.Pausing || _state == TaskMachineState.Paused) _state = TaskMachineState.Faulted;
             }
             catch
             {
@@ -251,16 +266,32 @@ namespace MotionControl.TaskEngine.Machine
         {
             _preparationRun?.Cancel();
             if (_state == TaskMachineState.Running) _runningPermit = NewSignal();
-            _state = state;
+            // 已锁存故障不能被并发到来的另一条暂停/停机处理暂时降级回“暂停中”。
+            if (_state != TaskMachineState.Faulted || state == TaskMachineState.Faulted) _state = state;
             TaskRun[] runs = AllStations().Select(station => station.CurrentRun).Where(run => run != null).ToArray();
             foreach (TaskRun run in runs) run.Pause();
             return runs;
         }
 
         /// <summary>等待指定任务运行中的受控停止登记全部完成。</summary>
-        private static Task StopPausedRunsAsync(IEnumerable<TaskRun> runs)
+        private async Task StopPausedRunsAsync(IEnumerable<TaskRun> runs)
         {
-            return Task.WhenAll(runs.Select(run => run.PauseAsync()));
+            Task settled = SettlePausedRunsAsync(runs);
+            if (await Task.WhenAny(settled, Task.Delay(PauseSettlementTimeout)).ConfigureAwait(false) != settled)
+            {
+                // 后台收尾仍可能返回错误；观察异常但不将超时当作完成，也不取消受控停止。
+                _ = settled.ContinueWith(task => { var ignored = task.Exception; }, CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                throw new TimeoutException("等待任务在途操作和资源记录超过 12 秒，状态尚未确认。");
+            }
+            await settled.ConfigureAwait(false);
+        }
+
+        /// <summary>先等动作和异常隔离收尾，再结算暂停前已开始的资源记录写入。</summary>
+        private async Task SettlePausedRunsAsync(IEnumerable<TaskRun> runs)
+        {
+            await Task.WhenAll(runs.Select(run => run.PauseAsync())).ConfigureAwait(false);
+            await _device.Resources.SettleJournalWritesAsync().ConfigureAwait(false);
         }
 
         /// <summary>故障记录有界，避免长期运行无限累积。</summary>
@@ -311,6 +342,8 @@ namespace MotionControl.TaskEngine.Machine
         private async Task CloseCoreAsync()
         {
             await AbortAsync().ConfigureAwait(false);
+            var cleanup = _device as ITaskResourceJournalCleanup;
+            if (cleanup != null) await cleanup.CompleteResourceJournalAsync().ConfigureAwait(false);
             lock (_sync)
             {
                 _device.ReleaseMachine(this);

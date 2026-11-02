@@ -34,6 +34,8 @@ namespace MotionControl.Host.Wpf.Recovery
         private bool _ownsRunMarker;
         /// <summary>正常暂停时仍占用资源；仅本会话允许携带原标记继续。</summary>
         private bool _pausedWithHeldResources;
+        /// <summary>任务运行标记在完整收尾屏障建立前不能因会话释放而被清除。</summary>
+        private bool _taskRunNeedsSettlement;
         /// <summary>串行化运行标记及检查点的创建、保存和移除。</summary>
         private readonly object _runRecordSync = new object();
 
@@ -77,6 +79,18 @@ namespace MotionControl.Host.Wpf.Recovery
             catch (Exception error)
             {
                 RecoveryBlockReason = "无法核查上次运行标记，请联系维护人员检查存储：" + error.Message;
+            }
+            try
+            {
+                string resourceWarning = _recoveryStore.InspectTaskResources();
+                if (!string.IsNullOrWhiteSpace(resourceWarning))
+                    RecoveryBlockReason = string.IsNullOrWhiteSpace(RecoveryBlockReason) ? resourceWarning : RecoveryBlockReason + Environment.NewLine + resourceWarning;
+            }
+            catch (Exception error)
+            {
+                System.Diagnostics.Trace.TraceError("核查任务资源记录失败，设备状态未知：" + error);
+                string resourceWarning = "任务资源记录损坏或无法读取，设备状态未知。请联系维护人员检查现场和存储。";
+                RecoveryBlockReason = string.IsNullOrWhiteSpace(RecoveryBlockReason) ? resourceWarning : RecoveryBlockReason + Environment.NewLine + resourceWarning;
             }
             _document = _recoveryStore.Load(out warningMessage);
             if (_document == null)
@@ -230,6 +244,13 @@ namespace MotionControl.Host.Wpf.Recovery
             {
                 if (runtime == null || runtime.State != MachineRunState.Paused || runtime.IsPreparing)
                     throw new InvalidOperationException("只有设备已受控暂停且准备已退出，才能保存暂停记录。");
+                // 任务侧停止回调与故障分类尚无完整屏障，即使当前资源为空也不能
+                // 证明所有在途动作已安全结束。保留原记录及跨进程运行证据。
+                if (_taskRunNeedsSettlement || runtime.IsTaskEngineControlClaimed)
+                {
+                    _pausedWithHeldResources = false;
+                    return;
+                }
                 // 尚有持有或隔离资源时保留运行前标记和旧记录，重启后不能把现场当成空区域。
                 TaskResourceRecoveryState resourceState = runtime.GetTaskResourceRecoveryState();
                 if (resourceState != TaskResourceRecoveryState.Clear)
@@ -253,14 +274,29 @@ namespace MotionControl.Host.Wpf.Recovery
         public void InvalidateBeforeAutomaticRun() { InvalidateBeforeAutomaticRun(null); }
 
         /// <summary>保留正常暂停的资源标记；隔离或未知时拒绝继续运行。</summary>
+        public string GetAutomaticStartBlockReason(MachineRuntime runtime)
+        {
+            lock (_runRecordSync)
+            {
+                if (!string.IsNullOrWhiteSpace(RecoveryBlockReason)) return RecoveryBlockReason;
+                TaskResourceRecoveryState resources = runtime == null ? TaskResourceRecoveryState.Clear : runtime.GetTaskResourceRecoveryState();
+                if (resources == TaskResourceRecoveryState.Blocked || resources == TaskResourceRecoveryState.Unknown)
+                    return "任务资源尚待确认或状态未知，不能启动；请联系维护人员核对现场。";
+                if (_ownsRunMarker && !(_pausedWithHeldResources && runtime != null))
+                    return "上次运行尚未确认安全收尾，不能再次启动。请停止当前任务或设备，并联系维护人员核查设备、在制品和恢复记录。";
+                if (!_ownsRunMarker && resources == TaskResourceRecoveryState.Held)
+                    return "任务仍持有资源但运行标记不属于当前会话，不能启动。";
+                return null;
+            }
+        }
+
+        /// <summary>持久化运行前复用相同的保护原因，界面提示不替代此处的最终检查。</summary>
         public void InvalidateBeforeAutomaticRun(MachineRuntime runtime)
         {
             lock (_runRecordSync)
             {
-                if (!string.IsNullOrWhiteSpace(RecoveryBlockReason)) throw new InvalidOperationException(RecoveryBlockReason);
-                TaskResourceRecoveryState resourceState = runtime == null ? TaskResourceRecoveryState.Clear : runtime.GetTaskResourceRecoveryState();
-                if (resourceState == TaskResourceRecoveryState.Blocked || resourceState == TaskResourceRecoveryState.Unknown)
-                    throw new InvalidOperationException("任务资源尚待确认或状态未知，不能启动；请联系维护人员核对现场。");
+                string reason = GetAutomaticStartBlockReason(runtime);
+                if (reason != null) throw new InvalidOperationException(reason);
                 if (_ownsRunMarker)
                 {
                     if (_pausedWithHeldResources && runtime != null)
@@ -268,12 +304,11 @@ namespace MotionControl.Host.Wpf.Recovery
                         _pausedWithHeldResources = false;
                         return;
                     }
-                    throw new InvalidOperationException("上次运行尚未完成安全暂停和恢复记录保存，不能再次启动。");
+                    throw new InvalidOperationException("上次运行尚未确认安全收尾，不能再次启动。请停止当前任务或设备，并联系维护人员核查设备、在制品和恢复记录。");
                 }
-                if (resourceState == TaskResourceRecoveryState.Held)
-                    throw new InvalidOperationException("任务仍持有资源但运行标记不属于当前会话，不能启动。");
                 _recoveryStore.MarkAutomaticRun();
                 _ownsRunMarker = true;
+                _taskRunNeedsSettlement = runtime != null && runtime.IsTaskEngineControlClaimed;
             }
         }
 
@@ -311,6 +346,7 @@ namespace MotionControl.Host.Wpf.Recovery
             {
                 if (machineIsPaused && (runtime == null || runtime.State != MachineRunState.Paused || runtime.IsPreparing))
                     throw new InvalidOperationException("设备尚未确认暂停，不能保存暂停记录。");
+                if (_taskRunNeedsSettlement || (runtime != null && runtime.IsTaskEngineControlClaimed)) return;
                 if (runtime != null && runtime.GetTaskResourceRecoveryState() != TaskResourceRecoveryState.Clear) return;
                 // 未完成安全暂停时保留独立标记和原记录，不能把当前不确定状态写成可恢复。
                 if (_ownsRunMarker && !machineIsPaused) return;

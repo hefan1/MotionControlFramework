@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -23,7 +24,47 @@ namespace MotionControl.ZMotionSimulatorCheck
             CheckRecoveryFileRoundTripAndConfigurationChange();
             CheckCoordinatorRestoresOnlyKnownStepsAndInvalidatesOnStart();
             CheckUntrustedRecoveryDoesNotOverwrite();
+            CheckResourceRecordErrorPresentation();
             return Task.CompletedTask;
+        }
+
+        /// <summary>损坏或不可读取的资源记录继续拦截，界面只显示中文，诊断保留完整异常。</summary>
+        private static void CheckResourceRecordErrorPresentation()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "ResourceWarning_" + Guid.NewGuid().ToString("N"));
+            var store = new MachineConfigurationStore(root);
+            string guards = Path.Combine(store.GetMachineDirectory("Machine01"), "Runtime", "ResourceGuards");
+            using (var writer = new StringWriter())
+            using (var listener = new TextWriterTraceListener(writer))
+            {
+                Trace.Listeners.Add(listener);
+                try
+                {
+                    string session = Path.Combine(guards, "session");
+                    Directory.CreateDirectory(session);
+                    File.WriteAllText(Path.Combine(session, "bad.guard"), "{");
+                    var coordinator = new MachineRecoveryCoordinator(new MachineRecoveryStore(store, "Machine01"),
+                        new DeviceVariableStore(new DeviceVariableDefinition[0]), "Machine01");
+                    coordinator.Load(out string warning);
+                    Trace.Flush();
+                    Ensure(warning.Contains("记录损坏或无法读取") && warning == coordinator.RecoveryBlockReason
+                        && !warning.Contains("Newtonsoft") && !warning.Contains("Error parsing"), "损坏记录提示未简化或未拦截。");
+                    Ensure(writer.ToString().Contains("JsonReaderException"), "完整解析异常未写入诊断日志。");
+                    writer.GetStringBuilder().Clear();
+                    Directory.Delete(guards, true);
+                    File.WriteAllText(guards, "不是目录");
+                    coordinator.Load(out warning);
+                    Trace.Flush();
+                    Ensure(warning.Contains("记录损坏或无法读取") && !string.IsNullOrWhiteSpace(coordinator.RecoveryBlockReason),
+                        "无法读取记录目录时未按未知状态拦截。");
+                    Ensure(writer.ToString().Contains("Exception"), "读取异常未保留诊断。");
+                }
+                finally
+                {
+                    Trace.Listeners.Remove(listener);
+                    if (Directory.Exists(root)) Directory.Delete(root, true);
+                }
+            }
         }
 
         /// <summary>损坏、错误设备或缺失变量时保留恢复原件，首次无文件不阻止运行。</summary>

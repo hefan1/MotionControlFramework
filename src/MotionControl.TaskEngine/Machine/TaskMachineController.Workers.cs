@@ -96,12 +96,12 @@ namespace MotionControl.TaskEngine.Machine
         }
 
         /// <summary>未预期的执行器退出不能用复位重放，锁存诊断并暂停其他工位。</summary>
-        private async Task ReportWorkerFailureAsync(StationExecutionControl station, Exception error)
+        internal async Task ReportWorkerFailureAsync(StationExecutionControl station, Exception error)
         {
             TaskRun[] runs;
             lock (_sync)
             {
-                if (_lifetime.IsCancellationRequested) return;
+                if (_lifetime.IsCancellationRequested || station.Unrecoverable) return;
                 station.Unrecoverable = true;
                 station.State = StationTaskState.WaitingReset;
                 station.Detail = error.ToString();
@@ -113,7 +113,7 @@ namespace MotionControl.TaskEngine.Machine
             {
                 await StopPausedRunsAsync(runs).ConfigureAwait(false);
                 lock (_sync)
-                    if (_state == TaskMachineState.Pausing) _state = TaskMachineState.Faulted;
+                    if (_state == TaskMachineState.Pausing || _state == TaskMachineState.Paused) _state = TaskMachineState.Faulted;
             }
             catch (Exception stopError)
             {

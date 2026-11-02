@@ -4,6 +4,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using MotionControl.Framework.Runtime.Configuration;
+using MotionControl.TaskEngine.Resources;
 
 namespace MotionControl.Host.Wpf.Recovery
 {
@@ -32,6 +33,12 @@ namespace MotionControl.Host.Wpf.Recovery
             try { File.GetAttributes(GetRunMarkerPath()); return true; }
             catch (FileNotFoundException) { return false; }
             catch (DirectoryNotFoundException) { return false; }
+        }
+
+        /// <summary>核查上次任务会话的具名资源记录；异常或损坏由调用方按未知状态拦截。</summary>
+        public string InspectTaskResources()
+        {
+            return TaskResourceJournal.Inspect(_configurationStore.GetMachineDirectory(_machineId), _machineId);
         }
 
         /// <summary>生产启动前原子创建并刷新标记；失败时调用者不能启动生产。</summary>

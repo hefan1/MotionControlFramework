@@ -27,8 +27,19 @@ namespace MotionControl.TaskEngine.Execution
             }
 
             // 先经过运行门控（暂停与时限），再向设备确认轴已闲置；确认可能需要读取真实轴状态。
-            await scope.StepAsync(() => { }).ConfigureAwait(false);
-            await _device.ConfirmStoppedAsync(node.AxisName, scope.Token).ConfigureAwait(false);
+            IDisposable confirmation = null;
+            try
+            {
+                await scope.StepAsync(() => confirmation = _run.RegisterInFlightOperation()).ConfigureAwait(false);
+                await _device.ConfirmStoppedAsync(node.AxisName, scope.Token).ConfigureAwait(false);
+            }
+            catch
+            {
+                scope.RetainFailureHandoff(confirmation);
+                confirmation = null;
+                throw;
+            }
+            finally { confirmation?.Dispose(); }
         }
 
         /// <summary>把任务定义的速度曲线转换为设备端可用的运动曲线，单位沿用工程单位。</summary>
@@ -50,6 +61,7 @@ namespace MotionControl.TaskEngine.Execution
                     MotionFinish finish = null;
                     IDisposable pauseStopRegistration = null;
                     bool restartAfterPause = false;
+                    IDisposable completionSettled = null;
                     int stoppedForPause = 0;
                     double started = 0;
                     double duration = 0;
@@ -73,7 +85,8 @@ namespace MotionControl.TaskEngine.Execution
                             catch (Exception error)
                             {
                                 // 驱动可能已发命令，异常或空凭证都不能证明轴安全。
-                                MotionFinish.BlockUnconfirmed(_device, acquired ?? scope.ResourceLease, axisName, error);
+                                try { MotionFinish.BlockUnconfirmed(_device, acquired ?? scope.ResourceLease, axisName, error); }
+                                catch { _run.MarkUnconfirmedPauseFailure(); throw; }
                                 throw;
                             }
                             finish = new MotionFinish(_device, operation, acquired ?? scope.ResourceLease, axisName);
@@ -118,6 +131,7 @@ namespace MotionControl.TaskEngine.Execution
                                         : "正在等待轴回零完成。");
                                     _run.Report(scope, TaskNodeState.Moving, "正在等待轴 " + axisName + " 回零完成。");
                                 }
+                                if (completed) completionSettled = _run.RegisterInFlightOperation();
                             }).ConfigureAwait(false);
 
                             if (restartAfterPause)
@@ -130,7 +144,15 @@ namespace MotionControl.TaskEngine.Execution
                             if (completed)
                             {
                                 operation = null;
-                                await finish.EndAsync(true).ConfigureAwait(false);
+                                try { await finish.EndAsync(true).ConfigureAwait(false); }
+                                catch
+                                {
+                                    _run.MarkUnconfirmedPauseFailure();
+                                    scope.RetainFailureHandoff(completionSettled);
+                                    completionSettled = null;
+                                    throw;
+                                }
+                                finally { completionSettled?.Dispose(); completionSettled = null; }
                                 break;
                             }
 
@@ -147,7 +169,10 @@ namespace MotionControl.TaskEngine.Execution
                     {
                         pauseStopRegistration?.Dispose();
                         if (operation != null)
-                            await finish.EndAsync(false).ConfigureAwait(false);
+                        {
+                            try { await finish.EndAsync(false).ConfigureAwait(false); }
+                            catch { _run.MarkUnconfirmedPauseFailure(); throw; }
+                        }
                     }
 
                     if (!restartAfterPause) break;

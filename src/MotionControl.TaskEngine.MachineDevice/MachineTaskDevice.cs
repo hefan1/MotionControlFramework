@@ -21,13 +21,19 @@ namespace MotionControl.TaskEngine.MachineDevice
     /// 变量走 IDeviceVariableStore，整机控制权通过 MachineRuntime 统一仲裁。
     /// 轴组插补和有条件的资源范围互锁尚未接入，调用时明确报错，不退化执行。
     /// </summary>
-    public sealed partial class MachineTaskDevice : ITaskDevice, ITaskInterlockSupport, ITaskResourceRecoveryState
+    public sealed partial class MachineTaskDevice : ITaskDevice, ITaskInterlockSupport, ITaskResourceRecoveryState, ITaskResourceJournalCleanup
     {
         /// <summary>未指定所有者时使用的匿名所有权标记，保证同一实例内的所有权比对稳定。</summary>
         private static readonly object AnonymousOwner = new object();
 
         /// <summary>本设备的资源协调器，按目录中的资源名建立。</summary>
         private readonly TaskResourceCoordinator _resources;
+        /// <summary>正式设备的会话资源记录，内存测试可不启用。</summary>
+        private readonly TaskResourceJournal _journal;
+        /// <summary>开始安全关闭后不再接受新任务登记。</summary>
+        private bool _closing;
+        /// <summary>当前设备会话的资源记录已完整清理。</summary>
+        private bool _journalCleared;
 
         /// <summary>已连接的控制卡组，按逻辑轴名称取轴。</summary>
         private readonly MotionCardGroup _motionCards;
@@ -69,14 +75,15 @@ namespace MotionControl.TaskEngine.MachineDevice
             MotionCardGroup motionCards,
             ILogicalIo logicalIo,
             IDeviceVariableStore variables,
-            MachineRuntime runtime)
+            MachineRuntime runtime, TaskResourceJournal journal = null)
         {
             Catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
             _motionCards = motionCards ?? throw new ArgumentNullException(nameof(motionCards));
             _logicalIo = logicalIo ?? throw new ArgumentNullException(nameof(logicalIo));
             _variables = variables ?? throw new ArgumentNullException(nameof(variables));
             _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
-            _resources = new TaskResourceCoordinator(catalog.Resources);
+            _journal = journal;
+            _resources = new TaskResourceCoordinator(catalog.Resources, journal);
         }
 
         /// <summary>本设备的只读资源目录。</summary>
@@ -187,9 +194,9 @@ namespace MotionControl.TaskEngine.MachineDevice
         /// <summary>只查询本会话的资源队列，不访问控制器或磁盘。</summary>
         public TaskResourceRecoveryState GetResourceRecoveryState()
         {
-            var resources = _resources.Read();
-            if (resources.Any(item => item.State == TaskResourceState.Blocked)) return TaskResourceRecoveryState.Blocked;
-            if (resources.Any(item => item.State == TaskResourceState.Held)) return TaskResourceRecoveryState.Held;
+            // 在队列锁内同时检查占用与持久化结果，避免写失败回调与状态读取交错。
+            TaskResourceRecoveryState resourceState = _resources.RecoveryState;
+            if (resourceState != TaskResourceRecoveryState.Clear) return resourceState;
             lock (_sync)
             {
                 RemoveSettledMoves();
@@ -352,6 +359,8 @@ namespace MotionControl.TaskEngine.MachineDevice
                     throw new InvalidOperationException("轴动作或取消收尾仍未结束，不能归还设备命令权。");
                 if (_resources.Read().Any(resource => resource.State == TaskResourceState.Held || resource.State == TaskResourceState.Blocked))
                     throw new InvalidOperationException("存在仍被占用或待确认的资源区域，不能关闭任务会话或归还设备控制权；请先核实并解除隔离。");
+                if (_journal != null && !_journalCleared)
+                    throw new InvalidOperationException("资源记录尚未安全清理，不能归还设备控制权。");
                 _runtime.ReleaseTaskEngineControl(this);
                 _machineOwner = null;
             }
@@ -363,6 +372,7 @@ namespace MotionControl.TaskEngine.MachineDevice
             object token = owner ?? AnonymousOwner;
             lock (_sync)
             {
+                if (_closing) throw new InvalidOperationException("任务会话正在关闭，不能登记新运行。");
                 if (_machineOwner == null || !ReferenceEquals(_machineOwner, token))
                 {
                     throw new InvalidOperationException("任务必须先取得整机控制权，不能使用独立任务入口。");
@@ -370,6 +380,25 @@ namespace MotionControl.TaskEngine.MachineDevice
 
                 _activeRuns.Add(runId);
             }
+        }
+
+        /// <summary>核实工作者、轴动作与所有资源均已退出，再在后台清理当前会话记录。</summary>
+        public async Task CompleteResourceJournalAsync()
+        {
+            if (_journal == null) return;
+            lock (_sync)
+            {
+                RemoveSettledMoves();
+                if (_activeRuns.Count != 0 || _unsettledMoves.Count != 0 || _pendingStops.Count != 0 || _beginningAxes.Count != 0)
+                    throw new InvalidOperationException("任务、轴动作或资源尚未全部收尾，不能清理资源记录。");
+                _closing = true;
+            }
+            // 被取消的排队申请可能正在落盘；异步等它收尾后再判断是否可清理。
+            await _resources.SettleJournalWritesAsync().ConfigureAwait(false);
+            if (_resources.Read().Count != 0)
+                throw new InvalidOperationException("任务、轴动作或资源尚未全部收尾，不能清理资源记录。");
+            await Task.Run(() => _journal.ClearSafeSession()).ConfigureAwait(false);
+            lock (_sync) _journalCleared = true;
         }
 
         /// <summary>动作全部退出后移除运行登记。</summary>

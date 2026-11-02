@@ -82,19 +82,41 @@ namespace MotionControl.TaskEngine.Execution
         private async Task SetOutputAsync(TaskExecutionScope scope, SetOutputNode node)
         {
             TaskResourceRequest acquired = null;
+            bool writeAttempted = false;
+            IDisposable writeSettled = null;
             try
             {
                 acquired = await AcquireActionAsync(scope, "Output:" + node.OutputName).ConfigureAwait(false);
                 await scope.StepAsync(() =>
                 {
+                    writeSettled = _run.RegisterInFlightOperation();
+                    // 驱动抛错不能证明输出没有变化；从尝试下发开始按状态未知处理。
+                    writeAttempted = true;
                     _device.WriteOutput(node.OutputName, node.Value);
                     scope.Diagnostics = new TaskStepDiagnostics("输出写入记录；机构到位另看反馈输入。", new[] {
                         new TaskObservedValue(node.OutputName, node.Value.ToString(), _device.ReadOutput(node.OutputName)?.ToString(), true) });
                 }).ConfigureAwait(false);
             }
+            catch (Exception error)
+            {
+                TaskResourceRequest uncertain = acquired ?? scope.ResourceLease;
+                if (uncertain != null && writeAttempted)
+                {
+                    try { _device.Resources.Block(uncertain, "输出写入或反馈失败，实际状态未知，请核对现场。" + error.Message); }
+                    catch { _run.MarkUnconfirmedPauseFailure(); throw; }
+                }
+                throw;
+            }
             finally
             {
-                if (acquired != null) _device.Resources.Release(acquired);
+                try { if (acquired != null) _device.Resources.Release(acquired); }
+                catch
+                {
+                    scope.RetainFailureHandoff(writeSettled);
+                    writeSettled = null;
+                    throw;
+                }
+                finally { writeSettled?.Dispose(); }
             }
         }
 
@@ -124,7 +146,10 @@ namespace MotionControl.TaskEngine.Execution
                     var failure = error as TaskExecutionException ?? scope.Error(error.Message, error);
                     _run.Report(scope, TaskNodeState.Failed, failure.Message);
                     // 正文已经完成时只恢复退出检查，不能从范围开头重放动作。
-                    await _station.RecoverAsync(scope, failure).ConfigureAwait(false);
+                    Task recovery;
+                    try { recovery = _station.RecoverAsync(scope, failure); }
+                    finally { scope.CompleteFailureHandoff(); }
+                    await recovery.ConfigureAwait(false);
                     _station.Machine.MarkNodeRecovered(_station);
                 }
             }

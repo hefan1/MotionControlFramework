@@ -116,6 +116,7 @@ namespace MotionControl.TaskEngine.Execution
                     scope.TimeoutAlarmsReported = true;
                     if (stopRequired) throw;
                     scope.IgnoreOwnTimeout();
+                    scope.CompleteFailureHandoff();
                 }
                 if (!complete) await scope.NextPollAsync().ConfigureAwait(false);
             }
@@ -158,6 +159,7 @@ namespace MotionControl.TaskEngine.Execution
                     scope.TimeoutAlarmsReported = true;
                     if (stopRequired) throw;
                     scope.IgnoreOwnTimeout();
+                    scope.CompleteFailureHandoff();
                 }
                 if (!complete) await scope.NextPollAsync().ConfigureAwait(false);
             }

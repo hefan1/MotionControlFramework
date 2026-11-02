@@ -110,6 +110,14 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>自动启动的当前拦截原因；为空时仍需结合状态检查是否允许启动。</summary>
         private string _automaticStartBlockReason;
+        /// <summary>恢复记录可能保留运行保护；查询不能改变保护状态。</summary>
+        private Func<string> _recoveryStartBlockReason;
+
+        /// <summary>注入 Host 恢复检查，让两种自动入口显示同一个启动拦截原因。</summary>
+        internal void SetRecoveryStartBlockReason(Func<string> getReason)
+        {
+            _recoveryStartBlockReason = getReason;
+        }
 
         /// <summary>是否已完成最近一次自动启动就绪检查。</summary>
         private bool _automaticStartReadinessKnown;
@@ -822,6 +830,12 @@ namespace MotionControl.Host.Wpf
                 : _machineRuntime.State;
             MachineRunState state = _softwareControllerSelected && !_motionCardSessionConnected
                 ? MachineRunState.Disconnected : actualState;
+            string recoveryBlock = state == MachineRunState.Ready ? _recoveryStartBlockReason?.Invoke() : null;
+            if (!string.IsNullOrWhiteSpace(recoveryBlock))
+            {
+                _automaticStartBlockReason = recoveryBlock;
+                _automaticStartReadinessKnown = true;
+            }
             string stateResourceKey = state == MachineRunState.Ready && !_automaticStartReadinessKnown
                 ? "状态检查启动条件"
                 : state == MachineRunState.Ready && !string.IsNullOrWhiteSpace(_automaticStartBlockReason)
@@ -928,6 +942,15 @@ namespace MotionControl.Host.Wpf
         private async Task RefreshAutomaticStartReadinessAsync()
         {
             MachineRuntime runtime = _machineRuntime;
+            string recoveryBlock = runtime != null && runtime.State == MachineRunState.Ready
+                ? _recoveryStartBlockReason?.Invoke() : null;
+            if (!string.IsNullOrWhiteSpace(recoveryBlock))
+            {
+                _automaticStartBlockReason = recoveryBlock;
+                _automaticStartReadinessKnown = true;
+                UpdateMachineStateDisplay();
+                return;
+            }
             if (runtime != null && runtime.State == MachineRunState.Ready && runtime.ControlOwner == MachineControlOwner.TaskEngine)
             {
                 var launcher = _taskMonitorPage as Tasks.TaskMonitorLauncher;
