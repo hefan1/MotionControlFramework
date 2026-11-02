@@ -30,7 +30,7 @@
 |---|---|
 | 基线提交 | 以 `git log` 为准；本轮软件控制器相关改动和提交状态以 `git status --short` 为准 |
 | 工作区 | 正式 Host 具备正运动及独立软件控制器两种后端；精确状态以 `git status --short` 为准 |
-| 构建 | MachineDevice 检查为 16 组、OperatorPages 检查为 18 组；TaskEngine 23/53/16 组、Runtime 37 项；具体范围见第 6 节 |
+| 构建 | MachineDevice 检查为 16 组、OperatorPages 检查为 19 组；TaskEngine 23/53/16 组、Runtime 38 项；具体范围见第 6 节 |
 | 正式 Host | 新一轮软件控制器测试前重新核对连接、轴和 IO；每次控制器进程重启后轴、IO 与供料场景状态均重置 |
 | 配置根 | `C:\Users\ASUS\AppData\Local\MotionControlFramework\Configurations\Machine01` |
 | 执行入口 | 当前 `Parameters/Equipment.json` 选择 `WeldingExample` / `TaskEngine`；切换前须安全停机并按第 0 节核对 |
@@ -101,11 +101,11 @@ $dotnet='C:\Program Files\dotnet\dotnet.exe'
 & $dotnet build tools/MotionControl.TaskEngine.Checks/MotionControl.TaskEngine.Checks.csproj -c Release -o tmp/check-te -v:q
 & .\tmp\check-te\MotionControl.TaskEngine.Checks.exe
 
-# 3) Runtime 回归：期望 37 项全部通过（35 Runtime + 1 工位配置 + 1 ZMotion）
+# 3) Runtime 回归：期望 38 项全部通过（36 Runtime + 1 工位配置 + 1 ZMotion）
 & $dotnet build tools/MotionControl.ZMotionSimulatorCheck/MotionControl.ZMotionSimulatorCheck.csproj -c Release -o tmp/check-rt -v:q
 & .\tmp\check-rt\MotionControl.ZMotionSimulatorCheck.exe --runtime-regression
 
-# 4) 操作员页面检查：期望 18 组，失败 0（含后端选择、断线和 IO 关联反馈检查）
+# 4) 操作员页面检查：期望 19 组，失败 0（含后端选择、断线和 IO 关联反馈检查）
 & $dotnet build tools/MotionControl.OperatorPages.Checks/MotionControl.OperatorPages.Checks.csproj -c Release -o tmp/check-ops -v:q
 & .\tmp\check-ops\MotionControl.OperatorPages.Checks.exe
 ```
@@ -143,3 +143,9 @@ $dotnet='C:\Program Files\dotnet\dotnet.exe'
 - 最新 Release 正式 Host 使用 `tmp/operator-unified-20261102` 隔离副本和软件控制器：焊接、压合准备完成，四工位各完成 20 个循环后受控暂停；运行中标记存在、成功暂停后消除。较早构建同场景各完成 24 次并检查报警和恢复。正式 Host 的历史报警页显示发生、条件恢复和复位，并可查看输入与详情。
 - 使用另外两份隔离副本验证恢复文件损坏和遗留运行标记：设备准备和生产被拦截、原因显示在界面，恢复文件哈希前后不变；标记也保留。隔离测试不修改默认 Machine01 的配置或恢复记录。结束时在 Host 确认轴停止、DI4–7 与 DO0–3 无效，已关闭本轮 Host 和软件控制器。
 - 内部检查：MachineDevice 16 组、TaskEngine 23/53/16 组、Runtime 37 项、OperatorPages 18 组、设备准备 11 组及报警历史检查通过。构建的 NuGet 漏洞数据查询有 SSL 警告。内部假设备和软件控制器的结果不代表真实控制卡、电气、机械或现场安全验收。
+
+## 11. 2026-11-03 资源恢复与暂停并发边界
+
+- 任务资源仍被持有、隔离或无法确认时，保留运行标记及原恢复快照，不能通过关闭任务会话遗失当前隔离。正常持有资源的暂停可在同一会话继续；隔离或未知状态禁止重启生产和设备准备。重启后的标记只提供整机拦截，不含具体资源名称与退出条件，正式 Host 尚无现场解除隔离或经身份认证的标记处理入口。
+- 设备准备页可展开只读维护诊断，显示实际设备配置下的恢复快照和运行标记路径，并提示维护人员核对现场；不会改变原始记录或解除运行限制。
+- 等待 DI 的同步读卡仍可能持有任务运行锁，卡住时会拖延整机暂停。曾试验移出锁，但并发审查发现迟到读卡故障可能发生在暂停保存与标记清除之后，故该试验未保留。需要先建立在途调用收尾与暂停的明确屏障，再重新验证；厂商原生锁、永久阻塞时超时及实体安全链仍需单独解决。

@@ -32,6 +32,8 @@ namespace MotionControl.Host.Wpf.Recovery
 
         /// <summary>仅标记由当前进程创建；重启后遗留标记不能自动清除。</summary>
         private bool _ownsRunMarker;
+        /// <summary>正常暂停时仍占用资源；仅本会话允许携带原标记继续。</summary>
+        private bool _pausedWithHeldResources;
         /// <summary>串行化运行标记及检查点的创建、保存和移除。</summary>
         private readonly object _runRecordSync = new object();
 
@@ -228,6 +230,14 @@ namespace MotionControl.Host.Wpf.Recovery
             {
                 if (runtime == null || runtime.State != MachineRunState.Paused || runtime.IsPreparing)
                     throw new InvalidOperationException("只有设备已受控暂停且准备已退出，才能保存暂停记录。");
+                // 尚有持有或隔离资源时保留运行前标记和旧记录，重启后不能把现场当成空区域。
+                TaskResourceRecoveryState resourceState = runtime.GetTaskResourceRecoveryState();
+                if (resourceState != TaskResourceRecoveryState.Clear)
+                {
+                    _pausedWithHeldResources = _ownsRunMarker && resourceState == TaskResourceRecoveryState.Held;
+                    return;
+                }
+                _pausedWithHeldResources = false;
                 var document = CreateDocumentWithCurrentVariables(runtime);
                 CaptureStationFlowCheckpoints(document, runtime);
                 SaveDocument(document);
@@ -240,12 +250,28 @@ namespace MotionControl.Host.Wpf.Recovery
         }
 
         /// <summary>在自动流程进入运行状态前同步写入独立标记，不覆盖既有恢复记录。</summary>
-        public void InvalidateBeforeAutomaticRun()
+        public void InvalidateBeforeAutomaticRun() { InvalidateBeforeAutomaticRun(null); }
+
+        /// <summary>保留正常暂停的资源标记；隔离或未知时拒绝继续运行。</summary>
+        public void InvalidateBeforeAutomaticRun(MachineRuntime runtime)
         {
             lock (_runRecordSync)
             {
                 if (!string.IsNullOrWhiteSpace(RecoveryBlockReason)) throw new InvalidOperationException(RecoveryBlockReason);
-                if (_ownsRunMarker) throw new InvalidOperationException("上次运行尚未完成安全暂停和恢复记录保存，不能再次启动。");
+                TaskResourceRecoveryState resourceState = runtime == null ? TaskResourceRecoveryState.Clear : runtime.GetTaskResourceRecoveryState();
+                if (resourceState == TaskResourceRecoveryState.Blocked || resourceState == TaskResourceRecoveryState.Unknown)
+                    throw new InvalidOperationException("任务资源尚待确认或状态未知，不能启动；请联系维护人员核对现场。");
+                if (_ownsRunMarker)
+                {
+                    if (_pausedWithHeldResources && runtime != null)
+                    {
+                        _pausedWithHeldResources = false;
+                        return;
+                    }
+                    throw new InvalidOperationException("上次运行尚未完成安全暂停和恢复记录保存，不能再次启动。");
+                }
+                if (resourceState == TaskResourceRecoveryState.Held)
+                    throw new InvalidOperationException("任务仍持有资源但运行标记不属于当前会话，不能启动。");
                 _recoveryStore.MarkAutomaticRun();
                 _ownsRunMarker = true;
             }
@@ -253,6 +279,14 @@ namespace MotionControl.Host.Wpf.Recovery
 
         /// <summary>准备动作开始前使用同一持久标记，意外退出后保留旧恢复证据。</summary>
         public void MarkBeforePreparation() { InvalidateBeforeAutomaticRun(); }
+
+        /// <summary>工位准备要求任务资源完全释放，不能借回零跨过待确认区域。</summary>
+        public void MarkBeforePreparation(MachineRuntime runtime)
+        {
+            if (runtime != null && runtime.GetTaskResourceRecoveryState() != TaskResourceRecoveryState.Clear)
+                throw new InvalidOperationException("任务资源仍被占用、待确认或状态未知，不能执行工位准备。");
+            InvalidateBeforeAutomaticRun(runtime);
+        }
 
         /// <summary>准备成功或受控停稳后保存当前变量，并撤销可能过时的旧流程断点。</summary>
         public void SaveAfterSafePreparation()
@@ -277,6 +311,7 @@ namespace MotionControl.Host.Wpf.Recovery
             {
                 if (machineIsPaused && (runtime == null || runtime.State != MachineRunState.Paused || runtime.IsPreparing))
                     throw new InvalidOperationException("设备尚未确认暂停，不能保存暂停记录。");
+                if (runtime != null && runtime.GetTaskResourceRecoveryState() != TaskResourceRecoveryState.Clear) return;
                 // 未完成安全暂停时保留独立标记和原记录，不能把当前不确定状态写成可恢复。
                 if (_ownsRunMarker && !machineIsPaused) return;
                 var document = CreateDocumentWithCurrentVariables(runtime);

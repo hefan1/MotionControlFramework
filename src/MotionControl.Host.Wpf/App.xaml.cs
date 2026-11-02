@@ -231,6 +231,7 @@ namespace MotionControl.Host.Wpf
                 _configurationStore,
                 MachineId);
             _mainWindow = new MainWindow();
+            _mainWindow.SetRecoveryEvidenceDirectory(_configurationStore.GetMachineDirectory(MachineId));
             if (simulationRoot != null) _mainWindow.SetSimulationConfiguration(simulationRoot);
             _mainWindow.Loaded += MainWindow_Loaded;
             _mainWindow.Closing += MainWindow_Closing;
@@ -577,8 +578,8 @@ namespace MotionControl.Host.Wpf
                     _machineRecoveryCoordinator.HasCompletedInitializationCheckpoint);
                 // 恢复数据不可信时保留原文件，并阻止自动准备和生产；手动排查仍可用。
                 createdRuntime.SetRecoveryBlockReason(_machineRecoveryCoordinator.RecoveryBlockReason);
-                createdRuntime.SetBeforeAutomaticRun(_machineRecoveryCoordinator.InvalidateBeforeAutomaticRun);
-                createdRuntime.SetPreparationRecordCallbacks(_machineRecoveryCoordinator.MarkBeforePreparation,
+                createdRuntime.SetBeforeAutomaticRun(() => _machineRecoveryCoordinator.InvalidateBeforeAutomaticRun(createdRuntime));
+                createdRuntime.SetPreparationRecordCallbacks(() => _machineRecoveryCoordinator.MarkBeforePreparation(createdRuntime),
                     _machineRecoveryCoordinator.SaveAfterSafePreparation);
                 createdRuntime.ConfigurePreparations(preparations);
                 await createdRuntime.ConnectAsync(CancellationToken.None);

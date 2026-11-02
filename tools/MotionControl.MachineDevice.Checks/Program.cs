@@ -100,8 +100,11 @@ namespace MotionControl.MachineDevice.Checks
             interlock.Axes.Add(new TaskAxisInterlock { AxisName = "X", MinimumPosition = 0, MaximumPosition = 0 });
             var request = device.Resources.Enqueue("run", "task", "工位", "node", "步骤", "call", new[] { "Axis:X" }, interlock);
             string reason;
+            Ensure(device.GetResourceRecoveryState() == TaskResourceRecoveryState.Clear, "等待资源不能当成已占用。");
             Ensure(device.Resources.TryAcquire(request, out reason), reason);
+            Ensure(device.GetResourceRecoveryState() == TaskResourceRecoveryState.Held, "占用资源没有报告持有状态。");
             device.Resources.Block(request, "未退出");
+            Ensure(device.GetResourceRecoveryState() == TaskResourceRecoveryState.Blocked, "隔离资源没有报告待确认状态。");
             string id = device.ReadResources().Single().RequestId;
             Ensure(!device.TryRecoverResources(id, "", out reason), "缺少现场确认也放行。");
             Ensure(!device.TryRecoverResources(id, "现场已核实", out reason) && reason.Contains("控制权"), "未持有控制权时放行。");
@@ -127,6 +130,7 @@ namespace MotionControl.MachineDevice.Checks
             Ensure(!device.TryRecoverResources(id, "现场已核实", out reason), "退出轴未使能被放行。");
             axis.ServoEnabled = true;
             Ensure(device.TryRecoverResources(id, "现场已核实", out reason), reason);
+            Ensure(device.GetResourceRecoveryState() == TaskResourceRecoveryState.Clear, "已恢复的资源仍被报告隔离。");
             Ensure(!device.TryRecoverResources(id, "重复确认", out reason), "旧凭证重复放行。");
 
             var variableCondition = new TaskCondition { Kind = TaskConditionKind.Compare,
@@ -157,6 +161,8 @@ namespace MotionControl.MachineDevice.Checks
             string reason;
             var request = device.Resources.Enqueue("run", "task", "工位", "node", "步骤", "call", new[] { "Axis:X" });
             Ensure(device.Resources.TryAcquire(request, out reason), reason);
+            ExpectMessage(() => controller.CloseAsync().GetAwaiter().GetResult(), "待确认");
+            Ensure(runtime.IsTaskEngineControlClaimed, "资源仍被持有时关闭会话丢失了控制权。");
             device.Resources.Block(request, "未退出");
             string id = device.ReadResources().Single().RequestId;
             ExpectMessage(() => controller.CloseAsync().GetAwaiter().GetResult(), "待确认");

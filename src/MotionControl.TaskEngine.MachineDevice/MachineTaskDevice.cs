@@ -21,7 +21,7 @@ namespace MotionControl.TaskEngine.MachineDevice
     /// 变量走 IDeviceVariableStore，整机控制权通过 MachineRuntime 统一仲裁。
     /// 轴组插补和有条件的资源范围互锁尚未接入，调用时明确报错，不退化执行。
     /// </summary>
-    public sealed partial class MachineTaskDevice : ITaskDevice, ITaskInterlockSupport
+    public sealed partial class MachineTaskDevice : ITaskDevice, ITaskInterlockSupport, ITaskResourceRecoveryState
     {
         /// <summary>未指定所有者时使用的匿名所有权标记，保证同一实例内的所有权比对稳定。</summary>
         private static readonly object AnonymousOwner = new object();
@@ -175,6 +175,15 @@ namespace MotionControl.TaskEngine.MachineDevice
             return _resources.Read();
         }
 
+        /// <summary>只查询本会话的资源队列，不访问控制器或磁盘。</summary>
+        public TaskResourceRecoveryState GetResourceRecoveryState()
+        {
+            var resources = _resources.Read();
+            if (resources.Any(item => item.State == TaskResourceState.Blocked)) return TaskResourceRecoveryState.Blocked;
+            if (resources.Any(item => item.State == TaskResourceState.Held)) return TaskResourceRecoveryState.Held;
+            return TaskResourceRecoveryState.Clear;
+        }
+
         /// <summary>仅在任务已退出、人工核实且退出条件通过两次现场采样后解除隔离；不提供连续安全监控。</summary>
         public bool TryRecoverResources(string requestId, string confirmation, out string reason)
         {
@@ -318,8 +327,8 @@ namespace MotionControl.TaskEngine.MachineDevice
                     throw new InvalidOperationException("任务设备所有权不匹配，不能由当前对象归还。");
                 if (_activeRuns.Count != 0)
                     throw new InvalidOperationException("仍有任务运行未收尾，不能归还设备命令权。");
-                if (_resources.Read().Any(resource => resource.State == TaskResourceState.Blocked))
-                    throw new InvalidOperationException("存在待确认的资源区域，不能关闭任务会话或归还设备控制权；请先核实并解除隔离。");
+                if (_resources.Read().Any(resource => resource.State == TaskResourceState.Held || resource.State == TaskResourceState.Blocked))
+                    throw new InvalidOperationException("存在仍被占用或待确认的资源区域，不能关闭任务会话或归还设备控制权；请先核实并解除隔离。");
                 _runtime.ReleaseTaskEngineControl(this);
                 _machineOwner = null;
             }

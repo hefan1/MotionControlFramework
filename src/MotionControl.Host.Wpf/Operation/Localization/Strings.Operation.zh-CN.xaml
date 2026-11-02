@@ -136,6 +136,8 @@
  <sys:String x:Key="操作页.连接设备后查看准备状态">连接设备后查看准备状态</sys:String>
  <sys:String x:Key="操作页.正在准备设备">正在准备设备</sys:String>
  <sys:String x:Key="操作页.设备恢复信息未确认">设备恢复信息未确认</sys:String>
+ <sys:String x:Key="操作页.恢复诊断.现场核查">请维护人员先核查轴、夹具和在制品状态，保留原始记录并按设备现场恢复方案处理。此处只显示证据，不会解除启动限制。</sys:String>
+ <sys:String x:Key="操作页.恢复诊断.记录位置">恢复记录与运行标记位置（文件可能不存在）：</sys:String>
  <sys:String x:Key="操作页.请联系维护人员核对现场及恢复记录，确认前不能回零或启动。">请联系维护人员核对现场及恢复记录，确认前不能回零或启动。</sys:String>
  <sys:String x:Key="操作页.当前未配置工位回零">当前未配置工位回零</sys:String>
  <sys:String x:Key="操作页.配置工位已准备完成">配置工位已准备完成</sys:String>

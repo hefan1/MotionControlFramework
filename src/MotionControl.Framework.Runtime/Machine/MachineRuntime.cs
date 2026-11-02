@@ -244,6 +244,26 @@ namespace MotionControl.Framework.Runtime.Machine
             }
         }
 
+        /// <summary>读取当前任务资源保护状态；未知实现按未知处理，不能视为空闲。</summary>
+        public TaskResourceRecoveryState GetTaskResourceRecoveryState()
+        {
+            object owner;
+            lock (_controlOwnerLock) owner = _taskEngineOwner;
+            if (owner == null) return TaskResourceRecoveryState.Clear;
+            var guard = owner as ITaskResourceRecoveryState;
+            if (guard == null) return TaskResourceRecoveryState.Unknown;
+            try
+            {
+                TaskResourceRecoveryState state = guard.GetResourceRecoveryState();
+                return Enum.IsDefined(typeof(TaskResourceRecoveryState), state) ? state : TaskResourceRecoveryState.Unknown;
+            }
+            catch (Exception error)
+            {
+                System.Diagnostics.Trace.TraceError("读取任务资源状态失败，保留恢复保护：" + error);
+                return TaskResourceRecoveryState.Unknown;
+            }
+        }
+
         /// <summary>返回本设备使用的报警服务。</summary>
         public IMachineAlarmService AlarmService
         {

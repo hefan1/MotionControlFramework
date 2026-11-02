@@ -35,6 +35,8 @@ namespace MotionControl.Host.Wpf.Operation
         private string _error;
         /// <summary>完整异常供维护人员展开查看，不占据操作员的主要状态区域。</summary>
         private string _diagnostic;
+        /// <summary>实际设备配置目录，恢复被拦截时仅供维护人员定位原始证据。</summary>
+        private string _recoveryEvidenceDirectory;
 
         /// <summary>创建页面，命令与导航由 Host 显式接入。</summary>
         public EquipmentPreparationView(Func<Task> ensureConfiguration, Action<string> navigate)
@@ -59,6 +61,13 @@ namespace MotionControl.Host.Wpf.Operation
             _rows.Clear();
             Refresh();
             if (IsLoaded) LoadConfiguration();
+        }
+
+        /// <summary>接收本次设备的真实配置路径，仅用于只读诊断，不修改恢复记录。</summary>
+        public void SetRecoveryEvidenceDirectory(string directory)
+        {
+            _recoveryEvidenceDirectory = directory;
+            Refresh();
         }
 
         /// <summary>切换本页文字资源；设备名称及实际诊断仍来自设备定义。</summary>
@@ -130,8 +139,9 @@ namespace MotionControl.Host.Wpf.Operation
             ErrorText.Text = recoveryBlocked ? _runtime.RecoveryBlockReason
                 : string.IsNullOrWhiteSpace(_error) ? string.Empty
                 : failed == null || _error.Contains(failed.StationName) ? _error : failed.StationName + "：" + _error;
-            DiagnosticText.Text = _diagnostic ?? string.Empty;
-            DiagnosticExpander.Visibility = string.IsNullOrWhiteSpace(_diagnostic) ? Visibility.Collapsed : Visibility.Visible;
+            string recoveryDiagnostic = recoveryBlocked ? BuildRecoveryDiagnostic() : null;
+            DiagnosticText.Text = recoveryDiagnostic ?? _diagnostic ?? string.Empty;
+            DiagnosticExpander.Visibility = string.IsNullOrWhiteSpace(DiagnosticText.Text) ? Visibility.Collapsed : Visibility.Visible;
             bool canPrepare = connected && _configurationLoaded && !preparing && !recoveryBlocked && !_commandInProgress
                 && (_runtime.State == MachineRunState.Ready || _runtime.State == MachineRunState.ResetRequired || _runtime.State == MachineRunState.Paused);
             PrepareAllButton.IsEnabled = canPrepare && _rows.Count > 0;
@@ -142,6 +152,21 @@ namespace MotionControl.Host.Wpf.Operation
             DetailText.Text = selected == null ? T("选择工位可查看当前动作和处理说明；相关前置工位会按依赖顺序一起准备。")
                 : selected.Name + " · " + selected.StateText + "\n" + selected.Action
                     + (string.IsNullOrWhiteSpace(selected.Detail) ? string.Empty : "\n" + SimplifyError(selected.Detail));
+        }
+
+        /// <summary>展示实际证据路径和处理边界，不推断现场状态、不提供解除门禁操作。</summary>
+        private string BuildRecoveryDiagnostic()
+        {
+            string result = T("恢复诊断.现场核查");
+            if (!string.IsNullOrWhiteSpace(_recoveryEvidenceDirectory))
+            {
+                string runtimeDirectory = System.IO.Path.Combine(_recoveryEvidenceDirectory, "Runtime");
+                result += "\n" + T("恢复诊断.记录位置") + "\n"
+                    + System.IO.Path.Combine(runtimeDirectory, "RecoverySnapshot.json") + "\n"
+                    + System.IO.Path.Combine(runtimeDirectory, "AutomaticRun.pending");
+            }
+            if (!string.IsNullOrWhiteSpace(_diagnostic)) result += "\n\n" + _diagnostic;
+            return result;
         }
 
         /// <summary>把通用准备状态映射为现场用语。</summary>

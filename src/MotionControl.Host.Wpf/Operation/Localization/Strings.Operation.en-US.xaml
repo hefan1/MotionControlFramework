@@ -136,6 +136,8 @@
  <sys:String x:Key="操作页.连接设备后查看准备状态">Connect the controller to view preparation status</sys:String>
  <sys:String x:Key="操作页.正在准备设备">Preparing equipment</sys:String>
  <sys:String x:Key="操作页.设备恢复信息未确认">Recovery information needs review</sys:String>
+ <sys:String x:Key="操作页.恢复诊断.现场核查">Maintenance must check axes, fixtures and workpieces, preserve the original records, and follow the equipment recovery procedure. This view only locates evidence; it does not release the start restriction.</sys:String>
+ <sys:String x:Key="操作页.恢复诊断.记录位置">Recovery record and run marker locations (files may be absent):</sys:String>
  <sys:String x:Key="操作页.请联系维护人员核对现场及恢复记录，确认前不能回零或启动。">Contact maintenance to check the equipment and recovery records before homing or starting.</sys:String>
  <sys:String x:Key="操作页.当前未配置工位回零">No station preparation configured</sys:String>
  <sys:String x:Key="操作页.配置工位已准备完成">Configured stations are prepared</sys:String>

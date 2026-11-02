@@ -69,7 +69,63 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("设备变量跨进程恢复及配置变化保护", MachineRecoveryChecks.RunAsync, failures);
             await RunCheckAsync("自动运行异常退出标记及受控暂停保存", RunMarkerSurvivesUntilSafePauseAsync, failures);
             await RunCheckAsync("设备准备异常退出标记及安全停止", PreparationMarkerSurvivesUntilSafeStopAsync, failures);
+            await RunCheckAsync("任务占用及隔离跨重启保护与同会话续跑", TaskResourceMarkerSurvivesPauseAsync, failures);
             return failures.AsReadOnly();
+        }
+
+        /// <summary>正常持有资源允许原会话续跑；隔离或未知时阻止续跑并保留跨进程标记。</summary>
+        private static async Task TaskResourceMarkerSurvivesPauseAsync()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "TaskResourceMarker_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var configuration = new MachineConfigurationStore(root);
+                var store = new MachineRecoveryStore(configuration, "Machine01");
+                var coordinator = new MachineRecoveryCoordinator(store, new DeviceVariableStore(new DeviceVariableDefinition[0]), "Machine01");
+                coordinator.Load(out string warning);
+                coordinator.SaveForShutdown(null, false);
+                string path = Path.Combine(configuration.GetMachineDirectory("Machine01"), "Runtime", "RecoverySnapshot.json");
+                string original = File.ReadAllText(path);
+                var runtime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { new FakeMotionCard("CardA", new FakeAxis("X")) }),
+                    new IStationFlow[0], new MachineAlarmService(), new FakeSafetyStatus(), controlOwner: MachineControlOwner.TaskEngine);
+                var owner = new RecoveryResourceOwner();
+                runtime.SetBeforeAutomaticRun(() => coordinator.InvalidateBeforeAutomaticRun(runtime));
+                runtime.StatusChanged += (sender, args) => { if (runtime.State == MachineRunState.Paused) coordinator.SavePausedCheckpoint(runtime); };
+                await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+                await runtime.AcquireTaskEngineControlAsync(owner, CancellationToken.None).ConfigureAwait(false);
+                await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+                await runtime.BeginTaskEngineRunAsync(CancellationToken.None).ConfigureAwait(false);
+                owner.State = TaskResourceRecoveryState.Held;
+                await runtime.FinishTaskEngineRunAsync(false, null).ConfigureAwait(false);
+                Ensure(store.HasUnfinishedAutomaticRun() && File.ReadAllText(path) == original, "暂停时占用资源丢失了标记或覆盖旧记录。");
+                var restarted = new MachineRecoveryCoordinator(store, new DeviceVariableStore(new DeviceVariableDefinition[0]), "Machine01");
+                restarted.Load(out warning);
+                Ensure(!string.IsNullOrWhiteSpace(restarted.RecoveryBlockReason), "占用资源时重启没有拦截。");
+                coordinator.SaveForShutdown(runtime, true);
+                Ensure(store.HasUnfinishedAutomaticRun() && File.ReadAllText(path) == original, "关闭时覆盖占用资源的保护记录。");
+                await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+                await runtime.BeginTaskEngineRunAsync(CancellationToken.None).ConfigureAwait(false);
+                Ensure(store.HasUnfinishedAutomaticRun(), "同会话恢复丢失运行标记。");
+                owner.State = TaskResourceRecoveryState.Blocked;
+                await runtime.FinishTaskEngineRunAsync(false, null).ConfigureAwait(false);
+                Ensure(store.HasUnfinishedAutomaticRun(), "隔离资源时错误移除了标记。");
+                await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+                await ExpectExceptionAsync<InvalidOperationException>(() => runtime.BeginTaskEngineRunAsync(CancellationToken.None)).ConfigureAwait(false);
+                Ensure(store.HasUnfinishedAutomaticRun(), "隔离资源尝试启动后丢失了标记。");
+                owner.State = TaskResourceRecoveryState.Unknown;
+                await ExpectExceptionAsync<InvalidOperationException>(() => runtime.BeginTaskEngineRunAsync(CancellationToken.None)).ConfigureAwait(false);
+                Ensure(store.HasUnfinishedAutomaticRun(), "未知资源状态错误清除标记。");
+            }
+            finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+        }
+
+        /// <summary>可控资源状态替身，只用于检查运行标记，不访问控制卡。</summary>
+        private sealed class RecoveryResourceOwner : ITaskResourceRecoveryState
+        {
+            /// <summary>当前测试的资源状态。</summary>
+            public TaskResourceRecoveryState State { get; set; }
+            /// <summary>返回测试设置的资源状态。</summary>
+            public TaskResourceRecoveryState GetResourceRecoveryState() { return State; }
         }
 
         /// <summary>自动运行前先持久化标记；运行中重启被阻止，安全暂停并保存后才移除。</summary>

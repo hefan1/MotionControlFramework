@@ -21,6 +21,9 @@ namespace MotionControl.Host.Wpf
         /// <summary>将当前设备的报警历史交给报警页面，写入器由应用管理。</summary>
         internal void SetAlarmHistory(MotionControl.Framework.Runtime.Alarms.AlarmHistoryJournal history)
         { _currentAlarmsPage.SetHistory(history); _alarmHistoryPage.SetHistory(history); }
+        /// <summary>向设备准备页提供实际设备目录，只用于查看恢复证据位置。</summary>
+        internal void SetRecoveryEvidenceDirectory(string directory)
+        { _equipmentPreparationPage.SetRecoveryEvidenceDirectory(directory); }
         /// <summary>从总览或报警进入关联页面后的返回目标。</summary>
         private string _operationReturnPage;
         /// <summary>返回目标所在分区，避免任务配置等非操作页被错误映射到首页。</summary>

@@ -50,11 +50,34 @@ namespace MotionControl.OperatorPages.Checks
             Check("控制器后端选择与设备映射保护", HostBackendSelectionChecks.Run, ref failures);
             Check("Host导航和返回原页面", HostNavigation, ref failures);
             Check("暂停和停止的现场恢复提示", MachineCommandGuidance, ref failures);
+            Check("恢复拦截只读诊断和设备目录", RecoveryEvidenceGuidance, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：18 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：19 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
+        }
+        /// <summary>恢复阻断时提供当前配置目录下的原始证据路径，不操作设备或放行。</summary>
+        private static void RecoveryEvidenceGuidance()
+        {
+            var card = new GuardCard();
+            var runtime = CreateRuntime(card, new MachineAlarmService());
+            runtime.SetRecoveryBlockReason("恢复文件未确认");
+            var view = new EquipmentPreparationView(null, null);
+            string directory = Path.Combine(Path.GetTempPath(), "RecoveryEvidenceExample", "Machine01");
+            view.SetRecoveryEvidenceDirectory(directory);
+            view.SetRuntime(runtime);
+            var expander = (Expander)view.FindName("DiagnosticExpander");
+            var diagnostic = (TextBox)view.FindName("DiagnosticText");
+            Assert(expander.Visibility == Visibility.Visible, "恢复拦截时没有维护诊断入口。");
+            Assert(diagnostic.Text.Contains(Path.Combine(directory, "Runtime", "RecoverySnapshot.json"))
+                && diagnostic.Text.Contains(Path.Combine(directory, "Runtime", "AutomaticRun.pending"))
+                && diagnostic.Text.Contains("不会解除启动限制"), "未显示当前目录的证据或限制说明。");
+            Assert(!((Button)view.FindName("PrepareAllButton")).IsEnabled && card.Calls == 0, "只读诊断触发设备动作或错误放行。");
+            view.SetLanguage("en-US");
+            Assert(diagnostic.Text.Contains("does not release") && diagnostic.Text.Contains(directory), "英文诊断或证据路径未更新。");
+            view.SetRuntime(null);
+            Assert(expander.Visibility == Visibility.Collapsed, "断开后仍展示旧设备拦截详情。");
         }
         /// <summary>检查任务页复用的顶部状态资源覆盖全部设备状态，且等待复位在两种语言下可读。</summary>
         private static void MachineStateLocalization()
