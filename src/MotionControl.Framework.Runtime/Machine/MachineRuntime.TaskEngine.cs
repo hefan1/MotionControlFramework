@@ -82,10 +82,26 @@ namespace MotionControl.Framework.Runtime.Machine
                     throw new InvalidOperationException("当前设备控制权不属于图形化任务执行入口，不能结束任务运行状态。");
                 await StopEmergencyStopMonitorAsync().ConfigureAwait(false);
 
-                if (State == MachineRunState.Alarmed || _alarmService.HasLatchedStopAlarm || faulted)
-                    SetStatus(MachineRunState.Alarmed, error);
-                else if (State == MachineRunState.Running || State == MachineRunState.Pausing)
-                    SetStatus(MachineRunState.Paused, error);
+                // 不在状态锁内调用可由外部实现的报警服务，避免不同组件锁顺序反转。
+                bool hasStopAlarm = _alarmService.HasLatchedStopAlarm;
+                bool changed = false;
+                lock (_statusLock)
+                {
+                    // 停机报警事件也使用此锁，不能在检查后把已报警状态覆盖成暂停。
+                    if (_state == MachineRunState.Alarmed || hasStopAlarm || faulted)
+                    {
+                        _state = MachineRunState.Alarmed;
+                        if (error != null) _lastError = error;
+                        changed = true;
+                    }
+                    else if (_state == MachineRunState.Running || _state == MachineRunState.Pausing)
+                    {
+                        _state = MachineRunState.Paused;
+                        _lastError = error;
+                        changed = true;
+                    }
+                }
+                if (changed) RaiseStatusChanged();
             }
             finally
             {

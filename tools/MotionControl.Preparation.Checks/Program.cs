@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Contracts.Preparation;
@@ -18,7 +19,7 @@ namespace MotionControl.Preparation.Checks
         /// <summary>执行全部检查并返回失败退出码。</summary>
         private static int Main()
         {
-            try { RunAsync().GetAwaiter().GetResult(); Console.WriteLine("设备准备：11 组检查通过（仅内部逻辑检查）。"); return 0; }
+            try { RunAsync().GetAwaiter().GetResult(); Console.WriteLine("设备准备：12 组检查通过（仅内部逻辑检查）。"); return 0; }
             catch (Exception error) { Console.Error.WriteLine(error); return 1; }
         }
 
@@ -36,6 +37,82 @@ namespace MotionControl.Preparation.Checks
             await UntrustedRecoveryBlocksAutomationAsync();
             await RunMarkerFailureBlocksBothOwnersAsync();
             await PreparationMarkerLifecycleAsync();
+            await StopAlarmCannotBeOverwrittenByTaskPauseAsync();
+        }
+
+        /// <summary>暂停提交与已报警状态使用同一锁；并发停机报警不能被覆盖成普通暂停。</summary>
+        private static async Task StopAlarmCannotBeOverwrittenByTaskPauseAsync()
+        {
+            var alarm = new GatedAlarmService();
+            var axis = new Axis();
+            var runtime = new MachineRuntime(new MotionCardGroup(new[] { new Card(axis) }), new[] { new Flow() },
+                alarm, new Safety(), controlOwner: MachineControlOwner.TaskEngine);
+            object owner = new object();
+            await runtime.ConnectAsync(CancellationToken.None);
+            await runtime.AcquireTaskEngineControlAsync(owner, CancellationToken.None);
+            await runtime.ResetAsync(CancellationToken.None);
+            await runtime.BeginTaskEngineRunAsync(CancellationToken.None);
+            alarm.Arm();
+            Task finish = Task.Run(() => runtime.FinishTaskEngineRunAsync(false, null));
+            Task report = null;
+            try
+            {
+                await WaitAsync(() => alarm.CheckEntered.IsSet);
+                var definition = new MachineAlarmDefinition("CONCURRENT_STOP", "并发停机", MachineAlarmKind.StopMachine);
+                report = Task.Run(() => alarm.ReportCondition(definition, "检查", true, "并发报警"));
+                await WaitAsync(() => alarm.StopObserved.IsSet);
+                await report;
+                Ensure(runtime.State == MachineRunState.Alarmed, "暂停检查期间停机报警没有生效。");
+            }
+            finally { alarm.ReleaseCheck.Set(); }
+            await finish;
+            if (report != null) await report;
+            Ensure(runtime.State == MachineRunState.Alarmed, "并发停机报警被普通暂停覆盖。");
+        }
+
+        /// <summary>提供可门控的报警读取，用于安排暂停检查与停机事件交错。</summary>
+        private sealed class GatedAlarmService : IMachineAlarmService
+        {
+            /// <summary>实际的内存报警实现。</summary>
+            private readonly MachineAlarmService _inner = new MachineAlarmService();
+            /// <summary>首次受控读取的启用标记。</summary>
+            private int _armed;
+            /// <summary>暂停流程已进入报警读取。</summary>
+            internal readonly ManualResetEventSlim CheckEntered = new ManualResetEventSlim(false);
+            /// <summary>允许暂停流程结束本次读取。</summary>
+            internal readonly ManualResetEventSlim ReleaseCheck = new ManualResetEventSlim(false);
+            /// <summary>停机事件处理已读取有效报警。</summary>
+            internal readonly ManualResetEventSlim StopObserved = new ManualResetEventSlim(false);
+            /// <summary>只阻塞下一次报警读取。</summary>
+            internal void Arm() { Interlocked.Exchange(ref _armed, 1); }
+            /// <summary>当前报警快照。</summary>
+            public IReadOnlyCollection<MachineAlarmRecord> Alarms => _inner.Alarms;
+            /// <summary>转发报警变化事件。</summary>
+            public event EventHandler AlarmsChanged { add { _inner.AlarmsChanged += value; } remove { _inner.AlarmsChanged -= value; } }
+            /// <summary>转发停机报警事件。</summary>
+            public event EventHandler<MachineAlarmRaisedEventArgs> StopAlarmRaised { add { _inner.StopAlarmRaised += value; } remove { _inner.StopAlarmRaised -= value; } }
+            /// <summary>按测试门控截取报警读取，其他调用如实返回当前报警。</summary>
+            public bool HasLatchedStopAlarm
+            {
+                get
+                {
+                    if (Interlocked.CompareExchange(ref _armed, 0, 1) == 1)
+                    {
+                        bool value = _inner.HasLatchedStopAlarm;
+                        CheckEntered.Set(); ReleaseCheck.Wait(); return value;
+                    }
+                    bool active = _inner.HasLatchedStopAlarm;
+                    if (active) StopObserved.Set();
+                    return active;
+                }
+            }
+            /// <summary>报告模拟报警条件。</summary>
+            public void ReportCondition(MachineAlarmDefinition definition, string source, bool active, string detail)
+                => _inner.ReportCondition(definition, source, active, detail);
+            /// <summary>复位模拟报警。</summary>
+            public void ResetStopAlarms() => _inner.ResetStopAlarms();
+            /// <summary>检查报警条件。</summary>
+            public void EnsureStopAlarmConditionsRecovered() => _inner.EnsureStopAlarmConditionsRecovered();
         }
 
         /// <summary>准备记录先于动作；成功或受控停稳后结束，执行/停轴/保存失败时保持。</summary>
