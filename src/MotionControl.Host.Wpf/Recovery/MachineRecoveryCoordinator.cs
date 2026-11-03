@@ -32,6 +32,10 @@ namespace MotionControl.Host.Wpf.Recovery
 
         /// <summary>仅标记由当前进程创建；重启后遗留标记不能自动清除。</summary>
         private bool _ownsRunMarker;
+        /// <summary>只有开始证据由当前会话成功写入时，才允许记录清料动作阶段。</summary>
+        private bool _ownsClearanceMarker;
+        /// <summary>仅本会话创建的清料可记录现场核查，重启后不能借用旧凭证。</summary>
+        private bool _ownsClearanceInspection;
         /// <summary>正常暂停时仍占用资源；仅本会话允许携带原标记继续。</summary>
         private bool _pausedWithHeldResources;
         /// <summary>任务运行标记在完整收尾屏障建立前不能因会话释放而被清除。</summary>
@@ -168,6 +172,20 @@ namespace MotionControl.Host.Wpf.Recovery
                 System.Diagnostics.Trace.TraceError("核查任务资源记录失败，设备状态未知：" + error);
                 string resourceWarning = "任务资源记录损坏或无法读取，设备状态未知。请联系维护人员检查现场和存储。";
                 RecoveryBlockReason = string.IsNullOrWhiteSpace(RecoveryBlockReason) ? resourceWarning : RecoveryBlockReason + Environment.NewLine + resourceWarning;
+            }
+            try
+            {
+                if (_recoveryStore.HasClearanceEvidence())
+                {
+                    const string clearanceWarning = "存在清料记录，旧工位断点禁止续跑；请核查现场、资源及恢复证据。";
+                    RecoveryBlockReason = string.IsNullOrWhiteSpace(RecoveryBlockReason) ? clearanceWarning : RecoveryBlockReason + Environment.NewLine + clearanceWarning;
+                }
+            }
+            catch (Exception error)
+            {
+                System.Diagnostics.Trace.TraceError("核查清料证据失败，设备状态未知：" + error);
+                const string clearanceWarning = "无法核查清料记录，禁止续跑；请联系维护人员检查存储。";
+                RecoveryBlockReason = string.IsNullOrWhiteSpace(RecoveryBlockReason) ? clearanceWarning : RecoveryBlockReason + Environment.NewLine + clearanceWarning;
             }
             _document = _recoveryStore.Load(out warningMessage);
             if (_document == null)
@@ -410,6 +428,57 @@ namespace MotionControl.Host.Wpf.Recovery
 
         /// <summary>准备动作开始前使用同一持久标记，意外退出后保留旧恢复证据。</summary>
         public void MarkBeforePreparation() { MarkBeforePreparation(null); }
+
+        /// <summary>清料开始前独立落盘并失效内存中的旧断点；不覆盖旧生产及恢复证据。</summary>
+        public void MarkBeforeClearance()
+        {
+            lock (_runRecordSync)
+            {
+                if (_ownsClearanceMarker) throw new InvalidOperationException("当前清料证据尚未结算。");
+                if (!string.IsNullOrWhiteSpace(RecoveryBlockReason))
+                    throw new InvalidOperationException("恢复记录尚不可信，不能取得清料证据：" + RecoveryBlockReason);
+                try { _recoveryStore.MarkClearanceStarted(); }
+                catch
+                {
+                    RecoveryBlockReason = "无法确认清料记录已安全保存；禁止启动生产，请检查现场和存储。";
+                    if (_document != null) { _document.CanResume = false; _document.EquipmentInitializationCompleted = false; }
+                    throw;
+                }
+                _ownsClearanceMarker = true;
+                _ownsClearanceInspection = true;
+                RecoveryBlockReason = "清料已开始，旧工位断点禁止续跑；完成后仍须核查现场与资源。";
+                if (_document != null)
+                {
+                    _document.CanResume = false;
+                    _document.EquipmentInitializationCompleted = false;
+                    _document.ResumeBlockedReason = RecoveryBlockReason;
+                }
+            }
+        }
+
+        /// <summary>追加动作及反馈阶段记录；最终停止和现场恢复仍未确认，不能解除保护。</summary>
+        public void SaveClearanceActionsObserved()
+        {
+            lock (_runRecordSync)
+            {
+                if (!_ownsClearanceMarker) throw new InvalidOperationException("当前会话没有已保存的清料开始记录。");
+                _recoveryStore.MarkClearanceActionsObserved();
+                _ownsClearanceMarker = false;
+                RecoveryBlockReason = "清料动作已到达反馈检查阶段，最终收尾及现场仍待核查；旧工位断点禁止续跑。";
+            }
+        }
+
+        /// <summary>记录本会话完成的现场核查；旧资源、生产标记和恢复快照仍须分别处理。</summary>
+        public void RecordClearanceInspection(string confirmation)
+        {
+            lock (_runRecordSync)
+            {
+                if (!_ownsClearanceInspection) throw new InvalidOperationException("当前会话没有可核查的清料证据。");
+                _recoveryStore.MarkClearanceInspected(confirmation);
+                _ownsClearanceMarker = false;
+                RecoveryBlockReason = "清料现场核查已记录；原资源与恢复记录仍需分别处理，旧工位断点禁止续跑。";
+            }
+        }
 
         /// <summary>工位准备要求任务资源完全释放，不能借回零跨过待确认区域。</summary>
         public void MarkBeforePreparation(MachineRuntime runtime)

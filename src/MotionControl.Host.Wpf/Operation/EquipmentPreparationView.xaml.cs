@@ -124,23 +124,30 @@ namespace MotionControl.Host.Wpf.Operation
             }
             else _rows.Clear();
             bool preparing = _runtime != null && _runtime.IsPreparing;
+            bool clearing = _runtime != null && _runtime.IsClearing;
             bool recoveryBlocked = _runtime != null && !string.IsNullOrWhiteSpace(_runtime.RecoveryBlockReason);
             int completed = snapshots == null ? 0 : snapshots.Count(item => item.IsPrepared);
             SummaryText.Text = !connected ? T("连接设备后查看准备状态")
+                : clearing && _runtime.State == MachineRunState.Alarmed ? T("清料状态待确认")
+                : clearing ? T("清料中或等待停止确认")
                 : preparing ? T("正在准备设备")
                 : recoveryBlocked ? T("设备恢复信息未确认")
                 : _rows.Count == 0 ? T("当前未配置工位回零")
                 : completed == _rows.Count ? T("配置工位已准备完成")
                 : string.Format(T("已准备 {0} / {1} 个工位"), completed, _rows.Count);
-            GuidanceText.Text = preparing ? T("按设备定义的顺序执行，完成后等待启动；需要中断时按停止回零。")
+            GuidanceText.Text = clearing && _runtime.State == MachineRunState.Alarmed
+                ? T("清料未确认安全结束，请停止并联系维护人员核查现场和资源。")
+                : clearing ? T("清料结束后仍需核查现场；需要中断时按停止清料。")
+                : preparing ? T("按设备定义的顺序执行，完成后等待启动；需要中断时按停止回零。")
                 : recoveryBlocked ? T("请联系维护人员核对现场及恢复记录，确认前不能回零或启动。")
                 : _runtime?.IsTaskEngineControlClaimed == true
                     ? T("回零前请确认相关轴已使能、工位与物料状态安全。如需使能，请先暂停并确认轴停稳，在生产流程停止并关闭任务，再到轴手动操作。")
                     : T("回零前请确认相关轴已使能、工位与物料状态安全；回零完成后再核对其他启动条件。");
             var failed = snapshots?.FirstOrDefault(item => item.State == StationPreparationState.Failed);
-            ErrorText.Text = recoveryBlocked ? _runtime.RecoveryBlockReason
+            string errorText = recoveryBlocked ? _runtime.RecoveryBlockReason
                 : string.IsNullOrWhiteSpace(_error) ? string.Empty
                 : failed == null || _error.Contains(failed.StationName) ? _error : failed.StationName + "：" + _error;
+            ErrorText.Text = errorText.Length > 240 ? errorText.Substring(0, 240) + "…" : errorText;
             string recoveryDiagnostic = recoveryBlocked ? BuildRecoveryDiagnostic() : null;
             DiagnosticText.Text = recoveryDiagnostic ?? _diagnostic ?? string.Empty;
             DiagnosticExpander.Visibility = string.IsNullOrWhiteSpace(DiagnosticText.Text) ? Visibility.Collapsed : Visibility.Visible;
@@ -150,6 +157,7 @@ namespace MotionControl.Host.Wpf.Operation
             PrepareAllButton.Opacity = PrepareAllButton.IsEnabled ? 1.0 : 0.5;
             PrepareSelectedButton.IsEnabled = canPrepare && StationsGrid.SelectedItem != null;
             StopPreparationButton.IsEnabled = preparing;
+            StopPreparationButton.Content = T(clearing ? "停止清料" : "停止回零");
             var selected = StationsGrid.SelectedItem as PreparationRow;
             DetailText.Text = selected == null ? T("选择工位可查看当前动作和处理说明；相关前置工位会按依赖顺序一起准备。")
                 : selected.Name + " · " + selected.StateText + "\n" + selected.Action
@@ -160,12 +168,17 @@ namespace MotionControl.Host.Wpf.Operation
         private string BuildRecoveryDiagnostic()
         {
             string result = T("恢复诊断.现场核查");
+            if (_runtime != null && !string.IsNullOrWhiteSpace(_runtime.RecoveryBlockReason))
+                result += "\n\n" + _runtime.RecoveryBlockReason;
             if (!string.IsNullOrWhiteSpace(_recoveryEvidenceDirectory))
             {
                 string runtimeDirectory = System.IO.Path.Combine(_recoveryEvidenceDirectory, "Runtime");
                 result += "\n" + T("恢复诊断.记录位置") + "\n"
                     + System.IO.Path.Combine(runtimeDirectory, "RecoverySnapshot.json") + "\n"
-                    + System.IO.Path.Combine(runtimeDirectory, "AutomaticRun.pending");
+                    + System.IO.Path.Combine(runtimeDirectory, "AutomaticRun.pending") + "\n"
+                    + System.IO.Path.Combine(runtimeDirectory, "ControlledClearance.pending") + "\n"
+                    + System.IO.Path.Combine(runtimeDirectory, "ControlledClearance.actions-observed") + "\n"
+                    + System.IO.Path.Combine(runtimeDirectory, "ControlledClearanceInspections");
             }
             if (!string.IsNullOrWhiteSpace(_diagnostic)) result += "\n\n" + _diagnostic;
             return result;

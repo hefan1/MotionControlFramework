@@ -29,6 +29,7 @@ namespace MotionControl.OperatorPages.Checks
                 var type = typeof(MainWindow).Assembly.GetType("MotionControl.Host.Wpf.Tasks.TaskMonitorLauncher", true);
                 CheckPausedGuidance(type);
                 CheckBlockedGuidance(type);
+                CheckClearancePreparationDisplay();
                 var store = new MachineConfigurationStore(Path.Combine(Path.GetTempPath(), "TaskRunPageChecks"));
                 var page = Activator.CreateInstance(type, BindingFlags.Instance | BindingFlags.NonPublic,
                     null, new object[] { store, "MissingMachine", host, null }, null);
@@ -111,6 +112,33 @@ namespace MotionControl.OperatorPages.Checks
                     "资源核查窗口故障被错误描述为任务停止失败。 ");
             }
             finally { host.Close(); }
+        }
+
+        /// <summary>清料活动及异常必须与回零区分，显示和语言切换不启动任何设备动作。</summary>
+        private static void CheckClearancePreparationDisplay()
+        {
+            var card = new ConnectedReadOnlyCard();
+            var runtime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { card }),
+                new IStationFlow[] { new ReadOnlyFlow() }, new MachineAlarmService(), new GuardSafety());
+            var runtimeType = typeof(MachineRuntime);
+            runtimeType.GetField("_state", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(runtime, MachineRunState.Preparing);
+            runtimeType.GetField("_preparing", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(runtime, true);
+            runtimeType.GetField("_clearing", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(runtime, true);
+            var page = new MotionControl.Host.Wpf.Operation.EquipmentPreparationView(null, null);
+            page.SetRuntime(runtime);
+            var summary = (TextBlock)page.FindName("SummaryText");
+            var guidance = (TextBlock)page.FindName("GuidanceText");
+            var stop = (Button)page.FindName("StopPreparationButton");
+            Require(summary.Text.Contains("清料") && guidance.Text.Contains("核查现场") && stop.Content.ToString() == "停止清料"
+                && stop.IsEnabled && !((Button)page.FindName("PrepareAllButton")).IsEnabled, "清料执行时错误显示或允许回零。");
+            runtimeType.GetField("_state", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(runtime, MachineRunState.Alarmed);
+            page.SetRuntime(runtime);
+            Require(summary.Text == "清料状态待确认" && guidance.Text.Contains("未确认安全结束"), "清料失败时错误报告仍在正常执行。");
+            page.SetLanguage("en-US");
+            Require(summary.Text.Contains("requires inspection") && stop.Content.ToString() == "Stop clearance", "清料状态没有随语言切换。");
+            runtimeType.GetField("_clearing", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(runtime, false);
+            page.SetRuntime(runtime);
+            Require(stop.Content.ToString() == "Stop preparation", "退出清料后未恢复回零停止文案。");
         }
 
         /// <summary>待确认资源应先提示现场核查，不误导操作员先回零或关闭保持输出。</summary>

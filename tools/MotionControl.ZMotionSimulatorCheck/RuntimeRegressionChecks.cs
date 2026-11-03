@@ -42,6 +42,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("设备定义按设备环境创建工位并拒绝越行程配置", EquipmentDefinitionCreatesStationsFromContextAsync, failures);
             await RunCheckAsync("执行入口可由设备配置指定", ConfiguredControlOwnerIsHonoredAsync, failures);
             await RunCheckAsync("任一轴仍在运动时禁止启动自动流程", MovingAxisBlocksAutomaticStartAsync, failures);
+            await RunCheckAsync("轴速度异常或反馈未知时禁止复位、准备、启动和断卡", UnknownAxisStopBlocksCommandsAsync, failures);
             await RunCheckAsync("硬限位后未配置初始化流程时必须先回零", HomingRequiredAxisBlocksStartWithoutInitializationAsync, failures);
             await RunCheckAsync("可选初始化先于工位、暂停续跑且每个连接周期只执行一次", EquipmentInitializationRunsBeforeStationsAndResumesAsync, failures);
             await RunCheckAsync("启动后立即暂停也能等待后台初始化调度收尾", PauseImmediatelyAfterStartWaitsForInitializationAsync, failures);
@@ -795,6 +796,56 @@ namespace MotionControl.ZMotionSimulatorCheck
 
             movingAxis.IsMoving = false;
             await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        /// <summary>运动标志为停止但速度异常或状态缺失时，不得让复位、准备、自动启动或断卡越过停稳检查。</summary>
+        private static async Task UnknownAxisStopBlocksCommandsAsync()
+        {
+            foreach (double? velocity in new double?[] { 0.1, double.NaN, double.PositiveInfinity, double.NegativeInfinity, null })
+            {
+                var axis = new FakeAxis("反馈轴") { ReportedVelocity = velocity ?? 0, ReturnNullStatus = !velocity.HasValue };
+                var card = new FakeMotionCard("反馈卡", axis);
+                var runtime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { card }),
+                    new IStationFlow[] { new WaitingStationFlow("工位", "等待") }, new MachineAlarmService(), new FakeSafetyStatus());
+                var preparation = new RecoveryPreparationForCheck();
+                runtime.ConfigurePreparations(new[] { preparation });
+                await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+                await ExpectExceptionAsync<InvalidOperationException>(() => runtime.ResetAsync(CancellationToken.None)).ConfigureAwait(false);
+                Ensure(axis.AlarmResetCount == 0, "轴停稳未知时不得下发报警复位。");
+                await ExpectExceptionAsync<InvalidOperationException>(() => runtime.PrepareAsync(null, CancellationToken.None)).ConfigureAwait(false);
+                Ensure(!preparation.Executing, "轴停稳未知时不得开始设备准备。");
+                await ExpectExceptionAsync<InvalidOperationException>(() => runtime.DisconnectAsync(CancellationToken.None)).ConfigureAwait(false);
+                Ensure(card.IsConnected, "轴停稳未知时不得断开控制卡。");
+                axis.ReturnNullStatus = false; axis.ReportedVelocity = 0;
+                await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+
+                var taskAxis = new FakeAxis("任务轴");
+                var taskCard = new FakeMotionCard("任务卡", taskAxis);
+                var taskRuntime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { taskCard }),
+                    new IStationFlow[] { new WaitingStationFlow("工位", "等待") }, new MachineAlarmService(), new FakeSafetyStatus(),
+                    controlOwner: MachineControlOwner.TaskEngine);
+                await taskRuntime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+                await taskRuntime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+                object owner = new object();
+                await taskRuntime.AcquireTaskEngineControlAsync(owner, CancellationToken.None).ConfigureAwait(false);
+                taskAxis.ReportedVelocity = velocity ?? 0; taskAxis.ReturnNullStatus = !velocity.HasValue;
+                await ExpectExceptionAsync<InvalidOperationException>(() => taskRuntime.BeginTaskEngineRunAsync(CancellationToken.None)).ConfigureAwait(false);
+                Ensure(taskRuntime.State != MachineRunState.Running, "轴停稳未知时任务入口错误进入运行。 ");
+                taskAxis.ReturnNullStatus = false; taskAxis.ReportedVelocity = 0;
+                taskRuntime.ReleaseTaskEngineControl(owner);
+                await taskRuntime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+
+                var flowAxis = new FakeAxis("流程轴");
+                var flow = new WaitingStationFlow("工位", "等待");
+                var flowRuntime = CreateRuntime(flow, new MachineAlarmService(), axis: flowAxis);
+                await flowRuntime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+                await flowRuntime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+                flowAxis.ReportedVelocity = velocity ?? 0; flowAxis.ReturnNullStatus = !velocity.HasValue;
+                await ExpectExceptionAsync<InvalidOperationException>(() => flowRuntime.StartAsync(CancellationToken.None)).ConfigureAwait(false);
+                Ensure(flow.StartCount == 0, "轴停稳未知时错误启动了 C# 工位。 ");
+                flowAxis.ReturnNullStatus = false; flowAxis.ReportedVelocity = 0;
+                await flowRuntime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+            }
         }
 
         /// <summary>确认没有设备初始化流程时，硬限位恢复留下的回零要求仍会阻止自动启动。</summary>
@@ -2042,6 +2093,11 @@ namespace MotionControl.ZMotionSimulatorCheck
             /// <summary>设置测试轴是否仍处于运动状态。</summary>
             public bool IsMoving { get; set; }
 
+            /// <summary>模拟控制器报告的速度或未知状态。</summary>
+            public double ReportedVelocity { get; set; }
+            /// <summary>模拟控制器返回空的轴状态。</summary>
+            public bool ReturnNullStatus { get; set; }
+
             /// <summary>记录测试期间收到的轴报警复位次数。</summary>
             public int AlarmResetCount { get; private set; }
 
@@ -2052,9 +2108,10 @@ namespace MotionControl.ZMotionSimulatorCheck
             public Task<AxisStatus> ReadStatusAsync(CancellationToken cancellationToken)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (ReturnNullStatus) return Task.FromResult<AxisStatus>(null);
                 return Task.FromResult(new AxisStatus(
                     0,
-                    0,
+                    ReportedVelocity,
                     true,
                     IsMoving,
                     true,

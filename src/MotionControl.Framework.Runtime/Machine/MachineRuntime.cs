@@ -515,10 +515,10 @@ namespace MotionControl.Framework.Runtime.Machine
                                 statusError);
                         }
 
-                        if (axisStatus.Moving)
+                        if (!AxisStopFeedback.IsConfirmedStopped(axisStatus))
                         {
                             throw new InvalidOperationException(
-                                "逻辑轴 '" + axis.Name + "' 仍在运动，停止所有轴后再执行整机复位。");
+                                "逻辑轴 '" + axis.Name + "' 仍在运动或速度状态未知，确认所有轴停稳后再执行整机复位。");
                         }
                     }
 

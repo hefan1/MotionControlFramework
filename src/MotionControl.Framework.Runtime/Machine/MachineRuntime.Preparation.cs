@@ -200,6 +200,11 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>报警触发的停止只作用于原准备令牌，不能跨到随后开始的新准备。</summary>
         private async Task StopPreparationAsync(CancellationToken cancellationToken, CancellationTokenSource expectedPreparation)
         {
+            if (IsClearing)
+            {
+                await StopControlledClearanceAsync(expectedPreparation).ConfigureAwait(false);
+                return;
+            }
             Task operation;
             bool recoveringStop;
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -581,7 +586,7 @@ namespace MotionControl.Framework.Runtime.Machine
             foreach (IAxis axis in _motionCards.Axes)
             {
                 AxisStatus status = await axis.ReadStatusAsync(token).ConfigureAwait(false);
-                if (status.Moving) throw new InvalidOperationException("逻辑轴“" + axis.Name + "”仍在运动，设备准备不能继续。");
+                if (!AxisStopFeedback.IsConfirmedStopped(status)) throw new InvalidOperationException("逻辑轴“" + axis.Name + "”仍在运动或速度状态未知，设备准备不能继续。");
                 if (checkAlarm && status.AlarmActive)
                     throw new InvalidOperationException("逻辑轴“" + axis.Name + "”存在报警：" + status.AlarmMessage);
             }

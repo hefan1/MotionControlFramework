@@ -34,6 +34,10 @@ namespace MotionControl.MachineDevice.Checks
             Run("移动到位由轴反馈决定", MotionCompletesFromFeedback, ref failures);
             Run("取消时让轴受控停止并确认停稳", CancelStopsAxis, ref failures);
             Run("未使能、未回零和越行程拒绝动作", MotionPreconditionsAreRejected, ref failures);
+            Run("轴报警无说明或状态未知不能视为正常", AxisAlarmWithoutDetailsIsNotCleared, ref failures);
+            Run("确认停止必须有有效停稳速度反馈", ConfirmStoppedRequiresValidVelocity, ref failures);
+            Run("轴动作前必须确认停稳且位置有效", MotionStartRequiresValidFeedback, ref failures);
+            Run("回零完成必须确认原点状态", HomeCompletionRequiresHomedFeedback, ref failures);
             Run("轴组插补明确拒绝", GroupMoveIsRejected, ref failures);
             Run("IO 读取失败向上抛出", IoFailureIsReported, ref failures);
             Run("变量按目录类型写入", VariablesAreWrittenByType, ref failures);
@@ -45,6 +49,9 @@ namespace MotionControl.MachineDevice.Checks
             Run("资源恢复复核现场状态且只放行一次", ResourceRecoveryRequiresRecheck, ref failures);
             Run("资源恢复复核输出可读且两次一致", ResourceRecoveryRequiresOutputReadback, ref failures);
             Run("资源恢复要求运行时实际持有控制权", RecoveryRequiresActualClaim, ref failures);
+            Run("清料租约独占资源并保留原隔离", ClearanceLeaseRetainsIsolation, ref failures);
+            Run("真实设备清料凭证继承资源并保持失败隔离", MachineClearanceReservationChecks, ref failures);
+            Run("整机清料成功与停止均保留正确资源边界", MachineClearanceLifecycleChecks, ref failures);
             Run("设备互锁有条件时拒绝执行", InterlockRejectsConfiguredConditions, ref failures);
             Run("进入与退出互锁在任务接管前拒绝", InterlocksRejectedBeforeTaskControl, ref failures);
             Run("隔离资源阻止关闭会话且恢复后可重试", BlockedResourcesPreventClose, ref failures);
@@ -61,8 +68,76 @@ namespace MotionControl.MachineDevice.Checks
             Run("设备凭证跨设备及迟到调用保护", DeviceMoveTokenOwnership, ref failures);
             Run("命令前拒绝与命令后异常严格区分", PreflightDoesNotMaskStartedMotion, ref failures);
 
-            Console.WriteLine("真机任务设备检查：共 28 组，失败 " + failures + "。未连接控制器。");
+            Console.WriteLine("真机任务设备检查：共 35 组，失败 " + failures + "。未连接控制器。");
             return failures == 0 ? 0 : 1;
+        }
+
+        /// <summary>轴报警即使没有描述也必须保留；空状态和读取失败不能被伪装成正常。</summary>
+        private static void AxisAlarmWithoutDetailsIsNotCleared()
+        {
+            var axis = new FakeAxis("X") { AlarmActive = true };
+            var device = CreateDevice(axis, new FakeLogicalIo(), out _, out _);
+            Ensure(!string.IsNullOrWhiteSpace(device.ReadAxis("X").Alarm), "无说明的轴报警被错误清除。 ");
+            axis.AlarmActive = false;
+            axis.NullStatus = true;
+            ExpectMessage(() => device.ReadAxis("X"), "轴状态读取为空");
+            axis.NullStatus = false;
+            axis.ReadError = new InvalidOperationException("测试轴反馈读取失败");
+            ExpectMessage(() => device.ReadAxis("X"), "测试轴反馈读取失败");
+        }
+
+        /// <summary>静止标志不能代替有限的零速度反馈；读取失败和空状态均拒绝确认。</summary>
+        private static void ConfirmStoppedRequiresValidVelocity()
+        {
+            var axis = new FakeAxis("X");
+            var device = CreateDevice(axis, new FakeLogicalIo(), out _, out _);
+            device.ConfirmStoppedAsync("X", CancellationToken.None).GetAwaiter().GetResult();
+            foreach (double velocity in new[] { double.NaN, double.PositiveInfinity, -0.1, 0.1 })
+            {
+                axis.ReportedVelocity = velocity;
+                ExpectMessage(() => device.ConfirmStoppedAsync("X", CancellationToken.None).GetAwaiter().GetResult(), "不能确认已停止");
+            }
+            axis.ReportedVelocity = 0;
+            axis.NullStatus = true;
+            ExpectMessage(() => device.ConfirmStoppedAsync("X", CancellationToken.None).GetAwaiter().GetResult(), "不能确认已停止");
+            axis.NullStatus = false;
+            axis.ReadError = new InvalidOperationException("读取异常");
+            ExpectMessage(() => device.ConfirmStoppedAsync("X", CancellationToken.None).GetAwaiter().GetResult(), "读取异常");
+        }
+
+        /// <summary>命令前的空状态或运动中状态不能伪装为可开始动作。</summary>
+        private static void MotionStartRequiresValidFeedback()
+        {
+            var axis = new FakeAxis("X");
+            var device = CreateDevice(axis, new FakeLogicalIo(), out _, out _);
+            var profile = new AxisMotionProfile(10, 20, 20);
+            foreach (double velocity in new[] { double.NaN, double.PositiveInfinity, 0.1 })
+            {
+                axis.ReportedVelocity = velocity;
+                ExpectMessage(() => device.BeginMove("X", 1, false, false, profile), "不能接受任务动作");
+            }
+            axis.ReportedVelocity = 0;
+            axis.NullStatus = true;
+            ExpectMessage(() => device.BeginMove("X", 1, false, false, profile), "不能接受任务动作");
+            axis.NullStatus = false;
+            axis.Position = double.NaN;
+            ExpectMessage(() => device.BeginMove("X", 1, false, false, profile), "位置状态未知");
+        }
+
+        /// <summary>回零任务返回后如果设备仍未确认回零，不得推进后续步骤。</summary>
+        private static void HomeCompletionRequiresHomedFeedback()
+        {
+            var axis = new FakeAxis("X");
+            var device = CreateDevice(axis, new FakeLogicalIo(), out _, out _);
+            ITaskAxisMove move = device.BeginMove("X", 0, false, true, null);
+            axis.Homed = false;
+            Ensure(!device.IsMoveComplete(move, 1), "回零反馈未确认却允许进入后续动作。");
+            axis.Homed = true;
+            Ensure(device.IsMoveComplete(move, 1), "回零已确认仍被阻止。");
+            axis.AlarmActive = true;
+            ExpectMessage(() => device.IsMoveComplete(move, 1), "存在报警");
+            axis.AlarmActive = false;
+            device.EndMoveAsync(move, true, CancellationToken.None).GetAwaiter().GetResult();
         }
 
         /// <summary>无条件范围正常通过；任何互锁或旧退出条件均明确拒绝。</summary>
@@ -533,7 +608,8 @@ namespace MotionControl.MachineDevice.Checks
             FakeLogicalIo io,
             out DeviceVariableStore variables,
             out MachineRuntime runtime,
-            bool withStationFlow = false, TaskResourceJournal journal = null)
+            bool withStationFlow = false, TaskResourceJournal journal = null, FakeSafetyStatus safety = null,
+            TimeSpan? pauseTimeout = null, IEnumerable<string> namedResources = null)
         {
             TaskResourceCatalog catalog = new TaskResourceCatalog(
                 new[] { new TaskAxisInfo("X", "CardA", "mm", -100, 100) },
@@ -541,7 +617,7 @@ namespace MotionControl.MachineDevice.Checks
                 new[] { "Vacuum" },
                 new Dictionary<string, DeviceVariableType> { { "Ready", DeviceVariableType.Boolean }, { "Complete", DeviceVariableType.Boolean }, { "Unknown", DeviceVariableType.Boolean } },
                 new TaskTeachPoint[0],
-                null,
+                namedResources,
                 null,
                 new Dictionary<string, string> { { "Ready", "false" } });
 
@@ -563,7 +639,8 @@ namespace MotionControl.MachineDevice.Checks
             var flows = withStationFlow
                 ? new IStationFlow[] { new WaitingStationFlow() }
                 : new IStationFlow[0];
-            runtime = new MachineRuntime(group, flows, new MachineAlarmService(), new FakeSafetyStatus());
+            runtime = new MachineRuntime(group, flows, new MachineAlarmService(), safety ?? new FakeSafetyStatus(),
+                pauseTimeout: pauseTimeout, safetyPollInterval: TimeSpan.FromMilliseconds(10), controlInputIo: io);
             return new MachineTaskDevice(catalog, group, io, variables, runtime, journal);
         }
 
@@ -623,7 +700,7 @@ namespace MotionControl.MachineDevice.Checks
             public string Name { get; }
 
             /// <summary>当前反馈位置。</summary>
-            internal double Position { get; private set; }
+            internal double Position { get; set; }
 
             /// <summary>是否正在运动。</summary>
             internal bool Moving { get; private set; }
@@ -633,6 +710,12 @@ namespace MotionControl.MachineDevice.Checks
 
             /// <summary>是否已回零。</summary>
             internal bool Homed { get; set; }
+
+            /// <summary>模拟轴存在报警但驱动未提供文本。</summary>
+            internal bool AlarmActive { get; set; }
+
+            /// <summary>模拟适配器错误返回空轴状态。</summary>
+            internal bool NullStatus { get; set; }
 
             /// <summary>模拟读取轴状态失败。</summary>
             internal Exception ReadError { get; set; }
@@ -690,8 +773,9 @@ namespace MotionControl.MachineDevice.Checks
                 StatusEntered.Set();
                 if (StatusGate != null) await StatusGate.Task.ConfigureAwait(false);
                 if (ReadError != null) throw ReadError;
+                if (NullStatus) return null;
                 return new AxisStatus(Position, ReportedVelocity, ServoEnabled, Moving, Homed,
-                    false, false, false, false, false, null, false);
+                    false, false, false, false, AlarmActive, null, false);
             }
 
             /// <summary>测试替身不模拟伺服使能，直接返回。</summary>
@@ -794,11 +878,15 @@ namespace MotionControl.MachineDevice.Checks
             internal bool OutputValue { get; private set; }
             /// <summary>记录驱动收到的输出命令次数。</summary>
             internal int OutputWrites;
+            /// <summary>记录输出读取次数，用于等待动作后回读阶段。</summary>
+            internal int OutputReads;
             /// <summary>读取 DI 时抛出的异常；为空表示正常返回假值。</summary>
             internal Exception ReadError { get; set; }
 
             /// <summary>当前测试输入状态。</summary>
             internal bool InputValue { get; set; }
+            /// <summary>可独立指定清料完成输入，避免将它与许可输入混用。</summary>
+            internal bool? ClearanceFeedback { get; set; }
             /// <summary>首次读取后切换信号，用于检查复核期间变化。</summary>
             internal bool FlipAfterRead { get; set; }
             /// <summary>首次读取输出后切换电平，模拟复核期间现场变化。</summary>
@@ -812,6 +900,9 @@ namespace MotionControl.MachineDevice.Checks
                     throw ReadError;
                 }
 
+                if (inputName == "ClearanceFeedback" && ClearanceFeedback.HasValue)
+                    return Task.FromResult(ClearanceFeedback.Value);
+
                 bool value = InputValue;
                 if (FlipAfterRead) InputValue = !InputValue;
                 return Task.FromResult(value);
@@ -820,6 +911,7 @@ namespace MotionControl.MachineDevice.Checks
             /// <summary>读取 DO，固定返回假值。</summary>
             public Task<bool> ReadOutputAsync(string outputName, CancellationToken cancellationToken)
             {
+                Interlocked.Increment(ref OutputReads);
                 if (OutputReadError != null) throw OutputReadError;
                 bool value = OutputValue;
                 if (FlipOutputAfterRead) OutputValue = !OutputValue;
@@ -874,6 +966,8 @@ namespace MotionControl.MachineDevice.Checks
         /// <summary>急停回路恒为释放状态的测试替身。</summary>
         private sealed class FakeSafetyStatus : IConfigurableMachineSafetyStatus
         {
+            /// <summary>模拟软件急停输入。</summary>
+            internal bool Active { get; set; }
             /// <summary>视为已配置，允许运行时启动检查继续。</summary>
             public bool IsConfigured
             {
@@ -883,7 +977,7 @@ namespace MotionControl.MachineDevice.Checks
             /// <summary>急停始终未触发。</summary>
             public Task<bool> ReadEmergencyStopActiveAsync(CancellationToken cancellationToken)
             {
-                return Task.FromResult(false);
+                return Task.FromResult(Active);
             }
         }
 

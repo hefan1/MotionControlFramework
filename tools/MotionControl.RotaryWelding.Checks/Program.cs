@@ -20,7 +20,7 @@ namespace MotionControl.RotaryWelding.Checks
         /// <summary>执行并行、堵料、暂停和扫码失败等检查。</summary>
         private static int Main()
         {
-            try { CheckMaterialInspectionAsync().GetAwaiter().GetResult(); CheckAsync().GetAwaiter().GetResult(); CheckMotionOnlyAsync().GetAwaiter().GetResult(); CheckScannerFailureAsync().GetAwaiter().GetResult(); CheckClampConflictAsync().GetAwaiter().GetResult(); CheckEvidenceWriteFailureAsync().GetAwaiter().GetResult(); CheckInterruptedOutputsAsync().GetAwaiter().GetResult(); CheckPreparationClampsAsync().GetAwaiter().GetResult(); CheckPreparationFeedbackAsync().GetAwaiter().GetResult(); CheckRecordFailureAsync(false).GetAwaiter().GetResult(); CheckRecordFailureAsync(true).GetAwaiter().GetResult(); Console.WriteLine("十三轴代码流程：独立物料反馈、纯运动、50件、准备反馈、夹具联锁、逐件记录及故障、在途输出恢复等内部检查通过。"); return 0; }
+            try { CheckMaterialInspectionAsync().GetAwaiter().GetResult(); RotaryClearanceExampleChecks.RunAsync().GetAwaiter().GetResult(); CheckAsync().GetAwaiter().GetResult(); CheckMotionOnlyAsync().GetAwaiter().GetResult(); CheckScannerFailureAsync().GetAwaiter().GetResult(); CheckClampConflictAsync().GetAwaiter().GetResult(); CheckEvidenceWriteFailureAsync().GetAwaiter().GetResult(); CheckInterruptedOutputsAsync().GetAwaiter().GetResult(); CheckPreparationClampsAsync().GetAwaiter().GetResult(); CheckPreparationFeedbackAsync().GetAwaiter().GetResult(); CheckRecordFailureAsync(false).GetAwaiter().GetResult(); CheckRecordFailureAsync(true).GetAwaiter().GetResult(); Console.WriteLine("十三轴代码流程：独立物料反馈、纯运动、50件、准备反馈、夹具联锁、逐件记录及故障、在途输出恢复等内部检查通过。"); return 0; }
             catch (Exception error) { Console.Error.WriteLine(error); return 1; }
         }
 
@@ -45,6 +45,39 @@ namespace MotionControl.RotaryWelding.Checks
             try { await RotaryMaterialInspection.ReadAsync(io, CancellationToken.None); }
             catch (InvalidOperationException error) { rejected = error.Message.Contains("模拟读取失败"); }
             if (!rejected) throw new InvalidOperationException("读取失败被误判为无料。 ");
+
+            var clearance = new MaterialReadFake();
+            clearance.Values["A夹位有料"] = true;
+            foreach (string position in new[] { "取料夹爪", "上料滑台", "B夹位", "缓存位", "下料位" })
+                clearance.Values[position + "无料"] = true;
+            await RotaryMaterialInspection.VerifySingleAClearanceAsync(clearance, CancellationToken.None);
+            foreach (string position in new[] { "取料夹爪", "上料滑台", "B夹位", "缓存位", "下料位" })
+            {
+                // 无料输入断开、有无料冲突或确认有料，三种情况都不能作为本例可处理状态。
+                clearance.Values[position + "无料"] = false;
+                await AssertClearanceMaterialRejected(clearance, position);
+                clearance.Values[position + "有料"] = true;
+                await AssertClearanceMaterialRejected(clearance, position);
+                clearance.Values[position + "无料"] = true;
+                await AssertClearanceMaterialRejected(clearance, position);
+                clearance.Values[position + "有料"] = false;
+            }
+            clearance.Values["A夹位无料"] = true;
+            await AssertClearanceMaterialRejected(clearance, "A夹位");
+            clearance.Values["A夹位无料"] = false;
+            clearance.FailName = "取料夹爪有料";
+            rejected = false;
+            try { await RotaryMaterialInspection.VerifySingleAClearanceAsync(clearance, CancellationToken.None); }
+            catch (InvalidOperationException error) { rejected = error.Message.Contains("模拟读取失败"); }
+            if (!rejected) throw new InvalidOperationException("清料夹爪反馈读取失败未拒绝。 ");
+        }
+
+        /// <summary>确认本例不接受指定位置的未知、冲突或额外带料。</summary>
+        private static async Task AssertClearanceMaterialRejected(MaterialReadFake io, string position)
+        {
+            try { await RotaryMaterialInspection.VerifySingleAClearanceAsync(io, CancellationToken.None); }
+            catch (InvalidOperationException error) { if (error.Message.Contains(position)) return; throw; }
+            throw new InvalidOperationException("清料错误接受了位置“" + position + "”的不受支持状态。");
         }
 
         /// <summary>只读测试 IO，可指定反馈变化或读取失败，不接受输出操作。</summary>

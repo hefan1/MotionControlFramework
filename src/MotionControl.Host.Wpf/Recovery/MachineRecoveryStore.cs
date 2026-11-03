@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.TaskEngine.Resources;
+using Newtonsoft.Json;
 
 namespace MotionControl.Host.Wpf.Recovery
 {
@@ -23,9 +24,90 @@ namespace MotionControl.Host.Wpf.Recovery
         /// <summary>自动生产尚未完成安全暂停时保留的独立标记；不纳入配置签名。</summary>
         private const string RunMarkerPath = "Runtime/AutomaticRun.pending";
 
+        /// <summary>清料开始及完成的独立证据；保留原运行标记和恢复快照。</summary>
+        private const string ClearanceMarkerPath = "Runtime/ControlledClearance.pending";
+        /// <summary>清料动作到达反馈检查点的证据；不代表最终停止、报警和现场核查已经结算。</summary>
+        private const string ClearanceActionsObservedPath = "Runtime/ControlledClearance.actions-observed";
+        /// <summary>人工核查记录目录；每次确认独立追加，不解除原资源隔离。</summary>
+        private const string ClearanceInspectionDirectory = "Runtime/ControlledClearanceInspections";
+        /// <summary>旧版单条现场核查证据继续阻止续跑。</summary>
+        private const string LegacyClearanceInspectionPath = "Runtime/ControlledClearance.inspected";
+        /// <summary>旧版阶段证据也继续拦截，不能因为名称变化而丢失保护。</summary>
+        private const string LegacyClearanceCompletedPath = "Runtime/ControlledClearance.completed";
+
         /// <summary>返回本机未完成运行标记的完整路径。</summary>
         private string GetRunMarkerPath()
         { return Path.Combine(_configurationStore.GetMachineDirectory(_machineId), RunMarkerPath.Replace('/', Path.DirectorySeparatorChar)); }
+
+        /// <summary>返回清料证据的完整路径。</summary>
+        private string GetClearanceEvidencePath(string relativePath)
+        { return Path.Combine(_configurationStore.GetMachineDirectory(_machineId), relativePath.Replace('/', Path.DirectorySeparatorChar)); }
+
+        /// <summary>只把明确不存在视为无文件；读取错误继续向上报告。</summary>
+        private static bool EvidenceExists(string path)
+        {
+            try { File.GetAttributes(path); return true; }
+            catch (FileNotFoundException) { return false; }
+            catch (DirectoryNotFoundException) { return false; }
+        }
+
+        /// <summary>任何清料证据都保守拦截旧断点；完成动作不等于现场已安全恢复。</summary>
+        public bool HasClearanceEvidence()
+        {
+            return EvidenceExists(GetClearanceEvidencePath(ClearanceMarkerPath))
+                || EvidenceExists(GetClearanceEvidencePath(ClearanceActionsObservedPath))
+                || EvidenceExists(GetClearanceEvidencePath(ClearanceInspectionDirectory))
+                || EvidenceExists(GetClearanceEvidencePath(LegacyClearanceInspectionPath))
+                || EvidenceExists(GetClearanceEvidencePath(LegacyClearanceCompletedPath));
+        }
+
+        /// <summary>动作前独立创建并刷新证据，不改动原有运行标记或恢复文件。</summary>
+        public void MarkClearanceStarted()
+        {
+            if (HasClearanceEvidence()) throw new InvalidOperationException("已有清料证据尚未处置，禁止再次开始清料。");
+            WriteNewClearanceEvidence(ClearanceMarkerPath, "清料已开始；现场状态已变化或未知，旧工位断点禁止续跑。\n");
+        }
+
+        /// <summary>记录动作到达反馈检查点；此记录不宣称最终安全收尾，原始证据仍保留。</summary>
+        public void MarkClearanceActionsObserved()
+        {
+            if (!EvidenceExists(GetClearanceEvidencePath(ClearanceMarkerPath)))
+                throw new InvalidOperationException("清料开始证据不存在，不能记录动作反馈阶段。");
+            WriteNewClearanceEvidence(ClearanceActionsObservedPath,
+                "清料动作和反馈曾到达检查点；最终停止、报警和收尾状态尚未由此记录确认。现场、资源和旧工位断点仍须核查，禁止据此续跑。\n");
+        }
+
+        /// <summary>追加本次核查说明；仅记录当时观察与人工确认，不释放旧资源或运行标记。</summary>
+        public void MarkClearanceInspected(string confirmation)
+        {
+            if (string.IsNullOrWhiteSpace(confirmation) || confirmation.Length > 16384)
+                throw new ArgumentException("清料现场核查说明不能为空，且不得超过 16384 字。", nameof(confirmation));
+            if (!EvidenceExists(GetClearanceEvidencePath(ClearanceMarkerPath)))
+                throw new InvalidOperationException("清料开始证据不存在，不能记录现场核查。");
+            string record = JsonConvert.SerializeObject(new
+            {
+                MachineId = _machineId,
+                RecordedAtUtc = DateTime.UtcNow,
+                Confirmation = confirmation.Trim(),
+                Notice = "这是一次现场核查记录，不代表原资源隔离已解除或允许设备续跑。"
+            }, Formatting.Indented);
+            // 不覆盖历史核查；即使记录过程中状态变化，下一次核查也必须单独留痕。
+            string path = ClearanceInspectionDirectory + "/" + Guid.NewGuid().ToString("N") + ".json";
+            WriteNewClearanceEvidence(path, record + "\n");
+        }
+
+        /// <summary>以独占创建和持久刷新写入证据，任何失败均不得执行或确认后续动作。</summary>
+        private void WriteNewClearanceEvidence(string relativePath, string message)
+        {
+            string path = GetClearanceEvidencePath(relativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            using (var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
+            {
+                byte[] bytes = Encoding.UTF8.GetBytes(message);
+                stream.Write(bytes, 0, bytes.Length);
+                stream.Flush(true);
+            }
+        }
 
         /// <summary>只把明确不存在视为无标记；权限与读取异常必须阻止启动。</summary>
         public bool HasUnfinishedAutomaticRun()

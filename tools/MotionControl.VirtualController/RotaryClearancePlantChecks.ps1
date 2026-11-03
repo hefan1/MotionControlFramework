@@ -1,4 +1,4 @@
-param([int]$Port = 19645, [string]$ControllerExe = '', [switch]$FaultOnly, [switch]$ConflictOnly)
+param([int]$Port = 19645, [string]$ControllerExe = '', [switch]$FaultOnly, [switch]$ConflictOnly, [string]$PlanRunnerExe = '')
 $ErrorActionPreference = 'Stop'
 $exePath = if ($ControllerExe) { $ControllerExe } else { Join-Path $PSScriptRoot 'bin\Release\net48\MotionControl.VirtualController.exe' }
 if (-not (Test-Path -LiteralPath $exePath -PathType Leaf)) { throw '请先构建软件控制器。' }
@@ -75,14 +75,23 @@ try {
         Send-Ok @{command='configureMaterialSensors'; name=$item.name; presentInputChannel=$item.present; emptyInputChannel=$item.empty} | Out-Null
         Send-Ok @{command='setMaterialSensorState'; name=$item.name; state='empty'} | Out-Null
     }
+    if ($PlanRunnerExe) {
+        foreach ($item in @(@{name='取料夹爪'; present=78; empty=79}, @{name='上料滑台'; present=80; empty=81})) {
+            Send-Ok @{command='configureMaterialSensors'; name=$item.name; presentInputChannel=$item.present; emptyInputChannel=$item.empty} | Out-Null
+            Send-Ok @{command='setMaterialSensorState'; name=$item.name; state='empty'} | Out-Null
+        }
+        Send-Ok @{command='setInput'; channel=82; value=$true} | Out-Null
+        Send-Ok @{command='setInput'; channel=83; value=$true} | Out-Null
+        foreach ($channel in @(84,85,86,87,88)) { Send-Ok @{command='setInput'; channel=$channel; value=$true} | Out-Null }
+    }
     Send-Ok @{command='setMaterialSensorState'; name='A夹位'; state='present'} | Out-Null
     foreach ($fixture in @(
-        @{output=41; closed=41; open=61}, @{output=42; closed=42; open=62}, @{output=51; closed=51; open=75})) {
+        @{output=40; closed=40; open=60}, @{output=41; closed=41; open=61}, @{output=42; closed=42; open=62}, @{output=51; closed=51; open=75})) {
         Send-Ok @{command='configureActuator'; outputChannel=$fixture.output; clampInputChannel=$fixture.closed; releaseInputChannel=$fixture.open; delayMs=25} | Out-Null
     }
     foreach ($channel in @(48,49)) { Send-Ok @{command='configureFeedback'; outputChannel=$channel; inputChannel=$channel; delayMs=25; activeHigh=$true} | Out-Null }
     Send-Ok @{command='setInput'; channel=67; value=$true} | Out-Null
-    foreach ($axis in @(0,1,2,3,5,6,7,8,9,10,11,12)) {
+    foreach ($axis in @(0,1,2,3,4,5,6,7,8,9,10,11,12)) {
         $base = 100 + 3 * $axis
         $bound = if ($axis -eq 11) { 100 } else { 10 }
         Send-Ok @{command='configureAxisSensors'; axis=$axis; originInputChannel=$base; negativeInputChannel=($base+1); positiveInputChannel=($base+2); originPosition=0; originHalfWidth=0.05; negativeLimit=(-$bound); positiveLimit=$bound} | Out-Null
@@ -91,6 +100,19 @@ try {
         Wait-Axis $axis 0
     }
     Send-Ok @{command='configureRotaryClearancePlant'} | Out-Null
+    if ($PlanRunnerExe) {
+        if (-not (Test-Path -LiteralPath $PlanRunnerExe -PathType Leaf)) { throw '清料 API 检查程序不存在。' }
+        # 仅建立明确的测试初态；后续清料动作由 VirtualMotionCard API 下发。
+        Send-Ok @{command='writeOutput'; channel=41; value=$true} | Out-Null
+        Send-Ok @{command='writeOutput'; channel=42; value=$true} | Out-Null
+        Send-Ok @{command='move'; axis=11; position=90; speed=900} | Out-Null
+        Wait-Axis 11 90
+        Send-Ok @{command='releaseLease'; leaseId=$script:LeaseId} | Out-Null
+        $script:LeaseId = $null
+        & $PlanRunnerExe $Port
+        if ($LASTEXITCODE -ne 0) { throw "清料运动卡 API 检查失败：$LASTEXITCODE。" }
+        return
+    }
     if ((Send-Request @{command='removeActuator'; outputChannel=41}).ok -or
         (Send-Request @{command='removeFeedback'; inputChannel=49}).ok -or
         (Send-Request @{command='setInput'; channel=41; value=$true}).ok) {

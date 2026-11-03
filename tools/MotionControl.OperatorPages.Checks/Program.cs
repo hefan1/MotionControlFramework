@@ -75,8 +75,16 @@ namespace MotionControl.OperatorPages.Checks
             Assert(expander.Visibility == Visibility.Visible, "恢复拦截时没有维护诊断入口。");
             Assert(diagnostic.Text.Contains(Path.Combine(directory, "Runtime", "RecoverySnapshot.json"))
                 && diagnostic.Text.Contains(Path.Combine(directory, "Runtime", "AutomaticRun.pending"))
+                && diagnostic.Text.Contains(Path.Combine(directory, "Runtime", "ControlledClearance.pending"))
+                && diagnostic.Text.Contains(Path.Combine(directory, "Runtime", "ControlledClearance.actions-observed"))
+                && diagnostic.Text.Contains(Path.Combine(directory, "Runtime", "ControlledClearanceInspections"))
                 && diagnostic.Text.Contains("不会解除启动限制"), "未显示当前目录的证据或限制说明。");
             Assert(!((Button)view.FindName("PrepareAllButton")).IsEnabled && card.Calls == 0, "只读诊断触发设备动作或错误放行。");
+            string longReason = new string('测', 260) + "完整原因末尾";
+            runtime.SetRecoveryBlockReason(longReason);
+            view.SetRuntime(runtime);
+            Assert(((TextBlock)view.FindName("ErrorText")).Text.Length == 241 && diagnostic.Text.Contains("完整原因末尾"),
+                "长错误未适当截断或完整原因丢失。");
             view.SetLanguage("en-US");
             Assert(diagnostic.Text.Contains("does not release") && diagnostic.Text.Contains(directory), "英文诊断或证据路径未更新。");
             view.SetRuntime(null);

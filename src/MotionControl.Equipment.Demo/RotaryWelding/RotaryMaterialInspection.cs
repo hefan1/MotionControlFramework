@@ -12,9 +12,35 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
         /// <summary>顺序读取四处独立反馈；任一读取失败时直接报告，不把失败当作无料。</summary>
         public static async Task<IReadOnlyList<RotaryMaterialState>> ReadAsync(ILogicalIo io, CancellationToken cancellationToken)
         {
+            return await ReadPositionsAsync(io, new[] { "A夹位", "B夹位", "缓存位", "下料位" }, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>清料前同时核查取料夹爪、上料滑台、双夹位、缓存和下料的独立双路反馈。</summary>
+        public static async Task<IReadOnlyList<RotaryMaterialState>> ReadClearanceAsync(ILogicalIo io, CancellationToken cancellationToken)
+        {
+            return await ReadPositionsAsync(io, new[] { "取料夹爪", "上料滑台", "A夹位", "B夹位", "缓存位", "下料位" }, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>只接受 A 夹位一处有料且其余五处明确空料；其他情况需另行处理。</summary>
+        public static async Task VerifySingleAClearanceAsync(ILogicalIo io, CancellationToken cancellationToken)
+        {
+            IReadOnlyList<RotaryMaterialState> states = await ReadClearanceAsync(io, cancellationToken).ConfigureAwait(false);
+            foreach (RotaryMaterialState state in states)
+            {
+                RotaryMaterialCondition required = state.Position == "A夹位" ? RotaryMaterialCondition.Present : RotaryMaterialCondition.Empty;
+                if (state.Condition != required)
+                    throw new InvalidOperationException("清料示例仅支持 A 夹位单处有料；位置“" + state.Position
+                        + "”反馈为 " + state.Condition + "，请核对现场并使用对应清料方式。");
+            }
+        }
+
+        /// <summary>对每个声明位置复读双路状态；未知、冲突及读数变化均保留原始异常语义。</summary>
+        private static async Task<IReadOnlyList<RotaryMaterialState>> ReadPositionsAsync(
+            ILogicalIo io, IEnumerable<string> positions, CancellationToken cancellationToken)
+        {
             if (io == null) throw new ArgumentNullException(nameof(io));
             var result = new List<RotaryMaterialState>();
-            foreach (string position in new[] { "A夹位", "B夹位", "缓存位", "下料位" })
+            foreach (string position in positions)
             {
                 bool present = await io.ReadInputAsync(position + "有料", cancellationToken).ConfigureAwait(false);
                 bool empty = await io.ReadInputAsync(position + "无料", cancellationToken).ConfigureAwait(false);

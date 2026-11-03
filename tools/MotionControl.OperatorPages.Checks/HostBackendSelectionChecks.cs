@@ -17,6 +17,7 @@ namespace MotionControl.OperatorPages.Checks
         /// <summary>在隔离目录检查缺省、明确选择、错误配置和轴映射只读控件。</summary>
         internal static void Run()
         {
+            HostClearanceCompositionChecks.Run();
             string root = Path.Combine(Path.GetTempPath(), "motion-backend-check-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
             try

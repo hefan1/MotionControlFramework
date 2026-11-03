@@ -270,11 +270,11 @@ namespace MotionControl.Framework.Runtime.Machine
                             readError);
                     }
 
-                    if (status.Moving)
+                    if (!AxisStopFeedback.IsConfirmedStopped(status))
                     {
                         throw new InvalidOperationException(
                             "逻辑轴 '" + axis.Name + "'（控制卡 '" + card.ControllerId
-                            + "'）仍在运动，必须先停止并确认轴停稳后再断开控制卡。");
+                            + "'）仍在运动或速度状态未知，必须先停止并确认轴停稳后再断开控制卡。");
                     }
                 }
             }

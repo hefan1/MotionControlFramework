@@ -11,6 +11,7 @@ using System.Windows;
 using System.Windows.Threading;
 using MotionControl.Adapter.MotionCard.ZMotion;
 using MotionControl.Framework.Contracts.Alarms;
+using MotionControl.Framework.Contracts.Clearance;
 using MotionControl.Framework.Contracts.Equipment;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.IO;
@@ -558,15 +559,17 @@ namespace MotionControl.Host.Wpf
                 _mainWindow.SetAlarmHistory(_alarmHistoryJournal);
                 IStationFlow[] stationFlows;
                 IReadOnlyList<IStationPreparation> preparations;
+                IReadOnlyList<ControlledClearanceProfile> clearanceProfiles;
                 try
                 {
                     stationFlows = CreateEquipmentStationFlows(
-                        motionCards, connectedLogicalIo, alarmService, out preparations);
+                        motionCards, connectedLogicalIo, alarmService, out preparations, out clearanceProfiles);
                 }
                 catch (Exception error)
                 {
                     stationFlows = new IStationFlow[0];
                     preparations = new IStationPreparation[0];
+                    clearanceProfiles = new ControlledClearanceProfile[0];
                     MessageBox.Show(
                         "设备工位配置无法启用，自动流程已关闭；轴手动和 IO 手动仍可使用。\n"
                         + error.Message,
@@ -594,6 +597,9 @@ namespace MotionControl.Host.Wpf
                 createdRuntime.SetBeforeAutomaticRun(() => _machineRecoveryCoordinator.InvalidateBeforeAutomaticRun(createdRuntime));
                 createdRuntime.SetPreparationRecordCallbacks(() => _machineRecoveryCoordinator.MarkBeforePreparation(createdRuntime),
                     _machineRecoveryCoordinator.SaveAfterSafePreparation);
+                createdRuntime.SetClearanceRecordCallbacks(_machineRecoveryCoordinator.MarkBeforeClearance,
+                    _machineRecoveryCoordinator.SaveClearanceActionsObserved, _machineRecoveryCoordinator.RecordClearanceInspection);
+                createdRuntime.ConfigureControlledClearanceProfiles(clearanceProfiles);
                 createdRuntime.ConfigurePreparations(preparations);
                 await createdRuntime.ConnectAsync(CancellationToken.None);
 
@@ -857,7 +863,8 @@ namespace MotionControl.Host.Wpf
             MotionCardGroup motionCards,
             ILogicalIo logicalIo,
             IMachineAlarmService alarmService,
-            out IReadOnlyList<IStationPreparation> preparations)
+            out IReadOnlyList<IStationPreparation> preparations,
+            out IReadOnlyList<ControlledClearanceProfile> clearanceProfiles)
         {
             IEquipmentDefinition equipment = HostEquipmentSelection.ResolveEquipmentDefinition(_configurationStore, MachineId);
             var context = new HostEquipmentContext(
@@ -873,7 +880,23 @@ namespace MotionControl.Host.Wpf
             IStationFlow[] flows = equipment.CreateStationFlows(context).ToArray();
             var provider = equipment as IEquipmentPreparationProvider;
             preparations = provider == null ? new IStationPreparation[0] : provider.CreatePreparations(context, flows);
+            clearanceProfiles = CreateClearanceProfiles(equipment);
             return flows;
+        }
+
+        /// <summary>只接受当前设备实例提供的固定清料配置；复制集合避免设备稍后替换。</summary>
+        private static IReadOnlyList<ControlledClearanceProfile> CreateClearanceProfiles(IEquipmentDefinition equipment)
+        {
+            if (equipment == null) throw new ArgumentNullException(nameof(equipment));
+            var provider = equipment as IEquipmentClearanceProvider;
+            if (provider == null) return new ControlledClearanceProfile[0];
+            var provided = provider.CreateClearanceProfiles();
+            if (provided == null) throw new InvalidOperationException("设备清料配置提供器返回空集合对象。");
+            var snapshot = provided.ToArray();
+            if (snapshot.Any(item => item == null)
+                || snapshot.Select(item => item.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count() != snapshot.Length)
+                throw new InvalidOperationException("设备清料配置包含空项或重复编号。");
+            return Array.AsReadOnly(snapshot);
         }
 
         /// <summary>为首次运行的设备目录按设备定义预置报警，框架不内置任何设备的报警代码。</summary>

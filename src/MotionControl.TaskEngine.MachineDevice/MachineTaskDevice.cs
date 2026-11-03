@@ -177,13 +177,14 @@ namespace MotionControl.TaskEngine.MachineDevice
         {
             IAxis axis = _motionCards.GetAxis(name);
             AxisStatus status = Wait(axis.ReadStatusAsync(CancellationToken.None));
+            if (status == null) throw new InvalidOperationException("轴状态读取为空，不能确认设备状态：" + name + "。");
             return new TaskAxisState(
                 name,
                 status.Position,
                 status.ServoEnabled,
                 status.Homed && !status.RequiresHomingAfterLimitAlarm,
                 status.Moving || double.IsNaN(status.Velocity) || double.IsInfinity(status.Velocity) || Math.Abs(status.Velocity) > 0.001,
-                status.AlarmActive ? status.AlarmMessage : null,
+                status.AlarmActive ? (string.IsNullOrWhiteSpace(status.AlarmMessage) ? "轴报警，未提供详细说明。" : status.AlarmMessage) : null,
                 AcceptedCommands(name));
         }
 

@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text;
 using Newtonsoft.Json;
@@ -85,6 +86,8 @@ namespace MotionControl.TaskEngine.Resources
             catch (FileNotFoundException) { return null; }
             catch (DirectoryNotFoundException) { return null; }
             var entries = Directory.GetFileSystemEntries(root);
+            var pendingResources = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+            var pendingSteps = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (string session in entries)
             {
                 if ((File.GetAttributes(session) & FileAttributes.Directory) == 0)
@@ -101,12 +104,13 @@ namespace MotionControl.TaskEngine.Resources
                         || names == null || names.Count == 0 || names.Any(n => n.Type != JTokenType.String || string.IsNullOrWhiteSpace((string)n))
                         || record.Property("ExitInterlock") == null || record.Property("ExitCondition") == null)
                         throw new InvalidDataException("资源记录内容无效或属于其他设备。");
-                    return "上次任务会话的资源状态尚未确认：[" + string.Join("、", names.Select(n => (string)n))
-                        + "]；关联步骤：" + ((string)record["NodeName"] ?? (string)record["NodeId"] ?? "未知")
-                        + "。请联系维护人员核对现场和资源记录。";
+                    foreach (JToken name in names) pendingResources.Add((string)name);
+                    pendingSteps.Add((string)record["NodeName"] ?? (string)record["NodeId"] ?? "未知");
                 }
             }
-            return null;
+            return pendingResources.Count == 0 ? null
+                : "上次任务会话的资源状态尚未确认：[" + string.Join("、", pendingResources)
+                    + "]；关联步骤：" + string.Join("、", pendingSteps) + "。请联系维护人员核对现场和资源记录。";
         }
     }
 }

@@ -27,7 +27,149 @@ namespace MotionControl.ZMotionSimulatorCheck
             CheckCoordinatorRestoresOnlyKnownStepsAndInvalidatesOnStart();
             CheckUntrustedRecoveryDoesNotOverwrite();
             CheckResourceRecordErrorPresentation();
+            CheckClearanceEvidenceKeepsOldRecoveryBlocked();
             return Task.CompletedTask;
+        }
+
+        /// <summary>清料开始、阶段记录或中断均保留旧记录，任何新会话不能据此恢复旧流程。</summary>
+        private static void CheckClearanceEvidenceKeepsOldRecoveryBlocked()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "ClearanceEvidence_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var configuration = new MachineConfigurationStore(root);
+                var store = new MachineRecoveryStore(configuration, "Machine01");
+                Directory.CreateDirectory(configuration.GetMachineDirectory("Machine01"));
+                store.Save(new MachineRecoveryDocument { CanResume = true, EquipmentInitializationCompleted = true });
+                string directory = Path.Combine(configuration.GetMachineDirectory("Machine01"), "Runtime");
+                string oldSnapshot = File.ReadAllText(Path.Combine(directory, "RecoverySnapshot.json"));
+                Func<MachineRecoveryCoordinator> create = () => new MachineRecoveryCoordinator(store,
+                    new DeviceVariableStore(new DeviceVariableDefinition[0]), "Machine01");
+                var coordinator = create();
+                coordinator.Load(out string warning);
+                coordinator.InvalidateBeforeAutomaticRun(null);
+                string oldMarker = File.ReadAllText(Path.Combine(directory, "AutomaticRun.pending"));
+                coordinator.MarkBeforeClearance();
+                Ensure(File.Exists(Path.Combine(directory, "ControlledClearance.pending")), "清料开始前未保存证据。");
+                Ensure(!File.Exists(Path.Combine(directory, "ControlledClearance.actions-observed")), "清料未到反馈检查点却写入阶段记录。");
+                Ensure(coordinator.GetAutomaticStartBlockReason(null) != null, "清料开始后允许了旧生产续跑。");
+                bool refusedDuplicate = false;
+                try { coordinator.MarkBeforeClearance(); } catch (InvalidOperationException) { refusedDuplicate = true; }
+                Ensure(refusedDuplicate, "当前清料证据未结算时允许重复开始。");
+
+                // 新进程只能看到已开始的证据，不能假定动作已经安全收尾。
+                var interrupted = create(); interrupted.Load(out warning);
+                Ensure(interrupted.RecoveryBlockReason.Contains("清料记录"), "清料中断后未阻止新会话续跑。");
+                bool refusedForeignCompletion = false;
+                try { interrupted.SaveClearanceActionsObserved(); } catch (InvalidOperationException) { refusedForeignCompletion = true; }
+                Ensure(refusedForeignCompletion, "其他会话能替原清料记录完成。");
+
+                coordinator.SaveClearanceActionsObserved();
+                string observedPath = Path.Combine(directory, "ControlledClearance.actions-observed");
+                Ensure(File.Exists(observedPath), "清料动作检查点未追加证据。");
+                Ensure(File.ReadAllText(observedPath).Contains("尚未由此记录确认")
+                    && File.Exists(Path.Combine(directory, "ControlledClearance.pending")),
+                    "动作阶段记录错误地声称最终停止已确认或丢失待确认标记。");
+                bool refusedEmpty = false;
+                try { coordinator.RecordClearanceInspection(" "); } catch (ArgumentException) { refusedEmpty = true; }
+                string inspectionsDirectory = Path.Combine(directory, "ControlledClearanceInspections");
+                Ensure(refusedEmpty && !Directory.Exists(inspectionsDirectory),
+                    "空的现场确认被记录。");
+                const string inspectionNote = "已现场检查夹具和料位\n保持输出已核对";
+                coordinator.RecordClearanceInspection(inspectionNote);
+                string[] firstInspections = Directory.GetFiles(inspectionsDirectory, "*.json");
+                Ensure(firstInspections.Length == 1, "现场核查没有独立生成一条记录。");
+                string firstInspection = File.ReadAllText(firstInspections[0]);
+                var inspection = Newtonsoft.Json.Linq.JObject.Parse(firstInspection);
+                Ensure((string)inspection["Confirmation"] == inspectionNote && ((string)inspection["Notice"]).Contains("不代表"),
+                    "现场确认内容未保存或错误声称资源已经解除。");
+                coordinator.RecordClearanceInspection("重新核查并确认条件");
+                string[] repeatedInspections = Directory.GetFiles(inspectionsDirectory, "*.json");
+                Ensure(repeatedInspections.Length == 2 && File.ReadAllText(firstInspections[0]) == firstInspection,
+                    "再次核查未追加独立证据或覆盖了上次确认。");
+                Ensure(File.ReadAllText(Path.Combine(directory, "RecoverySnapshot.json")) == oldSnapshot
+                    && File.ReadAllText(Path.Combine(directory, "AutomaticRun.pending")) == oldMarker,
+                    "清料覆盖了旧恢复快照或生产标记。");
+                var restarted = create(); restarted.Load(out warning);
+                Ensure(restarted.RecoveryBlockReason.Contains("清料记录"), "清料完成后错误地放行旧断点。");
+                bool refusedRestartedInspection = false;
+                try { restarted.RecordClearanceInspection("跨会话确认"); } catch (InvalidOperationException) { refusedRestartedInspection = true; }
+                Ensure(refusedRestartedInspection, "新进程错误借用了旧会话的清料核查凭证。");
+                restarted.SaveForShutdown(null, false);
+                Ensure(File.ReadAllText(Path.Combine(directory, "RecoverySnapshot.json")) == oldSnapshot,
+                    "清料后的关闭保存覆盖了旧恢复快照。");
+
+                // 加载与开始之间若出现其他证据，不能覆盖、开始动作或误报为干净状态。
+                var otherStore = new MachineRecoveryStore(configuration, "Machine02");
+                var raced = new MachineRecoveryCoordinator(otherStore,
+                    new DeviceVariableStore(new DeviceVariableDefinition[0]), "Machine02");
+                raced.Load(out warning);
+                string otherDirectory = Path.Combine(configuration.GetMachineDirectory("Machine02"), "Runtime");
+                Directory.CreateDirectory(otherDirectory);
+                string competing = Path.Combine(otherDirectory, "ControlledClearance.pending");
+                File.WriteAllText(competing, "未完整写入的旧证据");
+                bool refusedCompeting = false;
+                try { raced.MarkBeforeClearance(); } catch (InvalidOperationException) { refusedCompeting = true; }
+                Ensure(refusedCompeting && File.ReadAllText(competing) == "未完整写入的旧证据"
+                    && raced.GetAutomaticStartBlockReason(null) != null,
+                    "并发出现的不完整证据被覆盖或未阻止自动启动。");
+
+                // 动作反馈阶段刚写入时发生取消/断电，甚至开始标记不可读，也不能据阶段文件放行。
+                foreach (string fileName in new[] { "ControlledClearance.actions-observed", "ControlledClearance.completed", "ControlledClearance.inspected" })
+                {
+                    string id = fileName.EndsWith("completed", StringComparison.Ordinal) ? "Machine03"
+                        : fileName.EndsWith("inspected", StringComparison.Ordinal) ? "Machine06" : "Machine04";
+                    string evidenceDirectory = Path.Combine(configuration.GetMachineDirectory(id), "Runtime");
+                    Directory.CreateDirectory(evidenceDirectory);
+                    File.WriteAllText(Path.Combine(evidenceDirectory, fileName), "部分或旧版清料记录");
+                    var onlyStage = new MachineRecoveryCoordinator(new MachineRecoveryStore(configuration, id),
+                        new DeviceVariableStore(new DeviceVariableDefinition[0]), id);
+                    onlyStage.Load(out warning);
+                    Ensure(onlyStage.GetAutomaticStartBlockReason(null) != null && warning.Contains("清料记录"),
+                        "单独的阶段证据被当成清料安全完成：" + fileName);
+                }
+                // 目录已创建但记录尚未写完时，崩溃后空目录也代表未知状态。
+                string emptyInspectionDirectory = Path.Combine(configuration.GetMachineDirectory("Machine07"), "Runtime", "ControlledClearanceInspections");
+                Directory.CreateDirectory(emptyInspectionDirectory);
+                var emptyInspection = new MachineRecoveryCoordinator(new MachineRecoveryStore(configuration, "Machine07"),
+                    new DeviceVariableStore(new DeviceVariableDefinition[0]), "Machine07");
+                emptyInspection.Load(out warning);
+                Ensure(emptyInspection.GetAutomaticStartBlockReason(null) != null && warning.Contains("清料记录"),
+                    "未完成核查写入留下的空目录未阻止续跑。");
+
+                // 阶段文件在写入前被占用时，失败不得覆盖证据或释放 pending。
+                var failureStore = new MachineRecoveryStore(configuration, "Machine05");
+                var failedWrite = new MachineRecoveryCoordinator(failureStore,
+                    new DeviceVariableStore(new DeviceVariableDefinition[0]), "Machine05");
+                failedWrite.Load(out warning);
+                failedWrite.MarkBeforeClearance();
+                string failedDirectory = Path.Combine(configuration.GetMachineDirectory("Machine05"), "Runtime");
+                string failedStage = Path.Combine(failedDirectory, "ControlledClearance.actions-observed");
+                File.WriteAllText(failedStage, "其他会话证据");
+                bool refusedOverwrite = false;
+                try { failedWrite.SaveClearanceActionsObserved(); } catch (IOException) { refusedOverwrite = true; }
+                Ensure(refusedOverwrite && File.ReadAllText(failedStage) == "其他会话证据"
+                    && File.Exists(Path.Combine(failedDirectory, "ControlledClearance.pending"))
+                    && failedWrite.GetAutomaticStartBlockReason(null) != null,
+                    "阶段写入失败丢失 pending、覆盖文件或放行旧断点。");
+                string competingInspection = Path.Combine(failedDirectory, "ControlledClearanceInspections");
+                File.WriteAllText(competingInspection, "其他会话的核查证据");
+                bool refusedInspectionOverwrite = false;
+                try { failedWrite.RecordClearanceInspection("核查"); } catch (IOException) { refusedInspectionOverwrite = true; }
+                Ensure(refusedInspectionOverwrite && File.ReadAllText(competingInspection) == "其他会话的核查证据"
+                    && File.Exists(Path.Combine(failedDirectory, "ControlledClearance.pending"))
+                    && failedWrite.GetAutomaticStartBlockReason(null) != null,
+                    "核查记录写入冲突时覆盖了证据、丢失 pending 或放行旧断点。");
+            }
+            finally
+            {
+                string directory = Path.GetFullPath(root);
+                string tempPrefix = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                if (!directory.StartsWith(tempPrefix, StringComparison.OrdinalIgnoreCase)
+                    || !Path.GetFileName(directory).StartsWith("ClearanceEvidence_", StringComparison.Ordinal))
+                    throw new InvalidOperationException("清料证据测试目录不在预期的临时目录内。");
+                if (Directory.Exists(directory)) Directory.Delete(directory, true);
+            }
         }
 
         /// <summary>验证运行记录不改变签名、配置和草稿仍生效，旧签名无法证明兼容时保留原记录。</summary>

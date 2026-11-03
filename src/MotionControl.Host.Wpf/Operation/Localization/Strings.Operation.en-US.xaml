@@ -130,6 +130,11 @@
  <sys:String x:Key="操作页.全部工位回零">Prepare all stations</sys:String>
  <sys:String x:Key="操作页.所选工位回零">Prepare selected station</sys:String>
  <sys:String x:Key="操作页.停止回零">Stop preparation</sys:String>
+ <sys:String x:Key="操作页.停止清料">Stop clearance</sys:String>
+ <sys:String x:Key="操作页.清料状态待确认">Clearance status requires inspection</sys:String>
+ <sys:String x:Key="操作页.清料中或等待停止确认">Clearing or waiting for stop confirmation</sys:String>
+ <sys:String x:Key="操作页.清料未确认安全结束，请停止并联系维护人员核查现场和资源。">Clearance has not been confirmed stopped. Stop and ask maintenance to inspect the equipment and resources.</sys:String>
+ <sys:String x:Key="操作页.清料结束后仍需核查现场；需要中断时按停止清料。">Inspect the equipment after clearance. Use Stop clearance to interrupt.</sys:String>
  <sys:String x:Key="操作页.查看生产流程">View production</sys:String>
  <sys:String x:Key="操作页.工位">Station</sys:String>
  <sys:String x:Key="操作页.准备状态">Preparation status</sys:String>

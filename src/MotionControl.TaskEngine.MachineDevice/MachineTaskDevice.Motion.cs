@@ -41,6 +41,11 @@ namespace MotionControl.TaskEngine.MachineDevice
                 {
                     axis = _motionCards.GetAxis(name);
                     status = Wait(axis.ReadStatusAsync(CancellationToken.None));
+                    if (status == null || status.Moving || double.IsNaN(status.Velocity)
+                        || double.IsInfinity(status.Velocity) || Math.Abs(status.Velocity) > 0.001)
+                        throw new InvalidOperationException("轴仍在运动或速度状态未知，不能接受任务动作：" + name + "。");
+                    if (double.IsNaN(status.Position) || double.IsInfinity(status.Position))
+                        throw new InvalidOperationException("轴位置状态未知，不能接受任务动作：" + name + "。");
                     if (!status.ServoEnabled) throw new InvalidOperationException("轴未使能，不能接受任务动作：" + name + "。");
                     if (status.AlarmActive) throw new InvalidOperationException("轴存在报警，不能接受任务动作：" + name + "，" + status.AlarmMessage);
                     if (!home && !status.Homed) throw new InvalidOperationException("轴尚未回零，不能接受定位动作：" + name + "。");
@@ -94,9 +99,11 @@ namespace MotionControl.TaskEngine.MachineDevice
 
             machine.ThrowIfFailed();
             AxisStatus status = Wait(machine.Axis.ReadStatusAsync(CancellationToken.None));
-            if (status == null || double.IsNaN(status.Velocity) || double.IsInfinity(status.Velocity))
-                throw new InvalidOperationException("轴速度状态未知，不能确认停止：" + machine.AxisName + "。");
-            return !status.Moving && Math.Abs(status.Velocity) <= 0.001;
+            if (status == null || double.IsNaN(status.Velocity) || double.IsInfinity(status.Velocity)
+                || double.IsNaN(status.Position) || double.IsInfinity(status.Position))
+                throw new InvalidOperationException("轴位置或速度状态未知，不能确认停止：" + machine.AxisName + "。");
+            if (status.AlarmActive) throw new InvalidOperationException("轴存在报警，不能确认动作完成：" + machine.AxisName + "。");
+            return !status.Moving && Math.Abs(status.Velocity) <= 0.001 && (!machine.IsHome || status.Homed);
         }
 
         /// <summary>
@@ -168,9 +175,10 @@ namespace MotionControl.TaskEngine.MachineDevice
         {
             IAxis axis = _motionCards.GetAxis(name);
             AxisStatus status = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
-            if (status.Moving)
+            if (status == null || status.Moving || double.IsNaN(status.Velocity)
+                || double.IsInfinity(status.Velocity) || Math.Abs(status.Velocity) > 0.001)
             {
-                throw new InvalidOperationException("轴仍在运动，不能确认已停止：" + name + "。");
+                throw new InvalidOperationException("轴仍在运动或速度状态未知，不能确认已停止：" + name + "。");
             }
         }
 

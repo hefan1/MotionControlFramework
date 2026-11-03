@@ -44,7 +44,7 @@ $inputNames = @('上料到位','取料夹紧到位','取料松开到位','A夹�
 $outputNames = @('取料夹紧','A夹紧','B夹紧','扫码触发','焊接启动','压装启动','相机触发','相机结果复位','剔除启动','缓存交接','合格出料')
 if ($motionOnly) {
     $inputNames = @($inputNames | Where-Object { $_ -notin @('扫码完成','扫码成功') })
-    $inputNames += @('A夹位有料','A夹位无料','B夹位有料','B夹位无料','缓存位有料','缓存位无料','下料夹紧到位','下料松开到位','下料位有料','下料位无料')
+    $inputNames += @('A夹位有料','A夹位无料','B夹位有料','B夹位无料','缓存位有料','缓存位无料','下料夹紧到位','下料松开到位','下料位有料','下料位无料','取料夹爪有料','取料夹爪无料','上料滑台有料','上料滑台无料','旋转区清料允许','缓存区清料允许','焊接模组空闲','压合模组空闲','上料模组空闲','视觉模组空闲','出料模组空闲')
     $outputNames = @($outputNames | Where-Object { $_ -ne '扫码触发' }) + @('下料夹紧')
 }
 $inputs = @{}
@@ -143,7 +143,9 @@ try {
             @{Name='A夹位'; Present='A夹位有料'; Empty='A夹位无料'},
             @{Name='B夹位'; Present='B夹位有料'; Empty='B夹位无料'},
             @{Name='缓存位'; Present='缓存位有料'; Empty='缓存位无料'},
-            @{Name='下料位'; Present='下料位有料'; Empty='下料位无料'})) {
+            @{Name='下料位'; Present='下料位有料'; Empty='下料位无料'},
+            @{Name='取料夹爪'; Present='取料夹爪有料'; Empty='取料夹爪无料'},
+            @{Name='上料滑台'; Present='上料滑台有料'; Empty='上料滑台无料'})) {
             # 初始状态为未知；由测试场景明确注入，不能从夹具或输出电平推测有料。
             Send-Rotary @{command='configureMaterialSensors'; name=$pair.Name; presentInputChannel=$inputs[$pair.Present]; emptyInputChannel=$inputs[$pair.Empty]} | Out-Null
         }
@@ -162,7 +164,7 @@ try {
     Send-RotaryRaw @{command='releaseLease'; leaseId=$script:LeaseId} | Out-Null
     $script:LeaseId = $null
     $modeLabel = if ($motionOnly) { '十三轴运动验证（无扫码及逐件记录）' } else { '十三轴双夹位扫码样例' }
-    $fixtureCount = if ($motionOnly) { '四套夹具及四处独立物料反馈' } else { '三套夹具' }
+    $fixtureCount = if ($motionOnly) { '四套夹具及六处独立物料反馈' } else { '三套夹具' }
     Write-Host "已配置 $modeLabel、$fixtureCount、加工、视觉和出料规则；控制器 PID $($controller.Id)，端口 $port。"
     Write-Host '供料未启用，脚本没有使能或回零轴，也没有启动生产。请在 Host 完成设备准备后再按以下命令开启供料：'
     Write-Host "  & '.\tools\MotionControl.VirtualController\ControllerCommand.ps1' -Port $port -Action StartFeeder -InputChannel $($inputs['上料到位']) -OutputChannel $($outputs['取料夹紧']) -FeederSafeAxis 6 -FeederSafePosition 0 -FeederSafeTolerance 0.01 -FeederAdditionalSafeAxes @(7,1,3)"

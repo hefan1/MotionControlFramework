@@ -130,6 +130,11 @@
  <sys:String x:Key="操作页.全部工位回零">全部工位回零</sys:String>
  <sys:String x:Key="操作页.所选工位回零">所选工位回零</sys:String>
  <sys:String x:Key="操作页.停止回零">停止回零</sys:String>
+ <sys:String x:Key="操作页.停止清料">停止清料</sys:String>
+ <sys:String x:Key="操作页.清料状态待确认">清料状态待确认</sys:String>
+ <sys:String x:Key="操作页.清料中或等待停止确认">清料中或等待停止确认</sys:String>
+ <sys:String x:Key="操作页.清料未确认安全结束，请停止并联系维护人员核查现场和资源。">清料未确认安全结束，请停止并联系维护人员核查现场和资源。</sys:String>
+ <sys:String x:Key="操作页.清料结束后仍需核查现场；需要中断时按停止清料。">清料结束后仍需核查现场；需要中断时按停止清料。</sys:String>
  <sys:String x:Key="操作页.查看生产流程">查看生产流程</sys:String>
  <sys:String x:Key="操作页.工位">工位</sys:String>
  <sys:String x:Key="操作页.准备状态">准备状态</sys:String>

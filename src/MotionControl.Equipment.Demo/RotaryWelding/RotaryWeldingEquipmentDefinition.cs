@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using MotionControl.Framework.Contracts.Alarms;
+using MotionControl.Framework.Contracts.Clearance;
 using MotionControl.Framework.Contracts.Equipment;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.Motion;
@@ -10,7 +11,7 @@ using MotionControl.Framework.Contracts.Preparation;
 namespace MotionControl.Equipment.Demo.RotaryWelding
 {
     /// <summary>十三轴双夹位设备的代码样例；仅允许本机软件控制器。</summary>
-    public sealed class RotaryWeldingEquipmentDefinition : IEquipmentDefinition, IEquipmentPreparationProvider
+    public sealed class RotaryWeldingEquipmentDefinition : IEquipmentDefinition, IEquipmentPreparationProvider, IEquipmentClearanceProvider
     {
         /// <summary>是否按原焊接样例要求扫码和逐件记录；运动验证示例不依赖这两项业务能力。</summary>
         private readonly bool _traceProducts;
@@ -20,6 +21,12 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
         public RotaryWeldingEquipmentDefinition(bool traceProducts) { _traceProducts = traceProducts; }
         /// <summary>Host 显式选择本设备示例的配置名称。</summary>
         public string EquipmentName { get { return _traceProducts ? "RotaryWelding" : "RotaryMotionValidation"; } }
+
+        /// <summary>仅纯运动隔离样例提供 A 夹位单件清料；追溯样例保留原有行为。</summary>
+        public IEnumerable<ControlledClearanceProfile> CreateClearanceProfiles()
+        {
+            return _traceProducts ? Enumerable.Empty<ControlledClearanceProfile>() : new[] { RotarySingleAClearance.CreateProfile() };
+        }
 
         /// <summary>新设备目录所需的停机报警，既有设备仍采用报警库配置。</summary>
         public IReadOnlyList<MachineAlarmDefinition> CreateDefaultAlarms()

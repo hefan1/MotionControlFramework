@@ -34,8 +34,8 @@ namespace MotionControl.Framework.Runtime.Machine
                 foreach (IAxis axis in _motionCards.Axes)
                 {
                     AxisStatus status = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
-                    if (status.Moving)
-                        throw new InvalidOperationException("逻辑轴仍在运动，不能启动任务：" + axis.Name + "。");
+                    if (!AxisStopFeedback.IsConfirmedStopped(status))
+                        throw new InvalidOperationException("逻辑轴仍在运动或速度状态未知，不能启动任务：" + axis.Name + "。");
                     if (status.AlarmActive)
                         throw new InvalidOperationException("逻辑轴存在报警，不能启动任务：" + axis.Name + "，" + status.AlarmMessage);
                 }

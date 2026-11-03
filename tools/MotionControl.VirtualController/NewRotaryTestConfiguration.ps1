@@ -107,13 +107,24 @@ if ($MotionOnly) {
     $inputMap['下料松开到位'] = 75
     $inputMap['下料位有料'] = 76
     $inputMap['下料位无料'] = 77
+    $inputMap['取料夹爪有料'] = 78
+    $inputMap['取料夹爪无料'] = 79
+    $inputMap['上料滑台有料'] = 80
+    $inputMap['上料滑台无料'] = 81
+    $inputMap['旋转区清料允许'] = 82
+    $inputMap['缓存区清料允许'] = 83
+    $inputMap['焊接模组空闲'] = 84
+    $inputMap['压合模组空闲'] = 85
+    $inputMap['上料模组空闲'] = 86
+    $inputMap['视觉模组空闲'] = 87
+    $inputMap['出料模组空闲'] = 88
     $outputMap['下料夹紧'] = 51
 }
 foreach ($name in $inputMap.Keys) { Set-RotaryIo $inputs $name $inputMap[$name] $card }
 foreach ($name in $outputMap.Keys) { Set-RotaryIo $outputs $name $outputMap[$name] $card }
 if ($MotionOnly) {
     # 独立物料与松开反馈没有相应输出，若源配置已有同号 DO 则保守报错，不覆盖用户映射。
-    $unrelated = @($outputs | Where-Object { $_.controllerId -eq $card -and [int]$_.channel -ge 69 -and [int]$_.channel -le 77 })
+    $unrelated = @($outputs | Where-Object { $_.controllerId -eq $card -and [int]$_.channel -ge 69 -and [int]$_.channel -le 88 })
     if ($unrelated.Count -gt 0) { throw "清料反馈对应同号 DO 已有配置，请核对隔离测试映射：$($unrelated[0].name)。" }
 }
 if (-not $MotionOnly) {

@@ -170,10 +170,10 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
             foreach (IAxis axis in _motionCards.Axes)
             {
                 AxisStatus status = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
-                if (status.Moving)
+                if (!AxisStopFeedback.IsConfirmedStopped(status))
                 {
                     throw new InvalidOperationException(
-                        "逻辑轴 '" + axis.Name + "' 仍在运动，禁止启动自动流程；请先停止手动动作并确认轴已停稳。");
+                        "逻辑轴 '" + axis.Name + "' 仍在运动或速度状态未知，禁止启动自动流程；请先确认轴已停稳。");
                 }
 
                 var limitStatusMessage = BuildLimitStatusMessage(status);
@@ -241,6 +241,7 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
                 cancellationToken.ThrowIfCancellationRequested();
                 IAxis axis = _motionCards.GetAxis(requirement.Key);
                 AxisStatus status = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
+                if (status == null) throw new InvalidOperationException("读取逻辑轴 '" + axis.Name + "' 回零状态失败。");
                 if (!status.Homed)
                 {
                     missingHomedRequirements.Add(

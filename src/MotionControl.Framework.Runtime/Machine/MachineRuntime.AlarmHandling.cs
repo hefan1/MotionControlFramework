@@ -62,6 +62,12 @@ namespace MotionControl.Framework.Runtime.Machine
             // 停机报警可能改变机构或现场条件，之前的准备标记沿用资格立即失效。
             lock (_preparationSync) _preparationRecordReusable = false;
             var alarmError = CreateStopAlarmError(eventArgs.Alarm, null);
+            if (IsClearing)
+            {
+                SetClearanceStatus(MachineRunState.Alarmed, alarmError);
+                _ = StopClearanceAfterAlarmAsync();
+                return;
+            }
             if (IsPreparing)
             {
                 SetStatus(MachineRunState.Alarmed, alarmError);
