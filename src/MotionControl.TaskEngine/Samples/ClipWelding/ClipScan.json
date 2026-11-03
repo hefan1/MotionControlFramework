@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "taskId": "ClipScan",
   "name": "扫码与交接",
-  "revision": 1,
+  "revision": 2,
   "root": {
     "kind": "Sequence",
     "id": "ClipScanRoot",
@@ -16,6 +16,57 @@
         "timeoutMs": 30000,
         "inputName": "上料到位",
         "expected": true,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "SetVariable",
+        "id": "scanOccupied",
+        "name": "标记扫码工位有料",
+        "timeoutMs": 30000,
+        "variableName": "Clip.Scan.Occupied",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "true"
+        }
+      },
+      {
+        "kind": "WaitExclusiveInputs",
+        "id": "clampOpenBeforeMove",
+        "name": "确认夹具松开到位",
+        "timeoutMs": 30000,
+        "firstInputName": "夹具夹紧到位",
+        "secondInputName": "夹具松开到位",
+        "requiredFirstValue": false,
+        "firstVariableName": "Clip.Scan.ClampClosed",
+        "secondVariableName": "Clip.Scan.ClampOpen",
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitOutput",
+        "id": "clampOffBeforeMove",
+        "name": "移动前确认夹具输出关闭",
+        "timeoutMs": 30000,
+        "outputName": "夹具夹紧",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitExclusiveInputs",
+        "id": "clampFinalBeforeMove",
+        "name": "上料轴运动前确认夹具松开",
+        "timeoutMs": 30000,
+        "firstInputName": "夹具夹紧到位",
+        "secondInputName": "夹具松开到位",
+        "requiredFirstValue": false,
+        "firstVariableName": "Clip.Scan.ClampClosed",
+        "secondVariableName": "Clip.Scan.ClampOpen",
         "timeoutAlarmCodes": [
           "DEMO_SENSOR_TIMEOUT"
         ]
@@ -39,12 +90,62 @@
         }
       },
       {
+        "kind": "WaitInput",
+        "id": "feedStillReady",
+        "name": "夹紧前确认载具仍到位",
+        "timeoutMs": 30000,
+        "inputName": "上料到位",
+        "expected": true,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitExclusiveInputs",
+        "id": "clampStillOpen",
+        "name": "夹紧前再次确认夹具松开到位",
+        "timeoutMs": 30000,
+        "firstInputName": "夹具夹紧到位",
+        "secondInputName": "夹具松开到位",
+        "requiredFirstValue": false,
+        "firstVariableName": "Clip.Scan.ClampClosed",
+        "secondVariableName": "Clip.Scan.ClampOpen",
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitOutput",
+        "id": "clampOffBeforeCommand",
+        "name": "夹紧前确认输出关闭",
+        "timeoutMs": 30000,
+        "outputName": "夹具夹紧",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
         "kind": "SetOutput",
         "id": "scanClamp",
         "name": "测试夹具夹紧",
         "timeoutMs": 30000,
         "outputName": "夹具夹紧",
         "value": true
+      },
+      {
+        "kind": "WaitExclusiveInputs",
+        "id": "clampClosedAfterCommand",
+        "name": "等待夹具夹紧到位",
+        "timeoutMs": 30000,
+        "firstInputName": "夹具夹紧到位",
+        "secondInputName": "夹具松开到位",
+        "requiredFirstValue": true,
+        "firstVariableName": "Clip.Scan.ClampClosed",
+        "secondVariableName": "Clip.Scan.ClampOpen",
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
       },
       {
         "kind": "Delay",
@@ -104,13 +205,13 @@
             {
               "kind": "SetVariable",
               "id": "resultA",
-              "name": "记录合格测试结果",
+              "name": "等待后续检测结果",
               "timeoutMs": 30000,
               "variableName": "Clip.Scan.Result",
               "value": {
                 "source": "Constant",
                 "dataType": "String",
-                "constant": "OK"
+                "constant": ""
               }
             },
             {
@@ -160,13 +261,13 @@
             {
               "kind": "SetVariable",
               "id": "resultB",
-              "name": "记录不良测试结果",
+              "name": "等待后续检测结果",
               "timeoutMs": 30000,
               "variableName": "Clip.Scan.Result",
               "value": {
                 "source": "Constant",
                 "dataType": "String",
-                "constant": "NG"
+                "constant": ""
               }
             },
             {
@@ -185,18 +286,6 @@
         }
       },
       {
-        "kind": "SetVariable",
-        "id": "scanOccupied",
-        "name": "标记扫码工位有料",
-        "timeoutMs": 30000,
-        "variableName": "Clip.Scan.Occupied",
-        "value": {
-          "source": "Constant",
-          "dataType": "Boolean",
-          "constant": "true"
-        }
-      },
-      {
         "kind": "SetOutput",
         "id": "scanRelease",
         "name": "测试夹具释放",
@@ -205,12 +294,51 @@
         "value": false
       },
       {
+        "kind": "WaitExclusiveInputs",
+        "id": "clampOpenAfterRelease",
+        "name": "等待夹具松开到位",
+        "timeoutMs": 30000,
+        "firstInputName": "夹具夹紧到位",
+        "secondInputName": "夹具松开到位",
+        "requiredFirstValue": false,
+        "firstVariableName": "Clip.Scan.ClampClosed",
+        "secondVariableName": "Clip.Scan.ClampOpen",
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
         "kind": "WaitInput",
         "id": "feedClear",
         "name": "等待上料信号复归",
         "timeoutMs": 30000,
         "inputName": "上料到位",
         "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitOutput",
+        "id": "clampOffBeforeReturn",
+        "name": "返回前确认夹具输出关闭",
+        "timeoutMs": 30000,
+        "outputName": "夹具夹紧",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitExclusiveInputs",
+        "id": "clampFinalBeforeReturn",
+        "name": "返回前确认夹具松开",
+        "timeoutMs": 30000,
+        "firstInputName": "夹具夹紧到位",
+        "secondInputName": "夹具松开到位",
+        "requiredFirstValue": false,
+        "firstVariableName": "Clip.Scan.ClampClosed",
+        "secondVariableName": "Clip.Scan.ClampOpen",
         "timeoutAlarmCodes": [
           "DEMO_SENSOR_TIMEOUT"
         ]

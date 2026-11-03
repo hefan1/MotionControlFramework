@@ -11,6 +11,7 @@ using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Device;
 using MotionControl.TaskEngine.Device.InMemory;
+using MotionControl.TaskEngine.Execution;
 using MotionControl.TaskEngine.Machine;
 using MotionControl.TaskEngine.Resources;
 
@@ -19,6 +20,76 @@ namespace MotionControl.TaskEngine.Checks
     /// <summary>针对异步确认和写出故障的暂停竞态检查。</summary>
     internal static partial class MachineChecks
     {
+        /// <summary>输出读回错误保持等待；通信恢复后读取实际值才继续。</summary>
+        private static async Task OutputWaitReadFailure()
+        {
+            var inner = Device(); inner.WriteOutput("Vacuum", false); inner.SetVariable("Process.Ready", "false");
+            var device = new DelayedDevice(inner) { FailOutputRead = true };
+            var node = new WaitOutputNode { Id = "wait-do", Name = "等待输出", OutputName = "Vacuum", Expected = false,
+                TimeoutMs = 3000, TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" } };
+            TaskRun run = new TaskExecutionEngine().Start(TaskFixtures.Task(node,
+                new SetVariableNode { Id = "next", Name = "后续", VariableName = "Process.Ready", Value = new TaskValueBinding { Source = TaskValueSource.Constant, DataType = DeviceVariableType.Boolean, Constant = "true" } }), device);
+            try
+            {
+                await Until(() => run.GetSnapshot().Nodes.Any(item => item.NodeId == "wait-do" && item.Detail.Contains("读取失败")), "未显示输出读取错误。");
+                CheckAssert.True(BooleanValue(inner, "Process.Ready") == false, "输出读取错误时错误继续任务。");
+                device.FailOutputRead = false;
+                if (await Task.WhenAny(run.Completion, Task.Delay(5000)).ConfigureAwait(false) != run.Completion) throw new TimeoutException("输出恢复后未继续。");
+                CheckAssert.True((await run.Completion.ConfigureAwait(false)).State == TaskRunState.Completed && BooleanValue(inner, "Process.Ready") == true, "输出恢复后未采样当前值。");
+            }
+            finally { run.Cancel(); }
+        }
+
+        /// <summary>互斥等待读取故障期间保留原值，通信恢复后重新采样而不是使用旧结果。</summary>
+        private static async Task ExclusiveInputReadFailure()
+        {
+            var catalog = new TaskResourceCatalog(new TaskAxisInfo[0], new[] { "OK", "NG" }, new[] { "Vacuum" },
+                new Dictionary<string, DeviceVariableType> { { "OkResult", DeviceVariableType.Boolean }, { "NgResult", DeviceVariableType.Boolean } },
+                new TaskTeachPoint[0], alarmCodes: new[] { "DEMO_SENSOR_TIMEOUT" });
+            var inner = new InMemoryTaskDevice(catalog);
+            inner.SetInput("OK", true); inner.SetInput("NG", false);
+            inner.SetVariable("OkResult", "false"); inner.SetVariable("NgResult", "false");
+            var device = new DelayedDevice(inner) { FailInputRead = true };
+            var node = new WaitExclusiveInputsNode { Id = "result", Name = "等待结果", TimeoutMs = 3000,
+                FirstInputName = "OK", SecondInputName = "NG", FirstVariableName = "OkResult", SecondVariableName = "NgResult",
+                TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" } };
+            TaskRun run = new TaskExecutionEngine().Start(TaskFixtures.Task(node), device);
+            try
+            {
+                await Until(() => run.GetSnapshot().Nodes.Any(item => item.NodeId == "result" && item.Detail.Contains("读取失败")), "未显示输入读取错误。");
+                CheckAssert.True(BooleanValue(inner, "OkResult") == false && BooleanValue(inner, "NgResult") == false,
+                    "读取错误时错误写入采样变量。");
+                device.FailInputRead = false;
+                if (await Task.WhenAny(run.Completion, Task.Delay(5000)).ConfigureAwait(false) != run.Completion) throw new TimeoutException("读取恢复后未继续采样。");
+                CheckAssert.True((await run.Completion.ConfigureAwait(false)).State == TaskRunState.Completed
+                    && BooleanValue(inner, "OkResult") == true && BooleanValue(inner, "NgResult") == false,
+                    "通信恢复后未采样当前互斥结果。");
+            }
+            finally { run.Cancel(); }
+        }
+
+        /// <summary>后端读取抛错时不写目标变量，也不执行后续节点。</summary>
+        private static async Task InputReadFailure()
+        {
+            var inner = Device();
+            inner.SetVariable("Process.Ready", "true");
+            var device = new DelayedDevice(inner) { FailInputRead = true };
+            var task = TaskFixtures.Task(
+                new ReadInputNode { Id = "sample", Name = "读取输入", InputName = "PartReady", VariableName = "Process.Ready" },
+                new SetVariableNode { Id = "next", Name = "后续不执行", VariableName = "Process.Ready",
+                    Value = new TaskValueBinding { Source = TaskValueSource.Constant, DataType = DeviceVariableType.Boolean, Constant = "false" } });
+            TaskRun run = new TaskExecutionEngine().Start(task, device);
+            if (await Task.WhenAny(run.Completion, Task.Delay(5000)).ConfigureAwait(false) != run.Completion)
+            {
+                run.Cancel();
+                throw new TimeoutException("输入采样失败检查未完成。");
+            }
+            TaskRunSnapshot result = await run.Completion.ConfigureAwait(false);
+            CheckAssert.True(result.State == TaskRunState.Failed && result.Error.NodeId == "sample"
+                && result.Error.Message.Contains("测试输入读取失败") && bool.Parse(Value(inner, "Process.Ready"))
+                && !result.Nodes.Any(node => node.NodeId == "next"), "读取错误未保留、覆盖变量或错误继续执行。");
+        }
+
         /// <summary>准备任务登记设备期间锁存停机报警，不得发放准备运行许可。</summary>
         private static async Task AlarmDuringPreparationRegistration()
         {
@@ -316,6 +387,10 @@ namespace MotionControl.TaskEngine.Checks
             internal Task AlarmTask;
             /// <summary>确认返回时是否注入异常。</summary>
             internal bool FailConfirmation;
+            /// <summary>注入一次后端输入读取失败。</summary>
+            internal bool FailInputRead;
+            /// <summary>注入后端输出读取失败。</summary>
+            internal bool FailOutputRead;
             /// <summary>是否延迟并失败正常的轴收尾。</summary>
             internal bool DelayMoveFinish;
             /// <summary>是否阻塞轴动作接受，模拟停轴回调迟到登记。</summary>
@@ -335,9 +410,17 @@ namespace MotionControl.TaskEngine.Checks
             /// <summary>返回同一资源协调器。</summary>
             public TaskResourceCoordinator Resources => _inner.Resources;
             /// <summary>读取输入。</summary>
-            public bool? ReadInput(string name) => _inner.ReadInput(name);
+            public bool? ReadInput(string name)
+            {
+                if (FailInputRead) throw new InvalidOperationException("测试输入读取失败：" + name);
+                return _inner.ReadInput(name);
+            }
             /// <summary>读取输出。</summary>
-            public bool? ReadOutput(string name) => _inner.ReadOutput(name);
+            public bool? ReadOutput(string name)
+            {
+                if (FailOutputRead) throw new InvalidOperationException("测试输出读取失败：" + name);
+                return _inner.ReadOutput(name);
+            }
             /// <summary>模拟写出期间报警，随后抛出不能确认实际输出的错误。</summary>
             public void WriteOutput(string name, bool value)
             {
@@ -349,6 +432,8 @@ namespace MotionControl.TaskEngine.Checks
             }
             /// <summary>写变量。</summary>
             public void WriteVariable(string name, object value) => _inner.WriteVariable(name, value);
+            /// <summary>转发原子布尔变量对写入。</summary>
+            public void WriteBooleanPair(string firstName, bool firstValue, string secondName, bool secondValue) => _inner.WriteBooleanPair(firstName, firstValue, secondName, secondValue);
             /// <summary>读取变量快照。</summary>
             public IReadOnlyList<DeviceVariableSnapshot> ReadVariables() => _inner.ReadVariables();
             /// <summary>读取轴快照。</summary>

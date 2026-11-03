@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "taskId": "ClipInspect",
   "name": "复检与下料",
-  "revision": 1,
+  "revision": 2,
   "root": {
     "kind": "Sequence",
     "id": "ClipInspectRoot",
@@ -123,9 +123,330 @@
         }
       },
       {
+        "kind": "WaitOutput",
+        "id": "cameraTriggerInitiallyOff",
+        "name": "确认相机触发输出已关闭",
+        "timeoutMs": 30000,
+        "outputName": "相机触发",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "SetOutput",
+        "id": "cameraResetOn",
+        "name": "复位上次相机结果",
+        "timeoutMs": 30000,
+        "outputName": "相机结果复位",
+        "value": true
+      },
+      {
         "kind": "WaitInput",
-        "id": "inspectReady",
-        "name": "轴运动前确认复检反馈已复位",
+        "id": "cameraCompleteClear",
+        "name": "确认检测完成信号复位",
+        "timeoutMs": 30000,
+        "inputName": "检测完成",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitInput",
+        "id": "cameraAckClear",
+        "name": "确认相机触发反馈复位",
+        "timeoutMs": 30000,
+        "inputName": "相机触发反馈",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitInput",
+        "id": "cameraOkInitiallyClear",
+        "name": "确认合格结果已复位",
+        "timeoutMs": 30000,
+        "inputName": "检测OK",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitInput",
+        "id": "cameraNgInitiallyClear",
+        "name": "确认不合格结果已复位",
+        "timeoutMs": 30000,
+        "inputName": "检测NG",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "SetOutput",
+        "id": "cameraResetOff",
+        "name": "结束相机结果复位",
+        "timeoutMs": 30000,
+        "outputName": "相机结果复位",
+        "value": false
+      },
+      {
+        "kind": "MoveAxis",
+        "id": "cameraMove",
+        "name": "相机轴到拍照位置",
+        "timeoutMs": 30000,
+        "axisName": "Camera_X",
+        "mode": "Absolute",
+        "target": {
+          "source": "Constant",
+          "dataType": "Number",
+          "constant": "1"
+        },
+        "profile": {
+          "speed": 5,
+          "acceleration": 10,
+          "deceleration": 10
+        }
+      },
+      {
+        "kind": "WaitInput",
+        "id": "cameraAckBeforeTrigger",
+        "name": "触发前确认相机反馈复位",
+        "timeoutMs": 30000,
+        "inputName": "相机触发反馈",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitInput",
+        "id": "cameraDoneBeforeTrigger",
+        "name": "触发前确认检测完成复位",
+        "timeoutMs": 30000,
+        "inputName": "检测完成",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitOutput",
+        "id": "cameraTriggerOffBeforeCommand",
+        "name": "触发前确认相机输出关闭",
+        "timeoutMs": 30000,
+        "outputName": "相机触发",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "SetOutput",
+        "id": "cameraTriggerOn",
+        "name": "触发相机拍照",
+        "timeoutMs": 30000,
+        "outputName": "相机触发",
+        "value": true
+      },
+      {
+        "kind": "WaitInput",
+        "id": "cameraAckOn",
+        "name": "等待相机接收触发",
+        "timeoutMs": 30000,
+        "inputName": "相机触发反馈",
+        "expected": true,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "SetOutput",
+        "id": "cameraTriggerOff",
+        "name": "撤销相机触发",
+        "timeoutMs": 30000,
+        "outputName": "相机触发",
+        "value": false
+      },
+      {
+        "kind": "WaitInput",
+        "id": "cameraAckOff",
+        "name": "等待触发反馈复位",
+        "timeoutMs": 30000,
+        "inputName": "相机触发反馈",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitInput",
+        "id": "cameraDone",
+        "name": "等待检测完成",
+        "timeoutMs": 30000,
+        "inputName": "检测完成",
+        "expected": true,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitExclusiveInputs",
+        "id": "cameraValidateResult",
+        "name": "等待唯一有效的检测结果",
+        "timeoutMs": 30000,
+        "firstInputName": "检测OK",
+        "secondInputName": "检测NG",
+        "firstVariableName": "Clip.Inspect.VisionOK",
+        "secondVariableName": "Clip.Inspect.VisionNG",
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitInput",
+        "id": "cameraDoneStillValid",
+        "name": "确认检测完成信号仍有效",
+        "timeoutMs": 30000,
+        "inputName": "检测完成",
+        "expected": true,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "ConditionBranch",
+        "id": "cameraStoreResult",
+        "name": "记录相机检测结果",
+        "timeoutMs": 30000,
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Clip.Inspect.VisionOK"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "true"
+          }
+        },
+        "whenTrue": {
+          "kind": "Sequence",
+          "id": "cameraOkSequence",
+          "name": "记录合格",
+          "timeoutMs": 30000,
+          "children": [
+            {
+              "kind": "SetVariable",
+              "id": "cameraSetOk",
+              "name": "记录合格",
+              "timeoutMs": 30000,
+              "variableName": "Clip.Inspect.Result",
+              "value": {
+                "source": "Constant",
+                "dataType": "String",
+                "constant": "OK"
+              }
+            }
+          ]
+        },
+        "whenFalse": {
+          "kind": "Sequence",
+          "id": "cameraNgSequence",
+          "name": "记录不合格",
+          "timeoutMs": 30000,
+          "children": [
+            {
+              "kind": "SetVariable",
+              "id": "cameraSetNg",
+              "name": "记录不合格",
+              "timeoutMs": 30000,
+              "variableName": "Clip.Inspect.Result",
+              "value": {
+                "source": "Constant",
+                "dataType": "String",
+                "constant": "NG"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "kind": "SetOutput",
+        "id": "cameraClearResultOn",
+        "name": "复位本次相机结果",
+        "timeoutMs": 30000,
+        "outputName": "相机结果复位",
+        "value": true
+      },
+      {
+        "kind": "WaitInput",
+        "id": "cameraClearResultDone",
+        "name": "等待检测完成复位",
+        "timeoutMs": 30000,
+        "inputName": "检测完成",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitInput",
+        "id": "cameraClearResultOk",
+        "name": "等待合格信号复位",
+        "timeoutMs": 30000,
+        "inputName": "检测OK",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitInput",
+        "id": "cameraClearResultNg",
+        "name": "等待不合格信号复位",
+        "timeoutMs": 30000,
+        "inputName": "检测NG",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "SetOutput",
+        "id": "cameraClearResultOff",
+        "name": "结束结果复位",
+        "timeoutMs": 30000,
+        "outputName": "相机结果复位",
+        "value": false
+      },
+      {
+        "kind": "MoveAxis",
+        "id": "cameraReturn",
+        "name": "相机轴返回等待位",
+        "timeoutMs": 30000,
+        "axisName": "Camera_X",
+        "mode": "Absolute",
+        "target": {
+          "source": "Constant",
+          "dataType": "Number",
+          "constant": "0"
+        },
+        "profile": {
+          "speed": 5,
+          "acceleration": 10,
+          "deceleration": 10
+        }
+      },
+      {
+        "kind": "WaitInput",
+        "id": "unloadReady",
+        "name": "确认下料反馈已复位",
         "timeoutMs": 30000,
         "inputName": "下料到位",
         "expected": false,
@@ -134,9 +455,20 @@
         ]
       },
       {
+        "kind": "WaitOutput",
+        "id": "unloadOffBeforeMove",
+        "name": "运动前确认下料输出关闭",
+        "timeoutMs": 30000,
+        "outputName": "下料电磁阀",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
         "kind": "MoveAxis",
-        "id": "inspectMove",
-        "name": "复检测试定位",
+        "id": "unloadMove",
+        "name": "下料轴到工作位",
         "timeoutMs": 30000,
         "axisName": "Unload_X",
         "mode": "Absolute",
@@ -153,25 +485,38 @@
       },
       {
         "kind": "WaitInput",
-        "id": "inspectPrecheck",
-        "name": "复检输出前确认反馈仍已复位",
+        "id": "unloadPrecheck",
+        "name": "下料动作前确认反馈复位",
         "timeoutMs": 30000,
         "inputName": "下料到位",
         "expected": false,
-        "timeoutAlarmCodes": ["DEMO_SENSOR_TIMEOUT"]
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitOutput",
+        "id": "unloadOffBeforeCommand",
+        "name": "下料前确认输出关闭",
+        "timeoutMs": 30000,
+        "outputName": "下料电磁阀",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
       },
       {
         "kind": "SetOutput",
-        "id": "inspectOn",
-        "name": "复检测试动作",
+        "id": "unloadOn",
+        "name": "启动下料",
         "timeoutMs": 30000,
         "outputName": "下料电磁阀",
         "value": true
       },
       {
         "kind": "WaitInput",
-        "id": "inspectDone",
-        "name": "等待复检测试反馈",
+        "id": "unloadDone",
+        "name": "等待下料到位",
         "timeoutMs": 30000,
         "inputName": "下料到位",
         "expected": true,
@@ -180,24 +525,17 @@
         ]
       },
       {
-        "kind": "Delay",
-        "id": "inspectHold",
-        "name": "复检测试保持",
-        "timeoutMs": 30000,
-        "milliseconds": 300
-      },
-      {
         "kind": "SetOutput",
-        "id": "inspectOff",
-        "name": "复检测试动作关闭",
+        "id": "unloadOff",
+        "name": "撤销下料动作",
         "timeoutMs": 30000,
         "outputName": "下料电磁阀",
         "value": false
       },
       {
         "kind": "WaitInput",
-        "id": "inspectReset",
-        "name": "等待复检测试反馈复归",
+        "id": "unloadReset",
+        "name": "等待下料反馈复位",
         "timeoutMs": 30000,
         "inputName": "下料到位",
         "expected": false,
@@ -207,8 +545,8 @@
       },
       {
         "kind": "MoveAxis",
-        "id": "inspectReturn",
-        "name": "复检测试返回等待位",
+        "id": "unloadReturn",
+        "name": "下料轴返回等待位",
         "timeoutMs": 30000,
         "axisName": "Unload_X",
         "mode": "Absolute",

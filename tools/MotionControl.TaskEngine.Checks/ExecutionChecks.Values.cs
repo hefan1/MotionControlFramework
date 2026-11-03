@@ -126,6 +126,27 @@ namespace MotionControl.TaskEngine.Checks
             CheckAssert.True(device.ReadOutput("Vacuum") == null && result.Error.NodeId == "choose", "未知分支执行了写值或丢失节点位置。");
         }
 
+        /// <summary>真实采样 true、false 决定分支；未知数据不能覆盖旧变量或执行后续分支。</summary>
+        private static async Task InputSampling()
+        {
+            var device = Device();
+            var sample = new ReadInputNode { Id = "sample", Name = "读取检测输入", InputName = "PartReady", VariableName = "Process.Ready" };
+            var branch = new ConditionBranchNode { Id = "choose", Name = "判定检测", Condition = TaskFixtures.Condition(),
+                WhenTrue = Sequence("yes", Output("yesOutput", true)), WhenFalse = Sequence("no", Output("noOutput", false)) };
+            device.SetInput("PartReady", true);
+            Success(await Complete(Start(TaskFixtures.Task(sample, branch), device)));
+            CheckAssert.True(bool.Parse(Value(device, "Process.Ready")) && device.ReadOutput("Vacuum") == true, "有效输入未写入或真分支错误。");
+            device.SetInput("PartReady", false);
+            Success(await Complete(Start(TaskFixtures.Task(sample, branch), device)));
+            CheckAssert.True(!bool.Parse(Value(device, "Process.Ready")) && device.ReadOutput("Vacuum") == false, "无效电平未写入或假分支错误。");
+            device.SetVariable("Process.Ready", "true");
+            device.SetInput("PartReady", null);
+            var result = await Complete(Start(TaskFixtures.Task(sample, branch), device));
+            Failure(result, "没有有效数据");
+            CheckAssert.True(bool.Parse(Value(device, "Process.Ready")) && result.Error.NodeId == "sample", "未知输入覆盖变量或丢失失败节点。");
+            CheckAssert.True(device.ReadOutput("Vacuum") == false && !result.Nodes.Any(node => node.NodeId == "choose"), "未知输入后错误执行了分支。");
+        }
+
         /// <summary>构造明确的类型比较。</summary>
         private static TaskCondition Compare(TaskValueBinding left, TaskValueBinding right, TaskComparison comparison)
         {

@@ -9,7 +9,7 @@ using MotionControl.Framework.Contracts.Preparation;
 
 namespace MotionControl.Equipment.Demo.WeldingExample
 {
-    /// <summary>夹具焊接测试线的代码流程定义；四轴、四组 IO 均为测试映射，不代表参考设备接线。</summary>
+    /// <summary>夹具焊接测试线的代码流程定义；轴和 IO 均为测试映射，不代表参考设备接线。</summary>
     public sealed class WeldingExampleEquipmentDefinition : IEquipmentDefinition, IEquipmentPreparationProvider
     {
         /// <summary>正式 Host 配置中选择的设备定义名。</summary>
@@ -23,7 +23,7 @@ namespace MotionControl.Equipment.Demo.WeldingExample
                 "检查当前工位、输入和输出状态。", "确认设备安全后复位并从当前步骤继续。") };
         }
 
-        /// <summary>核对四轴行程与逻辑 IO 后创建四个并行工位及其共享载具线。</summary>
+        /// <summary>核对五轴行程与逻辑 IO 后创建四个并行工位及其共享载具线。</summary>
         public IReadOnlyList<IStationFlow> CreateStationFlows(IEquipmentContext context)
         {
             if (context == null) throw new ArgumentNullException(nameof(context));
@@ -32,27 +32,33 @@ namespace MotionControl.Equipment.Demo.WeldingExample
             WeldingTestBackend backend = context.LoadJson<WeldingTestBackend>("Parameters/ControllerBackend.json");
             if (backend == null || !string.Equals(backend.Backend, "Virtual", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("焊接测试线仅用于软件控制器，不允许连接实际设备执行。");
-            string[] names = { "扫码工位", "焊接工位", "压合工位", "复检工位" };
-            string[] axes = { "Load_X", "Press_Z", "Camera_X", "Unload_X" };
-            string[] inputs = { "上料到位", "压装完成", "检测完成", "下料到位" };
-            string[] outputs = { "夹具夹紧", "压头动作", "相机触发", "下料电磁阀" };
+            string[] names = { "上料工位", "焊接工位", "压合工位", "复检下料工位" };
+            string[] axes = { "Load_X", "Weld_Z", "Press_Z", "Camera_X", "Unload_X" };
+            string[] inputs = { "上料到位", "焊接完成", "压装完成", "相机触发反馈", "夹具夹紧到位", "夹具松开到位", "检测完成", "检测OK", "检测NG", "下料到位" };
+            string[] outputs = { "夹具夹紧", "焊接启动", "压头动作", "相机触发", "相机结果复位", "下料电磁阀" };
             var line = new WeldingCarrierLine();
             var flows = new List<IStationFlow>();
             MachineAlarmDefinition alarm = context.ResolveAlarm(DemoStationFlow.SensorTimeoutAlarmCode);
             if (alarm.Kind != MachineAlarmKind.StopMachine)
                 throw new InvalidOperationException("焊接测试线的传感器超时报警必须为停机报警。");
-            for (int index = 0; index < names.Length; index++)
+            foreach (string axisName in axes)
             {
                 AxisHardwareDefinition axis = context.AxisDefinitions.SingleOrDefault(item =>
-                    string.Equals(item.Name, axes[index], StringComparison.OrdinalIgnoreCase));
+                    string.Equals(item.Name, axisName, StringComparison.OrdinalIgnoreCase));
                 if (axis == null || axis.MinimumPosition > 0 || axis.MaximumPosition < 1)
-                    throw new InvalidOperationException("焊接测试线轴未映射或目标 0–1 超出行程：" + axes[index]);
-                if (!context.InputDefinitions.Any(item => string.Equals(item.Name, inputs[index], StringComparison.OrdinalIgnoreCase)))
-                    throw new InvalidOperationException("焊接测试线缺少逻辑输入：" + inputs[index]);
-                if (!context.OutputDefinitions.Any(item => string.Equals(item.Name, outputs[index], StringComparison.OrdinalIgnoreCase)))
-                    throw new InvalidOperationException("焊接测试线缺少逻辑输出：" + outputs[index]);
+                    throw new InvalidOperationException("焊接测试线轴未映射或目标 0–1 超出行程：" + axisName);
+            }
+            foreach (string input in inputs)
+                if (!context.InputDefinitions.Any(item => string.Equals(item.Name, input, StringComparison.OrdinalIgnoreCase)))
+                    throw new InvalidOperationException("焊接测试线缺少逻辑输入：" + input);
+            foreach (string output in outputs)
+                if (!context.OutputDefinitions.Any(item => string.Equals(item.Name, output, StringComparison.OrdinalIgnoreCase)))
+                    throw new InvalidOperationException("焊接测试线缺少逻辑输出：" + output);
+            for (int index = 0; index < names.Length; index++)
+            {
                 flows.Add(new WeldingStationFlow(index, names[index], context.GetAxis(axes[index]), context.LogicalIo,
-                    inputs[index], outputs[index], line, context.AlarmService, alarm));
+                    inputs[index], outputs[index], line, context.AlarmService, alarm,
+                    index == 3 ? context.GetAxis("Unload_X") : null));
             }
             return flows.AsReadOnly();
         }
@@ -69,10 +75,10 @@ namespace MotionControl.Equipment.Demo.WeldingExample
             if (flows.Length != 4 || flows.Select(flow => flow.StationIndex).Distinct().Count() != 4
                 || flows.Any(flow => !ReferenceEquals(flow.CarrierLine, flows[0].CarrierLine)))
                 throw new InvalidOperationException("焊接准备必须绑定当前四个工位的同一载具状态。");
-            var welding = new WeldingStationPreparation("ClipWeld", "焊接工位", context.GetAxis("Press_Z"),
-                context.LogicalIo, "压装完成", "压头动作", flows[0].CarrierLine, null);
-            var pressing = new WeldingStationPreparation("ClipPress", "压合工位", context.GetAxis("Camera_X"),
-                context.LogicalIo, "检测完成", "相机触发", flows[0].CarrierLine, welding);
+            var welding = new WeldingStationPreparation("ClipWeld", "焊接工位", context.GetAxis("Weld_Z"),
+                context.LogicalIo, "焊接完成", "焊接启动", flows[0].CarrierLine, null);
+            var pressing = new WeldingStationPreparation("ClipPress", "压合工位", context.GetAxis("Press_Z"),
+                context.LogicalIo, "压装完成", "压头动作", flows[0].CarrierLine, welding);
             return new IStationPreparation[] { welding, pressing };
         }
 

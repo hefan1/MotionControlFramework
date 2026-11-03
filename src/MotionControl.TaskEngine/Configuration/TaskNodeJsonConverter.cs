@@ -62,6 +62,25 @@ namespace MotionControl.TaskEngine.Configuration
                     node = new WaitInputNode();
                     Require(data, "expected", JTokenType.Boolean);
                     break;
+                case "WaitOutput":
+                    node = new WaitOutputNode();
+                    Require(data, "outputName", JTokenType.String);
+                    Require(data, "expected", JTokenType.Boolean);
+                    break;
+                case "ReadInput":
+                    node = new ReadInputNode();
+                    Require(data, "inputName", JTokenType.String);
+                    Require(data, "variableName", JTokenType.String);
+                    break;
+                case "WaitExclusiveInputs":
+                    node = new WaitExclusiveInputsNode();
+                    Require(data, "firstInputName", JTokenType.String);
+                    Require(data, "secondInputName", JTokenType.String);
+                    Require(data, "firstVariableName", JTokenType.String);
+                    Require(data, "secondVariableName", JTokenType.String);
+                    if (data["requiredFirstValue"] != null && data["requiredFirstValue"].Type != JTokenType.Null)
+                        Require(data, "requiredFirstValue", JTokenType.Boolean);
+                    break;
                 case "WaitCondition": node = new WaitConditionNode(); break;
                 case "Delay": node = new DelayNode(); break;
                 case "SetVariable": node = new SetVariableNode(); break;

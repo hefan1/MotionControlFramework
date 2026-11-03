@@ -259,6 +259,34 @@
       "initialValue": "",
       "description": "最近完成测试载具的结果去向",
       "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.Inspect.VisionOK",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "相机完成后锁存的合格输入快照",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.Inspect.VisionNG",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "相机完成后锁存的不合格输入快照",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.Scan.ClampClosed",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "夹具夹紧到位的互斥采样",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Clip.Scan.ClampOpen",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "夹具松开到位的互斥采样",
+      "allowOperatorWrite": false
     }
   ]
 }

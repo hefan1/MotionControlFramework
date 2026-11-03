@@ -98,6 +98,12 @@ namespace MotionControl.TaskEngine.Device.InMemory
             lock (_sync) TaskRuntimeValues.Write(_variables, name, Catalog.Variables[name], value);
         }
 
+        /// <summary>把两个布尔采样原子写入同一个内存变量表。</summary>
+        public void WriteBooleanPair(string firstName, bool firstValue, string secondName, bool secondValue)
+        {
+            lock (_sync) _variables.SetBooleanPair(firstName, firstValue, secondName, secondValue);
+        }
+
         /// <summary>拒绝错误的 IO 名称，不自动创建或猜测通道。</summary>
         private static void RequireIo(Dictionary<string, bool?> values, string name, string direction)
         {

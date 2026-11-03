@@ -34,7 +34,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             DockPanel.SetDock(hint, Dock.Top);
             panel.Children.Add(hint);
             _list = new ListBox();
-            foreach (string kind in new[] { "MoveAxis", "MoveAxisGroup", "Home", "Stop", "WaitInput", "SetOutput", "SetVariable", "Delay", "Sequence", "ParallelGroup", "ConditionBranch", "WaitCondition", "CallTask", "ResourceScope" })
+            foreach (string kind in new[] { "MoveAxis", "MoveAxisGroup", "Home", "Stop", "WaitInput", "WaitOutput", "ReadInput", "WaitExclusiveInputs", "SetOutput", "SetVariable", "Delay", "Sequence", "ParallelGroup", "ConditionBranch", "WaitCondition", "CallTask", "ResourceScope" })
                 _list.Items.Add(new ListBoxItem { Content = TaskEditingUi.T(this, TaskEditorNodes.KindName(kind)), Tag = kind, Padding = new Thickness(8, 6, 8, 6) });
             _list.Items.Add(new ListBoxItem { Content = TaskEditingUi.T(this, "直线插补未接入"), IsEnabled = false });
             _list.SelectionChanged += SelectionChanged;

@@ -52,6 +52,44 @@ namespace MotionControl.TaskEngine.Validation
                 CheckRequiredTimeoutAlarm(input.TimeoutAlarmCodes, node, path + ".timeoutAlarmCodes");
                 CheckAlarmReferences(input.TimeoutAlarmCodes, node, path + ".timeoutAlarmCodes");
             }
+            else if (node is WaitOutputNode outputWait)
+            {
+                if (!ValidName(outputWait.OutputName) || !_catalog.Outputs.Contains(outputWait.OutputName, StringComparer.OrdinalIgnoreCase))
+                    Error(node, path + ".outputName", "找不到逻辑 DO；不能把 DI 用作输出：" + outputWait.OutputName);
+                CheckRequiredTimeoutAlarm(outputWait.TimeoutAlarmCodes, node, path + ".timeoutAlarmCodes");
+                CheckAlarmReferences(outputWait.TimeoutAlarmCodes, node, path + ".timeoutAlarmCodes");
+            }
+            else if (node is ReadInputNode sample)
+            {
+                if (!ValidName(sample.InputName) || !_catalog.Inputs.Contains(sample.InputName, StringComparer.OrdinalIgnoreCase))
+                    Error(node, path + ".inputName", "找不到逻辑 DI；不能把 DO 用作输入：" + sample.InputName);
+                DeviceVariableType targetType;
+                if (!ValidName(sample.VariableName) || !_catalog.Variables.TryGetValue(sample.VariableName, out targetType))
+                    Error(node, path + ".variableName", "目标设备变量不存在：" + sample.VariableName);
+                else if (targetType != DeviceVariableType.Boolean)
+                    Error(node, path + ".variableName", "输入采样只能写入布尔设备变量：" + sample.VariableName);
+            }
+            else if (node is WaitExclusiveInputsNode pair)
+            {
+                foreach (var pairInput in new[] { new { Name = pair.FirstInputName, Field = ".firstInputName" }, new { Name = pair.SecondInputName, Field = ".secondInputName" } })
+                    if (!ValidName(pairInput.Name) || !_catalog.Inputs.Contains(pairInput.Name, StringComparer.OrdinalIgnoreCase))
+                        Error(node, path + pairInput.Field, "找不到逻辑 DI：" + pairInput.Name);
+                if (ValidName(pair.FirstInputName) && string.Equals(pair.FirstInputName, pair.SecondInputName, StringComparison.OrdinalIgnoreCase))
+                    Error(node, path + ".secondInputName", "两路输入不能相同。");
+                foreach (var variable in new[] { new { Name = pair.FirstVariableName, Field = ".firstVariableName" }, new { Name = pair.SecondVariableName, Field = ".secondVariableName" } })
+                {
+                    DeviceVariableType type;
+                    if (!ValidName(variable.Name) || !_catalog.Variables.TryGetValue(variable.Name, out type))
+                        Error(node, path + variable.Field, "目标设备变量不存在：" + variable.Name);
+                    else if (type != DeviceVariableType.Boolean)
+                        Error(node, path + variable.Field, "输入采样只能写入布尔设备变量：" + variable.Name);
+                }
+                if (ValidName(pair.FirstVariableName) && string.Equals(pair.FirstVariableName, pair.SecondVariableName, StringComparison.OrdinalIgnoreCase))
+                    Error(node, path + ".secondVariableName", "两个目标变量不能相同。");
+                CheckRequiredTimeoutAlarm(pair.TimeoutAlarmCodes, node, path + ".timeoutAlarmCodes");
+                CheckAlarmReferences(pair.TimeoutAlarmCodes, node, path + ".timeoutAlarmCodes");
+                Warning(node, path, "两路输入按顺序读取，要求外部设备锁存结果至确认；不能代替硬件原子采样或安全联锁。");
+            }
             else if (node is DelayNode delay)
             {
                 if (delay.Milliseconds <= 0 || delay.Milliseconds > delay.TimeoutMs)

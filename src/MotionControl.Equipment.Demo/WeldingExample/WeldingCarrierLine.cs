@@ -11,6 +11,8 @@ namespace MotionControl.Equipment.Demo.WeldingExample
         private readonly string[] _carriers = new string[4];
         /// <summary>本次连接中生成的测试编号，不是实际扫码枪结果。</summary>
         private long _nextNumber;
+        /// <summary>当前会话最近一次相机明确返回的结果；未知时为空。</summary>
+        private string _lastInspectionResult;
         /// <summary>本会话已经执行生产步骤；再次准备必须明确处理生产状态，不能清空载具绕过。</summary>
         private bool _productionStarted;
 
@@ -49,6 +51,24 @@ namespace MotionControl.Equipment.Demo.WeldingExample
         internal string GetCarrier(int station)
         {
             lock (_sync) return _carriers[station];
+        }
+
+        /// <summary>将相机实际返回的 OK 或 NG 记录在当前复检载具上，不预设检测结果。</summary>
+        internal void SetInspectionResult(string result)
+        {
+            if (result != "OK" && result != "NG") throw new ArgumentException("检测结果必须为 OK 或 NG。", nameof(result));
+            lock (_sync)
+            {
+                if (_carriers[3] == null) throw new InvalidOperationException("复检工位没有载具，不能记录检测结果。");
+                _carriers[3] += " · 检测" + result;
+                _lastInspectionResult = result;
+            }
+        }
+
+        /// <summary>读取本会话最近一次实际检测结果；没有结果时返回空。</summary>
+        internal string GetLastInspectionResult()
+        {
+            lock (_sync) return _lastInspectionResult;
         }
 
         /// <summary>仅当下游空闲时原子转移载具；最后工位完成后移出。</summary>

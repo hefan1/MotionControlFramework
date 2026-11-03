@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "taskId": "ClipWeld",
   "name": "焊接与交接",
-  "revision": 1,
+  "revision": 2,
   "root": {
     "kind": "Sequence",
     "id": "ClipWeldRoot",
@@ -127,7 +127,18 @@
         "id": "weldReady",
         "name": "轴运动前确认焊接反馈已复位",
         "timeoutMs": 30000,
-        "inputName": "压装完成",
+        "inputName": "焊接完成",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitOutput",
+        "id": "weldOffBeforeMove",
+        "name": "运动前确认焊接输出关闭",
+        "timeoutMs": 30000,
+        "outputName": "焊接启动",
         "expected": false,
         "timeoutAlarmCodes": [
           "DEMO_SENSOR_TIMEOUT"
@@ -138,7 +149,7 @@
         "id": "weldMove",
         "name": "焊接测试定位",
         "timeoutMs": 30000,
-        "axisName": "Press_Z",
+        "axisName": "Weld_Z",
         "mode": "Absolute",
         "target": {
           "source": "Constant",
@@ -156,16 +167,29 @@
         "id": "weldPrecheck",
         "name": "焊接输出前确认反馈仍已复位",
         "timeoutMs": 30000,
-        "inputName": "压装完成",
+        "inputName": "焊接完成",
         "expected": false,
-        "timeoutAlarmCodes": ["DEMO_SENSOR_TIMEOUT"]
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitOutput",
+        "id": "weldOffBeforeCommand",
+        "name": "焊接前确认输出关闭",
+        "timeoutMs": 30000,
+        "outputName": "焊接启动",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
       },
       {
         "kind": "SetOutput",
         "id": "weldOn",
         "name": "焊接测试动作",
         "timeoutMs": 30000,
-        "outputName": "压头动作",
+        "outputName": "焊接启动",
         "value": true
       },
       {
@@ -173,7 +197,7 @@
         "id": "weldDone",
         "name": "等待焊接测试反馈",
         "timeoutMs": 30000,
-        "inputName": "压装完成",
+        "inputName": "焊接完成",
         "expected": true,
         "timeoutAlarmCodes": [
           "DEMO_SENSOR_TIMEOUT"
@@ -191,7 +215,7 @@
         "id": "weldOff",
         "name": "焊接测试动作关闭",
         "timeoutMs": 30000,
-        "outputName": "压头动作",
+        "outputName": "焊接启动",
         "value": false
       },
       {
@@ -199,7 +223,7 @@
         "id": "weldReset",
         "name": "等待焊接测试反馈复归",
         "timeoutMs": 30000,
-        "inputName": "压装完成",
+        "inputName": "焊接完成",
         "expected": false,
         "timeoutAlarmCodes": [
           "DEMO_SENSOR_TIMEOUT"
@@ -210,7 +234,7 @@
         "id": "weldReturn",
         "name": "焊接测试返回等待位",
         "timeoutMs": 30000,
-        "axisName": "Press_Z",
+        "axisName": "Weld_Z",
         "mode": "Absolute",
         "target": {
           "source": "Constant",

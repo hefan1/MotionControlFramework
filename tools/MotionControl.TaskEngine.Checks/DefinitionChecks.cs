@@ -77,6 +77,7 @@ namespace MotionControl.TaskEngine.Checks
                     Id = "di", Name = "等待来料", InputName = "PartReady", Expected = true,
                     TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT", "OPERATOR_NOTICE" }
                 },
+                new ReadInputNode { Id = "sample", Name = "记录来料输入", InputName = "PartReady", VariableName = "Process.Ready" },
                 new WaitConditionNode {
                     Id = "wait", Name = "等待条件", Condition = TaskFixtures.Condition(),
                     TimeoutAlarmCodes = new List<string> { "OPERATOR_NOTICE" }
@@ -233,6 +234,14 @@ namespace MotionControl.TaskEngine.Checks
         {
             CheckAssert.HasError(Validate(new SetOutputNode { Id = "do", Name = "错误输出", OutputName = "PartReady" }), "找不到逻辑 DO");
             CheckAssert.HasError(Validate(new WaitInputNode { Id = "di", Name = "错误输入", InputName = "Vacuum" }), "找不到逻辑 DI");
+            var sample = new ReadInputNode { Id = "sample", Name = "采样输入", InputName = "PartReady", VariableName = "Process.Ready" };
+            CheckAssert.NoErrors(Validate(sample));
+            sample.InputName = "Vacuum";
+            CheckAssert.HasError(Validate(sample), "找不到逻辑 DI");
+            sample.InputName = "PartReady"; sample.VariableName = "Vision.Result";
+            CheckAssert.HasError(Validate(sample), "只能写入布尔设备变量");
+            sample.VariableName = "Missing";
+            CheckAssert.HasError(Validate(sample), "目标设备变量不存在");
             CheckAssert.HasError(Validate(new DelayNode { Id = "delay", Name = "错误时间", Milliseconds = 101, TimeoutMs = 100 }), "延时须");
             CheckAssert.HasError(Validate(new AxisCommandNode { Id = "stop", Name = "未指定停止方式", AxisName = "X", Command = TaskAxisCommand.Stop }), "停止方式");
         }

@@ -128,6 +128,112 @@ namespace MotionControl.TaskEngine.Execution
             }
         }
 
+        /// <summary>等待读回输出达到指定状态；未知或读取异常保留等待并显示原因，不推断机构到位。</summary>
+        private async Task WaitOutputAsync(TaskExecutionScope scope, WaitOutputNode node)
+        {
+            bool complete = false;
+            bool timeoutReportedThisAttempt = false;
+            while (!complete)
+            {
+                try
+                {
+                    await scope.StepAsync(() =>
+                    {
+                        bool? actual = null;
+                        string readError = null;
+                        try { actual = _device.ReadOutput(node.OutputName); }
+                        catch (Exception error) { readError = error.Message; }
+                        complete = readError == null && actual.HasValue && actual.Value == node.Expected;
+                        scope.WaitDetail = "等待 DO " + node.OutputName + "=" + node.Expected
+                            + "；当前=" + (actual?.ToString() ?? "未知") + (readError == null ? "" : "；读取失败：" + readError);
+                        scope.Diagnostics = new TaskStepDiagnostics("等待输出读回：" + node.OutputName, new[] {
+                            new TaskObservedValue(node.OutputName, node.Expected.ToString(), actual?.ToString(), actual.HasValue ? (bool?)complete : null) });
+                        _run.Report(scope, TaskNodeState.Waiting, scope.WaitDetail);
+                    }).ConfigureAwait(false);
+                }
+                catch (TaskExecutionException error) when (!timeoutReportedThisAttempt
+                    && error.NodeId == scope.Node.Id && scope.IsOwnTimeoutOwnerExpired
+                    && error.InnerException is TimeoutException)
+                {
+                    string detail = "等待 DO '" + node.OutputName + "' 达到超时时限 " + node.TimeoutMs + " ms；" + scope.WaitDetail;
+                    bool stopRequired = ReportTimeoutAlarms(scope, node.TimeoutAlarmCodes, detail);
+                    timeoutReportedThisAttempt = true;
+                    scope.TimeoutAlarmsReported = true;
+                    if (stopRequired) throw;
+                    scope.IgnoreOwnTimeout();
+                    scope.CompleteFailureHandoff();
+                }
+                if (!complete) await scope.NextPollAsync().ConfigureAwait(false);
+            }
+            if (scope.TimeoutAlarmsReported)
+            {
+                ClearTimeoutAlarms(scope, node.TimeoutAlarmCodes, "等待 DO '" + node.OutputName + "' 已满足。");
+                scope.TimeoutAlarmsReported = false;
+            }
+        }
+
+        /// <summary>反复核对两路锁存输入，恰好一路有效且重复读取一致时原子发布变量；未知和读错均不放行。</summary>
+        private async Task WaitExclusiveInputsAsync(TaskExecutionScope scope, WaitExclusiveInputsNode node)
+        {
+            bool complete = false;
+            bool timeoutReportedThisAttempt = false;
+            while (!complete)
+            {
+                try
+                {
+                    await scope.StepAsync(() =>
+                    {
+                        bool? first = null, second = null, firstAgain = null, secondAgain = null;
+                        string readError = null;
+                        try
+                        {
+                            first = _device.ReadInput(node.FirstInputName);
+                            second = _device.ReadInput(node.SecondInputName);
+                            firstAgain = _device.ReadInput(node.FirstInputName);
+                            secondAgain = _device.ReadInput(node.SecondInputName);
+                        }
+                        catch (Exception error) { readError = error.Message; }
+                        bool stable = readError == null && first.HasValue && second.HasValue
+                            && firstAgain.HasValue && secondAgain.HasValue
+                            && first.Value == firstAgain.Value && second.Value == secondAgain.Value;
+                        bool matched = stable && first.Value != second.Value
+                            && (!node.RequiredFirstValue.HasValue || first.Value == node.RequiredFirstValue.Value);
+                        scope.WaitDetail = "等待互斥 DI " + node.FirstInputName + " / " + node.SecondInputName
+                            + "；当前=" + (first?.ToString() ?? "未知") + " / " + (second?.ToString() ?? "未知")
+                            + (node.RequiredFirstValue.HasValue ? "；要求第一路=" + node.RequiredFirstValue.Value : "；任一路有效")
+                            + (readError == null ? (stable ? "" : "；采样未知或变化") : "；读取失败：" + readError);
+                        scope.Diagnostics = new TaskStepDiagnostics("两路锁存输入须恰好一路有效", new[] {
+                            new TaskObservedValue(node.FirstInputName, "互斥且稳定", first?.ToString(), stable ? (bool?)matched : null),
+                            new TaskObservedValue(node.SecondInputName, "互斥且稳定", second?.ToString(), stable ? (bool?)matched : null) });
+                        _run.Report(scope, TaskNodeState.Waiting, scope.WaitDetail);
+                        if (matched)
+                        {
+                            _device.WriteBooleanPair(node.FirstVariableName, first.Value, node.SecondVariableName, second.Value);
+                            complete = true;
+                        }
+                    }).ConfigureAwait(false);
+                }
+                catch (TaskExecutionException error) when (!timeoutReportedThisAttempt
+                    && error.NodeId == scope.Node.Id && scope.IsOwnTimeoutOwnerExpired
+                    && error.InnerException is TimeoutException)
+                {
+                    string detail = "等待互斥 DI 达到超时时限 " + node.TimeoutMs + " ms；" + scope.WaitDetail;
+                    bool stopRequired = ReportTimeoutAlarms(scope, node.TimeoutAlarmCodes, detail);
+                    timeoutReportedThisAttempt = true;
+                    scope.TimeoutAlarmsReported = true;
+                    if (stopRequired) throw;
+                    scope.IgnoreOwnTimeout();
+                    scope.CompleteFailureHandoff();
+                }
+                if (!complete) await scope.NextPollAsync().ConfigureAwait(false);
+            }
+            if (scope.TimeoutAlarmsReported)
+            {
+                ClearTimeoutAlarms(scope, node.TimeoutAlarmCodes, "互斥 DI 已取得有效结果。");
+                scope.TimeoutAlarmsReported = false;
+            }
+        }
+
         /// <summary>条件不满足或变量尚未有效时持续显示原因；节点时限负责终止等待。</summary>
         private async Task WaitConditionAsync(TaskExecutionScope scope, WaitConditionNode node)
         {

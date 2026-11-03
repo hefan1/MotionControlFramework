@@ -82,6 +82,7 @@ tasks.Save("Machine01", "TransferCycle.json", definition, catalog);
 - 数值常量使用不受界面语言影响的小数点格式。DateTime 常量使用 ISO 8601 往返格式，例如 `2026-10-22T10:30:00.0000000+08:00`。
 - 变量类型沿用已有配置名称：Boolean、Integer、Number、String、Byte、Character、DateTime、UInt32；后续 UI 可显示 bool、int、double、string、byte、char、DateTime、uint。
 - 赋值仅允许同类型或当前整数类型到 double；不把浮点数隐式截断为整数。
+- `ReadInput` 在同一个步骤内读取一次逻辑 DI 并写入已有 Boolean 设备变量，例如 `{"kind":"ReadInput","id":"readOk","name":"读取检测OK","timeoutMs":30000,"inputName":"检测OK","variableName":"Vision.OK"}`。输入未知或读取失败时步骤失败且不写变量；不同步骤采样多个输入不是原子快照，设备流程须保证结果稳定并检查互斥状态。
 - 轴资源名称为 `Axis:逻辑轴名`，输出为 `Output:逻辑输出名`，均由目录自动登记。区域等命名资源由调用方明确传入；自定义名称不能使用这两个保留前缀。
 - JSON 拒绝未知节点、未知字段、数字枚举、重复字段和 `$type` 等类型元数据。
 
@@ -139,7 +140,7 @@ if (result.State == TaskRunState.Failed)
 | Sequence、ParallelGroup | 顺序执行；独立分支全部成功后汇合 |
 | ConditionBranch、CallTask | 单次快照判断分支；子任务正常返回，调用状态独立 |
 | Delay、WaitInput、WaitCondition | 可暂停/取消、有时限、有等待对象说明 |
-| SetVariable、SetOutput | 写独立内存变量或 DO；变量类型复用现有实现 |
+| ReadInput、SetVariable、SetOutput | 读取明确 DI 或写独立内存变量、DO；变量类型复用现有实现 |
 | MoveAxis | 匀速单轴模型，检查使能、回零参考、报警和动态终点范围 |
 | MoveAxisGroup | 同卡轴组各自定位，统一等待、暂停与异常收尾，全部到位后完成 |
 | AxisCommand.Home | 100ms 内存回零占位，成功建立仿真参考；不模拟任何厂商回零模式 |

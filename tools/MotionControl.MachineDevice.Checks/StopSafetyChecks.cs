@@ -441,6 +441,8 @@ namespace MotionControl.MachineDevice.Checks
             public void WriteOutput(string name, bool value) => _inner.WriteOutput(name, value);
             /// <summary>写入变量。</summary>
             public void WriteVariable(string name, object value) => _inner.WriteVariable(name, value);
+            /// <summary>转发原子布尔变量对写入。</summary>
+            public void WriteBooleanPair(string firstName, bool firstValue, string secondName, bool secondValue) => _inner.WriteBooleanPair(firstName, firstValue, secondName, secondValue);
             /// <summary>读取变量。</summary>
             public IReadOnlyList<DeviceVariableSnapshot> ReadVariables() => _inner.ReadVariables();
             /// <summary>读取轴状态。</summary>

@@ -34,6 +34,9 @@ namespace MotionControl.TaskEngine.Device
         /// <summary>写入一个设备变量；类型不匹配或变量未配置必须报错。</summary>
         void WriteVariable(string name, object value);
 
+        /// <summary>在同一个变量表快照中发布两个布尔值；任一目标无效时两个均不写入。</summary>
+        void WriteBooleanPair(string firstName, bool firstValue, string secondName, bool secondValue);
+
         /// <summary>复制全部设备变量当前值，供一次条件判断使用一致快照。</summary>
         IReadOnlyList<DeviceVariableSnapshot> ReadVariables();
 

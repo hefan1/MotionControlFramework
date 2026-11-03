@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)] [string]$ConfigurationRoot
 )
 
@@ -55,18 +55,21 @@ foreach ($axisName in @('Load_X','Press_Z','Camera_X','Unload_X')) {
     if ($taskChannels.ContainsKey($channel)) { throw "样例轴映射到相同通道：$channel" }
     $taskChannels[$channel] = $axisName
 }
-$taskInputMap = @{ '上料到位'=4; '压装完成'=5; '检测完成'=6; '下料到位'=7 }
-$taskOutputMap = @{ '夹具夹紧'=0; '压头动作'=1; '相机触发'=2; '下料电磁阀'=3 }
-foreach ($direction in @(@{ Items = $taskIo.digitalInputs; Expected = $taskInputMap }, @{ Items = $taskIo.digitalOutputs; Expected = $taskOutputMap })) {
-    $items = @($direction.Items); $expected = $direction.Expected
-    foreach ($name in $expected.Keys) {
+$taskInputNames = @('上料到位', '压装完成', '检测完成', '下料到位')
+$taskOutputNames = @('夹具夹紧', '压头动作', '相机触发', '下料电磁阀')
+# 示例按逻辑名称访问 IO，物理通道由设备配置决定，不强制旧版编号。
+foreach ($direction in @(@{ Items = $taskIo.digitalInputs; Names = $taskInputNames }, @{ Items = $taskIo.digitalOutputs; Names = $taskOutputNames })) {
+    $items = @($direction.Items)
+    foreach ($name in $direction.Names) {
         $matched = @($items | Where-Object { $_.name -eq $name })
-        if ($matched.Count -ne 1 -or [int]$matched[0].channel -ne $expected[$name] -or $matched[0].activeHigh -ne $true -or [string]::IsNullOrWhiteSpace([string]$matched[0].controllerId)) { throw "IO 映射与样例不符：$name" }
+        if ($matched.Count -ne 1) { throw "IO 映射缺失或逻辑名称重复：$name" }
+        $ioChannel = 0
+        if (-not [int]::TryParse([string]$matched[0].channel, [ref]$ioChannel) -or $ioChannel -lt 0 -or $ioChannel -gt 4095 -or $matched[0].activeHigh -ne $true -or [string]::IsNullOrWhiteSpace([string]$matched[0].controllerId)) { throw "IO 映射与样例不符：$name；通道须为 0–4095 且高有效。" }
         $duplicate = @($items | Where-Object { $_.controllerId -eq $matched[0].controllerId -and $_.channel -eq $matched[0].channel })
         if ($duplicate.Count -ne 1) { throw "IO 物理通道存在重复映射：$name" }
     }
 }
-$taskControllerIds = @(@($taskAxes.axes | Where-Object { $_.name -in @('Load_X','Press_Z','Camera_X','Unload_X') }) + @($taskIo.digitalInputs | Where-Object { $_.name -in $taskInputMap.Keys }) + @($taskIo.digitalOutputs | Where-Object { $_.name -in $taskOutputMap.Keys }) | ForEach-Object { $_.controllerId } | Select-Object -Unique)
+$taskControllerIds = @(@($taskAxes.axes | Where-Object { $_.name -in @('Load_X','Press_Z','Camera_X','Unload_X') }) + @($taskIo.digitalInputs | Where-Object { $_.name -in $taskInputNames }) + @($taskIo.digitalOutputs | Where-Object { $_.name -in $taskOutputNames }) | ForEach-Object { $_.controllerId } | Select-Object -Unique)
 if ($taskControllerIds.Count -ne 1) { throw '样例轴和 IO 必须映射到同一张控制器。' }
 
 $taskAddVariables = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Variables.additions.json') -Raw -Encoding UTF8 | ConvertFrom-Json

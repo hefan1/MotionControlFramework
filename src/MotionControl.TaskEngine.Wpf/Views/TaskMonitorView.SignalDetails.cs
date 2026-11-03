@@ -20,6 +20,29 @@ namespace MotionControl.TaskEngine.Wpf.Views
                 parameters.Add(Field("期望状态", T(input.Expected ? "有效" : "无效")));
                 IoReferences(input.InputName, false, references);
             }
+            else if (node is WaitOutputNode outputWait)
+            {
+                parameters.Add(Field("逻辑输出", outputWait.OutputName));
+                parameters.Add(Field("期望状态", T(outputWait.Expected ? "有效" : "无效")));
+                fields.Add(Field("反馈说明", T("输出写入不等于机构到位")));
+                IoReferences(outputWait.OutputName, true, references);
+            }
+            else if (node is ReadInputNode sample)
+            {
+                parameters.Add(Field("逻辑输入", sample.InputName));
+                parameters.Add(Field("变量", sample.VariableName));
+                IoReferences(sample.InputName, false, references);
+                references.Add(new TaskReferenceEventArgs("设备变量", sample.VariableName));
+            }
+            else if (node is WaitExclusiveInputsNode pair)
+            {
+                parameters.Add(Field("第一路输入", pair.FirstInputName)); parameters.Add(Field("第二路输入", pair.SecondInputName));
+                parameters.Add(Field("有效输入要求", T(!pair.RequiredFirstValue.HasValue ? "任一路有效" : pair.RequiredFirstValue.Value ? "第一路有效" : "第二路有效")));
+                parameters.Add(Field("第一路目标变量", pair.FirstVariableName)); parameters.Add(Field("第二路目标变量", pair.SecondVariableName));
+                IoReferences(pair.FirstInputName, false, references); IoReferences(pair.SecondInputName, false, references);
+                references.Add(new TaskReferenceEventArgs("设备变量", pair.FirstVariableName));
+                references.Add(new TaskReferenceEventArgs("设备变量", pair.SecondVariableName));
+            }
             else if (node is SetOutputNode output)
             {
                 parameters.Add(Field("逻辑输出", output.OutputName));

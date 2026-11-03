@@ -36,13 +36,13 @@ namespace MotionControl.WeldingExample.Checks
             IStationPreparation[] preparations = CreatePreparations(context, out flows);
             Require(preparations[1].Dependencies.SequenceEqual(new[] { "ClipWeld" }), "压合缺少焊接依赖。");
             await ExpectFailureAsync(() => preparations[1].ExecuteAsync(null, CancellationToken.None), "焊接工位");
-            Require(context.Axes["Camera_X"].HomeCount == 0, "焊接未准备时压合已发起回零。");
+            Require(context.Axes["Press_Z"].HomeCount == 0, "焊接未准备时压合已发起回零。");
             var progress = new RecordingProgress();
             await preparations[0].ExecuteAsync(progress, CancellationToken.None);
             await preparations[1].ExecuteAsync(null, CancellationToken.None);
-            Require(progress.Actions.Any(action => action.Contains("Press_Z 回零"))
+            Require(progress.Actions.Any(action => action.Contains("Weld_Z 回零"))
                 && progress.Actions.Last() == "准备完成", "准备动作没有提供可定位的进度。");
-            foreach (string name in new[] { "Press_Z", "Camera_X" })
+            foreach (string name in new[] { "Weld_Z", "Press_Z" })
                 Require(context.Axes[name].Homed && context.Axes[name].HomeCount == 1
                     && context.Axes[name].MoveCount == 1 && context.Axes[name].Position == 0, "准备未执行真实回零与待机定位。");
             context.Io.Inputs["上料到位"] = true;
@@ -50,9 +50,9 @@ namespace MotionControl.WeldingExample.Checks
             await preparations[1].ValidateReadyAsync(CancellationToken.None);
             await ExpectFailureAsync(() => preparations[0].ValidateStartAsync(CancellationToken.None), "物料");
             context.Io.Inputs["上料到位"] = false;
-            context.Axes["Press_Z"].Position = 1;
+            context.Axes["Weld_Z"].Position = 1;
             await ExpectFailureAsync(() => preparations[1].ExecuteAsync(null, CancellationToken.None), "待机位");
-            Require(context.Axes["Camera_X"].HomeCount == 1, "邻站离开待机位置后仍重复执行压合回零。");
+            Require(context.Axes["Press_Z"].HomeCount == 1, "邻站离开待机位置后仍重复执行压合回零。");
         }
 
         /// <summary>核对反馈、输出和已执行生产时拒绝准备，并且不清空载具或工步。</summary>
@@ -61,14 +61,14 @@ namespace MotionControl.WeldingExample.Checks
             var context = new PreparationContext();
             IStationFlow[] flows;
             IStationPreparation[] preparations = CreatePreparations(context, out flows);
-            context.Io.Inputs["压装完成"] = true;
-            await ExpectFailureAsync(() => preparations[0].ValidateStartAsync(CancellationToken.None), "压装完成");
-            context.Io.Inputs["压装完成"] = false;
-            context.Io.Outputs["压头动作"] = true;
-            await ExpectFailureAsync(() => preparations[0].ValidateStartAsync(CancellationToken.None), "压头动作");
-            Require(context.Io.Outputs["压头动作"] && context.Axes["Press_Z"].HomeCount == 0,
+            context.Io.Inputs["焊接完成"] = true;
+            await ExpectFailureAsync(() => preparations[0].ValidateStartAsync(CancellationToken.None), "焊接完成");
+            context.Io.Inputs["焊接完成"] = false;
+            context.Io.Outputs["焊接启动"] = true;
+            await ExpectFailureAsync(() => preparations[0].ValidateStartAsync(CancellationToken.None), "焊接启动");
+            Require(context.Io.Outputs["焊接启动"] && context.Axes["Weld_Z"].HomeCount == 0,
                 "准备检查擅自释放输出或发起了回零。");
-            context.Io.Outputs["压头动作"] = false;
+            context.Io.Outputs["焊接启动"] = false;
             context.Io.Inputs["上料到位"] = true;
             await flows[0].ExecuteCurrentStepAsync(CancellationToken.None);
             string productionStep = flows[0].CurrentStepName;
@@ -88,7 +88,7 @@ namespace MotionControl.WeldingExample.Checks
             var context = new PreparationContext();
             IStationFlow[] flows;
             IStationPreparation[] preparations = CreatePreparations(context, out flows);
-            TestAxis axis = context.Axes["Press_Z"];
+            TestAxis axis = context.Axes["Weld_Z"];
             axis.BlockHome = true;
             using (var cancel = new CancellationTokenSource())
             {
@@ -174,19 +174,19 @@ namespace MotionControl.WeldingExample.Checks
             internal readonly TestIo Io = new TestIo();
             /// <summary>仅用于验证后端限制的配置名称。</summary>
             internal string Backend = "Virtual";
-            /// <summary>建立未使能、未回零的四个测试轴。</summary>
+            /// <summary>建立未使能、未回零的五个测试轴。</summary>
             internal PreparationContext()
             {
-                foreach (string name in new[] { "Load_X", "Press_Z", "Camera_X", "Unload_X" }) Axes.Add(name, new TestAxis(name));
+                foreach (string name in new[] { "Load_X", "Weld_Z", "Press_Z", "Camera_X", "Unload_X" }) Axes.Add(name, new TestAxis(name));
             }
             /// <summary>测试设备名。</summary>
             public string EquipmentId { get { return "PreparationCheck"; } }
             /// <summary>样例允许的毫米行程。</summary>
             public IReadOnlyList<AxisHardwareDefinition> AxisDefinitions { get { return Axes.Keys.Select(name => new AxisHardwareDefinition { Name = name, MinimumPosition = 0, MaximumPosition = 1 }).ToArray(); } }
             /// <summary>样例使用的逻辑输入。</summary>
-            public IReadOnlyList<DigitalIoHardwareDefinition> InputDefinitions { get { return new[] { "上料到位", "压装完成", "检测完成", "下料到位" }.Select(name => new DigitalIoHardwareDefinition { Name = name }).ToArray(); } }
+            public IReadOnlyList<DigitalIoHardwareDefinition> InputDefinitions { get { return new[] { "上料到位", "夹具夹紧到位", "夹具松开到位", "焊接完成", "压装完成", "相机触发反馈", "检测完成", "检测OK", "检测NG", "下料到位" }.Select(name => new DigitalIoHardwareDefinition { Name = name }).ToArray(); } }
             /// <summary>样例使用的逻辑输出。</summary>
-            public IReadOnlyList<DigitalIoHardwareDefinition> OutputDefinitions { get { return new[] { "夹具夹紧", "压头动作", "相机触发", "下料电磁阀" }.Select(name => new DigitalIoHardwareDefinition { Name = name }).ToArray(); } }
+            public IReadOnlyList<DigitalIoHardwareDefinition> OutputDefinitions { get { return new[] { "夹具夹紧", "焊接启动", "压头动作", "相机触发", "相机结果复位", "下料电磁阀" }.Select(name => new DigitalIoHardwareDefinition { Name = name }).ToArray(); } }
             /// <summary>逻辑 IO 测试入口。</summary>
             public ILogicalIo LogicalIo { get { return Io; } }
             /// <summary>独立报警服务。</summary>

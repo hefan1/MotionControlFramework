@@ -22,6 +22,9 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 case "Home": node = new AxisCommandNode { AxisName = "", Command = TaskAxisCommand.Home }; break;
                 case "Stop": node = new AxisCommandNode { AxisName = "", Command = TaskAxisCommand.Stop, StopMode = AxisStopMode.Controlled }; break;
                 case "WaitInput": node = new WaitInputNode { InputName = "", Expected = true }; break;
+                case "WaitOutput": node = new WaitOutputNode { OutputName = "", Expected = false }; break;
+                case "ReadInput": node = new ReadInputNode { InputName = "", VariableName = "" }; break;
+                case "WaitExclusiveInputs": node = new WaitExclusiveInputsNode { FirstInputName = "", SecondInputName = "", FirstVariableName = "", SecondVariableName = "" }; break;
                 case "SetOutput": node = new SetOutputNode { OutputName = "", Value = false }; break;
                 case "SetVariable": node = new SetVariableNode { VariableName = "", Value = Value() }; break;
                 case "Delay": node = new DelayNode { Milliseconds = 1000 }; break;
@@ -53,7 +56,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         internal static string KindName(string kind)
         {
             switch (kind) { case "MoveAxis": return "单轴定位"; case "MoveAxisGroup": return "多轴一起定位"; case "Home": return "回零";
-                case "Stop": return "停轴"; case "AxisCommand": return "轴命令"; case "WaitInput": return "等待DI"; case "SetOutput": return "设置DO";
+                case "Stop": return "停轴"; case "AxisCommand": return "轴命令"; case "WaitInput": return "等待DI"; case "WaitOutput": return "等待DO读回"; case "ReadInput": return "读取DI到变量"; case "WaitExclusiveInputs": return "等待互斥DI"; case "SetOutput": return "设置DO";
                 case "SetVariable": return "变量赋值"; case "Delay": return "延时"; case "Sequence": return "顺序段"; case "ParallelGroup": return "并行段";
                 case "ConditionBranch": return "条件分支"; case "WaitCondition": return "等待条件"; case "CallTask": return "调用子任务";
                 case "ResourceScope": return "资源范围"; default: return "直线插补未接入"; }

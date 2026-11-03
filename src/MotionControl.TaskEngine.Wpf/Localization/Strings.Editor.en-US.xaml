@@ -80,6 +80,8 @@
  <sys:String x:Key="任务编辑.当前设备报警库为空，请先维护报警代码">The equipment alarm catalog is empty. Add alarm codes first.</sys:String>
  <sys:String x:Key="任务编辑.任务报警关联规则">When the condition triggers, all selected alarms are raised. A stop alarm requires reset. Save the draft, update the task files, and reload the task to use these changes.</sys:String>
  <sys:String x:Key="任务编辑.等待DI">Wait for DI</sys:String>
+ <sys:String x:Key="任务编辑.读取DI到变量">Read DI to variable</sys:String>
+ <sys:String x:Key="任务编辑.未知输入不写入变量，步骤会报错">An unknown input is not written; the step fails.</sys:String>
  <sys:String x:Key="任务编辑.等级">Severity</sys:String>
  <sys:String x:Key="任务编辑.等于">Equal</sys:String>
  <sys:String x:Key="任务编辑.调用子任务">Call task</sys:String>
@@ -299,4 +301,16 @@
  <sys:String x:Key="任务编辑.查看完整诊断信息">View full diagnostic details</sys:String>
  <sys:String x:Key="任务编辑.任务配置尚未成功加载，请先处理上方错误提示">Task configuration did not load. Resolve the error above first.</sys:String>
  <sys:String x:Key="任务编辑.缺少轴参数配置操作指引">Axis parameters are missing. Go to Settings → Axis Mapping, enter the logical axis names and motion parameters, check and save the mapping, then return to Task Configuration.</sys:String>
+ <sys:String x:Key="任务编辑.等待互斥DI">Wait for exclusive inputs</sys:String>
+ <sys:String x:Key="任务编辑.等待DO读回">Wait for output readback</sys:String>
+ <sys:String x:Key="任务编辑.输出读回不代表机构已到位">Output readback does not confirm the mechanism has arrived.</sys:String>
+ <sys:String x:Key="任务编辑.有效输入要求">Required active input</sys:String>
+ <sys:String x:Key="任务编辑.任一路有效">Either input</sys:String>
+ <sys:String x:Key="任务编辑.第一路有效">First input</sys:String>
+ <sys:String x:Key="任务编辑.第二路有效">Second input</sys:String>
+ <sys:String x:Key="任务编辑.第一路输入">First input</sys:String>
+ <sys:String x:Key="任务编辑.第二路输入">Second input</sys:String>
+ <sys:String x:Key="任务编辑.第一路目标变量">First target variable</sys:String>
+ <sys:String x:Key="任务编辑.第二路目标变量">Second target variable</sys:String>
+ <sys:String x:Key="任务编辑.两路须由设备锁存且恰好一路有效；未知、读错或状态变化不会放行">Inputs must be latched by the device with exactly one active. Unknown, failed or changing readings do not pass.</sys:String>
 </ResourceDictionary>

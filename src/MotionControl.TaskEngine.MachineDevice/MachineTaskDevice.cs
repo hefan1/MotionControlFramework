@@ -156,6 +156,12 @@ namespace MotionControl.TaskEngine.MachineDevice
             return _variables.GetSnapshot();
         }
 
+        /// <summary>将两路布尔采样一次写入同一个设备变量表。</summary>
+        public void WriteBooleanPair(string firstName, bool firstValue, string secondName, bool secondValue)
+        {
+            _variables.SetBooleanPair(firstName, firstValue, secondName, secondValue);
+        }
+
         /// <summary>读取一根逻辑轴的当前状态，位置和速度使用该轴工程单位。</summary>
         public TaskAxisState ReadAxis(string name)
         {

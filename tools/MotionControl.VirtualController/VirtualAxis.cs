@@ -5,7 +5,7 @@ using Newtonsoft.Json.Linq;
 namespace MotionControl.VirtualController
 {
     /// <summary>一个使用工程单位的虚拟轴；移动按恒速估算，不模拟电机动力学。</summary>
-    internal sealed class VirtualAxis
+    internal sealed partial class VirtualAxis
     {
         /// <summary>单调时间来源，避免系统时间调整影响运动位置。</summary>
         private readonly Stopwatch _clock = Stopwatch.StartNew();
@@ -27,6 +27,8 @@ namespace MotionControl.VirtualController
         private bool _homed;
         /// <summary>由测试命令注入的轴报警。</summary>
         private bool _alarm;
+        /// <summary>最近一次轴报警原因。</summary>
+        private string _alarmMessage;
 
         /// <summary>按当前时间更新位置并返回独立状态快照。</summary>
         public JObject Snapshot()
@@ -34,20 +36,20 @@ namespace MotionControl.VirtualController
             Update();
             return new JObject
             {
-                ["position"] = _position,
-                ["commandPosition"] = _positioning ? _target : _position,
+                ["position"] = _position - _coordinateOffset,
+                ["commandPosition"] = (_positioning ? _target : _position) - _coordinateOffset,
                 ["velocity"] = _velocity,
                 ["servoEnabled"] = _servo,
                 ["moving"] = _velocity != 0,
                 ["homed"] = _homed,
-                ["positiveLimitActive"] = false,
-                ["negativeLimitActive"] = false,
+                ["positiveLimitActive"] = SensorPositiveLimit(),
+                ["negativeLimitActive"] = SensorNegativeLimit(),
                 ["positiveSoftLimitActive"] = false,
                 ["negativeSoftLimitActive"] = false,
                 ["alarmActive"] = _alarm,
-                ["alarmMessage"] = _alarm ? "测试控制器轴报警" : null,
-                ["requiresHomingAfterLimitAlarm"] = false,
-                ["originInputActive"] = JValue.CreateNull()
+                ["alarmMessage"] = _alarm ? _alarmMessage : null,
+                ["requiresHomingAfterLimitAlarm"] = _requiresSensorHome,
+                ["originInputActive"] = _sensorRule == null ? JValue.CreateNull() : new JValue(SensorOrigin())
             };
         }
 
@@ -65,7 +67,8 @@ namespace MotionControl.VirtualController
         {
             EnsureCanStart();
             _homed = false;
-            StartPosition(0, 10, true);
+            if (_sensorRule != null) { StartSensorHome(); return; }
+            StartPosition(_coordinateOffset, 10, true);
         }
 
         /// <summary>开始一次绝对定位，轴停止并已回零后才允许启动。</summary>
@@ -74,7 +77,10 @@ namespace MotionControl.VirtualController
             EnsureCanStart();
             if (!_homed) throw new InvalidOperationException("轴未回零，不能定位。");
             if (speed <= 0) throw new ArgumentOutOfRangeException("speed", "运动速度必须大于零。");
-            StartPosition(position, speed, false);
+            double physicalTarget = position + _coordinateOffset;
+            if (double.IsInfinity(physicalTarget) || double.IsNaN(physicalTarget)) throw new ArgumentOutOfRangeException("position", "物理目标位置超出有限数值范围。");
+            CheckSensorDirection(physicalTarget - _position);
+            StartPosition(physicalTarget, speed, false);
         }
 
         /// <summary>开始连续点动；速度符号表示运动方向。</summary>
@@ -82,6 +88,7 @@ namespace MotionControl.VirtualController
         {
             EnsureCanStart();
             if (speed == 0) throw new ArgumentOutOfRangeException("speed", "点动速度不能为零。");
+            CheckSensorDirection(speed);
             _lastSeconds = _clock.Elapsed.TotalSeconds;
             _positioning = false;
             _homing = false;
@@ -103,6 +110,7 @@ namespace MotionControl.VirtualController
         {
             Update();
             _alarm = false;
+            _alarmMessage = null;
         }
 
         /// <summary>注入轴报警并停止运动；解除注入后仍需显式复位。</summary>
@@ -111,6 +119,7 @@ namespace MotionControl.VirtualController
             if (!active) throw new InvalidOperationException("请通过 resetAlarm 清除轴报警。");
             Stop();
             _alarm = true;
+            _alarmMessage = "测试控制器轴报警";
         }
 
         /// <summary>确保伺服、报警和运动状态允许接收新动作。</summary>
@@ -147,6 +156,7 @@ namespace MotionControl.VirtualController
             if (_velocity != 0)
             {
                 double next = _position + _velocity * (now - _lastSeconds);
+                if (_sensorRule != null && HandleSensorMotion(next)) { _lastSeconds = now; return; }
                 bool arrived = _positioning && (_velocity > 0 ? next >= _target : next <= _target);
                 if (arrived)
                 {

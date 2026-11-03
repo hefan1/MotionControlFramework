@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "taskId": "ClipPress",
   "name": "压合与交接",
-  "revision": 1,
+  "revision": 2,
   "root": {
     "kind": "Sequence",
     "id": "ClipPressRoot",
@@ -127,7 +127,18 @@
         "id": "pressReady",
         "name": "轴运动前确认压合反馈已复位",
         "timeoutMs": 30000,
-        "inputName": "检测完成",
+        "inputName": "压装完成",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitOutput",
+        "id": "pressOffBeforeMove",
+        "name": "运动前确认压合输出关闭",
+        "timeoutMs": 30000,
+        "outputName": "压头动作",
         "expected": false,
         "timeoutAlarmCodes": [
           "DEMO_SENSOR_TIMEOUT"
@@ -138,7 +149,7 @@
         "id": "pressMove",
         "name": "压合测试定位",
         "timeoutMs": 30000,
-        "axisName": "Camera_X",
+        "axisName": "Press_Z",
         "mode": "Absolute",
         "target": {
           "source": "Constant",
@@ -156,16 +167,29 @@
         "id": "pressPrecheck",
         "name": "压合输出前确认反馈仍已复位",
         "timeoutMs": 30000,
-        "inputName": "检测完成",
+        "inputName": "压装完成",
         "expected": false,
-        "timeoutAlarmCodes": ["DEMO_SENSOR_TIMEOUT"]
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitOutput",
+        "id": "pressOffBeforeCommand",
+        "name": "压合前确认输出关闭",
+        "timeoutMs": 30000,
+        "outputName": "压头动作",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
       },
       {
         "kind": "SetOutput",
         "id": "pressOn",
         "name": "压合测试动作",
         "timeoutMs": 30000,
-        "outputName": "相机触发",
+        "outputName": "压头动作",
         "value": true
       },
       {
@@ -173,7 +197,7 @@
         "id": "pressDone",
         "name": "等待压合测试反馈",
         "timeoutMs": 30000,
-        "inputName": "检测完成",
+        "inputName": "压装完成",
         "expected": true,
         "timeoutAlarmCodes": [
           "DEMO_SENSOR_TIMEOUT"
@@ -191,7 +215,7 @@
         "id": "pressOff",
         "name": "压合测试动作关闭",
         "timeoutMs": 30000,
-        "outputName": "相机触发",
+        "outputName": "压头动作",
         "value": false
       },
       {
@@ -199,7 +223,7 @@
         "id": "pressReset",
         "name": "等待压合测试反馈复归",
         "timeoutMs": 30000,
-        "inputName": "检测完成",
+        "inputName": "压装完成",
         "expected": false,
         "timeoutAlarmCodes": [
           "DEMO_SENSOR_TIMEOUT"
@@ -210,7 +234,7 @@
         "id": "pressReturn",
         "name": "压合测试返回等待位",
         "timeoutMs": 30000,
-        "axisName": "Camera_X",
+        "axisName": "Press_Z",
         "mode": "Absolute",
         "target": {
           "source": "Constant",

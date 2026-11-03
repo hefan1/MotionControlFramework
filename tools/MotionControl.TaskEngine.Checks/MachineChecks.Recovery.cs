@@ -1,6 +1,10 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using MotionControl.Framework.Contracts.Variables;
+using MotionControl.Framework.Contracts.Alarms;
+using MotionControl.TaskEngine.Catalog;
+using MotionControl.TaskEngine.Device.InMemory;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Execution;
 using MotionControl.TaskEngine.Machine;
@@ -11,6 +15,52 @@ namespace MotionControl.TaskEngine.Checks
     /// <summary>故障重进当前节点时保留固定终点和资源范围阶段。</summary>
     internal static partial class MachineChecks
     {
+        /// <summary>输出等待超时后，复位只重采样当前输出，不跳过失败步骤。</summary>
+        private static async Task OutputWaitTimeoutRecovery()
+        {
+            var device = Device(); device.WriteOutput("Vacuum", true);
+            var node = new WaitOutputNode { Id = "wait-do", Name = "等待输出关闭", OutputName = "Vacuum", Expected = false,
+                TimeoutMs = 150, TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" } };
+            var machine = Machine(device, new[] { TaskDefinition("Wait", node) }, Station("wait", "Wait", StationTaskMode.Once));
+            machine.Reset(); machine.Start();
+            await Until(() => machine.GetSnapshot().State == TaskMachineState.Faulted, "输出读回未触发超时故障。");
+            CheckAssert.True(machine.AlarmService.Alarms.Any(alarm => alarm.Definition.Code == "DEMO_SENSOR_TIMEOUT"), "输出等待没有上报关联报警。");
+            string execution = State(machine, "wait").Run.Nodes.Single(item => item.NodeId == "wait-do").ExecutionId;
+            device.WriteOutput("Vacuum", false); machine.Reset(); machine.Start();
+            await Until(() => State(machine, "wait").CompletedCycles == 1, "复位后未重新读回输出。");
+            CheckAssert.True(State(machine, "wait").Run.Nodes.Single(item => item.NodeId == "wait-do").ExecutionId == execution, "输出等待恢复丢失步骤身份。");
+            await Wait(machine.CloseAsync());
+        }
+
+        /// <summary>互斥结果超时后复位继续等待，修复输入后采样当前值，不重放已成功步骤。</summary>
+        private static async Task ExclusiveInputTimeoutRecovery()
+        {
+            var catalog = new TaskResourceCatalog(new TaskAxisInfo[0], new[] { "OK", "NG" }, new[] { "Vacuum" },
+                new Dictionary<string, DeviceVariableType> { { "OkResult", DeviceVariableType.Boolean }, { "NgResult", DeviceVariableType.Boolean } },
+                new TaskTeachPoint[0], alarmDefinitions: new[] { new TaskAlarmInfo("DEMO_SENSOR_TIMEOUT", "等待结果超时", MachineAlarmKind.StopMachine) });
+            var device = new InMemoryTaskDevice(catalog);
+            device.SetVariable("OkResult", "false"); device.SetVariable("NgResult", "false");
+            device.SetInput("OK", false); device.SetInput("NG", false);
+            var node = new WaitExclusiveInputsNode { Id = "result", Name = "等待结果", TimeoutMs = 150,
+                FirstInputName = "OK", SecondInputName = "NG", FirstVariableName = "OkResult", SecondVariableName = "NgResult", RequiredFirstValue = true,
+                TimeoutAlarmCodes = new List<string> { "DEMO_SENSOR_TIMEOUT" } };
+            var machine = Machine(device, new[] { TaskDefinition("Wait", node) }, Station("wait", "Wait", StationTaskMode.Once));
+            machine.Reset(); machine.Start();
+            await Until(() => machine.GetSnapshot().State == TaskMachineState.Faulted, "互斥输入未触发超时故障。");
+            CheckAssert.True(machine.AlarmService.Alarms.Any(alarm => alarm.Definition.Code == "DEMO_SENSOR_TIMEOUT"), "互斥输入超时没有上报关联报警。");
+            string execution = State(machine, "wait").Run.Nodes.Single(item => item.NodeId == "result").ExecutionId;
+            CheckAssert.True(BooleanValue(device, "OkResult") == false && BooleanValue(device, "NgResult") == false, "无效结果覆盖了变量。");
+            device.SetInput("NG", true); machine.Reset(); machine.Start();
+            await Until(() => State(machine, "wait").Run.Nodes.Any(item => item.NodeId == "result" && item.State == TaskNodeState.Waiting), "复位后未等待指定方向。");
+            CheckAssert.True(BooleanValue(device, "OkResult") == false && BooleanValue(device, "NgResult") == false, "复位后错误接受了相反方向。");
+            device.SetInput("NG", false); device.SetInput("OK", true);
+            await Until(() => State(machine, "wait").CompletedCycles == 1, "复位后未重新采样互斥输入。");
+            CheckAssert.True(BooleanValue(device, "OkResult") == true && BooleanValue(device, "NgResult") == false
+                && State(machine, "wait").Run.Nodes.Single(item => item.NodeId == "result").ExecutionId == execution,
+                "恢复时没有保留节点身份或没有发布当前采样。");
+            await Wait(machine.CloseAsync());
+        }
+
         /// <summary>单轴或轴组运动中断后重进原绝对终点，修改距离变量也不追加相对位移。</summary>
         private static async Task RelativeTargetRecovery()
         {

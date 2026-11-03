@@ -113,7 +113,7 @@ namespace MotionControl.TaskEngine.Wpf.Views
                 case "Sequence": return T("顺序步骤"); case "ParallelGroup": return T("并行组");
                 case "ConditionBranch": return T("条件分支"); case "ResourceScope": return T("共享资源");
                 case "CallTask": return T("调用子任务"); case "Delay": return T("工艺延时");
-                case "WaitInput": return T("等待输入"); case "WaitCondition": return T("等待条件");
+                case "WaitInput": return T("等待输入"); case "WaitOutput": return T("等待读回输出"); case "ReadInput": return T("读取输入到变量"); case "WaitExclusiveInputs": return T("等待互斥输入"); case "WaitCondition": return T("等待条件");
                 case "SetOutput": return T("设置输出"); case "SetVariable": return T("变量赋值");
                 case "MoveAxis": return T("单轴定位"); case "MoveAxisGroup": return T("多轴分别定位");
                 case "AxisCommand": return T("轴命令"); case "CoordinatedMove": return T("协调插补未接入");

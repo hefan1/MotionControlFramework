@@ -184,6 +184,24 @@ namespace MotionControl.Framework.Runtime.Variables
             SetRuntimeValue(name, DeviceVariableType.Boolean, value.ToString());
         }
 
+        /// <summary>先验证两个变量，再在同一锁内发布完整布尔结果。</summary>
+        public void SetBooleanPair(string firstName, bool firstValue, string secondName, bool secondValue)
+        {
+            if (string.Equals(firstName, secondName, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("两个目标变量不能相同。");
+            lock (_sync)
+            {
+                RuntimeVariable first = GetVariable(firstName);
+                RuntimeVariable second = GetVariable(secondName);
+                EnsureTypeMatches(first.Definition, DeviceVariableType.Boolean);
+                EnsureTypeMatches(second.Definition, DeviceVariableType.Boolean);
+                DateTime timestamp = DateTime.Now;
+                first.CurrentValue = firstValue.ToString(); first.HasValue = true; first.LastUpdated = timestamp;
+                second.CurrentValue = secondValue.ToString(); second.HasValue = true; second.LastUpdated = timestamp;
+            }
+            RaiseVariablesChanged();
+        }
+
         /// <summary>原子核对两个布尔变量并更新完成值，避免工位或现场线程在检查和写入之间改变握手状态。</summary>
         public bool TryTransitionBooleanPair(string requestName, bool expectedRequest, string completedName, bool expectedCompleted, bool newCompleted)
         {

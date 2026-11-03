@@ -36,5 +36,17 @@ namespace MotionControl.VirtualController
         public bool Fault;
         /// <summary>用于让过期的延迟供料任务失效。</summary>
         public int Version;
+        /// <summary>上料轴物理轴号；-1 表示旧的无安全位门禁模式。</summary>
+        public int SafeAxis = -1;
+        /// <summary>上料轴已回零后的逻辑安全位置。</summary>
+        public double SafePosition;
+        /// <summary>允许轴偏离逻辑安全位置的最大距离。</summary>
+        public double SafeTolerance;
+        /// <summary>是否有一件等待安全位和延时的物料。</summary>
+        public bool FeedPending;
+        /// <summary>本次待供料应连续满足条件的时间，单位毫秒。</summary>
+        public int PendingDelayMs;
+        /// <summary>安全位持续满足的起始单调时间，空表示条件尚不满足。</summary>
+        public double? SafeSinceMilliseconds;
     }
 }

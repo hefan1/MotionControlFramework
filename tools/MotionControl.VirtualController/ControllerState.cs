@@ -8,7 +8,7 @@ using Newtonsoft.Json.Linq;
 namespace MotionControl.VirtualController
 {
     /// <summary>维护测试控制器的轴和数字 IO；所有请求共享同一个状态。</summary>
-    internal sealed class ControllerState
+    internal sealed partial class ControllerState
     {
         /// <summary>此控制器提供的轴数量，通道从零开始。</summary>
         private const int AxisCount = 64;
@@ -54,12 +54,16 @@ namespace MotionControl.VirtualController
             JObject result;
             lock (_sync)
             {
+                RefreshAxisSensors();
                 ExpireLeaseIfNeeded();
+                RefreshFeederSafetyGate();
                 if (RequiresLease(command)) RequireLease(request);
                 fault = TakeCommandFault(command, request);
                 if (fault != null && fault.Mode == "reject")
                     throw new InvalidOperationException("测试注入：" + command + " 在执行前被拒绝。");
                 result = fault != null && fault.Mode == "delayBefore" ? null : ExecuteLocked(command, request);
+                RefreshAxisSensors();
+                RefreshFeederSafetyGate();
             }
             // 故障仅影响该次应答，绝不持有状态锁等待，否则心跳和独立停轴也会被人为卡死。
             if (fault != null && fault.Mode == "delayBefore")
@@ -67,9 +71,13 @@ namespace MotionControl.VirtualController
                 Thread.Sleep(fault.DelayMilliseconds);
                 lock (_sync)
                 {
+                    RefreshAxisSensors();
                     ExpireLeaseIfNeeded();
+                    RefreshFeederSafetyGate();
                     if (RequiresLease(command)) RequireLease(request);
                     result = ExecuteLocked(command, request);
+                    RefreshAxisSensors();
+                    RefreshFeederSafetyGate();
                 }
             }
             if (fault != null && fault.Mode == "delayReply") Thread.Sleep(fault.DelayMilliseconds);
@@ -100,7 +108,11 @@ namespace MotionControl.VirtualController
                         WriteOutput(IoIndex(request, "channel"), RequireBool(request, "value"));
                         return Ok();
                     case "setInput":
-                        _inputs[IoIndex(request, "channel")] = RequireBool(request, "value");
+                        int inputChannel = IoIndex(request, "channel");
+                        if (AxisSensorUsesInput(inputChannel)) throw new InvalidOperationException("该输入已由轴传感器模型控制，不能手动改写。");
+                        if (_feeder.Enabled && _feeder.SafeAxis >= 0 && _feeder.Input == inputChannel)
+                            throw new InvalidOperationException("该输入已由带安全位门禁的供料规则控制，不能手动改写。");
+                        _inputs[inputChannel] = RequireBool(request, "value");
                         return Ok();
                     case "readAxis": return new JObject { ["ok"] = true, ["axisState"] = Axis(request).Snapshot() };
                     case "servo": Axis(request).SetServo(RequireBool(request, "value")); return Ok();
@@ -110,6 +122,10 @@ namespace MotionControl.VirtualController
                     case "stop": Axis(request).Stop(); return Ok();
                     case "resetAlarm": Axis(request).ResetAlarm(); return Ok();
                     case "setAxisAlarm": Axis(request).SetAlarm(RequireBool(request, "value")); return Ok();
+                    case "configureAxisSensors": ConfigureAxisSensors(request); return Ok();
+                    case "readAxisSensors": return ReadAxisSensors(request);
+                    case "setAxisSensorFault": SetAxisSensorFault(request); return Ok();
+                    case "removeAxisSensors": RemoveAxisSensors(request); return Ok();
                     case "configureFeedback": ConfigureFeedback(request); return Ok();
                     case "setFeedbackFault": SetFeedbackFault(request); return Ok();
                     case "readFeedback": return ReadFeedback(request);
@@ -117,6 +133,18 @@ namespace MotionControl.VirtualController
                     case "configureFeeder": ConfigureFeeder(request); return Ok();
                     case "setFeederFault": SetFeederFault(request); return Ok();
                     case "readFeeder": return ReadFeeder();
+                    case "configureCamera": ConfigureCamera(request); return Ok();
+                    case "readCamera": return ReadCamera();
+                    case "setCameraFault": SetCameraFault(request); return Ok();
+                    case "setCameraResult": SetCameraResult(request); return Ok();
+                    case "resumeCamera": ResumeCamera(); return Ok();
+                    case "resolveCameraResult": ResolveCameraResult(request); return Ok();
+                    case "resetCamera": ResetCamera(); return Ok();
+                    case "removeCamera": RemoveCamera(); return Ok();
+                    case "configureActuator": ConfigureActuator(request); return Ok();
+                    case "readActuator": return ReadActuator(request);
+                    case "setActuatorFault": SetActuatorFault(request); return Ok();
+                    case "removeActuator": RemoveActuator(request); return Ok();
                     case "setCommandFault": SetCommandFault(request); return Ok();
                     case "clearCommandFault": ClearCommandFault(request); return Ok();
                     case "readCommandFault": return ReadCommandFault(request);
@@ -248,7 +276,7 @@ namespace MotionControl.VirtualController
         /// <summary>定期检查过期会话；即使客户端断开且不再发请求也会停止轴。</summary>
         private void CheckLease(object unused)
         {
-            lock (_sync) ExpireLeaseIfNeeded();
+            lock (_sync) { RefreshAxisSensors(); ExpireLeaseIfNeeded(); RefreshFeederSafetyGate(); }
         }
 
         /// <summary>超时后立即使会话失效并停止所有轴。</summary>
@@ -312,6 +340,8 @@ namespace MotionControl.VirtualController
             bool previous = _outputs[channel];
             _outputs[channel] = value;
             if (previous == value) return;
+            CameraOutputChanged(channel, value);
+            ActuatorOutputChanged(channel);
             foreach (FeedbackRule rule in _feedback.Values)
             {
                 if (rule.Output == channel) ScheduleFeedback(rule, value);
@@ -332,6 +362,10 @@ namespace MotionControl.VirtualController
         private void ConfigureFeedback(JObject request)
         {
             int input = IoIndex(request, "inputChannel");
+            if (CameraUsesInput(input))
+                throw new InvalidOperationException("该输入已由相机规则使用，不能同时配置输出反馈。");
+            if (AxisSensorUsesInput(input) || ActuatorUsesInput(input))
+                throw new InvalidOperationException("该输入已由夹具规则使用，不能同时配置输出反馈。");
             if (_feeder.Enabled && _feeder.Input == input)
                 throw new InvalidOperationException("该输入已由上料规则使用，不能同时配置输出反馈。");
             int output = IoIndex(request, "outputChannel");
@@ -413,17 +447,41 @@ namespace MotionControl.VirtualController
                 _feeder.Version++;
                 _feeder.Enabled = false;
                 _feeder.Gripped = false;
+                _feeder.FeedPending = false;
+                _feeder.SafeSinceMilliseconds = null;
                 return;
             }
             int input = IoIndex(request, "inputChannel");
+            if (CameraUsesInput(input))
+                throw new InvalidOperationException("该输入已由相机规则使用，不能同时配置上料规则。");
+            if (AxisSensorUsesInput(input) || ActuatorUsesInput(input))
+                throw new InvalidOperationException("该输入已由夹具规则使用，不能同时配置上料规则。");
             if (_feedback.ContainsKey(input))
                 throw new InvalidOperationException("该输入已由输出反馈规则使用，不能同时配置上料规则。");
             int output = IoIndex(request, "outputChannel");
+            if (CameraUsesOutput(output))
+                throw new InvalidOperationException("该输出已由相机规则使用，不能同时配置上料规则。");
             int feedDelay = RequireInt(request, "feedDelayMs");
             int emptyDelay = RequireInt(request, "emptyDelayMs");
             if (feedDelay < 0 || feedDelay > 600000 || emptyDelay < 0 || emptyDelay > 600000)
                 throw new ArgumentOutOfRangeException("feedDelayMs", "供料延迟必须在 0 到 600000 毫秒之间。");
             if (_outputs[output]) throw new InvalidOperationException("夹具输出仍开启，请先关闭后再启用上料规则。");
+            bool hasSafetyAxis = request["safeAxis"] != null;
+            bool hasSafetyPosition = request["safePosition"] != null;
+            bool hasSafetyTolerance = request["safeTolerance"] != null;
+            if (hasSafetyAxis != hasSafetyPosition || hasSafetyAxis != hasSafetyTolerance)
+                throw new ArgumentException("上料轴、安全位置和容差必须同时提供或全部省略。");
+            int safeAxis = -1;
+            double safePosition = 0;
+            double safeTolerance = 0;
+            if (hasSafetyAxis)
+            {
+                safeAxis = RequireInt(request, "safeAxis");
+                if (safeAxis < 0 || safeAxis >= _axes.Length) throw new ArgumentOutOfRangeException("safeAxis", "上料安全轴号无效。");
+                safePosition = RequireNumber(request, "safePosition");
+                safeTolerance = RequireNumber(request, "safeTolerance");
+                if (safeTolerance <= 0) throw new ArgumentOutOfRangeException("safeTolerance", "安全位置容差必须大于零。");
+            }
             _feeder.Version++;
             _feeder.Enabled = enabled;
             _feeder.Input = input;
@@ -432,6 +490,11 @@ namespace MotionControl.VirtualController
             _feeder.EmptyDelayMs = emptyDelay;
             _feeder.Gripped = false;
             _feeder.Fault = false;
+            _feeder.SafeAxis = safeAxis;
+            _feeder.SafePosition = safePosition;
+            _feeder.SafeTolerance = safeTolerance;
+            _feeder.FeedPending = false;
+            _feeder.SafeSinceMilliseconds = null;
             if (enabled)
             {
                 _inputs[input] = false;
@@ -445,6 +508,8 @@ namespace MotionControl.VirtualController
             if (!_feeder.Enabled) throw new InvalidOperationException("上料规则尚未启用。");
             _feeder.Fault = RequireBool(request, "value");
             _feeder.Version++;
+            _feeder.FeedPending = false;
+            _feeder.SafeSinceMilliseconds = null;
             if (!_feeder.Fault && !_inputs[_feeder.Input]) ScheduleFeed(_feeder.FeedDelayMs);
         }
 
@@ -464,7 +529,13 @@ namespace MotionControl.VirtualController
                     ["feedDelayMs"] = _feeder.FeedDelayMs,
                     ["emptyDelayMs"] = _feeder.EmptyDelayMs,
                     ["fault"] = _feeder.Fault,
-                    ["gripped"] = _feeder.Gripped
+                    ["gripped"] = _feeder.Gripped,
+                    ["safeAxis"] = _feeder.SafeAxis >= 0 ? (int?)_feeder.SafeAxis : null,
+                    ["safePosition"] = _feeder.SafeAxis >= 0 ? (double?)_feeder.SafePosition : null,
+                    ["safeTolerance"] = _feeder.SafeAxis >= 0 ? (double?)_feeder.SafeTolerance : null,
+                    ["feedPending"] = _feeder.FeedPending,
+                    ["gateSatisfied"] = _feeder.Enabled && _feeder.SafeAxis >= 0 ? (bool?)FeederSafetySatisfied() : null,
+                    ["delayCounting"] = _feeder.SafeSinceMilliseconds.HasValue
                 }
             };
         }
@@ -473,6 +544,14 @@ namespace MotionControl.VirtualController
         private void ScheduleFeed(int delay)
         {
             int version = ++_feeder.Version;
+            if (_feeder.SafeAxis >= 0)
+            {
+                _feeder.FeedPending = true;
+                _feeder.PendingDelayMs = delay;
+                _feeder.SafeSinceMilliseconds = null;
+                RefreshFeederSafetyGate();
+                return;
+            }
             Task.Run(async () =>
             {
                 await Task.Delay(delay).ConfigureAwait(false);

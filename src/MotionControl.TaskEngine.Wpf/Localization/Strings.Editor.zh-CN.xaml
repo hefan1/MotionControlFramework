@@ -80,6 +80,8 @@
  <sys:String x:Key="任务编辑.当前设备报警库为空，请先维护报警代码">当前设备报警库为空，请先维护报警代码</sys:String>
  <sys:String x:Key="任务编辑.任务报警关联规则">条件触发时上报全部已选报警；停机报警需要复位。修改需先保存草稿、更新任务文件，再重新读取任务后生效。</sys:String>
  <sys:String x:Key="任务编辑.等待DI">等待DI</sys:String>
+ <sys:String x:Key="任务编辑.读取DI到变量">读取DI到变量</sys:String>
+ <sys:String x:Key="任务编辑.未知输入不写入变量，步骤会报错">未知输入不写入变量，步骤会报错</sys:String>
  <sys:String x:Key="任务编辑.等级">等级</sys:String>
  <sys:String x:Key="任务编辑.等于">等于</sys:String>
  <sys:String x:Key="任务编辑.调用子任务">调用子任务</sys:String>
@@ -299,4 +301,16 @@
  <sys:String x:Key="任务编辑.查看完整诊断信息">查看完整诊断信息</sys:String>
  <sys:String x:Key="任务编辑.任务配置尚未成功加载，请先处理上方错误提示">任务配置尚未成功加载；请先处理上方错误提示。</sys:String>
  <sys:String x:Key="任务编辑.缺少轴参数配置操作指引">缺少轴参数配置。请到“设置 → 轴映射配置”填写设备轴名称和运动参数，检查映射并保存，再返回任务配置。</sys:String>
+ <sys:String x:Key="任务编辑.等待互斥DI">等待互斥DI</sys:String>
+ <sys:String x:Key="任务编辑.等待DO读回">等待DO读回</sys:String>
+ <sys:String x:Key="任务编辑.输出读回不代表机构已到位">输出读回不代表机构已到位</sys:String>
+ <sys:String x:Key="任务编辑.有效输入要求">有效输入要求</sys:String>
+ <sys:String x:Key="任务编辑.任一路有效">任一路有效</sys:String>
+ <sys:String x:Key="任务编辑.第一路有效">第一路有效</sys:String>
+ <sys:String x:Key="任务编辑.第二路有效">第二路有效</sys:String>
+ <sys:String x:Key="任务编辑.第一路输入">第一路输入</sys:String>
+ <sys:String x:Key="任务编辑.第二路输入">第二路输入</sys:String>
+ <sys:String x:Key="任务编辑.第一路目标变量">第一路目标变量</sys:String>
+ <sys:String x:Key="任务编辑.第二路目标变量">第二路目标变量</sys:String>
+ <sys:String x:Key="任务编辑.两路须由设备锁存且恰好一路有效；未知、读错或状态变化不会放行">两路须由设备锁存且恰好一路有效；未知、读错或状态变化不会放行</sys:String>
 </ResourceDictionary>

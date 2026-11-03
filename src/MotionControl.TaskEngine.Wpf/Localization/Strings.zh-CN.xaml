@@ -47,6 +47,7 @@
  <sys:String x:Key="任务监控.调用子任务">调用子任务</sys:String>
  <sys:String x:Key="任务监控.工艺延时">工艺延时</sys:String>
  <sys:String x:Key="任务监控.等待输入">等待输入</sys:String>
+ <sys:String x:Key="任务监控.读取输入到变量">读取输入到变量</sys:String>
  <sys:String x:Key="任务监控.等待条件">等待条件</sys:String>
  <sys:String x:Key="任务监控.设置输出">设置输出</sys:String>
  <sys:String x:Key="任务监控.变量赋值">变量赋值</sys:String>
@@ -189,4 +190,14 @@
  <sys:String x:Key="任务监控.Waiting">等待占用</sys:String>
  <sys:String x:Key="任务监控.Held">已占用</sys:String>
  <sys:String x:Key="任务监控.Blocked">等待确认清空</sys:String>
+ <sys:String x:Key="任务监控.等待互斥输入">等待互斥输入</sys:String>
+ <sys:String x:Key="任务监控.等待读回输出">等待读回输出</sys:String>
+ <sys:String x:Key="任务监控.有效输入要求">有效输入要求</sys:String>
+ <sys:String x:Key="任务监控.任一路有效">任一路有效</sys:String>
+ <sys:String x:Key="任务监控.第一路有效">第一路有效</sys:String>
+ <sys:String x:Key="任务监控.第二路有效">第二路有效</sys:String>
+ <sys:String x:Key="任务监控.第一路输入">第一路输入</sys:String>
+ <sys:String x:Key="任务监控.第二路输入">第二路输入</sys:String>
+ <sys:String x:Key="任务监控.第一路目标变量">第一路目标变量</sys:String>
+ <sys:String x:Key="任务监控.第二路目标变量">第二路目标变量</sys:String>
 </ResourceDictionary>

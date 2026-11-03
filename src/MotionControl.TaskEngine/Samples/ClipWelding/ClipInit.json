@@ -1,14 +1,30 @@
 {
   "schemaVersion": 1,
   "taskId": "ClipInit",
-  "name": "清空测试交接（需确认设备无料）",
-  "revision": 1,
+  "name": "检查测试工位无料并初始化交接",
+  "revision": 2,
   "root": {
     "kind": "Sequence",
     "id": "ClipInitRoot",
-    "name": "清空测试交接（需确认设备无料）",
+    "name": "检查测试工位无料并初始化交接",
     "timeoutMs": 900000,
     "children": [
+      {
+        "kind": "WaitCondition",
+        "id": "checkAllStationsEmpty",
+        "name": "检查四个测试工位无料",
+        "timeoutMs": 3000,
+        "timeoutAlarmCodes": ["FOUR_HANDSHAKE_TIMEOUT"],
+        "condition": {
+          "kind": "All",
+          "conditions": [
+            { "kind": "Compare", "comparison": "Equal", "left": { "source": "Variable", "variableName": "Clip.Scan.Occupied" }, "right": { "source": "Constant", "dataType": "Boolean", "constant": "false" } },
+            { "kind": "Compare", "comparison": "Equal", "left": { "source": "Variable", "variableName": "Clip.Weld.Occupied" }, "right": { "source": "Constant", "dataType": "Boolean", "constant": "false" } },
+            { "kind": "Compare", "comparison": "Equal", "left": { "source": "Variable", "variableName": "Clip.Press.Occupied" }, "right": { "source": "Constant", "dataType": "Boolean", "constant": "false" } },
+            { "kind": "Compare", "comparison": "Equal", "left": { "source": "Variable", "variableName": "Clip.Inspect.Occupied" }, "right": { "source": "Constant", "dataType": "Boolean", "constant": "false" } }
+          ]
+        }
+      },
       {
         "kind": "SetVariable",
         "id": "initClipSWReady",
@@ -124,54 +140,6 @@
         "timeoutMs": 30000,
         "variableName": "Clip.LastDestination",
         "value": { "source": "Constant", "dataType": "String", "constant": "" }
-      },
-      {
-        "kind": "SetVariable",
-        "id": "initClipScanOccupied",
-        "name": "清空测试工位有料状态",
-        "timeoutMs": 30000,
-        "variableName": "Clip.Scan.Occupied",
-        "value": {
-          "source": "Constant",
-          "dataType": "Boolean",
-          "constant": "false"
-        }
-      },
-      {
-        "kind": "SetVariable",
-        "id": "initClipWeldOccupied",
-        "name": "清空测试工位有料状态",
-        "timeoutMs": 30000,
-        "variableName": "Clip.Weld.Occupied",
-        "value": {
-          "source": "Constant",
-          "dataType": "Boolean",
-          "constant": "false"
-        }
-      },
-      {
-        "kind": "SetVariable",
-        "id": "initClipPressOccupied",
-        "name": "清空测试工位有料状态",
-        "timeoutMs": 30000,
-        "variableName": "Clip.Press.Occupied",
-        "value": {
-          "source": "Constant",
-          "dataType": "Boolean",
-          "constant": "false"
-        }
-      },
-      {
-        "kind": "SetVariable",
-        "id": "initClipInspectOccupied",
-        "name": "清空测试工位有料状态",
-        "timeoutMs": 30000,
-        "variableName": "Clip.Inspect.Occupied",
-        "value": {
-          "source": "Constant",
-          "dataType": "Boolean",
-          "constant": "false"
-        }
       }
     ]
   }

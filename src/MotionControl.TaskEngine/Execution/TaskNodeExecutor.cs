@@ -109,6 +109,18 @@ namespace MotionControl.TaskEngine.Execution
                 await ExecuteAsync(call.TaskId, _library[call.TaskId].Root, scope, scope.Token).ConfigureAwait(false);
             else if (node is DelayNode delay) await DelayAsync(scope, delay.Milliseconds).ConfigureAwait(false);
             else if (node is WaitInputNode input) await WaitInputAsync(scope, input).ConfigureAwait(false);
+            else if (node is WaitOutputNode outputWait) await WaitOutputAsync(scope, outputWait).ConfigureAwait(false);
+            else if (node is WaitExclusiveInputsNode pair) await WaitExclusiveInputsAsync(scope, pair).ConfigureAwait(false);
+            else if (node is ReadInputNode sample)
+                await scope.StepAsync(() =>
+                {
+                    bool? value = _device.ReadInput(sample.InputName);
+                    if (!value.HasValue) throw new InvalidOperationException("逻辑输入 '" + sample.InputName + "' 当前没有有效数据，未写入变量 '" + sample.VariableName + "'。");
+                    _device.WriteVariable(sample.VariableName, value.Value);
+                    scope.Diagnostics = new TaskStepDiagnostics("本次读取逻辑输入并写入设备变量", new[] {
+                        new TaskObservedValue(sample.InputName, "有效采样", value.Value.ToString(), true),
+                        new TaskObservedValue(sample.VariableName, "本次采样值", value.Value.ToString(), true) });
+                }).ConfigureAwait(false);
             else if (node is WaitConditionNode condition) await WaitConditionAsync(scope, condition).ConfigureAwait(false);
             else if (node is SetOutputNode output)
                 await SetOutputAsync(scope, output).ConfigureAwait(false);

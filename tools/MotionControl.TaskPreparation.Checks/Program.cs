@@ -42,8 +42,8 @@ namespace MotionControl.TaskPreparation.Checks
             try
             {
                 var catalog = new TaskResourceCatalog(new[] {
-                    new TaskAxisInfo("Press_Z", "Card", "mm", -10, 10), new TaskAxisInfo("Camera_X", "Card", "mm", -10, 10) },
-                    new[] { "压装完成", "检测完成" }, new[] { "压头动作", "相机触发" },
+                    new TaskAxisInfo("Weld_Z", "Card", "mm", -10, 10), new TaskAxisInfo("Press_Z", "Card", "mm", -10, 10) },
+                    new[] { "上料到位", "焊接完成", "压装完成" }, new[] { "焊接启动", "压头动作" },
                     new Dictionary<string, DeviceVariableType> { { "Clip.Weld.Occupied", DeviceVariableType.Boolean }, { "Clip.Press.Occupied", DeviceVariableType.Boolean } },
                     new TaskTeachPoint[0], variableInitialValues: new Dictionary<string, string> { { "Clip.Weld.Occupied", "false" }, { "Clip.Press.Occupied", "false" } },
                     alarmCodes: new[] { "DEMO_SENSOR_TIMEOUT" });
@@ -56,9 +56,9 @@ namespace MotionControl.TaskPreparation.Checks
                         Children = new List<TaskNode> { new DelayNode { Id = "cycle", Name = "生产周期", TimeoutMs = 10000, Milliseconds = 3000 } } } });
                 var library = definitions.ToDictionary(item => item.TaskId, StringComparer.OrdinalIgnoreCase);
                 var device = new InMemoryTaskDevice(catalog);
-                device.ConfigureAxis("Press_Z", 1, true, false); device.ConfigureAxis("Camera_X", 1, true, false);
-                device.SetInput("压装完成", false); device.SetInput("检测完成", false);
-                device.WriteOutput("压头动作", false); device.WriteOutput("相机触发", false);
+                device.ConfigureAxis("Weld_Z", 1, true, false); device.ConfigureAxis("Press_Z", 1, true, false);
+                device.SetInput("上料到位", false); device.SetInput("焊接完成", false); device.SetInput("压装完成", false);
+                device.WriteOutput("焊接启动", false); device.WriteOutput("压头动作", false);
                 var configuration = new TaskMachineConfiguration { MachineId = "Machine01", Name = "准备检查", Revision = 1,
                     Stations = new List<StationTaskConfiguration> { new StationTaskConfiguration { StationId = "Production", Name = "生产工位", TaskId = "Production", Mode = StationTaskMode.Cyclic } } };
                 machine = new TaskMachineController(configuration, definitions, device);
@@ -71,7 +71,15 @@ namespace MotionControl.TaskPreparation.Checks
                 Ensure(device.ReadVariables().Single(item => item.Name == "Clip.Weld.Occupied").CurrentValue == "True", "准备检查清除了占料变量。");
                 device.SetVariable("Clip.Weld.Occupied", "false");
 
-                device.SetInput("压装完成", true);
+                // 仅准备任务要求上料位置无料；不得在有料时下发回零。
+                device.SetInput("上料到位", true);
+                await ThrowsAsync(() => preparation[0].ExecuteAsync(null, CancellationToken.None), "上料有料时焊接准备未拦截。");
+                await ThrowsAsync(() => preparation[1].ExecuteAsync(null, CancellationToken.None), "上料有料时压合准备未拦截。");
+                Ensure(device.ReadAxis("Weld_Z").AcceptedCommands == 0 && device.ReadAxis("Press_Z").AcceptedCommands == 0,
+                    "上料有料时错误下发了回零。");
+                device.SetInput("上料到位", false);
+
+                device.SetInput("焊接完成", true);
                 using (var cancel = new CancellationTokenSource())
                 {
                     var entered = new TaskCompletionSource<string>();
@@ -82,10 +90,22 @@ namespace MotionControl.TaskPreparation.Checks
                     cancel.Cancel();
                     await ThrowsAsync(() => running, "取消准备没有返回中断结果。");
                 }
-                Ensure(device.ReadAxis("Press_Z").AcceptedCommands == 0, "等待反馈期间错误发送回零。");
+                Ensure(device.ReadAxis("Weld_Z").AcceptedCommands == 0, "等待反馈期间错误发送回零。");
+                // 反馈复位等待期间新来料，回零前应再次检查，不能沿用准备开始时的无料结果。
+                var waitingFeedback = new TaskCompletionSource<string>();
+                Task interruptedByMaterial = preparation[0].ExecuteAsync(
+                    new DirectProgress(value => { if (value.Action.Contains("反馈")) waitingFeedback.TrySetResult(value.Action); }),
+                    CancellationToken.None);
+                await Bounded(waitingFeedback.Task);
+                device.SetInput("上料到位", true);
+                device.SetInput("焊接完成", false);
+                await ThrowsAsync(() => interruptedByMaterial, "反馈等待期间来料后仍允许回零。");
+                Ensure(device.ReadAxis("Weld_Z").AcceptedCommands == 0, "回零前来料后错误下发了轴动作。");
+                device.SetInput("上料到位", false);
+                device.SetInput("焊接完成", true);
                 await ThrowsAsync(() => preparation[0].ExecuteAsync(null, CancellationToken.None), "反馈超时被当成准备完成。");
                 Throws(() => machine.Start(), "准备失败后允许生产启动。");
-                device.SetInput("压装完成", false);
+                device.SetInput("焊接完成", false);
                 foreach (IStationPreparation item in preparation)
                 {
                     await item.ValidateStartAsync(CancellationToken.None);
@@ -93,13 +113,15 @@ namespace MotionControl.TaskPreparation.Checks
                     await item.ValidateReadyAsync(CancellationToken.None);
                 }
                 Ensure(machine.GetSnapshot().Stations.All(item => item.CompletedCycles == 0 && item.Run == null), "准备结束后自动启动了生产。");
-                Ensure(device.ReadAxis("Press_Z").Homed && device.ReadAxis("Camera_X").Homed, "实际回零结果未完成。");
-                device.SetInput("检测完成", true);
+                Ensure(device.ReadAxis("Weld_Z").Homed && device.ReadAxis("Press_Z").Homed, "实际回零结果未完成。");
+                device.SetInput("压装完成", true);
                 Throws(() => machine.Start(), "准备后反馈变化未重新检查。");
-                device.SetInput("检测完成", false);
+                device.SetInput("压装完成", false);
+                // 已准备完成后允许正常来料和生产，不把准备前置条件扩大为生产启动条件。
+                device.SetInput("上料到位", true);
                 machine.Start(); await Task.Delay(30); await machine.PauseAsync();
                 await ThrowsAsync(() => preparation[0].ValidateStartAsync(CancellationToken.None), "生产启动过的会话允许重新准备。");
-                device.SetInput("检测完成", true);
+                device.SetInput("压装完成", true);
                 machine.Reset(); machine.Start(); await Task.Delay(30); await machine.PauseAsync();
                 Ensure(machine.GetSnapshot().Stations.Single().Run != null, "正常暂停续跑丢失生产步骤。");
             }
