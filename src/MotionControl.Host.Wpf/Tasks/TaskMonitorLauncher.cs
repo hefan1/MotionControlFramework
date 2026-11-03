@@ -107,6 +107,17 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>当前是否已装载一个整机任务会话。</summary>
         internal bool HasTaskSession { get { return _session != null; } }
 
+        /// <summary>返回当前会话身份，供恢复保护区分是否为同一次任务接管。</summary>
+        internal object CurrentTaskSession { get { return _session; } }
+
+        /// <summary>核对同一任务会话已完成暂停和故障处理；只读，不发设备命令。</summary>
+        internal bool IsTaskSessionSettled(object session)
+        {
+            TaskMonitorSession current = _session;
+            return current != null && ReferenceEquals(current, session)
+                && current.Machine.IsPauseSettlementConfirmed;
+        }
+
         /// <summary>任务命令正在读写或等待停稳，顶部按钮应避免并发提交。</summary>
         internal bool IsCommandInProgress { get { return _commandInProgress; } }
 
@@ -748,6 +759,8 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>根据连接和任务状态说明下一步，不改变原有按钮控制条件。</summary>
         private void UpdateNextAction(bool connected, TaskMachineState? state)
         {
+            string recoveryReason = connected && !_commandInProgress && _runtime.State != MachineRunState.Running
+                && _runtime.State != MachineRunState.Pausing ? _recoveryStartBlockReason?.Invoke() : null;
             if (_commandInProgress)
                 _nextAction.Text = PageText("正在处理，请稍候。", "Processing, please wait.");
             else if (!connected)
@@ -755,9 +768,14 @@ namespace MotionControl.Host.Wpf.Tasks
             else if (!string.IsNullOrWhiteSpace(_runtime.RecoveryBlockReason))
                 _nextAction.Text = PageText("设备恢复信息未确认，不能准备或启动：", "Recovery information is not verified; preparation and start are blocked: ")
                     + _runtime.RecoveryBlockReason;
+            else if (state == TaskMachineState.Paused && _runtime.State == MachineRunState.Paused
+                && IsSettledPauseAwaitingReset(state, _runtime.State,
+                _session != null && _session.Machine.IsPauseSettlementConfirmed,
+                _runtime.AlarmService.HasLatchedStopAlarm, recoveryReason))
+                _nextAction.Text = PageText("暂停后输出可能保持原状态；请检查机构和输出，再复位、启动。", "Outputs may remain active while paused. Check the equipment and outputs before reset and start.");
             else if (_runtime.State != MachineRunState.Running && _runtime.State != MachineRunState.Pausing
-                && !string.IsNullOrWhiteSpace(_recoveryStartBlockReason?.Invoke()))
-                _nextAction.Text = _recoveryStartBlockReason();
+                && !string.IsNullOrWhiteSpace(recoveryReason))
+                _nextAction.Text = recoveryReason;
             else if (_runtime.IsPreparing)
                 _nextAction.Text = PageText("设备回零正在执行；可在设备准备页查看进度或停止。", "Preparation is running. View progress or stop on the preparation page.");
             else if (!_runtime.IsPrepared)
@@ -782,6 +800,15 @@ namespace MotionControl.Host.Wpf.Tasks
                 _nextAction.Text = PageText("请处理报警并检查机构和输出，再复位、启动。", "Resolve alarms and check the equipment and outputs before reset and start.");
             else
                 _nextAction.Text = PageText("请检查任务状态，必要时停止并重新读取任务。", "Check task status; stop and reload tasks if needed.");
+        }
+
+        /// <summary>只对已确认收尾的正常暂停隐藏等待复位的标记提示；其他保护原因继续显示。</summary>
+        private static bool IsSettledPauseAwaitingReset(TaskMachineState? state, MachineRunState runtimeState,
+            bool settlementConfirmed, bool hasStopAlarm, string recoveryReason)
+        {
+            return state == TaskMachineState.Paused && runtimeState == MachineRunState.Paused
+                && settlementConfirmed && !hasStopAlarm && recoveryReason != null
+                && recoveryReason.StartsWith("上次运行尚未确认安全收尾，", StringComparison.Ordinal);
         }
 
         /// <summary>区分未读取、通讯中断和已读取但没有报警。</summary>

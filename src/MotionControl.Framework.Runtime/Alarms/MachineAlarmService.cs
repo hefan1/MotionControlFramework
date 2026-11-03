@@ -1,15 +1,51 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Alarms;
 
 namespace MotionControl.Framework.Runtime.Alarms
 {
     /// <summary>按设备报警规则保存当前报警，并处理条件恢复和人工复位。</summary>
-    public sealed class MachineAlarmService : IMachineAlarmService, IMachineAlarmBatchService, IMachineAlarmConditionContextService
+    public sealed class MachineAlarmService : IMachineAlarmService, IMachineAlarmBatchService, IMachineAlarmConditionContextService, IMachineStopAlarmNotificationDrain, IMachineAlarmStartGate
     {
         /// <summary>保护报警集合，避免流程线程与界面线程同时读写。</summary>
         private readonly object _sync = new object();
+
+        /// <summary>已锁存但尚未交接给全部同步停机订阅者的报警批次数。</summary>
+        private int _pendingStopNotifications;
+
+        /// <summary>停机通知失败后保留原因，不能假定设备已收到停机要求。</summary>
+        private string _stopNotificationFailure;
+
+        /// <summary>当前批次全部停机通知交接结束时完成。</summary>
+        private TaskCompletionSource<bool> _stopNotificationsDrained;
+
+        /// <summary>等待调用前已登记的停机通知完成；调用方应先解除自己的订阅。</summary>
+        public Task WaitForStopNotificationDispatchAsync()
+        {
+            lock (_sync)
+            {
+                if (_pendingStopNotifications != 0) return _stopNotificationsDrained.Task;
+                if (_stopNotificationFailure != null)
+                    return Task.FromException(new InvalidOperationException("停机报警通知失败：" + _stopNotificationFailure));
+                return Task.CompletedTask;
+            }
+        }
+
+        /// <summary>在报警状态锁内提交纯内存启动许可，不在此处执行设备操作。</summary>
+        public void ExecuteWhenNoStopAlarm(Action commit)
+        {
+            if (commit == null) throw new ArgumentNullException(nameof(commit));
+            lock (_sync)
+            {
+                EnsureStopAlarmConditionsRecoveredCore();
+                if (_alarmsBySource.SelectMany(source => source.Value.Values)
+                    .Any(alarm => alarm.Definition.Kind == MachineAlarmKind.StopMachine))
+                    throw new InvalidOperationException("停机报警尚未复位，不能启动。");
+                commit();
+            }
+        }
 
         /// <summary>按报警来源和报警代码保存当前报警记录。</summary>
         private readonly Dictionary<string, Dictionary<string, MachineAlarmRecord>> _alarmsBySource =
@@ -261,9 +297,33 @@ namespace MotionControl.Framework.Runtime.Alarms
                     _alarmsBySource.Remove(sourceName);
                     _conditionsBySource.Remove(sourceName);
                 }
+                // 在释放报警锁前登记通知，避免条件恢复和复位抢在停机订阅者之前。
+                if (newStopAlarms.Count != 0)
+                {
+                    if (_pendingStopNotifications++ == 0)
+                        _stopNotificationsDrained = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                }
             }
 
-            NotifyChanges(newStopAlarms, alarmsChanged);
+            try { NotifyChanges(newStopAlarms, alarmsChanged); }
+            catch (Exception error)
+            {
+                if (newStopAlarms.Count != 0)
+                    lock (_sync) _stopNotificationFailure = error.Message;
+                throw;
+            }
+            finally
+            {
+                if (newStopAlarms.Count != 0)
+                    lock (_sync)
+                    {
+                        if (--_pendingStopNotifications == 0)
+                        {
+                            if (_stopNotificationFailure == null) _stopNotificationsDrained.TrySetResult(true);
+                            else _stopNotificationsDrained.TrySetException(new InvalidOperationException("停机报警通知失败：" + _stopNotificationFailure));
+                        }
+                    }
+            }
         }
 
         /// <summary>停机报警条件全部恢复后，清除已锁存的停机报警。</summary>
@@ -328,6 +388,10 @@ namespace MotionControl.Framework.Runtime.Alarms
         /// <summary>在报警锁内确认所有停机报警条件均已恢复。</summary>
         private void EnsureStopAlarmConditionsRecoveredCore()
         {
+            if (_pendingStopNotifications != 0)
+                throw new InvalidOperationException("停机报警通知尚未完成，不能复位；请等待报警处理并核查设备状态。");
+            if (_stopNotificationFailure != null)
+                throw new InvalidOperationException("停机报警通知失败，不能确认设备已收到停机要求；请联系维护人员核查：" + _stopNotificationFailure);
             var activeStopAlarms = _alarmsBySource
                 .SelectMany(source => source.Value.Values)
                 .Where(alarm => alarm.Definition.Kind == MachineAlarmKind.StopMachine && alarm.ConditionActive)

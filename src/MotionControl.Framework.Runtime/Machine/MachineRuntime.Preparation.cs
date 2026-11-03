@@ -14,12 +14,23 @@ namespace MotionControl.Framework.Runtime.Machine
     {
         /// <summary>准备动作开始前记录不确定现场；由 Host 配置。</summary>
         private Action _beforePreparation;
-        /// <summary>准备成功或受控停稳后提交现场记录；由 Host 配置。</summary>
+        /// <summary>准备成功或受控停稳后保存现场记录；回调不得移除运行标记，由 Host 配置。</summary>
         private Action _afterSafePreparation;
         /// <summary>本次准备已创建记录且尚未完成安全收尾。</summary>
         private bool _preparationRecordPending;
+        /// <summary>本进程准备已安全收尾并保存记录，可沿用仍保留的运行标记；停机报警或重新准备时失效。</summary>
+        private bool _preparationRecordReusable;
 
-        /// <summary>连接前接入准备动作的持久标记；两个回调必须成对提供。</summary>
+        /// <summary>仅供当前设备会话判断是否可沿用准备标记；不代表跨进程现场安全。</summary>
+        public bool IsPreparationRecordReusable { get { lock (_preparationSync) return _preparationRecordReusable; } }
+
+        /// <summary>控制器连接周期变化时撤销本会话准备标记资格，不能跨重连沿用。</summary>
+        private void InvalidatePreparationRecordReuse()
+        {
+            lock (_preparationSync) _preparationRecordReusable = false;
+        }
+
+        /// <summary>连接前接入准备动作的持久标记；结束回调只保存记录并保留标记，两个回调必须成对提供。</summary>
         public void SetPreparationRecordCallbacks(Action before, Action afterSafe)
         {
             if (State != MachineRunState.Disconnected) throw new InvalidOperationException("只能在连接前配置准备记录。");
@@ -28,7 +39,7 @@ namespace MotionControl.Framework.Runtime.Machine
             _afterSafePreparation = afterSafe;
         }
 
-        /// <summary>调用方持有整机命令锁时提交安全结束记录，失败保留待核对标记。</summary>
+        /// <summary>调用方持有整机命令锁时保存结束记录，标记继续保留；失败保留待核对状态。</summary>
         private void CompletePreparationRecord()
         {
             if (!_preparationRecordPending) return;
@@ -135,18 +146,33 @@ namespace MotionControl.Framework.Runtime.Machine
                 }
                 // 持久标记必须在设备步骤、使能或轴运动之前创建；写失败不进入准备状态。
                 if (_beforePreparation != null) { _beforePreparation(); _preparationRecordPending = true; }
-                lock (_preparationSync)
+                lock (_preparationSync) _preparationRecordReusable = false;
+                var preparationGate = _alarmService as IMachineAlarmStartGate;
+                if (preparationGate == null)
+                    throw new InvalidOperationException("报警服务不支持原子检查设备准备许可。");
+                lock (_statusLock)
                 {
-                    _preparing = true;
-                    _preparationStopUnconfirmed = false;
-                    _preparationProductionStarted = false;
-                    _preparationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                    foreach (IStationPreparation item in selected)
-                        if (!_preparationStates[item.StationId].IsPrepared)
-                            _preparationStates[item.StationId] = new StationPreparationSnapshot(item.StationId,
-                                item.StationName, StationPreparationState.Waiting, "等待准备", "等待前序工位和条件检查。");
+                    if (_state != MachineRunState.Ready && _state != MachineRunState.ResetRequired && _state != MachineRunState.Paused)
+                        throw new InvalidOperationException("设备状态已改变，不能执行工位准备。当前状态：" + _state + "。");
+                    // 顺序与既有状态检查一致：先持状态锁，再持报警门禁；门禁内只发布内存状态。
+                    preparationGate.ExecuteWhenNoStopAlarm(() =>
+                    {
+                        lock (_preparationSync)
+                        {
+                            _preparing = true;
+                            _preparationStopUnconfirmed = false;
+                            _preparationProductionStarted = false;
+                            _preparationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                            foreach (IStationPreparation item in selected)
+                                if (!_preparationStates[item.StationId].IsPrepared)
+                                    _preparationStates[item.StationId] = new StationPreparationSnapshot(item.StationId,
+                                        item.StationName, StationPreparationState.Waiting, "等待准备", "等待前序工位和条件检查。");
+                        }
+                        _state = MachineRunState.Preparing;
+                        _lastError = null;
+                    });
                 }
-                SetStatus(MachineRunState.Preparing, null);
+                RaiseStatusChanged();
                 try { StartEmergencyStopMonitor(); }
                 catch
                 {
@@ -168,6 +194,12 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>停止准备并等待步骤退出及所有轴停稳；超时仍保持占用，禁止继续动作。</summary>
         public async Task StopPreparationAsync(CancellationToken cancellationToken)
         {
+            await StopPreparationAsync(cancellationToken, null).ConfigureAwait(false);
+        }
+
+        /// <summary>报警触发的停止只作用于原准备令牌，不能跨到随后开始的新准备。</summary>
+        private async Task StopPreparationAsync(CancellationToken cancellationToken, CancellationTokenSource expectedPreparation)
+        {
             Task operation;
             bool recoveringStop;
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -176,6 +208,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 lock (_preparationSync)
                 {
                     if (!_preparing) return;
+                    if (expectedPreparation != null && !ReferenceEquals(expectedPreparation, _preparationCancellation)) return;
                     operation = _preparationTask;
                     recoveringStop = _preparationStopUnconfirmed && operation.IsCompleted;
                     _preparationStopRequests++;
@@ -220,6 +253,7 @@ namespace MotionControl.Framework.Runtime.Machine
                     }
                     lock (_preparationSync) if (lastStop) _preparing = false;
                     if (finishError != null) SetStatus(MachineRunState.Alarmed, finishError);
+                    else if (lastStop) TryConfirmPreparationRecordReuse();
                 }
                 finally { _commandLock.Release(); }
                 RaisePreparationChanged();
@@ -229,17 +263,21 @@ namespace MotionControl.Framework.Runtime.Machine
         }
 
         /// <summary>报警事件中异步受控停止准备，并将停止异常留在整机诊断中。</summary>
-        private async Task StopPreparationAfterAlarmAsync()
+        private async Task StopPreparationAfterAlarmAsync(CancellationTokenSource preparation)
         {
-            try { await StopPreparationAsync(CancellationToken.None).ConfigureAwait(false); }
+            try { await StopPreparationAsync(CancellationToken.None, preparation).ConfigureAwait(false); }
             catch (Exception error) { SetStatus(MachineRunState.Alarmed, error); }
         }
 
         /// <summary>只请求取消，不等待后台步骤，供停机报警事件使用。</summary>
-        private void RequestPreparationStop()
+        private CancellationTokenSource RequestPreparationStop()
         {
             lock (_preparationSync)
-                if (_preparationCancellation != null) _preparationCancellation.Cancel();
+            {
+                CancellationTokenSource current = _preparationCancellation;
+                if (current != null) current.Cancel();
+                return current;
+            }
         }
 
         /// <summary>先核对全部所选工位前提，再按依赖执行；任何失败或取消都不得给出完成资格。</summary>
@@ -375,9 +413,14 @@ namespace MotionControl.Framework.Runtime.Machine
                         }
                     }
                     lock (_preparationSync) _preparing = _preparationStopUnconfirmed || _preparationStopRequests != 0;
-                    if (failure != null || _alarmService.HasLatchedStopAlarm || State == MachineRunState.Alarmed)
-                        SetStatus(MachineRunState.Alarmed, failure ?? LastError);
-                    else SetStatus(stopped ? MachineRunState.ResetRequired : MachineRunState.Ready, null);
+                    Exception previousFailure = failure;
+                    failure = SetPreparationCompletionStatus(stopped, failure);
+                    if (previousFailure == null && failure != null && active != null)
+                    {
+                        InvalidatePreparationAndDependents(active.StationId, "准备完成确认期间出现报警。\n请检查现场后重新准备。");
+                        SetPreparationSnapshot(active, StationPreparationState.Failed, "准备失败", failure.Message);
+                    }
+                    if (failure == null) TryConfirmPreparationRecordReuse();
                 }
                 finally { _commandLock.Release(); cancellation.Dispose(); }
                 if (failure != null)
@@ -391,6 +434,63 @@ namespace MotionControl.Framework.Runtime.Machine
             }
             if (failure != null) throw new InvalidOperationException("工位准备未完成：" + failure.Message, failure);
             if (stopped) throw new OperationCanceledException(token);
+        }
+
+        /// <summary>记录保存且准备完全退出后，经报警门禁确认本进程可沿用仍保留的标记。</summary>
+        private void TryConfirmPreparationRecordReuse()
+        {
+            lock (_statusLock)
+            {
+                if (_state == MachineRunState.Alarmed || _preparationRecordPending || _beforePreparation == null) return;
+                var gate = _alarmService as IMachineAlarmStartGate;
+                if (gate == null) return;
+                try
+                {
+                    gate.ExecuteWhenNoStopAlarm(() =>
+                    {
+                        lock (_preparationSync)
+                            _preparationRecordReusable = !_preparing && !_preparationStopUnconfirmed && _preparationStopRequests == 0;
+                    });
+                }
+                catch (InvalidOperationException) { lock (_preparationSync) _preparationRecordReusable = false; }
+            }
+        }
+
+        /// <summary>准备结束时与报警锁存原子协调，不能用就绪状态覆盖并发停机报警。</summary>
+        private Exception SetPreparationCompletionStatus(bool stopped, Exception failure)
+        {
+            lock (_statusLock)
+            {
+                if (failure != null || _state == MachineRunState.Alarmed)
+                {
+                    _state = MachineRunState.Alarmed;
+                    _lastError = failure ?? _lastError;
+                    if (failure == null && !stopped)
+                        failure = _lastError ?? new InvalidOperationException("准备结束期间出现停机报警。");
+                }
+                else
+                {
+                    try
+                    {
+                        var gate = _alarmService as IMachineAlarmStartGate;
+                        if (gate == null) throw new InvalidOperationException("报警服务不支持原子检查准备结束状态。");
+                        // 延续状态锁到报警锁的既有顺序；门禁中只提交内存状态。
+                        gate.ExecuteWhenNoStopAlarm(() =>
+                        {
+                            _state = stopped ? MachineRunState.ResetRequired : MachineRunState.Ready;
+                            _lastError = null;
+                        });
+                    }
+                    catch (Exception error)
+                    {
+                        _state = MachineRunState.Alarmed;
+                        failure = new InvalidOperationException("准备结束时存在未确认的停机报警。", error);
+                        _lastError = failure;
+                    }
+                }
+            }
+            RaiseStatusChanged();
+            return failure;
         }
 
         /// <summary>生产启动前检查全部资格；首次启动还实时核对姿态，正常暂停续跑不要求回到初始位置。</summary>

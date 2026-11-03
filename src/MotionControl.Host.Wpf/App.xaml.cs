@@ -246,6 +246,9 @@ namespace MotionControl.Host.Wpf
             _mainWindow.SetDeviceVariablePage(_deviceVariablePage);
             _taskMonitorLauncher = new Tasks.TaskMonitorLauncher(_configurationStore, MachineId, _mainWindow,
                 () => _machineRecoveryCoordinator.GetAutomaticStartBlockReason(_machineRuntime));
+            _machineRecoveryCoordinator.SetTaskSessionSettlementQueries(
+                () => _taskMonitorLauncher.CurrentTaskSession,
+                session => _taskMonitorLauncher.IsTaskSessionSettled(session));
             _mainWindow.SetTaskMonitorPage(_taskMonitorLauncher);
             _taskConfigurationPage = new MotionControl.TaskEngine.Wpf.Editing.TaskConfigurationView(
                 _configurationStore,

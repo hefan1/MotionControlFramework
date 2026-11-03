@@ -27,9 +27,10 @@ namespace MotionControl.OperatorPages.Checks
             try
             {
                 var type = typeof(MainWindow).Assembly.GetType("MotionControl.Host.Wpf.Tasks.TaskMonitorLauncher", true);
+                CheckPausedGuidance(type);
                 var store = new MachineConfigurationStore(Path.Combine(Path.GetTempPath(), "TaskRunPageChecks"));
                 var page = Activator.CreateInstance(type, BindingFlags.Instance | BindingFlags.NonPublic,
-                    null, new object[] { store, "MissingMachine", host }, null);
+                    null, new object[] { store, "MissingMachine", host, null }, null);
                 var guidance = Field<TextBlock>(type, page, "_nextAction");
                 var alarm = Field<TextBlock>(type, page, "_alarmState");
                 var details = Field<Expander>(type, page, "_diagnostics");
@@ -91,6 +92,20 @@ namespace MotionControl.OperatorPages.Checks
                 Require(status.Text == message, "状态变化隐藏了真实错误提示。");
             }
             finally { host.Close(); }
+        }
+
+        /// <summary>仅正常停稳且无报警时优先给出复位操作提示，其他保护原因不能隐藏。</summary>
+        private static void CheckPausedGuidance(Type type)
+        {
+            var method = type.GetMethod("IsSettledPauseAwaitingReset", BindingFlags.Static | BindingFlags.NonPublic);
+            string pendingMarker = "上次运行尚未确认安全收尾，不能再次启动。请联系维护人员。";
+            Func<TaskMachineState, MachineRunState, bool, bool, string, bool> showPause = (task, runtime, settled, alarm, reason) =>
+                (bool)method.Invoke(null, new object[] { task, runtime, settled, alarm, reason });
+            Require(showPause(TaskMachineState.Paused, MachineRunState.Paused, true, false, pendingMarker), "已停稳的正常暂停没有显示复位提示。");
+            Require(!showPause(TaskMachineState.Paused, MachineRunState.Paused, false, false, pendingMarker), "尚未结算的暂停隐藏了维护提示。");
+            Require(!showPause(TaskMachineState.Faulted, MachineRunState.Alarmed, true, false, pendingMarker), "故障状态隐藏了维护提示。");
+            Require(!showPause(TaskMachineState.Paused, MachineRunState.Paused, true, true, pendingMarker), "存在停机报警时隐藏了维护提示。");
+            Require(!showPause(TaskMachineState.Paused, MachineRunState.Paused, true, false, "任务资源尚待确认"), "其他恢复保护原因被隐藏。");
         }
 
         /// <summary>读取被检查页面的控件字段，不修改设备状态。</summary>

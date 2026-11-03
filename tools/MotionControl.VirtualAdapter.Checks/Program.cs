@@ -17,6 +17,8 @@ namespace MotionControl.VirtualAdapter.Checks
     /// <summary>对独立控制器运行轴、IO 和取消运动的适配器往返检查。</summary>
     internal static class Program
     {
+        /// <summary>每个检查进程使用独立的临时诊断目录，不写用户设备日志。</summary>
+        private static readonly string DiagnosticsRoot = Path.Combine(Path.GetTempPath(), "MotionControl.VirtualAdapter.Checks-" + Guid.NewGuid().ToString("N"));
         /// <summary>使用隔离端口执行检查，调用方需先启动控制器。</summary>
         private static void Main(string[] args)
         {
@@ -32,6 +34,14 @@ namespace MotionControl.VirtualAdapter.Checks
                 Console.Error.WriteLine(ex.Message);
                 Environment.ExitCode = 1;
             }
+            finally
+            {
+                // 只删除此检查进程自己创建、位于系统临时目录的结果。
+                string root = Path.GetFullPath(DiagnosticsRoot);
+                string temporary = Path.GetFullPath(Path.GetTempPath());
+                if (root.StartsWith(temporary, StringComparison.OrdinalIgnoreCase) && Directory.Exists(root))
+                    Directory.Delete(root, true);
+            }
         }
         /// <summary>验证真实控制器往返行为。</summary>
         private static void Run(string[] args)
@@ -40,7 +50,7 @@ namespace MotionControl.VirtualAdapter.Checks
             var definition = new AxisHardwareDefinition { Name = "X", ControllerId = "Test", AxisNumber = 1, PositionTolerance = 0.01, SoftLimitEnabled = true, MinimumPosition = -10, MaximumPosition = 10 };
             var input = new DigitalIoHardwareDefinition { Name = "Input", Channel = 4, ActiveHigh = false };
             var output = new DigitalIoHardwareDefinition { Name = "Output", Channel = 0, ActiveHigh = false };
-            var card = new VirtualMotionCard("Test", new[] { definition }, new[] { input }, new[] { output }, port);
+            var card = new VirtualMotionCard("Test", new[] { definition }, new[] { input }, new[] { output }, port, DiagnosticsRoot);
             var token = CancellationToken.None;
             card.ConnectAsync(token).GetAwaiter().GetResult();
             SendRaw(port, "{\"command\":\"setInput\",\"channel\":4,\"value\":true}");
@@ -80,7 +90,7 @@ namespace MotionControl.VirtualAdapter.Checks
             card.DisconnectAsync(token).GetAwaiter().GetResult();
             AssertLeaseStopsAfterExit(port);
             AssertLeaseStopsAfterLostReply(port);
-            var unreachable = new VirtualMotionCard("Offline", new[] { definition }, new[] { input }, new[] { output }, 18522);
+            var unreachable = new VirtualMotionCard("Offline", new[] { definition }, new[] { input }, new[] { output }, 18522, DiagnosticsRoot);
             bool connectionFailed = false;
             try { unreachable.ConnectAsync(token).GetAwaiter().GetResult(); }
             catch (IOException) { connectionFailed = true; }
@@ -88,13 +98,15 @@ namespace MotionControl.VirtualAdapter.Checks
             AssertRejectedIdentity(definition, input, output, "{\"ok\":true}");
             AssertRejectedIdentity(definition, input, output, "{\"ok\":true,\"controllerType\":\"Other\",\"protocolVersion\":1}");
             AssertRejectedIdentity(definition, input, output, "{\"ok\":true,\"controllerType\":\"MotionControl.VirtualController\",\"protocolVersion\":1}");
+            AssertHeartbeatDiagnostic(false);
+            AssertHeartbeatDiagnostic(true);
             Console.WriteLine("虚拟控制器适配器往返检查通过。");
         }
         /// <summary>启动运动后直接退出，模拟 Host 未执行任何断开清理。</summary>
         private static void StartMotionAndExit(int port)
         {
             var axisDefinition = new AxisHardwareDefinition { Name = "X", ControllerId = "Test", AxisNumber = 1, SoftLimitEnabled = false };
-            var card = new VirtualMotionCard("Test", new[] { axisDefinition }, new DigitalIoHardwareDefinition[0], new DigitalIoHardwareDefinition[0], port);
+            var card = new VirtualMotionCard("Test", new[] { axisDefinition }, new DigitalIoHardwareDefinition[0], new DigitalIoHardwareDefinition[0], port, DiagnosticsRoot);
             var token = CancellationToken.None;
             card.ConnectAsync(token).GetAwaiter().GetResult();
             var axis = card.Axes.Single();
@@ -148,12 +160,17 @@ namespace MotionControl.VirtualAdapter.Checks
             try
             {
                 var definition = new AxisHardwareDefinition { Name = "X", ControllerId = "Test", AxisNumber = 1, PositionTolerance = 0.01 };
-                var card = new VirtualMotionCard("Test", new[] { definition }, new DigitalIoHardwareDefinition[0], new DigitalIoHardwareDefinition[0], proxyPort);
+                string lostReplyDirectory = Path.Combine(DiagnosticsRoot, "lost-reply");
+                var card = new VirtualMotionCard("Test", new[] { definition }, new DigitalIoHardwareDefinition[0], new DigitalIoHardwareDefinition[0], proxyPort, lostReplyDirectory);
                 card.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
                 bool failed = false;
                 try { card.Axes.Single().MoveAbsoluteAsync(20, new AxisMotionProfile(1, 1, 1), CancellationToken.None).GetAwaiter().GetResult(); }
                 catch (IOException) { failed = true; }
                 if (!failed || card.IsConnected) throw new Exception("丢失定位响应未报告通信失败");
+                string diagnostic = card.FirstConnectionFailure;
+                if (string.IsNullOrWhiteSpace(diagnostic) || !diagnostic.Contains("通信/move") || !diagnostic.Contains("System.IO.IOException"))
+                    throw new Exception("丢失响应未保留首次传输错误与操作上下文");
+                if (!File.ReadAllText(card.ConnectionDiagnosticsPath).Contains("通信/move")) throw new Exception("传输故障未写入隔离诊断目录");
                 if (!SendRaw(port, "{\"command\":\"readAxis\",\"axis\":1}").Contains("\"moving\":true"))
                     throw new Exception("代理没有放行定位指令");
                 Thread.Sleep(3000);
@@ -162,6 +179,86 @@ namespace MotionControl.VirtualAdapter.Checks
             }
             finally { listener.Stop(); }
         }
+
+        /// <summary>模拟心跳被控制器拒绝；检查真实原因、日志错误和离线状态均可观察。</summary>
+        private static void AssertHeartbeatDiagnostic(bool blockLogDirectory)
+        {
+            string directory = Path.Combine(DiagnosticsRoot, blockLogDirectory ? "not-a-directory" : "heartbeat");
+            if (blockLogDirectory)
+            {
+                Directory.CreateDirectory(DiagnosticsRoot);
+                File.WriteAllText(directory, "作为文件阻止创建诊断目录");
+            }
+            else
+            {
+                Directory.CreateDirectory(directory);
+                File.WriteAllText(Path.Combine(directory, "software-controller-connection.log"), new string('x', 1024 * 1024));
+            }
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            Task server = Task.Run(() =>
+            {
+                try
+                {
+                    while (true)
+                    {
+                        using (var client = listener.AcceptTcpClient())
+                        using (var stream = client.GetStream())
+                        using (var reader = new StreamReader(stream, Encoding.UTF8))
+                        using (var writer = new StreamWriter(stream, new UTF8Encoding(false), 1024, true) { AutoFlush = true })
+                        {
+                            string request = reader.ReadLine();
+                            if (request.Contains("\"command\":\"ping\""))
+                                writer.WriteLine("{\"ok\":true,\"controllerType\":\"MotionControl.VirtualController\",\"protocolVersion\":2}");
+                            else if (request.Contains("\"command\":\"acquireLease\""))
+                                writer.WriteLine("{\"ok\":true,\"leaseId\":\"TEST_LEASE_SECRET\"}");
+                            else if (request.Contains("\"command\":\"heartbeat\""))
+                                writer.WriteLine("{\"ok\":false,\"error\":\"测试心跳故障\"}");
+                            else writer.WriteLine("{\"ok\":false,\"error\":\"不支持的测试请求\"}");
+                        }
+                    }
+                }
+                catch (SocketException) { }
+                catch (ObjectDisposedException) { }
+            });
+            try
+            {
+                var card = new VirtualMotionCard("Test", new AxisHardwareDefinition[0], new DigitalIoHardwareDefinition[0],
+                    new DigitalIoHardwareDefinition[0], port, directory);
+                card.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
+                if (!SpinWait.SpinUntil(() => !card.IsConnected && card.FirstConnectionFailure != null, 5000))
+                    throw new Exception("心跳失败未及时标记离线并保留原因");
+                string failure = card.FirstConnectionFailure;
+                if (!failure.Contains("心跳") || !failure.Contains("测试心跳故障") || failure.Contains("TEST_LEASE_SECRET"))
+                    throw new Exception("心跳诊断缺少具体原因或泄漏会话编号");
+                DateTimeOffset time;
+                if (!DateTimeOffset.TryParse(failure.Split(' ')[0], out time) || Math.Abs((DateTimeOffset.Now - time).TotalMinutes) > 1)
+                    throw new Exception("心跳诊断时间不正确");
+                if (blockLogDirectory)
+                {
+                    if (!SpinWait.SpinUntil(() => !string.IsNullOrWhiteSpace(card.ConnectionDiagnosticsWriteFailure), 3000))
+                        throw new Exception("诊断写入失败未报告");
+                }
+                else
+                {
+                    if (!SpinWait.SpinUntil(() => File.Exists(card.ConnectionDiagnosticsPath + ".previous")
+                        && new FileInfo(card.ConnectionDiagnosticsPath).Length < 1024 * 1024, 3000)) throw new Exception("心跳诊断日志未完成轮转");
+                    if (!File.ReadAllText(card.ConnectionDiagnosticsPath).Contains("测试心跳故障"))
+                        throw new Exception("心跳故障未写入诊断日志");
+                    if (!File.Exists(card.ConnectionDiagnosticsPath + ".previous")
+                        || new FileInfo(card.ConnectionDiagnosticsPath).Length >= 1024 * 1024)
+                        throw new Exception("诊断日志达到上限后未保留有界历史");
+                    if (card.ConnectionDiagnosticsWriteFailure != null) throw new Exception("正常写入被误报为失败");
+                }
+            }
+            finally
+            {
+                listener.Stop();
+                server.GetAwaiter().GetResult();
+            }
+        }
+
         /// <summary>启动短暂的本地服务，确保错误身份或协议不会被当成控制器连接。</summary>
         private static void AssertRejectedIdentity(AxisHardwareDefinition axis, DigitalIoHardwareDefinition input, DigitalIoHardwareDefinition output, string reply)
         {
@@ -181,7 +278,7 @@ namespace MotionControl.VirtualAdapter.Checks
                         writer.WriteLine(reply);
                     }
                 });
-                var card = new VirtualMotionCard("Test", new[] { axis }, new[] { input }, new[] { output }, port);
+                var card = new VirtualMotionCard("Test", new[] { axis }, new[] { input }, new[] { output }, port, DiagnosticsRoot);
                 bool rejected = false;
                 try { card.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult(); }
                 catch (InvalidOperationException) { rejected = true; }

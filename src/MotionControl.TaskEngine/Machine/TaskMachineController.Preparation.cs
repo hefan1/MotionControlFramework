@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.TaskEngine.Execution;
 
 namespace MotionControl.TaskEngine.Machine
@@ -74,13 +75,16 @@ namespace MotionControl.TaskEngine.Machine
                 try
                 {
                     linked.Token.ThrowIfCancellationRequested();
-                    AlarmService.EnsureStopAlarmConditionsRecovered();
-                    if (AlarmService.HasLatchedStopAlarm) throw new InvalidOperationException("停机报警尚未复位，不能开始工位准备。");
                     lock (_sync)
                     {
+                        RequireOpen();
                         run = new TaskExecutionEngine().StartPreparation(_library[taskId], _device,
                             _library.Values.Where(item => !string.Equals(item.TaskId, taskId, StringComparison.OrdinalIgnoreCase)), this, linked.Token);
                         _preparationRun = run;
+                        var gate = AlarmService as IMachineAlarmStartGate;
+                        if (gate == null) throw new InvalidOperationException("报警服务不支持原子检查工位准备许可。");
+                        // 运行已预先暂停；报警锁内只发放内存许可，设备动作在锁外执行。
+                        gate.ExecuteWhenNoStopAlarm(() => run.Resume());
                     }
                     while (!run.Completion.IsCompleted)
                     {
@@ -95,7 +99,17 @@ namespace MotionControl.TaskEngine.Machine
                         throw new InvalidOperationException("准备任务失败：" + taskId + "。" + result.Error?.Message, result.Error);
                     _preparationChecks[taskId]();
                     linked.Token.ThrowIfCancellationRequested();
-                    lock (_sync) _completedPreparationTasks.Add(taskId);
+                    lock (_sync)
+                    {
+                        linked.Token.ThrowIfCancellationRequested();
+                        RequireOpen();
+                        if (_state == TaskMachineState.Faulted || _state == TaskMachineState.Pausing || _activeStopAlarms.Count != 0)
+                            throw new InvalidOperationException("准备完成确认时收到停机报警，准备资格未生效。");
+                        var completionGate = AlarmService as IMachineAlarmStartGate;
+                        if (completionGate == null) throw new InvalidOperationException("报警服务不支持原子检查准备完成资格。");
+                        // 检查条件之后可能有新报警；只在报警门禁内发布准备完成资格。
+                        completionGate.ExecuteWhenNoStopAlarm(() => _completedPreparationTasks.Add(taskId));
+                    }
                 }
                 finally
                 {

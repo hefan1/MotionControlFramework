@@ -36,6 +36,22 @@ namespace MotionControl.Host.Wpf.Recovery
         private bool _pausedWithHeldResources;
         /// <summary>任务运行标记在完整收尾屏障建立前不能因会话释放而被清除。</summary>
         private bool _taskRunNeedsSettlement;
+        /// <summary>首次建立当前任务运行标记时的会话身份；跨会话不得借用标记。</summary>
+        private object _taskRunSession;
+        /// <summary>标记所属运行时实例；设备重新连接后不能复用旧会话状态。</summary>
+        private MachineRuntime _taskRunRuntime;
+        /// <summary>生产标记所属 C# 工位流程运行时。</summary>
+        private MachineRuntime _stationFlowRuntime;
+        /// <summary>生产标记所属连接周期；断卡重连不能复用旧周期的现场状态。</summary>
+        private Guid? _stationFlowConnectionSession;
+        /// <summary>当前运行标记是否由本进程的设备准备创建，而非生产任务。</summary>
+        private bool _markerFromPreparation;
+        /// <summary>准备标记所属的 Runtime，重连或新进程不得沿用。</summary>
+        private MachineRuntime _preparationRunRuntime;
+        /// <summary>取得当前任务会话身份，供同会话续跑核对。</summary>
+        private Func<object> _currentTaskSession;
+        /// <summary>确认指定会话的暂停或故障收尾是否已结算。</summary>
+        private Func<object, bool> _isTaskSessionSettled;
         /// <summary>串行化运行标记及检查点的创建、保存和移除。</summary>
         private readonly object _runRecordSync = new object();
 
@@ -64,6 +80,67 @@ namespace MotionControl.Host.Wpf.Recovery
         public bool HasCompletedInitializationCheckpoint
         {
             get { return _document != null && _document.EquipmentInitializationCompleted; }
+        }
+
+        /// <summary>安装只读的任务会话身份及收尾查询；查询失败时禁止续跑。</summary>
+        public void SetTaskSessionSettlementQueries(Func<object> currentSession, Func<object, bool> isSettled)
+        {
+            if (currentSession == null) throw new ArgumentNullException(nameof(currentSession));
+            if (isSettled == null) throw new ArgumentNullException(nameof(isSettled));
+            lock (_runRecordSync)
+            {
+                _currentTaskSession = currentSession;
+                _isTaskSessionSettled = isSettled;
+            }
+        }
+
+        /// <summary>仅允许标记所属的同一任务会话在完成收尾后继续；不删除运行标记。</summary>
+        private bool CanResumeCurrentTaskSession(MachineRuntime runtime)
+        {
+            if (!_taskRunNeedsSettlement || _taskRunSession == null || runtime == null
+                || !ReferenceEquals(_taskRunRuntime, runtime)
+                || !runtime.IsTaskEngineControlClaimed || runtime.State != MachineRunState.Ready
+                || _currentTaskSession == null || _isTaskSessionSettled == null)
+                return false;
+            try
+            {
+                object current = _currentTaskSession();
+                return ReferenceEquals(current, _taskRunSession) && _isTaskSessionSettled(current);
+            }
+            catch (Exception error)
+            {
+                System.Diagnostics.Trace.TraceError("核查任务会话收尾失败，继续保留运行保护：" + error);
+                return false;
+            }
+        }
+
+        /// <summary>只允许本运行时已确认收尾的准备标记在本进程复用。</summary>
+        private bool CanReusePreparationMarker(MachineRuntime runtime)
+        {
+            return _markerFromPreparation && runtime != null
+                && ReferenceEquals(_preparationRunRuntime, runtime)
+                && runtime.IsPreparationRecordReusable;
+        }
+
+        /// <summary>仅同一连接周期的工位流程确认完成暂停和报警收尾后可续跑。</summary>
+        private bool CanResumeStationFlows(MachineRuntime runtime)
+        {
+            return runtime != null && ReferenceEquals(_stationFlowRuntime, runtime)
+                && runtime.ControlOwner == MachineControlOwner.StationFlows
+                && runtime.State == MachineRunState.Ready
+                && _stationFlowConnectionSession.HasValue
+                && runtime.ConnectionSessionId == _stationFlowConnectionSession
+                && runtime.IsStationFlowSettlementConfirmed;
+        }
+
+        /// <summary>绑定当前生产入口和连接周期，避免旧任务会话或断卡重连复用标记。</summary>
+        private void BindProductionSession(MachineRuntime runtime)
+        {
+            _taskRunNeedsSettlement = runtime != null && runtime.IsTaskEngineControlClaimed;
+            _taskRunSession = _taskRunNeedsSettlement ? _currentTaskSession?.Invoke() : null;
+            _taskRunRuntime = _taskRunNeedsSettlement ? runtime : null;
+            _stationFlowRuntime = runtime != null && runtime.ControlOwner == MachineControlOwner.StationFlows ? runtime : null;
+            _stationFlowConnectionSession = _stationFlowRuntime == null ? null : runtime.ConnectionSessionId;
         }
 
         /// <summary>加载运行值，并按设备变量定义校验是否还能使用旧流程断点。</summary>
@@ -246,7 +323,7 @@ namespace MotionControl.Host.Wpf.Recovery
                     throw new InvalidOperationException("只有设备已受控暂停且准备已退出，才能保存暂停记录。");
                 // 任务侧停止回调与故障分类尚无完整屏障，即使当前资源为空也不能
                 // 证明所有在途动作已安全结束。保留原记录及跨进程运行证据。
-                if (_taskRunNeedsSettlement || runtime.IsTaskEngineControlClaimed)
+                if (_markerFromPreparation || _taskRunNeedsSettlement || runtime.IsTaskEngineControlClaimed)
                 {
                     _pausedWithHeldResources = false;
                     return;
@@ -262,11 +339,7 @@ namespace MotionControl.Host.Wpf.Recovery
                 var document = CreateDocumentWithCurrentVariables(runtime);
                 CaptureStationFlowCheckpoints(document, runtime);
                 SaveDocument(document);
-                if (_ownsRunMarker && string.IsNullOrWhiteSpace(RecoveryBlockReason))
-                {
-                    _recoveryStore.ClearAutomaticRunMarker();
-                    _ownsRunMarker = false;
-                }
+                // 快照可供维护核对，但暂停不证明现场输出和在制品安全，仍保留独立运行标记。
             }
         }
 
@@ -282,7 +355,10 @@ namespace MotionControl.Host.Wpf.Recovery
                 TaskResourceRecoveryState resources = runtime == null ? TaskResourceRecoveryState.Clear : runtime.GetTaskResourceRecoveryState();
                 if (resources == TaskResourceRecoveryState.Blocked || resources == TaskResourceRecoveryState.Unknown)
                     return "任务资源尚待确认或状态未知，不能启动；请联系维护人员核对现场。";
-                if (_ownsRunMarker && !(_pausedWithHeldResources && runtime != null))
+                if (_ownsRunMarker && !(_pausedWithHeldResources && runtime != null)
+                    && !CanResumeCurrentTaskSession(runtime)
+                    && !CanResumeStationFlows(runtime)
+                    && !(CanReusePreparationMarker(runtime) && runtime.State == MachineRunState.Ready && runtime.IsPrepared))
                     return "上次运行尚未确认安全收尾，不能再次启动。请停止当前任务或设备，并联系维护人员核查设备、在制品和恢复记录。";
                 if (!_ownsRunMarker && resources == TaskResourceRecoveryState.Held)
                     return "任务仍持有资源但运行标记不属于当前会话，不能启动。";
@@ -299,6 +375,16 @@ namespace MotionControl.Host.Wpf.Recovery
                 if (reason != null) throw new InvalidOperationException(reason);
                 if (_ownsRunMarker)
                 {
+                    if (CanResumeCurrentTaskSession(runtime)) return;
+                    if (CanResumeStationFlows(runtime)) return;
+                    if (CanReusePreparationMarker(runtime) && runtime.State == MachineRunState.Ready && runtime.IsPrepared)
+                    {
+                        // 准备标记成为生产标记；任务执行必须重新绑定当前任务会话。
+                        _markerFromPreparation = false;
+                        _preparationRunRuntime = null;
+                        BindProductionSession(runtime);
+                        return;
+                    }
                     if (_pausedWithHeldResources && runtime != null)
                     {
                         _pausedWithHeldResources = false;
@@ -308,34 +394,45 @@ namespace MotionControl.Host.Wpf.Recovery
                 }
                 _recoveryStore.MarkAutomaticRun();
                 _ownsRunMarker = true;
-                _taskRunNeedsSettlement = runtime != null && runtime.IsTaskEngineControlClaimed;
+                _markerFromPreparation = false;
+                BindProductionSession(runtime);
             }
         }
 
         /// <summary>准备动作开始前使用同一持久标记，意外退出后保留旧恢复证据。</summary>
-        public void MarkBeforePreparation() { InvalidateBeforeAutomaticRun(); }
+        public void MarkBeforePreparation() { MarkBeforePreparation(null); }
 
         /// <summary>工位准备要求任务资源完全释放，不能借回零跨过待确认区域。</summary>
         public void MarkBeforePreparation(MachineRuntime runtime)
         {
-            if (runtime != null && runtime.GetTaskResourceRecoveryState() != TaskResourceRecoveryState.Clear)
-                throw new InvalidOperationException("任务资源仍被占用、待确认或状态未知，不能执行工位准备。");
-            InvalidateBeforeAutomaticRun(runtime);
+            lock (_runRecordSync)
+            {
+                if (!string.IsNullOrWhiteSpace(RecoveryBlockReason)) throw new InvalidOperationException(RecoveryBlockReason);
+                if (runtime != null && runtime.GetTaskResourceRecoveryState() != TaskResourceRecoveryState.Clear)
+                    throw new InvalidOperationException("任务资源仍被占用、待确认或状态未知，不能执行工位准备。");
+                if (_ownsRunMarker)
+                {
+                    if (CanReusePreparationMarker(runtime)) return;
+                    throw new InvalidOperationException("已有未确认的生产或准备记录，不能执行工位准备。");
+                }
+                _recoveryStore.MarkAutomaticRun();
+                _ownsRunMarker = true;
+                _markerFromPreparation = true;
+                _preparationRunRuntime = runtime;
+            }
         }
 
-        /// <summary>准备成功或受控停稳后保存当前变量，并撤销可能过时的旧流程断点。</summary>
+        /// <summary>准备收尾后保存变量并撤销旧断点；运行标记保留至进程结束。</summary>
         public void SaveAfterSafePreparation()
         {
             lock (_runRecordSync)
             {
-                if (!_ownsRunMarker || !string.IsNullOrWhiteSpace(RecoveryBlockReason))
-                    throw new InvalidOperationException("准备记录尚未建立或恢复信息不可信，不能解除标记。");
+                if (!_ownsRunMarker || !_markerFromPreparation || !string.IsNullOrWhiteSpace(RecoveryBlockReason))
+                    throw new InvalidOperationException("准备记录尚未建立或恢复信息不可信，不能保存准备结果。");
                 var document = CreateDocumentWithCurrentVariables(null);
                 document.CanResume = false;
                 document.ResumeBlockedReason = "设备准备已改变现场状态；旧工位断点不能直接续跑，请按设备工艺核对。";
                 SaveDocument(document);
-                _recoveryStore.ClearAutomaticRunMarker();
-                _ownsRunMarker = false;
             }
         }
 
@@ -346,7 +443,7 @@ namespace MotionControl.Host.Wpf.Recovery
             {
                 if (machineIsPaused && (runtime == null || runtime.State != MachineRunState.Paused || runtime.IsPreparing))
                     throw new InvalidOperationException("设备尚未确认暂停，不能保存暂停记录。");
-                if (_taskRunNeedsSettlement || (runtime != null && runtime.IsTaskEngineControlClaimed)) return;
+                if (_markerFromPreparation || _taskRunNeedsSettlement || (runtime != null && runtime.IsTaskEngineControlClaimed)) return;
                 if (runtime != null && runtime.GetTaskResourceRecoveryState() != TaskResourceRecoveryState.Clear) return;
                 // 未完成安全暂停时保留独立标记和原记录，不能把当前不确定状态写成可恢复。
                 if (_ownsRunMarker && !machineIsPaused) return;
@@ -361,11 +458,7 @@ namespace MotionControl.Host.Wpf.Recovery
                 }
 
                 SaveDocument(document);
-                if (_ownsRunMarker && machineIsPaused && string.IsNullOrWhiteSpace(RecoveryBlockReason))
-                {
-                    _recoveryStore.ClearAutomaticRunMarker();
-                    _ownsRunMarker = false;
-                }
+                // 保存停机快照不能代替现场状态核对，保留运行标记供下次启动检查。
             }
         }
 

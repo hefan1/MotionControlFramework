@@ -98,6 +98,38 @@ namespace MotionControl.Framework.Runtime.Machine
 
         /// <summary>观察并回收当前整机流程任务的后台任务。</summary>
         private Task _flowObserverTask = Task.CompletedTask;
+        /// <summary>当前控制卡连接周期的唯一标识；断卡后为空，重连会产生新标识。</summary>
+        private Guid? _connectionSessionId;
+
+        /// <summary>读取本次控制卡连接周期标识；同一 Runtime 对象重连也会改变。</summary>
+        public Guid? ConnectionSessionId { get { lock (_statusLock) return _connectionSessionId; } }
+
+        /// <summary>当前 C# 工位流程及报警交接均正常收尾；只用于同连接会话恢复，不能证明物理安全。</summary>
+        public bool IsStationFlowSettlementConfirmed
+        {
+            get
+            {
+                if (ConnectionSessionId == null || !_motionCards.IsConnected || ControlOwner != MachineControlOwner.StationFlows
+                    || State != MachineRunState.Ready || !_flowScheduler.IsSettlementConfirmed)
+                    return false;
+                Task observer = _flowObserverTask;
+                if (observer == null || observer.Status != TaskStatus.RanToCompletion) return false;
+                var drain = _alarmService as IMachineStopAlarmNotificationDrain;
+                if (drain == null) return false;
+                try
+                {
+                    Task notification = drain.WaitForStopNotificationDispatchAsync();
+                    if (notification == null) return false;
+                    if (notification.IsFaulted) { var ignored = notification.Exception; return false; }
+                    return notification.Status == TaskStatus.RanToCompletion;
+                }
+                catch (Exception error)
+                {
+                    System.Diagnostics.Trace.TraceError("核查工位报警收尾失败：" + error);
+                    return false;
+                }
+            }
+        }
 
         /// <summary>周期监控急停输入的后台任务。</summary>
         private Task _safetyMonitorTask = Task.CompletedTask;
@@ -369,14 +401,17 @@ namespace MotionControl.Framework.Runtime.Machine
                 EnsureState(MachineRunState.Disconnected, "只有断开状态的设备可以连接运动控制卡。");
                 try
                 {
+                    InvalidatePreparationRecordReuse();
                     _flowScheduler.ResetForNewConnection();
                     InvalidatePreparations("控制器已重新连接，请重新确认工位准备。");
                     await _motionCards.ConnectAsync(cancellationToken).ConfigureAwait(false);
+                    lock (_statusLock) _connectionSessionId = Guid.NewGuid();
                     SetStatus(MachineRunState.ResetRequired, null);
                     StartControlInputMonitor();
                 }
                 catch (Exception connectionError)
                 {
+                    lock (_statusLock) _connectionSessionId = null;
                     SetStatus(MachineRunState.Disconnected, connectionError);
                     throw;
                 }
@@ -406,6 +441,8 @@ namespace MotionControl.Framework.Runtime.Machine
                 }
 
                 EnsureNoManualOperationsInProgress("断开运动控制卡");
+                InvalidatePreparationRecordReuse();
+                lock (_statusLock) _connectionSessionId = null;
 
                 try
                 {
@@ -693,10 +730,33 @@ namespace MotionControl.Framework.Runtime.Machine
                             _flowScheduler.HasPendingInitialization,
                             cancellationToken)
                         .ConfigureAwait(false);
+                    Task previousObserver = _flowObserverTask;
+                    if (await Task.WhenAny(previousObserver, Task.Delay(_pauseTimeout, cancellationToken)).ConfigureAwait(false) != previousObserver)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        throw new TimeoutException("上一次工位状态与监控仍在收尾，不能启动。");
+                    }
+                    await previousObserver.ConfigureAwait(false);
+                    if (!IsStationFlowSettlementConfirmed)
+                        throw new InvalidOperationException("上一次工位流程或停机报警尚未确认收尾，不能启动。");
                     RecordBeforeAutomaticRun();
                     SetRunningIfNoStopAlarm();
                     StartEmergencyStopMonitor();
-                    var runTask = _flowScheduler.Start();
+                    var startGate = _alarmService as IMachineAlarmStartGate;
+                    if (startGate == null)
+                        throw new InvalidOperationException("报警服务不支持原子检查工位流程启动许可。");
+                    var activation = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    Task runTask = null;
+                    try
+                    {
+                        // 仅将可取消调度和异步内存许可一同提交；不会在报警锁线程调用设备。
+                        startGate.ExecuteWhenNoStopAlarm(() =>
+                        {
+                            runTask = _flowScheduler.Start(activation.Task);
+                            activation.TrySetResult(true);
+                        });
+                    }
+                    finally { if (runTask == null) activation.TrySetResult(true); }
                     MarkPreparationProductionStarted();
                     _flowObserverTask = ObserveFlowRunAsync(runTask);
 

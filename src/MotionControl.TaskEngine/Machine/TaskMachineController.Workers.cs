@@ -107,6 +107,7 @@ namespace MotionControl.TaskEngine.Machine
                 station.Detail = error.ToString();
                 AddFault(new TaskMachineFault(station.Configuration.StationId, error.Message, error.InnerException as TaskExecutionException));
                 runs = PauseAll(TaskMachineState.Pausing);
+                BeginPauseSettlement();
             }
 
             try
@@ -119,10 +120,12 @@ namespace MotionControl.TaskEngine.Machine
             {
                 lock (_sync)
                 {
-                    _state = TaskMachineState.Faulted;
+                    _pauseSettlementUnconfirmed = true;
+                    if (_state != TaskMachineState.Stopped && _state != TaskMachineState.Closed) _state = TaskMachineState.Faulted;
                     AddFault(new TaskMachineFault("WORKER_STOP_FAILED", "工位故障后等待轴受控停止失败：" + stopError.Message, null));
                 }
             }
+            finally { EndPauseSettlement(); }
         }
 
         /// <summary>故障节点收到复位启动许可后更新工位阶段，节点本身仍保留原调用身份。</summary>

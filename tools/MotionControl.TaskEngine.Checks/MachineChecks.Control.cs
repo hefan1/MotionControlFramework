@@ -129,9 +129,35 @@ namespace MotionControl.TaskEngine.Checks
                 Task pause = machine.PauseAsync();
                 Task alarm = machine.SetStopAlarmAsync("RACE", "暂停中出现停机报警", true);
                 CheckAssert.True(!pause.IsCompleted && !alarm.IsCompleted, "未等待停轴即完成暂停或报警处理。");
+                CheckAssert.True(!machine.IsPauseSettlementConfirmed, "并发报警与停轴仍在处理时不能确认收尾。");
+                CheckAssert.Throws(machine.Reset, "并发报警和停轴未收尾时不能复位。");
                 stopped.TrySetResult(true);
                 await Wait(Task.WhenAll(pause, alarm));
                 CheckAssert.True(machine.GetSnapshot().State == TaskMachineState.Faulted, "并发报警被暂停状态覆盖。");
+                CheckAssert.True(machine.IsPauseSettlementConfirmed, "并发报警和停轴已收尾后应允许核查恢复条件。");
+                machine.SetStopAlarm("RACE", "", false);
+                machine.Reset();
+                CheckAssert.True(machine.IsPauseSettlementConfirmed, "复位后的就绪状态应保留已收尾的判断。");
+                machine.Start();
+                var closeStop = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var closeRegistration = (IDisposable)typeof(TaskRun).GetMethod("RegisterPauseStopAction", flags)
+                    .Invoke(run, new object[] { new Func<Task>(() => closeStop.Task) });
+                try
+                {
+                    Task secondPause = machine.PauseAsync();
+                    Task close = machine.CloseAsync();
+                    await Task.Delay(50);
+                    CheckAssert.True(!secondPause.IsCompleted && !close.IsCompleted,
+                        "停轴收尾仍在途时关闭不能归还控制权。");
+                    CheckAssert.Throws(() => machine.SetStopAlarm("CLOSING", "关闭中报警", true),
+                        "已终止的会话不能在清理中登记新的停机处理。");
+                    CheckAssert.Throws(() => machine.SetStopAlarmAsync("CLOSING", "关闭中报警", true).GetAwaiter().GetResult(),
+                        "关闭中的会话不能通过异步入口登记新的停机处理。");
+                    closeStop.TrySetResult(true);
+                    await Wait(Task.WhenAll(secondPause, close));
+                    CheckAssert.True(machine.GetSnapshot().State == TaskMachineState.Closed, "停轴收尾后未关闭会话。");
+                }
+                finally { closeStop.TrySetResult(true); closeRegistration.Dispose(); }
             }
             finally { stopped.TrySetResult(true); registration.Dispose(); }
         }
@@ -152,9 +178,13 @@ namespace MotionControl.TaskEngine.Checks
             CheckAssert.True(!device.ReadAxis("X").IsBusy && machine.GetSnapshot().State == TaskMachineState.Stopped
                 && device.ReadResources().Single().State == TaskResourceState.Blocked, "终止没有停止动作或提前让出区域。");
             CheckAssert.Throws(machine.Reset, "终止会话被复位续跑。");
-            await Wait(machine.CloseAsync()); await Wait(machine.CloseAsync());
+            bool blocked = false;
+            try { await Wait(machine.CloseAsync()); }
+            catch (InvalidOperationException) { blocked = true; }
+            CheckAssert.True(blocked, "区域待确认时不能释放会话控制权。");
             string reason;
             CheckAssert.True(device.TryRecoverResources(device.ReadResources().Single().RequestId, "已核实内存区域", out reason), reason);
+            await Wait(machine.CloseAsync()); await Wait(machine.CloseAsync());
             var next = TaskDefinition("Next", TaskFixtures.Delay("next"));
             CheckAssert.True((await new TaskExecutionEngine().Start(next, device).Completion).State == TaskRunState.Completed, "关闭后仍未归还设备。");
         }

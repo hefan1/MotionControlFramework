@@ -19,7 +19,7 @@ namespace MotionControl.Preparation.Checks
         /// <summary>执行全部检查并返回失败退出码。</summary>
         private static int Main()
         {
-            try { RunAsync().GetAwaiter().GetResult(); Console.WriteLine("设备准备：12 组检查通过（仅内部逻辑检查）。"); return 0; }
+            try { RunAsync().GetAwaiter().GetResult(); Console.WriteLine("设备准备：17 组检查通过（仅内部逻辑检查）。"); return 0; }
             catch (Exception error) { Console.Error.WriteLine(error); return 1; }
         }
 
@@ -38,6 +38,205 @@ namespace MotionControl.Preparation.Checks
             await RunMarkerFailureBlocksBothOwnersAsync();
             await PreparationMarkerLifecycleAsync();
             await StopAlarmCannotBeOverwrittenByTaskPauseAsync();
+            await PreparationAlarmGateAsync();
+            await StationFlowStartAlarmGateAsync();
+            await StationFlowSettlementAndConnectionAsync();
+            await OldAlarmTimeoutDoesNotAffectNewRunAsync();
+            await OldPreparationStopDoesNotAffectNewRunAsync();
+        }
+
+        /// <summary>旧准备的报警停止请求迟到时，不得停止新的准备周期。</summary>
+        private static async Task OldPreparationStopDoesNotAffectNewRunAsync()
+        {
+            var fixture = new Fixture();
+            fixture.Runtime.ConfigurePreparations(new[] { new Preparation("Slow", fixture) { WaitUntilStopped = true } });
+            await fixture.ConnectAsync();
+            Task first = fixture.Runtime.PrepareAsync(null, CancellationToken.None);
+            await WaitAsync(() => fixture.Axis.Moving);
+            const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            var oldToken = (CancellationTokenSource)typeof(MachineRuntime).GetField("_preparationCancellation", flags).GetValue(fixture.Runtime);
+            await fixture.Runtime.StopPreparationAsync(CancellationToken.None);
+            try { await first; } catch (OperationCanceledException) { }
+            Task second = fixture.Runtime.PrepareAsync(null, CancellationToken.None);
+            await WaitAsync(() => fixture.Axis.Moving);
+            try
+            {
+                var stop = typeof(MachineRuntime).GetMethod("StopPreparationAsync", flags, null,
+                    new[] { typeof(CancellationToken), typeof(CancellationTokenSource) }, null);
+                await (Task)stop.Invoke(fixture.Runtime, new object[] { CancellationToken.None, oldToken });
+                Ensure(fixture.Runtime.IsPreparing && fixture.Axis.Moving && !second.IsCompleted,
+                    "旧准备的迟到停止请求影响了新的准备周期。");
+            }
+            finally
+            {
+                await fixture.Runtime.StopPreparationAsync(CancellationToken.None);
+                try { await second; } catch (OperationCanceledException) { }
+            }
+        }
+
+        /// <summary>旧一轮报警的超时任务不能把下一轮正在受控暂停的生产误报为超时。</summary>
+        private static async Task OldAlarmTimeoutDoesNotAffectNewRunAsync()
+        {
+            var flow = new DelayedSecondStopFlow();
+            var runtime = new MachineRuntime(new MotionCardGroup(new[] { new Card(new Axis()) }), new IStationFlow[] { flow },
+                new MachineAlarmService(), new Safety(), pauseTimeout: TimeSpan.FromMilliseconds(1000), safetyPollInterval: TimeSpan.FromMilliseconds(10));
+            await runtime.ConnectAsync(CancellationToken.None);
+            await runtime.ResetAsync(CancellationToken.None);
+            await runtime.StartAsync(CancellationToken.None);
+            await WaitAsync(() => flow.Executions == 1);
+            var alarm = new MachineAlarmDefinition("OLD_TIMER", "第一轮停机", MachineAlarmKind.StopMachine);
+            runtime.AlarmService.ReportCondition(alarm, "测试", true, "第一轮报警");
+            runtime.AlarmService.ReportCondition(alarm, "测试", false, "条件恢复");
+            await WaitAsync(() => runtime.State == MachineRunState.Alarmed);
+            await Task.Delay(700);
+            await runtime.ResetAsync(CancellationToken.None);
+            await runtime.StartAsync(CancellationToken.None);
+            await WaitAsync(() => flow.Executions == 2);
+            Task pause = runtime.PauseAsync(CancellationToken.None);
+            try
+            {
+                await flow.SecondStopEntered.Task;
+                await Task.Delay(450);
+                Ensure(runtime.State == MachineRunState.Pausing, "旧一轮报警超时错误影响了新一轮暂停。");
+            }
+            finally { flow.ReleaseSecondStop.TrySetResult(true); }
+            await pause;
+        }
+
+        /// <summary>仅同次控制器连接且工位、观察器及报警交接均已正常结束时可确认 C# 流程收尾。</summary>
+        private static async Task StationFlowSettlementAndConnectionAsync()
+        {
+            var fixture = new Fixture();
+            await fixture.ConnectAsync();
+            Guid? firstConnection = fixture.Runtime.ConnectionSessionId;
+            Ensure(firstConnection.HasValue, "控制器连接后未生成连接周期标识。");
+            await fixture.Runtime.ResetAsync(CancellationToken.None);
+            Ensure(fixture.Runtime.IsStationFlowSettlementConfirmed, "首次运行前工位应处于正常空闲状态。");
+            await fixture.Runtime.StartAsync(CancellationToken.None);
+            await WaitAsync(() => fixture.Flow.Executions > 0);
+            Ensure(!fixture.Runtime.IsStationFlowSettlementConfirmed, "生产运行中不能确认已收尾。");
+            var alarm = new MachineAlarmDefinition("FLOW_SETTLE", "检查停机", MachineAlarmKind.StopMachine);
+            fixture.Runtime.AlarmService.ReportCondition(alarm, "测试", true, "暂停流程");
+            fixture.Runtime.AlarmService.ReportCondition(alarm, "测试", false, "条件恢复");
+            await WaitAsync(() => fixture.Runtime.State == MachineRunState.Alarmed);
+            await fixture.Runtime.ResetAsync(CancellationToken.None);
+            await WaitAsync(() => fixture.Runtime.IsStationFlowSettlementConfirmed);
+            Ensure(fixture.Runtime.ConnectionSessionId == firstConnection, "同次连接的暂停恢复改变了连接标识。");
+            await fixture.Runtime.DisconnectAsync(CancellationToken.None);
+            Ensure(fixture.Runtime.ConnectionSessionId == null && !fixture.Runtime.IsStationFlowSettlementConfirmed,
+                "断开连接后不能沿用旧工位收尾凭据。");
+            await fixture.ConnectAsync();
+            Ensure(fixture.Runtime.ConnectionSessionId.HasValue && fixture.Runtime.ConnectionSessionId != firstConnection,
+                "控制器重连后没有生成新的连接周期标识。");
+
+            var disconnected = new Fixture();
+            await disconnected.ConnectAsync();
+            await disconnected.Runtime.ResetAsync(CancellationToken.None);
+            disconnected.Card.ForceOffline();
+            Ensure(disconnected.Runtime.ConnectionSessionId.HasValue && !disconnected.Runtime.IsStationFlowSettlementConfirmed,
+                "底层控制卡意外断线时不能沿用 C# 流程收尾凭据。");
+
+            var alarms = new MachineAlarmService();
+            var notificationEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var releaseNotification = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            alarms.StopAlarmRaised += (sender, args) => { notificationEntered.TrySetResult(true); releaseNotification.Task.GetAwaiter().GetResult(); };
+            var other = new MachineRuntime(new MotionCardGroup(new[] { new Card(new Axis()) }), new[] { new Flow() }, alarms, new Safety());
+            await other.ConnectAsync(CancellationToken.None);
+            await other.ResetAsync(CancellationToken.None);
+            Task report = Task.Run(() => alarms.ReportCondition(new MachineAlarmDefinition("PENDING_NOTIFY", "通知未交接", MachineAlarmKind.StopMachine), "测试", true, "测试"));
+            try
+            {
+                await notificationEntered.Task;
+                Ensure(other.State == MachineRunState.Ready && !other.IsStationFlowSettlementConfirmed,
+                    "报警已锁存但回调尚未交接时错误确认工位收尾。");
+            }
+            finally { releaseNotification.TrySetResult(true); await report; }
+
+            var failedFlow = new ThrowingStopFlow();
+            var failed = new MachineRuntime(new MotionCardGroup(new[] { new Card(new Axis()) }), new IStationFlow[] { failedFlow },
+                new MachineAlarmService(), new Safety());
+            await failed.ConnectAsync(CancellationToken.None);
+            await failed.ResetAsync(CancellationToken.None);
+            await failed.StartAsync(CancellationToken.None);
+            await failedFlow.Entered.Task;
+            await RejectAsync(() => failed.PauseAsync(CancellationToken.None), "停止回调抛错却允许确认安全暂停");
+            await failed.ResetAsync(CancellationToken.None);
+            Ensure(!failed.IsStationFlowSettlementConfirmed, "停止回调失败但后台任务退出后错误确认收尾。");
+        }
+
+        /// <summary>C# 流程许可前报警禁止启动；许可后报警须取消并完成工位收尾。</summary>
+        private static async Task StationFlowStartAlarmGateAsync()
+        {
+            var before = new Fixture();
+            await before.ConnectAsync();
+            await before.Runtime.ResetAsync(CancellationToken.None);
+            int reported = 0;
+            before.Runtime.StatusChanged += (sender, args) =>
+            {
+                if (before.Runtime.State == MachineRunState.Running && Interlocked.Exchange(ref reported, 1) == 0)
+                    before.Runtime.AlarmService.ReportCondition(new MachineAlarmDefinition("FLOW_BEFORE_GATE", "启动时停机", MachineAlarmKind.StopMachine), "测试", true, "许可前");
+            };
+            await RejectAsync(() => before.Runtime.StartAsync(CancellationToken.None), "启动许可前已报警却成功启动");
+            Ensure(reported == 1 && before.Flow.Executions == 0, "报警已锁存时 C# 工位仍执行了步骤。");
+
+            var alarm = new GatedAlarmService();
+            var flow = new Flow();
+            var runtime = new MachineRuntime(new MotionCardGroup(new[] { new Card(new Axis()) }), new[] { flow }, alarm, new Safety());
+            await runtime.ConnectAsync(CancellationToken.None);
+            await runtime.ResetAsync(CancellationToken.None);
+            alarm.ReportImmediatelyAfterStartGate = true;
+            await runtime.StartAsync(CancellationToken.None);
+            await WaitAsync(() => runtime.State == MachineRunState.Alarmed);
+            Ensure(runtime.State == MachineRunState.Alarmed, "许可提交后报警未使工位流程停止并进入报警。");
+        }
+
+        /// <summary>报警在准备许可提交前后发生时均不得覆盖报警或执行准备动作。</summary>
+        private static async Task PreparationAlarmGateAsync()
+        {
+            var before = new Fixture();
+            before.Runtime.ConfigurePreparations(new[] { new Preparation("A", before) });
+            var markerEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var releaseMarker = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            before.Runtime.SetPreparationRecordCallbacks(() => { markerEntered.TrySetResult(true); releaseMarker.Task.GetAwaiter().GetResult(); }, () => { });
+            await before.ConnectAsync();
+            Task attempt = Task.Run(() => before.Runtime.PrepareAsync(null, CancellationToken.None));
+            try
+            {
+                await markerEntered.Task;
+                var alarm = new MachineAlarmDefinition("PREP_BEFORE_GATE", "准备前停机", MachineAlarmKind.StopMachine);
+                before.Runtime.AlarmService.ReportCondition(alarm, "测试", true, "准备提交前");
+                releaseMarker.TrySetResult(true);
+                await RejectAsync(() => attempt, "报警后设备准备未被拒绝");
+                Ensure(before.Runtime.State == MachineRunState.Alarmed && before.Log.Count == 0 && !before.Runtime.IsPreparing,
+                    "准备前报警被覆盖，或准备动作已执行。");
+            }
+            finally { releaseMarker.TrySetResult(true); }
+
+            var after = new Fixture();
+            after.Runtime.ConfigurePreparations(new[] { new Preparation("A", after) });
+            await after.ConnectAsync();
+            int reported = 0;
+            after.Runtime.StatusChanged += (sender, args) =>
+            {
+                if (after.Runtime.State == MachineRunState.Preparing && Interlocked.Exchange(ref reported, 1) == 0)
+                    after.Runtime.AlarmService.ReportCondition(new MachineAlarmDefinition("PREP_AFTER_GATE", "准备启动停机", MachineAlarmKind.StopMachine), "测试", true, "准备许可已发布");
+            };
+            try { await after.Runtime.PrepareAsync(null, CancellationToken.None); }
+            catch (OperationCanceledException) { }
+            Ensure(reported == 1 && after.Log.Count == 0 && after.Runtime.State == MachineRunState.Alarmed,
+                "准备许可刚发布便收到报警时仍执行了准备动作或覆盖报警状态。");
+
+            var completing = new Fixture();
+            completing.Runtime.ConfigurePreparations(new[] { new Preparation("A", completing) });
+            completing.Runtime.SetPreparationRecordCallbacks(() => { }, () =>
+                completing.Runtime.AlarmService.ReportCondition(
+                    new MachineAlarmDefinition("PREP_FINISH_STOP", "准备结束停机", MachineAlarmKind.StopMachine), "测试", true, "结束记录提交期间"));
+            await completing.ConnectAsync();
+            await RejectAsync(() => completing.Runtime.PrepareAsync(null, CancellationToken.None), "准备结束期间报警却报告成功");
+            Ensure(completing.Log.Count == 1 && completing.Runtime.State == MachineRunState.Alarmed,
+                "准备结束期间的停机报警被覆盖成就绪。");
+            Ensure(!completing.Runtime.IsPreparationRecordReusable && !completing.Runtime.IsPrepared,
+                "准备结束记录保存期间发生报警，不能授予复用标记或准备完成资格。");
         }
 
         /// <summary>暂停提交与已报警状态使用同一锁；并发停机报警不能被覆盖成普通暂停。</summary>
@@ -71,7 +270,7 @@ namespace MotionControl.Preparation.Checks
         }
 
         /// <summary>提供可门控的报警读取，用于安排暂停检查与停机事件交错。</summary>
-        private sealed class GatedAlarmService : IMachineAlarmService
+        private sealed class GatedAlarmService : IMachineAlarmService, IMachineAlarmStartGate, IMachineStopAlarmNotificationDrain
         {
             /// <summary>实际的内存报警实现。</summary>
             private readonly MachineAlarmService _inner = new MachineAlarmService();
@@ -83,6 +282,8 @@ namespace MotionControl.Preparation.Checks
             internal readonly ManualResetEventSlim ReleaseCheck = new ManualResetEventSlim(false);
             /// <summary>停机事件处理已读取有效报警。</summary>
             internal readonly ManualResetEventSlim StopObserved = new ManualResetEventSlim(false);
+            /// <summary>启动门禁提交后立即上报报警，用于检查调度令牌已登记。</summary>
+            internal bool ReportImmediatelyAfterStartGate;
             /// <summary>只阻塞下一次报警读取。</summary>
             internal void Arm() { Interlocked.Exchange(ref _armed, 1); }
             /// <summary>当前报警快照。</summary>
@@ -113,6 +314,18 @@ namespace MotionControl.Preparation.Checks
             public void ResetStopAlarms() => _inner.ResetStopAlarms();
             /// <summary>检查报警条件。</summary>
             public void EnsureStopAlarmConditionsRecovered() => _inner.EnsureStopAlarmConditionsRecovered();
+            /// <summary>等待实际报警服务中的通知交接。</summary>
+            public Task WaitForStopNotificationDispatchAsync() => _inner.WaitForStopNotificationDispatchAsync();
+            /// <summary>转发原子门禁，并按需在退出门禁后同步注入停机报警。</summary>
+            public void ExecuteWhenNoStopAlarm(Action commit)
+            {
+                _inner.ExecuteWhenNoStopAlarm(commit);
+                if (ReportImmediatelyAfterStartGate)
+                {
+                    ReportImmediatelyAfterStartGate = false;
+                    _inner.ReportCondition(new MachineAlarmDefinition("FLOW_AFTER_GATE", "启动后停机", MachineAlarmKind.StopMachine), "测试", true, "许可后");
+                }
+            }
         }
 
         /// <summary>准备记录先于动作；成功或受控停稳后结束，执行/停轴/保存失败时保持。</summary>
@@ -124,7 +337,12 @@ namespace MotionControl.Preparation.Checks
             success.Runtime.SetPreparationRecordCallbacks(() => { Ensure(success.Log.Count == 0, "动作先于准备标记"); begins++; }, () => ends++);
             await success.ConnectAsync();
             await success.Runtime.PrepareAsync(null, CancellationToken.None);
-            Ensure(begins == 1 && ends == 1 && success.Runtime.IsPrepared, "准备成功未提交安全结束记录");
+            Ensure(begins == 1 && ends == 1 && success.Runtime.IsPrepared && success.Runtime.IsPreparationRecordReusable,
+                "准备成功未提交安全结束记录或未授予本会话标记沿用资格");
+            await success.Runtime.DisconnectAsync(CancellationToken.None);
+            Ensure(!success.Runtime.IsPreparationRecordReusable, "控制器断开后保留了旧准备标记沿用资格。");
+            await success.ConnectAsync();
+            Ensure(!success.Runtime.IsPreparationRecordReusable, "控制器重新连接后沿用了旧准备标记资格。");
 
             var cancelled = new Fixture();
             cancelled.Runtime.ConfigurePreparations(new[] { new Preparation("Slow", cancelled) { WaitUntilStopped = true } });
@@ -136,7 +354,8 @@ namespace MotionControl.Preparation.Checks
             Ensure(marked && !cleared, "运行中的准备未保留标记");
             await cancelled.Runtime.StopPreparationAsync(CancellationToken.None);
             try { await run; } catch (OperationCanceledException) { }
-            Ensure(cleared && !cancelled.Runtime.IsPreparing, "受控停止后未保存安全结束记录");
+            Ensure(cleared && !cancelled.Runtime.IsPreparing && cancelled.Runtime.IsPreparationRecordReusable,
+                "受控停止后未保存安全结束记录或未允许重新准备");
 
             var concurrent = new Fixture();
             concurrent.Runtime.ConfigurePreparations(new[] { new Preparation("Slow", concurrent) { WaitUntilStopped = true } });
@@ -412,6 +631,8 @@ namespace MotionControl.Preparation.Checks
         {
             /// <summary>可控轴替身。</summary>
             internal readonly Axis Axis = new Axis();
+            /// <summary>用于控制测试连接状态的运动卡替身。</summary>
+            internal readonly Card Card;
             /// <summary>可控安全输入。</summary>
             internal readonly Safety Safety = new Safety();
             /// <summary>记录准备的工位顺序。</summary>
@@ -421,7 +642,7 @@ namespace MotionControl.Preparation.Checks
             /// <summary>被检查的通用运行时。</summary>
             internal readonly MachineRuntime Runtime;
             /// <summary>创建无硬件环境。</summary>
-            internal Fixture(MachineControlOwner owner = MachineControlOwner.StationFlows) { Runtime = new MachineRuntime(new MotionCardGroup(new[] { new Card(Axis) }), new[] { Flow },
+            internal Fixture(MachineControlOwner owner = MachineControlOwner.StationFlows) { Card = new Card(Axis); Runtime = new MachineRuntime(new MotionCardGroup(new[] { Card }), new[] { Flow },
                 new MachineAlarmService(), Safety, pauseTimeout: TimeSpan.FromSeconds(1), safetyPollInterval: TimeSpan.FromMilliseconds(10), controlOwner: owner); }
             /// <summary>连接内存卡，不做物理动作。</summary>
             internal Task ConnectAsync() { return Runtime.ConnectAsync(CancellationToken.None); }
@@ -477,6 +698,8 @@ namespace MotionControl.Preparation.Checks
             public Task ConnectAsync(CancellationToken token) { IsConnected = true; return Task.CompletedTask; }
             /// <summary>标记断开。</summary>
             public Task DisconnectAsync(CancellationToken token) { IsConnected = false; return Task.CompletedTask; }
+            /// <summary>模拟底层通信突然断开，而不经过 Runtime 的主动断卡流程。</summary>
+            internal void ForceOffline() { IsConnected = false; }
         }
 
         /// <summary>提供运动/停止和未知状态的轴替身。</summary>
@@ -537,6 +760,57 @@ namespace MotionControl.Preparation.Checks
             /// <summary>进入生产后一直等待暂停令牌。</summary>
             public async Task ExecuteCurrentStepAsync(CancellationToken token) { Interlocked.Increment(ref Executions); await Task.Delay(Timeout.Infinite, token); }
             /// <summary>不重放生产步骤。</summary>
+            public Task ResetAsync(CancellationToken token) { return Task.CompletedTask; }
+        }
+
+        /// <summary>第一轮快速响应取消，第二轮受控延迟收尾以复现跨代定时器。</summary>
+        private sealed class DelayedSecondStopFlow : IStationFlow
+        {
+            /// <summary>已经开始执行的周期次数。</summary>
+            internal int Executions;
+            /// <summary>第二轮已收到停止。</summary>
+            internal readonly TaskCompletionSource<bool> SecondStopEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            /// <summary>允许第二轮结束。</summary>
+            internal readonly TaskCompletionSource<bool> ReleaseSecondStop = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            /// <summary>工位名称。</summary>
+            public string StationName => "延迟停止工位";
+            /// <summary>当前步骤说明。</summary>
+            public string CurrentStepName => "等待停止";
+            /// <summary>取消第二轮时先等待测试许可，再完成退出。</summary>
+            public async Task ExecuteCurrentStepAsync(CancellationToken token)
+            {
+                int run = Interlocked.Increment(ref Executions);
+                try { await Task.Delay(Timeout.Infinite, token); }
+                catch (OperationCanceledException) when (run == 2 && token.IsCancellationRequested)
+                {
+                    SecondStopEntered.TrySetResult(true);
+                    await ReleaseSecondStop.Task;
+                    throw;
+                }
+            }
+            /// <summary>测试流程没有额外复位动作。</summary>
+            public Task ResetAsync(CancellationToken token) { return Task.CompletedTask; }
+        }
+
+        /// <summary>取消回调异常的 C# 工位替身，用于验证失败不会被正常任务退出掩盖。</summary>
+        private sealed class ThrowingStopFlow : IStationFlow
+        {
+            /// <summary>工位已经注册取消回调。</summary>
+            internal readonly TaskCompletionSource<bool> Entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            /// <summary>工位名称。</summary>
+            public string StationName => "停止失败工位";
+            /// <summary>当前步骤说明。</summary>
+            public string CurrentStepName => "等待停止";
+            /// <summary>模拟停止回调返回异常，同时允许后台任务退出。</summary>
+            public async Task ExecuteCurrentStepAsync(CancellationToken token)
+            {
+                using (token.Register(() => { throw new InvalidOperationException("测试停止回调失败"); }))
+                {
+                    Entered.TrySetResult(true);
+                    await Task.Delay(Timeout.Infinite, token);
+                }
+            }
+            /// <summary>测试工位没有额外复位动作。</summary>
             public Task ResetAsync(CancellationToken token) { return Task.CompletedTask; }
         }
     }

@@ -32,6 +32,12 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
 
         /// <summary>当前并行工位任务；全部退出后由暂停流程清空。</summary>
         private Task _runTask;
+        /// <summary>已清理的最近一次调度是否完成安全收尾或只被轴未回零前置检查拒绝。</summary>
+        private bool _lastRunSettledSuccessfully = true;
+        /// <summary>取消回调失败会锁存，不能仅因调度任务退出就认定相关停止请求成功。</summary>
+        private bool _stopRequestFailed;
+        /// <summary>每次启动递增的运行代次，供迟到的暂停超时检查区分新旧运行。</summary>
+        private long _runGeneration;
 
         /// <summary>当前控制卡连接周期内，设备初始化是否已经完成。</summary>
         private bool _equipmentInitializationCompleted;
@@ -130,6 +136,8 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
                 {
                     throw new InvalidOperationException("设备流程仍在运行，不能开始新的控制卡连接周期。");
                 }
+                _runTask = null;
+                if (_runCancellation != null) { _runCancellation.Dispose(); _runCancellation = null; }
 
                 if (_equipmentInitializationFlow != null)
                 {
@@ -137,6 +145,8 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
                 }
 
                 _equipmentInitializationCompleted = false;
+                _lastRunSettledSuccessfully = true;
+                _stopRequestFailed = false;
             }
         }
 
@@ -201,7 +211,7 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
 
                 if (!allowHomingRequired && status.RequiresHomingAfterLimitAlarm)
                 {
-                    throw new InvalidOperationException(
+                    throw new AxisRequiresHomingException(
                         "逻辑轴 '" + axis.Name
                         + "' 曾触发硬限位，恢复后必须先完成回零，才能启动自动流程。");
                 }
@@ -440,8 +450,34 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
             }
         }
 
+        /// <summary>工位正常退出或仅被轴回零前置检查拒绝，才可作为同连接恢复条件之一。</summary>
+        public bool IsSettlementConfirmed
+        {
+            get
+            {
+                lock (_runSync)
+                    return !_stopRequestFailed && (_runTask == null ? _lastRunSettledSuccessfully : IsRunSettled(_runTask));
+            }
+        }
+
+        /// <summary>仅将已完成的普通退出及明确的未回零前置检查视为已结算；其他故障保持保守拦截。</summary>
+        private static bool IsRunSettled(Task run)
+        {
+            if (run.Status == TaskStatus.RanToCompletion) return true;
+            if (!run.IsFaulted || run.Exception == null) return false;
+            var errors = run.Exception.Flatten().InnerExceptions;
+            return errors.Count != 0 && errors.All(error => error is StationAxesNotHomedException || error is AxisRequiresHomingException);
+        }
+
+        /// <summary>轴限位后尚未回零的明确前置拒绝；本次不会启动生产工位。</summary>
+        private sealed class AxisRequiresHomingException : InvalidOperationException
+        {
+            /// <summary>记录需要回零的轴和处理说明。</summary>
+            internal AxisRequiresHomingException(string message) : base(message) { }
+        }
+
         /// <summary>把设备初始化和工位调度放到后台执行，避免初始化同步代码卡住界面线程。</summary>
-        public Task Start()
+        public Task Start(Task activation = null)
         {
             lock (_runSync)
             {
@@ -457,22 +493,39 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
 
                 var runCancellation = new CancellationTokenSource();
                 _runCancellation = runCancellation;
+                _lastRunSettledSuccessfully = false;
+                _runGeneration++;
                 // 不把暂停令牌交给 Task.Run；即使刚启动就暂停，也让调度方法运行并正常收尾。
-                _runTask = Task.Run(() => RunAllStationsAsync(runCancellation));
+                _runTask = Task.Run(async () =>
+                {
+                    // 启动许可发布前先登记可取消的运行；门禁持锁时不调用任何工位流程。
+                    if (activation != null) await activation.ConfigureAwait(false);
+                    if (runCancellation.IsCancellationRequested) return;
+                    await RunAllStationsAsync(runCancellation).ConfigureAwait(false);
+                });
                 return _runTask;
             }
         }
 
         /// <summary>从报警通知等同步事件中请求暂停，不等待当前初始化或工位步骤退出。</summary>
-        public void RequestPause()
+        public long RequestPause()
         {
             lock (_runSync)
             {
                 if (_runCancellation != null && _runTask != null && !_runTask.IsCompleted)
                 {
-                    _runCancellation.Cancel();
+                    try { _runCancellation.Cancel(); }
+                    catch { _stopRequestFailed = true; throw; }
+                    return _runGeneration;
                 }
+                return -1;
             }
+        }
+
+        /// <summary>检查指定代次是否仍在运行，旧周期的异步超时不能作用于新周期。</summary>
+        public bool IsRunActive(long generation)
+        {
+            lock (_runSync) return generation >= 0 && generation == _runGeneration && _runTask != null && !_runTask.IsCompleted;
         }
 
         /// <summary>请求当前初始化或所有工位暂停，并在指定时限内等待步骤退出。</summary>
@@ -503,6 +556,7 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
                 catch (Exception error)
                 {
                     cancellationError = error;
+                    _stopRequestFailed = true;
                 }
             }
 
@@ -537,6 +591,7 @@ namespace MotionControl.Framework.Runtime.FlowScheduling
                     {
                         if (ReferenceEquals(_runCancellation, cancellation))
                         {
+                            _lastRunSettledSuccessfully = !_stopRequestFailed && runError == null && IsRunSettled(runTask);
                             _runCancellation = null;
                             _runTask = null;
                             cancellation.Dispose();

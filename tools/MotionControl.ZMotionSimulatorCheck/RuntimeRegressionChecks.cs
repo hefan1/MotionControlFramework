@@ -72,7 +72,149 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("设备准备异常退出标记及安全停止", PreparationMarkerSurvivesUntilSafeStopAsync, failures);
             await RunCheckAsync("任务暂停保留证据并禁止未确认的续跑", TaskResourceMarkerSurvivesPauseAsync, failures);
             await RunCheckAsync("任务故障复位及会话关闭后保留未确认运行标记", FaultMarkerBlocksUnsafeRestartAsync, failures);
+            await RunCheckAsync("已结算任务仅同一会话允许续跑且保留运行证据", SettledTaskSessionCanResumeAsync, failures);
+            await RunCheckAsync("准备标记转为生产标记后不得借准备清除", PreparationMarkerBecomesTaskMarkerAsync, failures);
+            await RunCheckAsync("C# 工位报警复位仅同连接允许续跑并保留记录", StationFlowMarkerResumesSameConnectionAsync, failures);
             return failures.AsReadOnly();
+        }
+
+        /// <summary>验证 C# 工位报警复位续跑、运行记录持久保留和重连隔离。</summary>
+        private static async Task StationFlowMarkerResumesSameConnectionAsync()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "StationFlowResume_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var configuration = new MachineConfigurationStore(root);
+                var store = new MachineRecoveryStore(configuration, "Machine01");
+                var coordinator = new MachineRecoveryCoordinator(store, new DeviceVariableStore(new DeviceVariableDefinition[0]), "Machine01");
+                coordinator.Load(out string warning);
+                var alarms = new MachineAlarmService();
+                var flow = new WaitingStationFlow("工位", "等待工件");
+                var runtime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { new FakeMotionCard("CardA", new FakeAxis("X")) }),
+                    new IStationFlow[] { flow }, alarms, new FakeSafetyStatus());
+                runtime.SetBeforeAutomaticRun(() => coordinator.InvalidateBeforeAutomaticRun(runtime));
+                runtime.SetPreparationRecordCallbacks(() => coordinator.MarkBeforePreparation(runtime), coordinator.SaveAfterSafePreparation);
+                runtime.ConfigurePreparations(new[] { new RecoveryPreparationForCheck() });
+                runtime.StatusChanged += (sender, args) => { if (runtime.State == MachineRunState.Paused) coordinator.SavePausedCheckpoint(runtime); };
+                await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+                await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+                await runtime.PrepareAsync(null, CancellationToken.None).ConfigureAwait(false);
+                Ensure(store.HasUnfinishedAutomaticRun() && runtime.IsPrepared, "C# 设备准备没有保留标记或确认准备完成。");
+                await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+                await flow.WaitUntilStartedAsync().ConfigureAwait(false);
+                var alarm = new MachineAlarmDefinition("STATION_FEED_TIMEOUT", "等待供料超时", MachineAlarmKind.StopMachine);
+                alarms.ReportCondition(alarm, "工位", true, "上料未到位");
+                await WaitForStateAsync(runtime, MachineRunState.Alarmed).ConfigureAwait(false);
+                Ensure(store.HasUnfinishedAutomaticRun(), "工位报警后运行标记丢失。");
+                alarms.ReportCondition(alarm, "工位", false, "供料恢复");
+                await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+                Ensure(coordinator.GetAutomaticStartBlockReason(runtime) == null, "同一连接确认收尾后仍被错误拦截。");
+                await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+                Ensure(store.HasUnfinishedAutomaticRun(), "报警后续跑不应删除标记。");
+                await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+                Ensure(store.HasUnfinishedAutomaticRun(), "C# 正常暂停不应删除标记。");
+                await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+                await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+                await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+                Ensure(!string.IsNullOrWhiteSpace(coordinator.GetAutomaticStartBlockReason(runtime)), "断卡重连错误复用了旧连接的生产标记。");
+                await ExpectExceptionAsync<InvalidOperationException>(() => runtime.StartAsync(CancellationToken.None)).ConfigureAwait(false);
+                Ensure(store.HasUnfinishedAutomaticRun(), "断卡重连不得删除旧运行标记。");
+                var restarted = new MachineRecoveryCoordinator(store, new DeviceVariableStore(new DeviceVariableDefinition[0]), "Machine01");
+                restarted.Load(out warning);
+                Ensure(!string.IsNullOrWhiteSpace(restarted.RecoveryBlockReason), "进程重启不得复用旧连接的收尾确认。");
+                await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+        }
+
+        /// <summary>准备记录仅可在同一 Runtime 内作为生产起点，生产后不能借准备清除证据。</summary>
+        private static async Task PreparationMarkerBecomesTaskMarkerAsync()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "PreparationToTask_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var configuration = new MachineConfigurationStore(root);
+                var store = new MachineRecoveryStore(configuration, "Machine01");
+                var coordinator = new MachineRecoveryCoordinator(store, new DeviceVariableStore(new DeviceVariableDefinition[0]), "Machine01");
+                coordinator.Load(out string warning);
+                var runtime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { new FakeMotionCard("CardA", new FakeAxis("X")) }),
+                    new IStationFlow[0], new MachineAlarmService(), new FakeSafetyStatus(), controlOwner: MachineControlOwner.TaskEngine);
+                var owner = new RecoveryResourceOwner();
+                object session = new object();
+                coordinator.SetTaskSessionSettlementQueries(() => session, current => true);
+                runtime.SetBeforeAutomaticRun(() => coordinator.InvalidateBeforeAutomaticRun(runtime));
+                runtime.SetPreparationRecordCallbacks(() => coordinator.MarkBeforePreparation(runtime), coordinator.SaveAfterSafePreparation);
+                runtime.ConfigurePreparations(new[] { new RecoveryPreparationForCheck() });
+                await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+                await runtime.PrepareAsync(null, CancellationToken.None).ConfigureAwait(false);
+                Ensure(store.HasUnfinishedAutomaticRun() && runtime.IsPreparationRecordReusable, "准备结束未保留可确认的运行记录。");
+                await runtime.AcquireTaskEngineControlAsync(owner, CancellationToken.None).ConfigureAwait(false);
+                await runtime.BeginTaskEngineRunAsync(CancellationToken.None).ConfigureAwait(false);
+                Ensure(store.HasUnfinishedAutomaticRun(), "准备转生产时错误清除了运行标记。");
+                await runtime.FinishTaskEngineRunAsync(false, null).ConfigureAwait(false);
+                await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+                try
+                {
+                    coordinator.MarkBeforePreparation(runtime);
+                    throw new InvalidOperationException("生产标记被错误复用为准备标记。");
+                }
+                catch (InvalidOperationException error) when (error.Message.Contains("已有未确认")) { }
+                Ensure(store.HasUnfinishedAutomaticRun(), "准备操作不得清除生产运行标记。");
+                runtime.ReleaseTaskEngineControl(owner);
+            }
+            finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+        }
+
+        /// <summary>模拟同一任务会话完成收尾，以及结算失败、会话变更和进程重启。</summary>
+        private static async Task SettledTaskSessionCanResumeAsync()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "TaskSessionResume_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var configuration = new MachineConfigurationStore(root);
+                var store = new MachineRecoveryStore(configuration, "Machine01");
+                var coordinator = new MachineRecoveryCoordinator(store, new DeviceVariableStore(new DeviceVariableDefinition[0]), "Machine01");
+                coordinator.Load(out string warning);
+                var runtime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { new FakeMotionCard("CardA", new FakeAxis("X")) }),
+                    new IStationFlow[0], new MachineAlarmService(), new FakeSafetyStatus(), controlOwner: MachineControlOwner.TaskEngine);
+                var owner = new RecoveryResourceOwner();
+                object session = new object();
+                bool settled = false;
+                coordinator.SetTaskSessionSettlementQueries(() => session, current => settled);
+                runtime.SetBeforeAutomaticRun(() => coordinator.InvalidateBeforeAutomaticRun(runtime));
+                await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+                await runtime.AcquireTaskEngineControlAsync(owner, CancellationToken.None).ConfigureAwait(false);
+                await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+                await runtime.BeginTaskEngineRunAsync(CancellationToken.None).ConfigureAwait(false);
+                await runtime.FinishTaskEngineRunAsync(false, null).ConfigureAwait(false);
+                coordinator.SavePausedCheckpoint(runtime);
+                await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+                await ExpectExceptionAsync<InvalidOperationException>(() => runtime.BeginTaskEngineRunAsync(CancellationToken.None)).ConfigureAwait(false);
+                settled = true;
+                owner.State = TaskResourceRecoveryState.Blocked;
+                await ExpectExceptionAsync<InvalidOperationException>(() => runtime.BeginTaskEngineRunAsync(CancellationToken.None)).ConfigureAwait(false);
+                owner.State = TaskResourceRecoveryState.Clear;
+                Ensure(coordinator.GetAutomaticStartBlockReason(runtime) == null, "已结算同一会话仍被错误阻止。");
+                try
+                {
+                    coordinator.MarkBeforePreparation(runtime);
+                    throw new InvalidOperationException("生产运行标记被错误地作为准备标记复用。");
+                }
+                catch (InvalidOperationException error) when (error.Message.Contains("已有未确认")) { }
+                Ensure(store.HasUnfinishedAutomaticRun(), "准备请求不得替代生产运行记录。");
+                await runtime.BeginTaskEngineRunAsync(CancellationToken.None).ConfigureAwait(false);
+                Ensure(store.HasUnfinishedAutomaticRun(), "同会话续跑不应移除运行标记。");
+                await runtime.FinishTaskEngineRunAsync(false, null).ConfigureAwait(false);
+                await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+                session = new object();
+                await ExpectExceptionAsync<InvalidOperationException>(() => runtime.BeginTaskEngineRunAsync(CancellationToken.None)).ConfigureAwait(false);
+                var restarted = new MachineRecoveryCoordinator(store, new DeviceVariableStore(new DeviceVariableDefinition[0]), "Machine01");
+                restarted.Load(out warning);
+                Ensure(!string.IsNullOrWhiteSpace(restarted.RecoveryBlockReason), "重启后不得借用旧进程的收尾确认。");
+                Ensure(store.HasUnfinishedAutomaticRun(), "跨会话检查不得清除运行标记。");
+                runtime.ReleaseTaskEngineControl(owner);
+            }
+            finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
         }
 
         /// <summary>尚无全路径收尾证据时，故障复位或另开会话不能绕过原运行标记。</summary>
@@ -178,7 +320,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             public TaskResourceRecoveryState GetResourceRecoveryState() { return State; }
         }
 
-        /// <summary>自动运行前先持久化标记；运行中重启被阻止，安全暂停并保存后才移除。</summary>
+        /// <summary>自动运行与暂停后均保留标记；重启和新的连接周期不能自动复用现场状态。</summary>
         private static async Task RunMarkerSurvivesUntilSafePauseAsync()
         {
             string root = Path.Combine(Path.GetTempPath(), "MachineRunMarker_" + Guid.NewGuid().ToString("N"));
@@ -195,7 +337,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 string previous = File.ReadAllText(snapshotPath);
                 var runtime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { new FakeMotionCard("CardA", new FakeAxis("X")) }),
                     new IStationFlow[] { new WaitingStationFlow("工位", "等待") }, new MachineAlarmService(), new FakeSafetyStatus());
-                runtime.SetBeforeAutomaticRun(coordinator.InvalidateBeforeAutomaticRun);
+                runtime.SetBeforeAutomaticRun(() => coordinator.InvalidateBeforeAutomaticRun(runtime));
                 runtime.StatusChanged += (sender, args) => { if (runtime.State == MachineRunState.Paused) coordinator.SavePausedCheckpoint(runtime); };
                 await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
                 await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
@@ -208,10 +350,10 @@ namespace MotionControl.ZMotionSimulatorCheck
                 catch (InvalidOperationException error) when (error.Message.Contains("只有设备已受控暂停")) { }
                 Ensure(store.HasUnfinishedAutomaticRun(), "运行中错误移除了标记。");
                 await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
-                Ensure(!store.HasUnfinishedAutomaticRun(), "安全暂停并保存后标记未清除。");
+                Ensure(store.HasUnfinishedAutomaticRun(), "暂停后不得删除运行标记。");
                 var afterPause = new MachineRecoveryCoordinator(store, new DeviceVariableStore(new DeviceVariableDefinition[0]), "Machine01");
                 afterPause.Load(out warning);
-                Ensure(afterPause.RecoveryBlockReason == null, "受控暂停后的检查点错误被标为异常退出。");
+                Ensure(!string.IsNullOrWhiteSpace(afterPause.RecoveryBlockReason), "进程重启不得自动使用旧运行标记。");
                 await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
             }
             finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
@@ -235,7 +377,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                     new IStationFlow[] { new WaitingStationFlow("工位", "等待") }, new MachineAlarmService(), new FakeSafetyStatus());
                 var preparation = new RecoveryPreparationForCheck { WaitForCancel = true };
                 runtime.ConfigurePreparations(new[] { preparation });
-                runtime.SetPreparationRecordCallbacks(coordinator.MarkBeforePreparation, coordinator.SaveAfterSafePreparation);
+                runtime.SetPreparationRecordCallbacks(() => coordinator.MarkBeforePreparation(runtime), coordinator.SaveAfterSafePreparation);
                 await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
                 Task preparing = runtime.PrepareAsync(null, CancellationToken.None);
                 for (int index = 0; index < 200 && !preparation.Executing; index++) await Task.Delay(10).ConfigureAwait(false);
@@ -246,21 +388,32 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(!string.IsNullOrWhiteSpace(afterCrash.RecoveryBlockReason), "准备中意外退出未被拦截。");
                 await runtime.StopPreparationAsync(CancellationToken.None).ConfigureAwait(false);
                 try { await preparing.ConfigureAwait(false); } catch (OperationCanceledException) { }
-                Ensure(!store.HasUnfinishedAutomaticRun(), "受控停止准备并保存后标记未移除。");
+                Ensure(store.HasUnfinishedAutomaticRun(), "受控停止准备后必须保留运行标记。");
                 var saved = store.Load(out warning);
                 Ensure(!saved.CanResume && saved.ResumeBlockedReason.Contains("设备准备"), "安全停止准备后旧工步仍允许续跑。");
                 preparation.WaitForCancel = false;
                 await runtime.PrepareAsync(null, CancellationToken.None).ConfigureAwait(false);
-                Ensure(!store.HasUnfinishedAutomaticRun() && runtime.IsPrepared, "准备成功未移除标记或未通过验收。");
+                Ensure(store.HasUnfinishedAutomaticRun() && runtime.IsPrepared, "准备成功后应保留标记并通过验收。");
+                Ensure(coordinator.GetAutomaticStartBlockReason(runtime) == null, "已确认完成的准备应允许同 Runtime 启动生产。");
                 await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
 
+                var failedStore = new MachineRecoveryStore(new MachineConfigurationStore(Path.Combine(root, "failed")), "Machine01");
+                var failedCoordinator = new MachineRecoveryCoordinator(failedStore, new DeviceVariableStore(new DeviceVariableDefinition[0]), "Machine01");
+                failedCoordinator.Load(out warning);
                 var failed = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { new FakeMotionCard("CardB", new FakeAxis("Y")) }),
                     new IStationFlow[] { new WaitingStationFlow("工位", "等待") }, new MachineAlarmService(), new FakeSafetyStatus());
+                try
+                {
+                    coordinator.MarkBeforePreparation(failed);
+                    throw new InvalidOperationException("其他 Runtime 错误复用了已有准备标记。");
+                }
+                catch (InvalidOperationException error) when (error.Message.Contains("已有未确认")) { }
+                Ensure(store.HasUnfinishedAutomaticRun(), "其他 Runtime 不得清除已有准备记录。");
                 failed.ConfigurePreparations(new[] { new RecoveryPreparationForCheck { ThrowDuringExecute = true } });
-                failed.SetPreparationRecordCallbacks(coordinator.MarkBeforePreparation, coordinator.SaveAfterSafePreparation);
+                failed.SetPreparationRecordCallbacks(() => failedCoordinator.MarkBeforePreparation(failed), failedCoordinator.SaveAfterSafePreparation);
                 await failed.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
                 await ExpectExceptionAsync<InvalidOperationException>(() => failed.PrepareAsync(null, CancellationToken.None)).ConfigureAwait(false);
-                Ensure(store.HasUnfinishedAutomaticRun(), "准备失败错误清除了标记。");
+                Ensure(failedStore.HasUnfinishedAutomaticRun(), "准备失败错误清除了标记。");
             }
             finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
         }

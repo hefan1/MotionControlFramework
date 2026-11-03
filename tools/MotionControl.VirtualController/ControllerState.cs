@@ -28,6 +28,8 @@ namespace MotionControl.VirtualController
         private readonly Dictionary<int, FeedbackRule> _feedback = new Dictionary<int, FeedbackRule>();
         /// <summary>当前上料循环规则；未启用时不自动改变供料输入。</summary>
         private readonly FeederRule _feeder = new FeederRule();
+        /// <summary>一次性命令故障，键为命令名及对应的物理轴号或 IO 通道号。</summary>
+        private readonly Dictionary<string, CommandFault> _commandFaults = new Dictionary<string, CommandFault>();
         /// <summary>租约计时使用的单调时钟，不受系统时间调整影响。</summary>
         private readonly Stopwatch _leaseClock = Stopwatch.StartNew();
         /// <summary>当前运动控制所有者的随机标识；为空表示没有所有者。</summary>
@@ -48,10 +50,37 @@ namespace MotionControl.VirtualController
         {
             if (request == null) throw new ArgumentNullException(nameof(request));
             string command = RequireString(request, "command");
+            CommandFault fault = null;
+            JObject result;
             lock (_sync)
             {
                 ExpireLeaseIfNeeded();
                 if (RequiresLease(command)) RequireLease(request);
+                fault = TakeCommandFault(command, request);
+                if (fault != null && fault.Mode == "reject")
+                    throw new InvalidOperationException("测试注入：" + command + " 在执行前被拒绝。");
+                result = fault != null && fault.Mode == "delayBefore" ? null : ExecuteLocked(command, request);
+            }
+            // 故障仅影响该次应答，绝不持有状态锁等待，否则心跳和独立停轴也会被人为卡死。
+            if (fault != null && fault.Mode == "delayBefore")
+            {
+                Thread.Sleep(fault.DelayMilliseconds);
+                lock (_sync)
+                {
+                    ExpireLeaseIfNeeded();
+                    if (RequiresLease(command)) RequireLease(request);
+                    result = ExecuteLocked(command, request);
+                }
+            }
+            if (fault != null && fault.Mode == "delayReply") Thread.Sleep(fault.DelayMilliseconds);
+            if (fault != null && fault.Mode == "errorAfter")
+                throw new InvalidOperationException("测试注入：" + command + " 已执行，但返回失败。");
+            return result;
+        }
+
+        /// <summary>在持有状态锁时执行控制器命令；调用者负责租约和故障注入。</summary>
+        private JObject ExecuteLocked(string command, JObject request)
+        {
                 switch (command)
                 {
                     case "ping": return new JObject
@@ -88,10 +117,86 @@ namespace MotionControl.VirtualController
                     case "configureFeeder": ConfigureFeeder(request); return Ok();
                     case "setFeederFault": SetFeederFault(request); return Ok();
                     case "readFeeder": return ReadFeeder();
+                    case "setCommandFault": SetCommandFault(request); return Ok();
+                    case "clearCommandFault": ClearCommandFault(request); return Ok();
+                    case "readCommandFault": return ReadCommandFault(request);
                     default: throw new InvalidOperationException("不支持控制器命令：" + command);
                 }
+        }
+
+        /// <summary>明确故障支持的命令及其物理通道字段，防止误注入心跳或租约命令。</summary>
+        private static string FaultIndexField(string command)
+        {
+            switch (command)
+            {
+                case "readInput":
+                case "readOutput":
+                case "writeOutput": return "channel";
+                case "readAxis":
+                case "stop": return "axis";
+                default: throw new ArgumentException("不支持对命令注入故障：" + command);
             }
         }
+
+        /// <summary>配置下一次匹配请求的响应故障；执行后的失败不回滚设备状态。</summary>
+        private void SetCommandFault(JObject request)
+        {
+            string command = RequireString(request, "targetCommand");
+            string indexField = FaultIndexField(command);
+            int index = RequireInt(request, "targetIndex");
+            if (index < 0 || index >= (indexField == "axis" ? AxisCount : IoCount))
+                throw new ArgumentOutOfRangeException("targetIndex", "故障目标超出控制器通道范围。");
+            string mode = RequireString(request, "mode");
+            if (mode != "reject" && mode != "errorAfter" && mode != "delayReply" && mode != "delayBefore")
+                throw new ArgumentException("故障模式仅支持 reject、errorAfter、delayReply 或 delayBefore。");
+            if (mode == "errorAfter" && command != "writeOutput" && command != "stop")
+                throw new ArgumentException("执行后失败仅支持写输出和停止轴。");
+            int delay = RequireInt(request, "delayMs");
+            if (delay < 0 || delay > 30000 || ((mode == "delayReply" || mode == "delayBefore") && delay == 0))
+                throw new ArgumentOutOfRangeException("delayMs", "响应延迟须在 0 到 30000 毫秒内，延迟模式不能为零。");
+            _commandFaults[FaultKey(command, index)] = new CommandFault { Mode = mode, DelayMilliseconds = delay };
+        }
+
+        /// <summary>清除指定命令与通道上尚未触发的一次性故障。</summary>
+        private void ClearCommandFault(JObject request)
+        {
+            string command = RequireString(request, "targetCommand");
+            FaultIndexField(command);
+            _commandFaults.Remove(FaultKey(command, RequireInt(request, "targetIndex")));
+        }
+
+        /// <summary>查询故障是否仍待触发，不改变控制器状态。</summary>
+        private JObject ReadCommandFault(JObject request)
+        {
+            string command = RequireString(request, "targetCommand");
+            FaultIndexField(command);
+            int index = RequireInt(request, "targetIndex");
+            CommandFault fault;
+            bool configured = _commandFaults.TryGetValue(FaultKey(command, index), out fault);
+            return new JObject { ["ok"] = true, ["configured"] = configured,
+                ["mode"] = configured ? fault.Mode : null, ["delayMs"] = configured ? fault.DelayMilliseconds : 0 };
+        }
+
+        /// <summary>原子取出并消费匹配故障；其它轴或通道不会受到影响。</summary>
+        private CommandFault TakeCommandFault(string command, JObject request)
+        {
+            string field;
+            switch (command)
+            {
+                case "readInput": case "readOutput": case "writeOutput": field = "channel"; break;
+                case "readAxis": case "stop": field = "axis"; break;
+                default: return null;
+            }
+            int index = RequireInt(request, field);
+            string key = FaultKey(command, index);
+            CommandFault fault;
+            if (!_commandFaults.TryGetValue(key, out fault)) return null;
+            _commandFaults.Remove(key);
+            return fault;
+        }
+
+        /// <summary>构造命令和通道组成的稳定键。</summary>
+        private static string FaultKey(string command, int index) { return command + ":" + index; }
 
         /// <summary>判断会改变轴或输出的生产命令是否必须持有租约。</summary>
         private static bool RequiresLease(string command)

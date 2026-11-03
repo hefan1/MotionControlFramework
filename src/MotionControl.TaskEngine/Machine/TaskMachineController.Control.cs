@@ -37,10 +37,16 @@ namespace MotionControl.TaskEngine.Machine
             lock (_sync)
             {
                 ValidateResetConditions(true);
+            }
+            AlarmService.ResetStopAlarms();
+            lock (_sync)
+            {
+                // 报警复位可能失败或与新报警并发；只能在全部检查完成后发布就绪。
+                AlarmService.EnsureStopAlarmConditionsRecovered();
+                ValidateResetConditions(true);
                 _faults.Clear();
                 _state = TaskMachineState.Ready;
             }
-            AlarmService.ResetStopAlarms();
         }
 
         /// <summary>检查任务复位条件；Runtime 复位前允许仍待清除的轴报警存在。</summary>
@@ -50,8 +56,9 @@ namespace MotionControl.TaskEngine.Machine
             if (_preparationActive) throw new InvalidOperationException("工位准备正在执行，请先停止回零再复位。");
             if (_state == TaskMachineState.Running || _state == TaskMachineState.Pausing)
                 throw new InvalidOperationException("请先暂停整机并确认所有轴已停稳，再复位。");
-            if (AllStations().Any(station => station.CurrentRun != null && station.CurrentRun.HasUnsettledPauseOperations)
-                || _device.Resources.HasPendingJournalWrites)
+            if (_device.ReadResources().Any(resource => resource.State == TaskResourceState.Blocked))
+                throw new InvalidOperationException("存在待确认区域，请先核实并显式恢复资源。");
+            if (HasUnsettledPauseWork())
                 throw new InvalidOperationException("任务仍有未完成的设备操作或资源记录，不能确认安全；请等待收尾并检查现场。");
             if (_activeStopAlarms.Count != 0) throw new InvalidOperationException("停机条件仍有效：" + string.Join("；", _activeStopAlarms.Values));
             var axesRequiringHome = new HashSet<string>(GetAxesRequiringPreHome(), StringComparer.OrdinalIgnoreCase);
@@ -68,8 +75,6 @@ namespace MotionControl.TaskEngine.Machine
                     if (!axis.Homed) throw new InvalidOperationException("任务使用的轴尚未回零：" + name + "。请在轴手动页面回零后再复位任务。");
                 }
             }
-            if (_device.ReadResources().Any(resource => resource.State == TaskResourceState.Blocked))
-                throw new InvalidOperationException("存在待确认区域，请先核实并显式恢复资源。");
             if (AllStations().Any(station => station.Unrecoverable))
                 throw new InvalidOperationException("执行器已终止，无法证明当前步骤可以恢复；请终止并核实生产状态。");
         }
@@ -87,22 +92,34 @@ namespace MotionControl.TaskEngine.Machine
             {
                 RequireOpen();
                 if (_state != TaskMachineState.Ready) throw new InvalidOperationException("必须先复位到就绪状态再启动。");
+                if (HasUnsettledPauseWork())
+                    throw new InvalidOperationException("任务停止或故障处理仍未确认收尾，不能启动。");
                 EnsurePreparationCompletedForStart();
-                _state = TaskMachineState.Running;
-                foreach (StationExecutionControl station in AllStations())
-                {
-                    station.CurrentRun?.Resume();
-                    station.RecoveryPermit?.TrySetResult(true);
-                    station.RecoveryPermit = null;
-                }
-                _runningPermit.TrySetResult(true);
-                if (!_workersStarted)
-                {
-                    _workersStarted = true;
-                    if (_initialization != null) _workers.Add(Task.Run(() => RunInitializationAsync(_lifetime.Token)));
-                    foreach (StationExecutionControl station in _stations.Where(item => item.Configuration.Enabled))
-                        _workers.Add(Task.Run(() => RunStationAsync(station, _lifetime.Token)));
-                }
+                var startGate = AlarmService as IMachineAlarmStartGate;
+                if (startGate == null)
+                    throw new InvalidOperationException("报警服务不支持原子检查并发放启动许可，不能启动任务。");
+                // 只在报警服务锁内提交内存许可，不访问设备或等待后台任务。
+                startGate.ExecuteWhenNoStopAlarm(CommitStart);
+            }
+        }
+
+        /// <summary>原子门禁内提交运行许可；调用方已经持有整机锁和报警启动门禁。</summary>
+        private void CommitStart()
+        {
+            _state = TaskMachineState.Running;
+            foreach (StationExecutionControl station in AllStations())
+            {
+                station.CurrentRun?.Resume();
+                station.RecoveryPermit?.TrySetResult(true);
+                station.RecoveryPermit = null;
+            }
+            _runningPermit.TrySetResult(true);
+            if (!_workersStarted)
+            {
+                _workersStarted = true;
+                if (_initialization != null) _workers.Add(Task.Run(() => RunInitializationAsync(_lifetime.Token)));
+                foreach (StationExecutionControl station in _stations.Where(item => item.Configuration.Enabled))
+                    _workers.Add(Task.Run(() => RunStationAsync(station, _lifetime.Token)));
             }
         }
 
@@ -132,6 +149,7 @@ namespace MotionControl.TaskEngine.Machine
                 if (_state == TaskMachineState.Faulted) return;
                 if (_state != TaskMachineState.Running) throw new InvalidOperationException("只有自动运行状态可以暂停。");
                 runs = PauseAll(TaskMachineState.Pausing);
+                BeginPauseSettlement();
             }
 
             try
@@ -145,12 +163,14 @@ namespace MotionControl.TaskEngine.Machine
             {
                 lock (_sync)
                 {
-                    _state = TaskMachineState.Faulted;
+                    _pauseSettlementUnconfirmed = true;
+                    if (_state != TaskMachineState.Stopped && _state != TaskMachineState.Closed) _state = TaskMachineState.Faulted;
                     AddFault(new TaskMachineFault("PAUSE_STOP_FAILED", "暂停时等待轴受控停止失败：" + stopError.Message, null));
                 }
 
                 throw new InvalidOperationException("暂停未能确认所有轴已停稳；整机已锁定为故障状态。", stopError);
             }
+            finally { EndPauseSettlement(); }
         }
 
         /// <summary>更新外部停机条件；解除条件后仍须复位，不能自动继续。</summary>
@@ -164,17 +184,19 @@ namespace MotionControl.TaskEngine.Machine
         /// <summary>锁存外部停机条件并等待所有真实轴受控停止。</summary>
         public async Task SetStopAlarmAsync(string code, string message, bool active)
         {
-            TaskRun[] runs = SetStopAlarmCore(code, message, active, true, TaskMachineState.Pausing);
+            TaskRun[] runs = SetStopAlarmCore(code, message, active, true, TaskMachineState.Pausing, active);
             try { await StopPausedRunsAsync(runs).ConfigureAwait(false); }
             catch (Exception error)
             {
                 lock (_sync)
                 {
-                    _state = TaskMachineState.Faulted;
+                    _pauseSettlementUnconfirmed = true;
+                    if (_state != TaskMachineState.Stopped && _state != TaskMachineState.Closed) _state = TaskMachineState.Faulted;
                     AddFault(new TaskMachineFault("ALARM_STOP_FAILED", "停机报警收尾未确认：" + error.Message, null));
                 }
                 throw;
             }
+            finally { if (active) EndPauseSettlement(); }
             if (active)
                 lock (_sync)
                     if (_state == TaskMachineState.Pausing || _state == TaskMachineState.Paused) _state = TaskMachineState.Faulted;
@@ -183,7 +205,7 @@ namespace MotionControl.TaskEngine.Machine
         /// <summary>只记录报警快照，报警条件状态仍由共享设备报警服务负责。</summary>
         private async Task HandleAlarmServiceStopAsync(string code, string message)
         {
-            TaskRun[] runs = SetStopAlarmCore(code, message, true, false, TaskMachineState.Pausing);
+            TaskRun[] runs = SetStopAlarmCore(code, message, true, false, TaskMachineState.Pausing, true);
             try
             {
                 await StopPausedRunsAsync(runs).ConfigureAwait(false);
@@ -194,11 +216,13 @@ namespace MotionControl.TaskEngine.Machine
             {
                 lock (_sync)
                 {
-                    _state = TaskMachineState.Faulted;
+                    _pauseSettlementUnconfirmed = true;
+                    if (_state != TaskMachineState.Stopped && _state != TaskMachineState.Closed) _state = TaskMachineState.Faulted;
                     AddFault(new TaskMachineFault("ALARM_STOP_FAILED", "停机报警后等待轴受控停止失败：" + error.Message, null));
                 }
                 throw;
             }
+            finally { EndPauseSettlement(); }
         }
 
         /// <summary>把共享报警服务的新停机报警送入任务整机并停止当前运动。</summary>
@@ -217,7 +241,8 @@ namespace MotionControl.TaskEngine.Machine
 
         /// <summary>更新停机条件和整机状态，并冻结全部运行记录。</summary>
         private TaskRun[] SetStopAlarmCore(string code, string message, bool active,
-            bool trackLocalCondition = true, TaskMachineState stoppingState = TaskMachineState.Faulted)
+            bool trackLocalCondition = true, TaskMachineState stoppingState = TaskMachineState.Faulted,
+            bool trackSettlement = false)
         {
             if (string.IsNullOrWhiteSpace(code) || (active && string.IsNullOrWhiteSpace(message)))
                 throw new ArgumentException("停机报警必须提供代码和有效原因。");
@@ -227,6 +252,7 @@ namespace MotionControl.TaskEngine.Machine
                 if (!active) { _activeStopAlarms.Remove(code); return new TaskRun[0]; }
                 if (trackLocalCondition) _activeStopAlarms[code] = message;
                 AddFault(new TaskMachineFault(code, message, null));
+                if (trackSettlement) BeginPauseSettlement();
                 return PauseAll(stoppingState);
             }
         }
@@ -244,6 +270,7 @@ namespace MotionControl.TaskEngine.Machine
                 if (station.RecoveryPermit == null) station.RecoveryPermit = NewSignal();
                 AddFault(new TaskMachineFault(station.Configuration.StationId, error.Message, error));
                 runs = PauseAll(TaskMachineState.Pausing);
+                BeginPauseSettlement();
                 permit = station.RecoveryPermit.Task;
             }
 
@@ -255,10 +282,41 @@ namespace MotionControl.TaskEngine.Machine
             }
             catch
             {
-                lock (_sync) _state = TaskMachineState.Faulted;
+                lock (_sync)
+                {
+                    _pauseSettlementUnconfirmed = true;
+                    if (_state != TaskMachineState.Stopped && _state != TaskMachineState.Closed) _state = TaskMachineState.Faulted;
+                }
                 throw;
             }
+            finally { EndPauseSettlement(); }
             return permit;
+        }
+
+        /// <summary>检查已冻结操作、停止回调、资源记录及隔离；调用方必须持有整机锁。</summary>
+        private bool HasUnsettledPauseWork()
+        {
+            return _pauseSettlementUnconfirmed || _activePauseSettlements != 0
+                || AllStations().Any(station => station.CurrentRun != null && station.CurrentRun.HasUnsettledPauseOperations)
+                || _device.Resources.HasPendingJournalWrites
+                || _device.ReadResources().Any(resource => resource.State == TaskResourceState.Blocked);
+        }
+
+        /// <summary>冻结运行的同一整机锁内登记收尾，防止复位先于报警处理交接。</summary>
+        private void BeginPauseSettlement()
+        {
+            if (_activePauseSettlements++ == 0) _pauseSettlementsIdle = NewSignal();
+        }
+
+        /// <summary>完成已登记的停止或报警收尾；即使出错也必须解除在途计数。</summary>
+        private void EndPauseSettlement()
+        {
+            lock (_sync)
+            {
+                if (_activePauseSettlements <= 0) throw new InvalidOperationException("暂停收尾登记不匹配。");
+                _activePauseSettlements--;
+                if (_activePauseSettlements == 0) _pauseSettlementsIdle.TrySetResult(true);
+            }
         }
 
         /// <summary>把全部周期许可和正在执行的运行冻结；调用方已持有整机锁。</summary>
@@ -342,14 +400,36 @@ namespace MotionControl.TaskEngine.Machine
         private async Task CloseCoreAsync()
         {
             await AbortAsync().ConfigureAwait(false);
-            var cleanup = _device as ITaskResourceJournalCleanup;
-            if (cleanup != null) await cleanup.CompleteResourceJournalAsync().ConfigureAwait(false);
-            lock (_sync)
+            var drain = AlarmService as IMachineStopAlarmNotificationDrain;
+            if (drain == null)
+                throw new InvalidOperationException("报警服务不支持等待停机通知交接，不能确认任务会话安全关闭。");
+            AlarmService.StopAlarmRaised -= AlarmService_StopAlarmRaised;
+            try
             {
-                _device.ReleaseMachine(this);
-                AlarmService.StopAlarmRaised -= AlarmService_StopAlarmRaised;
-                _lifetime.Dispose();
-                _state = TaskMachineState.Closed;
+                // 摘订后排空服务已捕获的旧回调，再等待回调启动的异步停轴处理。
+                await drain.WaitForStopNotificationDispatchAsync().ConfigureAwait(false);
+                Task pendingSettlements;
+                lock (_sync) pendingSettlements = _activePauseSettlements == 0 ? Task.CompletedTask : _pauseSettlementsIdle.Task;
+                await pendingSettlements.ConfigureAwait(false);
+                lock (_sync)
+                    if (HasUnsettledPauseWork())
+                        throw new InvalidOperationException("任务停止或资源状态待确认，保留设备控制权和恢复记录。");
+                var cleanup = _device as ITaskResourceJournalCleanup;
+                if (cleanup != null) await cleanup.CompleteResourceJournalAsync().ConfigureAwait(false);
+                lock (_sync)
+                {
+                    if (HasUnsettledPauseWork())
+                        throw new InvalidOperationException("清理期间任务状态变为待确认，保留设备控制权。");
+                    _device.ReleaseMachine(this);
+                    _lifetime.Dispose();
+                    _state = TaskMachineState.Closed;
+                }
+            }
+            catch
+            {
+                // 会话已终止但仍持有设备，恢复报警监听以便维护；不能重新启动旧任务。
+                AlarmService.StopAlarmRaised += AlarmService_StopAlarmRaised;
+                throw;
             }
         }
     }

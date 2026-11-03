@@ -34,15 +34,28 @@ namespace MotionControl.Adapter.MotionCard.Virtual
         private CancellationTokenSource _heartbeatCancellation;
         /// <summary>串行化连接与断开操作，防止同时取得多个租约。</summary>
         private readonly SemaphoreSlim _connectionGate = new SemaphoreSlim(1, 1);
+        /// <summary>保留本连接周期的首次断线原因及有限大小的维护日志。</summary>
+        private readonly VirtualConnectionDiagnostics _diagnostics;
+        /// <summary>把首个离线状态变化和故障记录串行化，避免后续心跳覆盖真实根因。</summary>
+        private readonly object _failureSync = new object();
 
         /// <summary>创建控制器适配器，轴和 IO 映射使用正式设备配置。</summary>
         public VirtualMotionCard(string controllerId, IEnumerable<AxisHardwareDefinition> axes,
             IEnumerable<DigitalIoHardwareDefinition> inputs, IEnumerable<DigitalIoHardwareDefinition> outputs, int port = 18520)
+            : this(controllerId, axes, inputs, outputs, port,
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MotionControlFramework", "Logs"))
+        {
+        }
+
+        /// <summary>指定诊断目录创建软件控制卡；供隔离测试或应用明确指定维护位置。</summary>
+        public VirtualMotionCard(string controllerId, IEnumerable<AxisHardwareDefinition> axes,
+            IEnumerable<DigitalIoHardwareDefinition> inputs, IEnumerable<DigitalIoHardwareDefinition> outputs, int port, string diagnosticsDirectory)
         {
             if (string.IsNullOrWhiteSpace(controllerId)) throw new ArgumentException("控制卡编号不能为空。", nameof(controllerId));
             if (port < 1 || port > 65535) throw new ArgumentOutOfRangeException(nameof(port));
             ControllerId = controllerId;
             _port = port;
+            _diagnostics = new VirtualConnectionDiagnostics(diagnosticsDirectory);
             _axes = (axes ?? throw new ArgumentNullException(nameof(axes))).Select(a => (IAxis)new VirtualAxis(this, a)).ToList().AsReadOnly();
             _inputs = (inputs ?? throw new ArgumentNullException(nameof(inputs))).ToDictionary(p => p.Name, StringComparer.OrdinalIgnoreCase);
             _outputs = (outputs ?? throw new ArgumentNullException(nameof(outputs))).ToDictionary(p => p.Name, StringComparer.OrdinalIgnoreCase);
@@ -54,6 +67,12 @@ namespace MotionControl.Adapter.MotionCard.Virtual
         public bool IsConnected { get { return _connected; } }
         /// <summary>根据设备配置创建的逻辑轴列表。</summary>
         public IReadOnlyCollection<IAxis> Axes { get { return _axes; } }
+        /// <summary>本机连接故障日志路径；最多保留当前文件和一份旧文件。</summary>
+        public string ConnectionDiagnosticsPath { get { return _diagnostics.FilePath; } }
+        /// <summary>本连接周期首次通信或心跳失败的时间和原因；成功建立新会话后清空。</summary>
+        public string FirstConnectionFailure { get { return _diagnostics.FirstFailure; } }
+        /// <summary>无法写入连接诊断文件时保留具体原因；不改变连接状态。</summary>
+        public string ConnectionDiagnosticsWriteFailure { get { return _diagnostics.WriteFailure; } }
 
         /// <summary>验证控制器可达后建立连接。</summary>
         public async Task ConnectAsync(CancellationToken cancellationToken)
@@ -73,12 +92,19 @@ namespace MotionControl.Adapter.MotionCard.Virtual
                 var lease = await SendAsync(new Dictionary<string, object> { ["command"] = "acquireLease" }, cancellationToken, false).ConfigureAwait(false);
                 if (!lease.TryGetValue("leaseId", out var rawId) || string.IsNullOrWhiteSpace(rawId as string))
                     throw new InvalidOperationException("软件控制器未返回有效租约，连接已拒绝。");
+                _diagnostics.BeginConnection();
                 _leaseId = (string)rawId;
                 _connected = true;
                 _heartbeatCancellation = new CancellationTokenSource();
                 CancellationToken heartbeatToken = _heartbeatCancellation.Token;
                 string heartbeatLease = _leaseId;
                 _ = Task.Run(() => MaintainLeaseAsync(heartbeatLease, heartbeatToken));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception error)
+            {
+                _diagnostics.Record(ControllerId, _port, "建立连接", error);
+                throw;
             }
             finally { _connectionGate.Release(); }
         }
@@ -121,9 +147,9 @@ namespace MotionControl.Adapter.MotionCard.Virtual
                 }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { }
-            catch (Exception)
+            catch (Exception error)
             {
-                if (string.Equals(_leaseId, leaseId, StringComparison.Ordinal)) _connected = false;
+                RecordDisconnected(leaseId, "心跳", error);
             }
         }
 
@@ -167,8 +193,19 @@ namespace MotionControl.Adapter.MotionCard.Virtual
             }
             catch (Exception ex) when (ex is IOException || ex is SocketException || ex is TimeoutException)
             {
-                if (requireConnected && string.Equals(_leaseId, leaseId, StringComparison.Ordinal)) _connected = false;
+                if (requireConnected) RecordDisconnected(leaseId, "通信/" + Convert.ToString(request["command"]), ex);
                 throw new IOException("软件控制器通信失败，端口 " + _port + "。", ex);
+            }
+        }
+
+        /// <summary>仅记录当前会话首次离线的原始原因；过期会话不能改变新连接状态。</summary>
+        private void RecordDisconnected(string leaseId, string operation, Exception error)
+        {
+            lock (_failureSync)
+            {
+                if (!_connected || !string.Equals(_leaseId, leaseId, StringComparison.Ordinal)) return;
+                _connected = false;
+                _diagnostics.Record(ControllerId, _port, operation, error);
             }
         }
 

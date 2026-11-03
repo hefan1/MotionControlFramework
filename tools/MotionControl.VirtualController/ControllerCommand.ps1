@@ -1,6 +1,6 @@
 ﻿param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Status', 'StartFeeder', 'StopFeeder', 'MissingMaterial', 'RestoreFeeder', 'SetInput', 'AxisAlarm', 'ConfigureFeedback', 'FeedbackStatus', 'FeedbackStuck', 'FeedbackRestore', 'RemoveFeedback')]
+    [ValidateSet('Status', 'StartFeeder', 'StopFeeder', 'MissingMaterial', 'RestoreFeeder', 'SetInput', 'AxisAlarm', 'ConfigureFeedback', 'FeedbackStatus', 'FeedbackStuck', 'FeedbackRestore', 'RemoveFeedback', 'SetCommandFault', 'CommandFaultStatus', 'ClearCommandFault')]
     [string]$Action,
     [int]$Port = 18520,
     [int]$InputChannel = 4,
@@ -10,7 +10,13 @@
     [int]$FeedbackDelayMs = 300,
     [bool]$FeedbackActiveHigh = $true,
     [int]$Axis = 1,
-    [bool]$Value = $false
+    [bool]$Value = $false,
+    [ValidateSet('readInput', 'readOutput', 'writeOutput', 'readAxis', 'stop')]
+    [string]$TargetCommand = 'writeOutput',
+    [int]$TargetIndex = 0,
+    [ValidateSet('reject', 'errorAfter', 'delayReply', 'delayBefore')]
+    [string]$FaultMode = 'reject',
+    [int]$FaultDelayMs = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -34,6 +40,9 @@ try {
         'FeedbackStuck' { $request = @{ command = 'setFeedbackFault'; inputChannel = $InputChannel; value = $true } }
         'FeedbackRestore' { $request = @{ command = 'setFeedbackFault'; inputChannel = $InputChannel; value = $false } }
         'RemoveFeedback' { $request = @{ command = 'removeFeedback'; inputChannel = $InputChannel } }
+        'SetCommandFault' { $request = @{ command = 'setCommandFault'; targetCommand = $TargetCommand; targetIndex = $TargetIndex; mode = $FaultMode; delayMs = $FaultDelayMs } }
+        'CommandFaultStatus' { $request = @{ command = 'readCommandFault'; targetCommand = $TargetCommand; targetIndex = $TargetIndex } }
+        'ClearCommandFault' { $request = @{ command = 'clearCommandFault'; targetCommand = $TargetCommand; targetIndex = $TargetIndex } }
     }
 
     $client = [System.Net.Sockets.TcpClient]::new()
@@ -61,6 +70,9 @@ try {
         }
         elseif ($Action -eq 'FeedbackStatus') {
             $response.feedbackState | Format-List
+        }
+        elseif ($Action -eq 'CommandFaultStatus') {
+            $response | Format-List configured, mode, delayMs
         }
         else { Write-Host "已完成：$Action" }
     }

@@ -4,7 +4,9 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Motion;
+using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Variables;
+using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Device;
@@ -17,6 +19,117 @@ namespace MotionControl.TaskEngine.Checks
     /// <summary>针对异步确认和写出故障的暂停竞态检查。</summary>
     internal static partial class MachineChecks
     {
+        /// <summary>准备任务登记设备期间锁存停机报警，不得发放准备运行许可。</summary>
+        private static async Task AlarmDuringPreparationRegistration()
+        {
+            var device = new DelayedDevice(Device());
+            var alarms = new MachineAlarmService();
+            var enteredNotification = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var releaseNotification = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            alarms.StopAlarmRaised += (sender, args) => { enteredNotification.TrySetResult(true); releaseNotification.Task.GetAwaiter().GetResult(); };
+            var definition = TaskDefinition("Prepare", new SetOutputNode { Id = "write", Name = "准备写出", OutputName = "Vacuum", Value = true });
+            var config = new TaskMachineConfiguration { MachineId = "PrepareGate", Name = "准备门禁",
+                Stations = new List<StationTaskConfiguration> { Station("station", "Prepare", StationTaskMode.Once) } };
+            var machine = new TaskMachineController(config, new[] { definition }, device, alarms);
+            Machines.Add(machine);
+            machine.RegisterPreparationTask("Prepare", () => { });
+            var registering = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var finishRegistering = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            device.BeforeRegisterRun = () => { registering.TrySetResult(true); finishRegistering.Task.GetAwaiter().GetResult(); };
+            Task preparation = machine.ExecutePreparationTaskAsync("Prepare", null, CancellationToken.None);
+            Task raise = null;
+            try
+            {
+                await Wait(registering.Task);
+                var alarm = new MachineAlarmDefinition("PREP_GATE", "准备期间停机", MachineAlarmKind.StopMachine);
+                raise = Task.Run(() => alarms.ReportCondition(alarm, "输入", true, "测试"));
+                await Wait(enteredNotification.Task);
+                finishRegistering.TrySetResult(true);
+                bool rejected = false;
+                try { await Wait(preparation); }
+                catch (InvalidOperationException) { rejected = true; }
+                CheckAssert.True(rejected && !device.WriteStarted.Task.IsCompleted,
+                    "准备期间报警已锁存时不允许写出设备。");
+            }
+            finally
+            {
+                finishRegistering.TrySetResult(true);
+                releaseNotification.TrySetResult(true);
+                if (raise != null) await Wait(raise);
+                device.BeforeRegisterRun = null;
+            }
+        }
+
+        /// <summary>准备步骤结束后、最终现场检查期间报警时不得登记已准备资格。</summary>
+        private static async Task AlarmDuringPreparationCompletion()
+        {
+            var device = Device();
+            var task = TaskDefinition("Prepare", new DelayNode { Id = "wait", Name = "准备", Milliseconds = 1 });
+            var machine = Machine(device, new[] { task }, Station("station", "Prepare", StationTaskMode.Once));
+            var checking = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            machine.RegisterPreparationTask("Prepare", () => { checking.TrySetResult(true); release.Task.GetAwaiter().GetResult(); });
+            Task preparation = machine.ExecutePreparationTaskAsync("Prepare", null, CancellationToken.None);
+            try
+            {
+                await Wait(checking.Task);
+                await machine.SetStopAlarmAsync("PREP_COMPLETE", "准备确认期间报警", true);
+                release.TrySetResult(true);
+                bool rejected = false;
+                try { await Wait(preparation); } catch (InvalidOperationException) { rejected = true; }
+                CheckAssert.True(rejected, "准备完成检查期间报警却登记了准备资格。");
+                await machine.SetStopAlarmAsync("PREP_COMPLETE", "", false);
+                machine.Reset();
+                CheckAssert.Throws(machine.Start, "报警复位后不应沿用受中断的准备资格。");
+            }
+            finally { release.TrySetResult(true); }
+        }
+
+        /// <summary>停机报警在启动提交前锁存时，即使通知回调尚未进入，也不能发放任务运行许可。</summary>
+        private static async Task AlarmBetweenStartCheckAndPermit()
+        {
+            var device = new DelayedDevice(Device());
+            var alarms = new MachineAlarmService();
+            var notificationEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var finishNotification = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            alarms.StopAlarmRaised += (sender, args) =>
+            {
+                notificationEntered.TrySetResult(true);
+                finishNotification.Task.GetAwaiter().GetResult();
+            };
+            var write = new SetOutputNode { Id = "write", Name = "写出", OutputName = "Vacuum", Value = true };
+            var config = new TaskMachineConfiguration { MachineId = "GateCheck", Name = "启动门禁",
+                Stations = new List<StationTaskConfiguration> { Station("write", "Write", StationTaskMode.Once) } };
+            var machine = new TaskMachineController(config, new[] { TaskDefinition("Write", write) }, device, alarms);
+            Machines.Add(machine);
+            machine.Reset();
+            var checking = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var releaseCheck = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            device.BeforeReadResources = () => { checking.TrySetResult(true); releaseCheck.Task.GetAwaiter().GetResult(); };
+            Task start = Task.Run(() => machine.Start());
+            Task raise = null;
+            try
+            {
+                await Wait(checking.Task);
+                var definition = new MachineAlarmDefinition("START_RACE", "启动时停机", MachineAlarmKind.StopMachine);
+                raise = Task.Run(() => alarms.ReportCondition(definition, "输入", true, "测试"));
+                await Wait(notificationEntered.Task);
+                releaseCheck.TrySetResult(true);
+                bool rejected = false;
+                try { await Wait(start); }
+                catch (InvalidOperationException) { rejected = true; }
+                CheckAssert.True(rejected && !device.WriteStarted.Task.IsCompleted,
+                    "报警已经锁存时不允许发放运行许可或写出设备。");
+                device.BeforeReadResources = null;
+            }
+            finally
+            {
+                releaseCheck.TrySetResult(true);
+                finishNotification.TrySetResult(true);
+                if (raise != null) await Wait(raise);
+                device.BeforeReadResources = null;
+            }
+        }
         /// <summary>模拟后台日志已失败或取消但完成回调尚未运行，复位不能跨过该结算窗口。</summary>
         private static async Task JournalFailureSettlementBlocksReset()
         {
@@ -44,6 +157,7 @@ namespace MotionControl.TaskEngine.Checks
                 CheckAssert.True(device.ReadResources().Single().State == TaskResourceState.Blocked,
                     "日志结算后必须保持资源待确认。");
                 CheckAssert.Throws(machine.Reset, "日志隔离后允许直接复位。");
+                await ExpectCloseBlocked(machine);
             }
         }
 
@@ -88,6 +202,7 @@ namespace MotionControl.TaskEngine.Checks
                 CheckAssert.Throws(stuckMachine.Reset, "设备确认仍未返回时允许复位。");
             }
             finally { stuck.FinishConfirmation.TrySetResult(true); }
+            await ExpectCloseBlocked(stuckMachine);
 
             var lateMove = new DelayedDevice(Device()) { DelayBeginMove = true };
             var lateDefinition = TaskFixtures.Move("late"); lateDefinition.Target.Constant = "1"; lateDefinition.Profile.Speed = 100;
@@ -137,6 +252,7 @@ namespace MotionControl.TaskEngine.Checks
                 && moving.ReadResources().Any(item => item.State == TaskResourceState.Blocked),
                 "轴收尾失败时，暂停完成前必须锁存故障并隔离轴资源。");
             CheckAssert.Throws(moveMachine.Reset, "轴收尾状态未知时允许复位。");
+            await ExpectCloseBlocked(moveMachine);
 
             var innerOutput = Device();
             var output = new DelayedDevice(innerOutput);
@@ -172,6 +288,7 @@ namespace MotionControl.TaskEngine.Checks
                 "输出状态未知时，报警返回前必须先隔离输出资源。");
             await outputMachine.SetStopAlarmAsync("RACE_WRITE", "", false);
             CheckAssert.Throws(outputMachine.Reset, "输出待确认时允许复位。");
+            await ExpectCloseBlocked(outputMachine);
         }
 
         /// <summary>在内存设备外包装可控的异步确认和写出中断，不访问实物。</summary>
@@ -191,6 +308,10 @@ namespace MotionControl.TaskEngine.Checks
             internal Action OnWrite;
             /// <summary>写出后端内部触发报警之前可控暂停，用于复现双线程锁反转。</summary>
             internal Action BeforeWrite;
+            /// <summary>在资源读取期间暂停，用于复现启动门禁与报警上报交错。</summary>
+            internal Action BeforeReadResources;
+            /// <summary>设备运行登记期间的受控暂停，用于检查准备许可。</summary>
+            internal Action BeforeRegisterRun;
             /// <summary>写出期间发起的报警操作。</summary>
             internal Task AlarmTask;
             /// <summary>确认返回时是否注入异常。</summary>
@@ -235,7 +356,7 @@ namespace MotionControl.TaskEngine.Checks
             /// <summary>检查互锁。</summary>
             public bool CheckInterlock(TaskInterlock interlock, TaskCondition condition, out string reason) => _inner.CheckInterlock(interlock, condition, out reason);
             /// <summary>读取资源快照。</summary>
-            public IReadOnlyList<TaskResourceSnapshot> ReadResources() => _inner.ReadResources();
+            public IReadOnlyList<TaskResourceSnapshot> ReadResources() { BeforeReadResources?.Invoke(); return _inner.ReadResources(); }
             /// <summary>按条件恢复资源。</summary>
             public bool TryRecoverResources(string id, string confirmation, out string reason) => _inner.TryRecoverResources(id, confirmation, out reason);
             /// <summary>接受轴运动。</summary>
@@ -289,7 +410,7 @@ namespace MotionControl.TaskEngine.Checks
             /// <summary>归还整机所有权。</summary>
             public void ReleaseMachine(object owner) => ((ITaskDevice)_inner).ReleaseMachine(owner);
             /// <summary>登记运行。</summary>
-            public void RegisterRun(string id, object owner) => ((ITaskDevice)_inner).RegisterRun(id, owner);
+            public void RegisterRun(string id, object owner) { BeforeRegisterRun?.Invoke(); ((ITaskDevice)_inner).RegisterRun(id, owner); }
             /// <summary>结束运行登记。</summary>
             public void UnregisterRun(string id) => ((ITaskDevice)_inner).UnregisterRun(id);
         }

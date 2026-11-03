@@ -37,6 +37,9 @@ namespace MotionControl.TaskEngine.Checks
                 { "父步骤超时不重放及规模超限终止", ParentTimeoutAndExpansionLimit },
                 { "外部停机条件锁存", StopAlarm },
                 { "暂停停轴期间并发报警优先锁存", PauseFaultRace },
+                { "启动检查与报警锁存原子协调", AlarmBetweenStartCheckAndPermit },
+                { "准备任务登记与报警锁存原子协调", AlarmDuringPreparationRegistration },
+                { "准备完成检查与报警锁存原子协调", AlarmDuringPreparationCompletion },
                 { "日志写入失败和取消的结算窗口禁止复位", JournalFailureSettlementBlocksReset },
                 { "在途确认与输出异常隔离后才允许暂停", PauseWaitsForDeviceOperations },
                 { "请求提前撤销不重做动作", EarlyRequestWithdrawal },
@@ -120,6 +123,17 @@ namespace MotionControl.TaskEngine.Checks
             if (await Task.WhenAny(operation, Task.Delay(10000)).ConfigureAwait(false) != operation)
                 throw new TimeoutException("整机操作超过十秒未收尾。");
             await operation.ConfigureAwait(false);
+        }
+
+        /// <summary>验证异常后关闭被拒绝且会话不释放，再移除这台仅用于检查的内存设备。</summary>
+        private static async Task ExpectCloseBlocked(TaskMachineController machine)
+        {
+            bool blocked = false;
+            try { await Wait(machine.CloseAsync()); }
+            catch (InvalidOperationException) { blocked = true; }
+            CheckAssert.True(blocked && machine.GetSnapshot().State == TaskMachineState.Stopped,
+                "未确认状态必须保留控制权，不能关闭或重新启动会话。");
+            Machines.Remove(machine);
         }
 
         /// <summary>按现有变量类型读取文本。</summary>

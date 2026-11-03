@@ -353,7 +353,14 @@ namespace MotionControl.MachineDevice.Checks
                     await inner.EndMoveAsync(device.LastMove, true, CancellationToken.None);
                     Ensure(device.TryRecoverResources(blocked.RequestId, "检查已确认轴停止", out reason), reason);
                 }
-                await machine.CloseAsync();
+                if (fail)
+                {
+                    bool rejected = false;
+                    try { await machine.CloseAsync(); }
+                    catch (InvalidOperationException error) { rejected = error.Message.Contains("待确认"); }
+                    Ensure(rejected, "停轴收尾曾失败时，即使资源已解除隔离，也不能自动归还控制权。");
+                }
+                else await machine.CloseAsync();
             }
         }
 

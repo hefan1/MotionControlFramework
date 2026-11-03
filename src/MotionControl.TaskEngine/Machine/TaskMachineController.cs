@@ -51,6 +51,26 @@ namespace MotionControl.TaskEngine.Machine
         private Task _abortTask;
         /// <summary>关闭和归还所有权的唯一任务。</summary>
         private Task _closeTask;
+        /// <summary>已冻结任务但尚未完成停轴、异常分类或资源落盘的暂停与报警处理数量。</summary>
+        private int _activePauseSettlements;
+        /// <summary>有收尾在途时等待全部收尾退出；为空表示当前没有待等待的批次。</summary>
+        private TaskCompletionSource<bool> _pauseSettlementsIdle;
+        /// <summary>任一暂停收尾超时或失败后锁存，不能以短暂空闲状态证明设备安全。</summary>
+        private bool _pauseSettlementUnconfirmed;
+
+        /// <summary>当前会话暂停处理是否已确认收尾；这不是现场安全态或跨进程恢复凭据。</summary>
+        public bool IsPauseSettlementConfirmed
+        {
+            get
+            {
+                lock (_sync)
+                {
+                    if (_state != TaskMachineState.Paused && _state != TaskMachineState.Faulted && _state != TaskMachineState.Ready)
+                        return false;
+                    return !HasUnsettledPauseWork();
+                }
+            }
+        }
 
         /// <summary>先校验并冻结清单和任务库，再取得设备控制权；构造不会运行任务或修改场景值。</summary>
         public TaskMachineController(TaskMachineConfiguration configuration, IEnumerable<TaskDefinition> definitions,

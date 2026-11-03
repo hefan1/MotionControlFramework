@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.Framework.Runtime.Configuration;
@@ -34,6 +36,90 @@ internal static class Program
         }
         CheckBoundedRecentAndReadFailure(store);
         CheckCloseReportsWriteFailure(store);
+        CheckPendingStopNotification();
+        CheckAlarmStartGate();
+    }
+
+    /// <summary>报警锁存与纯内存启动提交有确定顺序，已经锁存的报警不能放行。</summary>
+    private static void CheckAlarmStartGate()
+    {
+        var service = new MachineAlarmService();
+        var alarm = new MachineAlarmDefinition("START_GATE", "测试停机", MachineAlarmKind.StopMachine, "检查", "复位");
+        using (var committed = new ManualResetEventSlim())
+        using (var release = new ManualResetEventSlim())
+        {
+            Task start = Task.Run(() => service.ExecuteWhenNoStopAlarm(() =>
+            {
+                committed.Set();
+                if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException("启动门禁测试超时。");
+            }));
+            try
+            {
+                if (!committed.Wait(TimeSpan.FromSeconds(5))) throw new Exception("启动提交未进入门禁。");
+                Task report = Task.Run(() => service.ReportCondition(alarm, "工位", true, "测试"));
+                if (report.Wait(TimeSpan.FromMilliseconds(100))) throw new Exception("报警锁存穿过了启动提交。");
+                release.Set();
+                start.GetAwaiter().GetResult();
+                report.GetAwaiter().GetResult();
+                bool rejected = false;
+                try { service.ExecuteWhenNoStopAlarm(() => { throw new Exception("不应提交启动。"); }); }
+                catch (InvalidOperationException) { rejected = true; }
+                if (!rejected) throw new Exception("已锁存停机报警时错误允许启动。");
+            }
+            finally { release.Set(); }
+        }
+        Console.WriteLine("报警检查通过：停机报警和启动许可原子排序。");
+    }
+
+    /// <summary>报警发布尚未交接时，即使条件已经恢复也不能先复位。</summary>
+    private static void CheckPendingStopNotification()
+    {
+        var service = new MachineAlarmService();
+        var alarm = new MachineAlarmDefinition("NOTICE_GATE", "测试停机", MachineAlarmKind.StopMachine, "检查", "复位");
+        using (var entered = new ManualResetEventSlim())
+        using (var release = new ManualResetEventSlim())
+        {
+            service.StopAlarmRaised += (sender, args) =>
+            {
+                entered.Set();
+                if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException("测试停机通知等待超时。");
+            };
+            Task publish = Task.Run(() => service.ReportCondition(alarm, "工位", true, "测试"));
+            try
+            {
+                if (!entered.Wait(TimeSpan.FromSeconds(5))) throw new Exception("停机通知没有进入订阅者。");
+                Task drained = service.WaitForStopNotificationDispatchAsync();
+                if (drained.IsCompleted) throw new Exception("停机通知尚未交接时错误显示排空完成。");
+                service.ReportCondition(alarm, "工位", false, "条件已恢复");
+                bool rejected = false;
+                try { service.ResetStopAlarms(); }
+                catch (InvalidOperationException) { rejected = true; }
+                if (!rejected || !service.HasLatchedStopAlarm)
+                    throw new Exception("停机通知尚未交接时错误允许复位。");
+            }
+            finally { release.Set(); }
+            publish.GetAwaiter().GetResult();
+            service.WaitForStopNotificationDispatchAsync().GetAwaiter().GetResult();
+            service.ResetStopAlarms();
+            if (service.HasLatchedStopAlarm) throw new Exception("通知交接完成后无法复位。");
+        }
+        var failedService = new MachineAlarmService();
+        failedService.StopAlarmRaised += (sender, args) => { throw new InvalidOperationException("订阅者失败"); };
+        bool notificationFailed = false;
+        try { failedService.ReportCondition(alarm, "工位", true, "测试"); }
+        catch (InvalidOperationException) { notificationFailed = true; }
+        if (!notificationFailed) throw new Exception("停机通知异常未反馈给上报方。");
+        failedService.ReportCondition(alarm, "工位", false, "条件已恢复");
+        bool failureRejected = false;
+        try { failedService.ResetStopAlarms(); }
+        catch (InvalidOperationException) { failureRejected = true; }
+        if (!failureRejected || !failedService.HasLatchedStopAlarm)
+            throw new Exception("停机通知失败后错误允许复位。");
+        bool drainRejected = false;
+        try { failedService.WaitForStopNotificationDispatchAsync().GetAwaiter().GetResult(); }
+        catch (InvalidOperationException) { drainRejected = true; }
+        if (!drainRejected) throw new Exception("停机通知失败后错误显示排空成功。");
+        Console.WriteLine("报警检查通过：待发布停机通知阻止提前复位。");
     }
 
     /// <summary>写入目录不可用时明确报告未写事件，且重复收尾不伪装成功。</summary>

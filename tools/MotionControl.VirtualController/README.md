@@ -108,3 +108,25 @@ $command = '.\tools\MotionControl.VirtualController\ControllerCommand.ps1'
 ```
 
 `FeedbackStuck` 表示输入卡在当前电平，不跟随输出，用于测试超时；`FeedbackRestore` 解除故障后按当前输出及延迟恢复反馈。`RemoveFeedback` 删除该规则并保持当前输入电平。反向反馈可增加 `-FeedbackActiveHigh $false`。同一输入不能同时被上料规则和普通反馈规则控制；请先停用或删除原规则。
+
+## 控制命令故障注入
+
+以下命令只作用于这个独立软件控制器，先在正式 Host 核对目标设备及轴、IO 状态。每次故障只影响指定物理通道或轴号的下一次匹配请求；未触发时可查询和撤销，故障触发后自动移除。
+
+```powershell
+$command = '.\tools\MotionControl.VirtualController\ControllerCommand.ps1'
+# DO1 的下一次写入已改变电平，但调用者收到失败。
+& $command -Action SetCommandFault -TargetCommand writeOutput -TargetIndex 1 -FaultMode errorAfter
+& $command -Action CommandFaultStatus -TargetCommand writeOutput -TargetIndex 1
+# 轴 2 的下一次停轴请求直接失败，轴按原状态继续运动。
+& $command -Action SetCommandFault -TargetCommand stop -TargetIndex 2 -FaultMode reject
+# DI5 的下一次读取延迟应答 1500 毫秒，不阻塞其他连接。
+& $command -Action SetCommandFault -TargetCommand readInput -TargetIndex 5 -FaultMode delayReply -FaultDelayMs 1500
+# DO1 下一次写入延迟执行；等待期间会话失效时，旧请求不会写入。
+& $command -Action SetCommandFault -TargetCommand writeOutput -TargetIndex 1 -FaultMode delayBefore -FaultDelayMs 1500
+& $command -Action ClearCommandFault -TargetCommand stop -TargetIndex 2
+```
+
+可注入的命令为 `readInput`、`readOutput`、`writeOutput`、`readAxis` 和 `stop`，分别按通道号或轴号匹配；批量 IO 读取不受单通道故障影响。`reject` 在设备状态改变前返回失败；`errorAfter` 仅支持 `writeOutput` 和 `stop`，设备状态已经改变，但返回失败；`delayBefore` 在执行前等待，执行前再次核对原控制会话；`delayReply` 在执行后等待再应答。延迟范围为 1–30000 ms。故障清除不会回滚已经执行的动作，也不会猜测安全输出，测试结束应通过正式 Host 确认轴停止和 IO 状态。
+
+软件控制器适配器读取应答超时为 3 秒。较长延迟可能导致 Host 判断通信失败并停止心跳，控制器看门狗会停止轴但保留输出；这一行为用于测试本软件模型，不能代表某个实体控制卡或机械设备的超时、停轴、急停或断电行为。

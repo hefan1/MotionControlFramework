@@ -59,11 +59,15 @@ namespace MotionControl.Framework.Runtime.Machine
                 return;
             }
 
+            // 停机报警可能改变机构或现场条件，之前的准备标记沿用资格立即失效。
+            lock (_preparationSync) _preparationRecordReusable = false;
             var alarmError = CreateStopAlarmError(eventArgs.Alarm, null);
             if (IsPreparing)
             {
                 SetStatus(MachineRunState.Alarmed, alarmError);
-                _ = StopPreparationAfterAlarmAsync();
+                // 先同步取消已发布的准备许可；停止命令随后等待命令锁时不允许准备继续发动作。
+                CancellationTokenSource preparation = RequestPreparationStop();
+                if (preparation != null) _ = StopPreparationAfterAlarmAsync(preparation);
                 return;
             }
             var shouldPauseFlows = false;
@@ -95,11 +99,12 @@ namespace MotionControl.Framework.Runtime.Machine
             }
 
             Exception pauseRequestError = null;
+            long pausedGeneration = -1;
             if (shouldPauseFlows)
             {
                 try
                 {
-                    _flowScheduler.RequestPause();
+                    pausedGeneration = _flowScheduler.RequestPause();
                 }
                 catch (Exception pauseError)
                 {
@@ -122,7 +127,7 @@ namespace MotionControl.Framework.Runtime.Machine
 
             if (shouldPauseFlows)
             {
-                _ = MarkPauseTimeoutIfStillRunningAsync();
+                _ = MarkPauseTimeoutIfStillRunningAsync(pausedGeneration);
             }
 
             if (pauseRequestError != null)
@@ -132,17 +137,12 @@ namespace MotionControl.Framework.Runtime.Machine
         }
 
         /// <summary>停机报警触发后，若工位超过暂停时限仍未退出，则把整机状态置为报警。</summary>
-        private async Task MarkPauseTimeoutIfStillRunningAsync()
+        private async Task MarkPauseTimeoutIfStillRunningAsync(long generation)
         {
             await Task.Delay(_pauseTimeout).ConfigureAwait(false);
-            if (!_flowScheduler.IsRunning)
-            {
-                return;
-            }
-
             lock (_statusLock)
             {
-                if (_state != MachineRunState.Pausing)
+                if (_state != MachineRunState.Pausing || !_flowScheduler.IsRunActive(generation))
                 {
                     return;
                 }
