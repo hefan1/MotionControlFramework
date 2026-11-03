@@ -107,8 +107,17 @@ namespace MotionControl.Host.Wpf.Tasks
                 var sample = await Task.Run(() => ResourceRecoverySample.Capture(_device, selected.Id));
                 if (!_contextValid()) throw new InvalidOperationException("读取期间设备或会话状态发生变化；保留隔离。");
                 _sample = sample; _sampleText.Text = sample.Description;
-                _status.Foreground = Brushes.DarkSlateGray;
-                _status.Text = T("请核对采样并检查实际现场；命名区域的安全状态不能由采样自动判断。", "Review the samples and the physical area; named-area safety cannot be inferred automatically.");
+                if (sample.ActiveOutputs.Count != 0)
+                {
+                    _status.Foreground = Brushes.Firebrick;
+                    _status.Text = T("输出仍有效：", "Active outputs: ") + string.Join("、", sample.ActiveOutputs)
+                        + T("。当前不能解除隔离；请按设备规程核查，系统不会自动切换输出。", ". Isolation cannot be released. Follow the equipment procedure; outputs will not be switched automatically.");
+                }
+                else
+                {
+                    _status.Foreground = Brushes.DarkSlateGray;
+                    _status.Text = T("请核对采样并检查实际现场；命名区域的安全状态不能由采样自动判断。", "Review the samples and the physical area; named-area safety cannot be inferred automatically.");
+                }
             }
             catch (Exception error) { ShowFailure(error.Message); }
             finally { _busy = false; UpdateControls(); }
@@ -121,7 +130,7 @@ namespace MotionControl.Host.Wpf.Tasks
         private async void Recover_Click(object sender, RoutedEventArgs e)
         {
             var selected = _resources.SelectedItem as ResourceChoice;
-            if (_busy || selected == null || _sample == null || _confirmed.IsChecked != true || string.IsNullOrWhiteSpace(_confirmation.Text)) return;
+            if (_busy || selected == null || _sample == null || _sample.ActiveOutputs.Count != 0 || _confirmed.IsChecked != true || string.IsNullOrWhiteSpace(_confirmation.Text)) return;
             var previous = _sample;
             string confirmation = _confirmation.Text.Trim();
             _busy = true; UpdateControls();
@@ -151,7 +160,7 @@ namespace MotionControl.Host.Wpf.Tasks
             _resources.IsEnabled = !_busy; _readButton.IsEnabled = !_busy && _resources.SelectedItem != null;
             _confirmed.IsEnabled = !_busy; _confirmation.IsEnabled = !_busy;
             _recoverButton.IsEnabled = !_busy && _resources.SelectedItem != null && _sample != null
-                && _confirmed.IsChecked == true && !string.IsNullOrWhiteSpace(_confirmation.Text);
+                && _sample.ActiveOutputs.Count == 0 && _confirmed.IsChecked == true && !string.IsNullOrWhiteSpace(_confirmation.Text);
         }
         /// <summary>完成后台操作前不能关闭，避免不确定的确认结果。</summary>
         private void Dialog_Closing(object sender, System.ComponentModel.CancelEventArgs e) { if (_busy) e.Cancel = true; }

@@ -22,7 +22,7 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
         public RotaryProductEvidence NestB { get; set; }
         /// <summary>缓存最近确认产品。</summary>
         public RotaryProductEvidence Buffer { get; set; }
-        /// <summary>正在上料的已扫码产品编号；扫码前为空。</summary>
+        /// <summary>上料交接标识；原样例为扫码编号，纯运动验证为内部载具令牌。</summary>
         public string LoadingProduct { get; set; }
         /// <summary>相应操作正在进行，重启时产品或机构实际位置可能不确定。</summary>
         public bool Loading { get; set; }
@@ -45,7 +45,7 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
     /// <summary>某个确认位置的产品编号、工艺阶段及结果。</summary>
     public sealed class RotaryProductEvidence
     {
-        /// <summary>扫码模型实际返回的本会话编号。</summary>
+        /// <summary>载具交接标识；纯运动验证的令牌不表示扫码产品编号。</summary>
         public string Id { get; set; }
         /// <summary>最近确认的加工阶段。</summary>
         public string Stage { get; set; }

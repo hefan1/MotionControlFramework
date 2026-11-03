@@ -23,8 +23,10 @@ namespace MotionControl.Host.Wpf.Tasks
         internal string ResourceDescription { get; private set; }
         /// <summary>供操作者核对的完整采样说明。</summary>
         internal string Description { get; private set; }
+        /// <summary>采样中当前有效的逻辑输出；有有效输出时仍不得解除资源隔离。</summary>
+        internal IReadOnlyList<string> ActiveOutputs { get { return _outputs.Where(item => item.Value).Select(item => item.Key).OrderBy(item => item, StringComparer.OrdinalIgnoreCase).ToList().AsReadOnly(); } }
 
-        /// <summary>复查被选资源仍待确认，并读取全部已配置轴与逻辑 IO；读取失败、轴未停稳或输出有效都拒绝。</summary>
+        /// <summary>复查被选资源仍待确认，并读取全部已配置轴与逻辑 IO；输出有效时保留采样供核对，不代表允许解除隔离。</summary>
         internal static ResourceRecoverySample Capture(ITaskDevice device, string requestId)
         {
             if (device == null || string.IsNullOrWhiteSpace(requestId)) throw new ArgumentException("资源或设备无效。");
@@ -61,9 +63,8 @@ namespace MotionControl.Host.Wpf.Tasks
             {
                 bool? value = device.ReadOutput(name);
                 if (!value.HasValue) throw new InvalidOperationException("输出状态未知：" + name + "。保留隔离。");
-                if (value.Value) throw new InvalidOperationException("输出仍有效：" + name + "。保留隔离；请按设备规程处理，系统不会自动切换输出。");
                 sample._outputs.Add(name, value.Value);
-                text.AppendLine(name + "：无效");
+                text.AppendLine(name + "：" + (value.Value ? "有效" : "无效"));
             }
             if (sample._outputs.Count == 0) text.AppendLine("未配置逻辑输出。");
             FindBlocked(device, requestId);
@@ -95,6 +96,8 @@ namespace MotionControl.Host.Wpf.Tasks
             try
             {
                 ResourceRecoverySample current = Capture(device, RequestId);
+                if (current.ActiveOutputs.Count != 0) { reason = "输出仍有效：" + string.Join("、", current.ActiveOutputs) + "。保留隔离；请按设备规程处理，系统不会自动切换输出。"; return false; }
+                if (ActiveOutputs.Count != 0) { reason = "上次采样中存在有效输出；请重新读取并核查现场。"; return false; }
                 if (!SameAs(current)) { reason = "轴或 IO 状态发生变化；请重新读取并核查现场。"; return false; }
                 if (!contextValid()) { reason = "复核期间设备或会话状态发生变化；保留隔离。"; return false; }
                 return device.TryRecoverResources(RequestId, confirmation.Trim(), out reason);

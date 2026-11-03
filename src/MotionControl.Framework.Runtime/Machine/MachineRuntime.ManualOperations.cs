@@ -144,7 +144,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 throw new ArgumentNullException(nameof(stopOperation));
             }
 
-            ManualOperationBlockReason blockReason = await BeginManualRecoveryOperationAsync(cancellationToken)
+            ManualOperationBlockReason blockReason = await BeginManualRecoveryOperationAsync(cancellationToken, true)
                 .ConfigureAwait(true);
             if (blockReason != ManualOperationBlockReason.None)
             {
@@ -163,7 +163,7 @@ namespace MotionControl.Framework.Runtime.Machine
         }
 
         /// <summary>根据整机状态返回当前是否允许手动轴或 IO 操作。</summary>
-        private ManualOperationBlockReason GetManualOperationStateBlockReason()
+        private ManualOperationBlockReason GetManualOperationStateBlockReason(bool allowUnsettledStop = false)
         {
             if (IsPreparing) return ManualOperationBlockReason.AutomaticFlowActive;
             if (IsTaskEngineControlClaimed)
@@ -180,6 +180,12 @@ namespace MotionControl.Framework.Runtime.Machine
             if (state == MachineRunState.Running || state == MachineRunState.Pausing)
             {
                 return ManualOperationBlockReason.AutomaticFlowActive;
+            }
+
+            // 报警态不表示旧 C# 工位已退出；只让受控停止入口穿过未确认的收尾。
+            if (!allowUnsettledStop && (_flowScheduler.IsRunning || !_flowScheduler.IsSettlementConfirmed))
+            {
+                return ManualOperationBlockReason.AutomaticFlowUnsettled;
             }
 
             return ManualOperationBlockReason.None;
@@ -208,13 +214,13 @@ namespace MotionControl.Framework.Runtime.Machine
             }
         }
 
-        /// <summary>在整机命令锁内登记恢复操作；拒绝未连接或自动运行状态，但不检查急停锁存。</summary>
-        private async Task<ManualOperationBlockReason> BeginManualRecoveryOperationAsync(CancellationToken cancellationToken)
+        /// <summary>在整机命令锁内登记恢复或专用停止；仅停止允许穿过未确认的自动流程收尾。</summary>
+        private async Task<ManualOperationBlockReason> BeginManualRecoveryOperationAsync(CancellationToken cancellationToken, bool allowUnsettledStop = false)
         {
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                ManualOperationBlockReason blockReason = GetManualOperationStateBlockReason();
+                ManualOperationBlockReason blockReason = GetManualOperationStateBlockReason(allowUnsettledStop);
                 if (blockReason == ManualOperationBlockReason.None)
                 {
                     Interlocked.Increment(ref _activeManualOperationCount);

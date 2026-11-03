@@ -16,6 +16,7 @@ namespace MotionControl.TaskEngine.Checks
             if (args.Length == 3 && args[0] == "--four-station-demo") return MachineChecks.RunFourStationDemo(args[1], args[2]);
             if (args.Length == 3 && args[0] == "--clip-welding-demo") return MachineChecks.RunClipWeldingDemo(args[1], args[2]);
             if (args.Length == 3 && args[0] == "--rotary-welding-demo") return MachineChecks.RunRotaryWeldingDemo(args[1], args[2]);
+            if (args.Length == 3 && args[0] == "--rotary-motion-demo") return MachineChecks.RunRotaryMotionDemo(args[1], args[2]);
             if (args.Length == 3 && args[0] == "--validate-machine") return MachineChecks.ValidateTaskMachine(args[1], args[2]);
             if (args.Length > 0)
             {

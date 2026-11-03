@@ -2,6 +2,7 @@ param(
     [Parameter(Mandatory=$true)][string]$DestinationRoot,
     [ValidateSet('TaskEngine','StationFlows')][string]$ExecutionOwner = 'TaskEngine',
     [ValidateRange(1024,65535)][int]$Port = 19580,
+    [switch]$MotionOnly,
     [string]$SourceRoot = (Join-Path $env:LOCALAPPDATA 'MotionControlFramework\Configurations')
 )
 
@@ -15,8 +16,11 @@ if (-not (Test-Path -LiteralPath $sourceMachine -PathType Container)) { throw '�
 if (Test-Path -LiteralPath $destination) { throw '目标根目录已存在；不会覆盖或删除。' }
 if ($destination.StartsWith($source.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw '测试目录不能位于源配置之内。' }
 if (@(Get-Process -Name 'MotionControl.Host.Wpf' -ErrorAction SilentlyContinue).Count -gt 0) { throw '正式上位机正在运行，不复制可能变化的配置。' }
-$sample = Join-Path $repo 'src\MotionControl.TaskEngine\Samples\RotaryWelding'
-foreach ($relative in @('TaskMachine.json','StationPreparation.json','Variables.additions.json','RotaryInit.json','RotaryPrepare.json','RotaryTable.json','RotaryWeld.json','RotaryPress.json','RotaryInspect.json')) {
+$sampleName = if ($MotionOnly) { 'RotaryMotionValidation' } else { 'RotaryWelding' }
+$sample = Join-Path $repo ('src\MotionControl.TaskEngine\Samples\' + $sampleName)
+$taskPrefix = if ($MotionOnly) { 'RotaryMotion' } else { 'Rotary' }
+$taskFiles = @('Init','Prepare','Table','Weld','Press','Inspect') | ForEach-Object { $taskPrefix + $_ + '.json' }
+foreach ($relative in (@('TaskMachine.json','StationPreparation.json','Variables.additions.json') + $taskFiles)) {
     if (-not (Test-Path -LiteralPath (Join-Path $sample $relative) -PathType Leaf)) { throw "缺少样例文件：$relative" }
 }
 
@@ -88,9 +92,16 @@ $outputMap = [ordered]@{
     '取料夹紧'=40; 'A夹紧'=41; 'B夹紧'=42; '扫码触发'=43; '压装启动'=45;
     '剔除启动'=48; '缓存交接'=49; '合格出料'=50
 }
+if ($MotionOnly) {
+    $inputMap.Remove('扫码成功')
+    $inputMap.Remove('扫码完成')
+    $outputMap.Remove('扫码触发')
+}
 foreach ($name in $inputMap.Keys) { Set-RotaryIo $inputs $name $inputMap[$name] $card }
 foreach ($name in $outputMap.Keys) { Set-RotaryIo $outputs $name $outputMap[$name] $card }
-for ($bit=0; $bit -lt 16; $bit++) { Set-RotaryIo $inputs ('扫码数据{0:D2}' -f $bit) (200 + $bit) $card }
+if (-not $MotionOnly) {
+    for ($bit=0; $bit -lt 16; $bit++) { Set-RotaryIo $inputs ('扫码数据{0:D2}' -f $bit) (200 + $bit) $card }
+}
 foreach ($name in @('上料到位','焊接完成','相机触发反馈','检测完成','检测OK','检测NG')) {
     if (@($inputs | Where-Object { $_.name -eq $name -and $_.controllerId -eq $card -and $_.activeHigh -eq $true }).Count -ne 1) { throw "缺少既有输入：$name" }
 }
@@ -102,8 +113,11 @@ $io.digitalOutputs = @($outputs.ToArray())
 Write-RotaryJson 'HardwareConfig\AxisParameters.json' $axisConfig
 Write-RotaryJson 'HardwareConfig\IoMapping.json' $io
 Write-RotaryJson 'Parameters\ControllerBackend.json' ([pscustomobject]@{backend='Virtual'; port=$Port})
-$definition = if ($ExecutionOwner -eq 'StationFlows') { 'RotaryWelding' } else { 'WeldingExample' }
+$definition = if ($ExecutionOwner -eq 'StationFlows') { if ($MotionOnly) { 'RotaryMotionValidation' } else { 'RotaryWelding' } } else { 'WeldingExample' }
 Write-RotaryJson 'Parameters\Equipment.json' ([pscustomobject]@{schemaVersion=1; definition=$definition; executionOwner=$ExecutionOwner})
+$markerPath = Join-Path $machine 'Parameters\RotaryMotionValidation.json'
+if (Test-Path -LiteralPath $markerPath) { throw '源配置已有纯运动模式标记；请核对设备，不会覆盖或误用该标记。' }
+if ($MotionOnly) { Write-RotaryJson 'Parameters\RotaryMotionValidation.json' ([pscustomobject]@{schemaVersion=1; motionOnly=$true}) }
 $variables = Read-RotaryJson 'Parameters\DeviceVariables.json'
 $additions = Get-Content -LiteralPath (Join-Path $sample 'Variables.additions.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 foreach ($item in @($additions.variables)) {
@@ -111,7 +125,7 @@ foreach ($item in @($additions.variables)) {
 }
 $variables.variables = @($variables.variables) + @($additions.variables)
 Write-RotaryJson 'Parameters\DeviceVariables.json' $variables
-foreach ($name in @('RotaryInit.json','RotaryPrepare.json','RotaryTable.json','RotaryWeld.json','RotaryPress.json','RotaryInspect.json')) {
+foreach ($name in $taskFiles) {
     $target = Join-Path $machine ('Tasks\' + $name)
     if (Test-Path -LiteralPath $target) { throw "任务已存在，不覆盖：$target" }
     Copy-Item -LiteralPath (Join-Path $sample $name) -Destination $target

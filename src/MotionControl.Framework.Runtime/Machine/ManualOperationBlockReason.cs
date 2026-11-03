@@ -22,6 +22,9 @@ namespace MotionControl.Framework.Runtime.Machine
         EmergencyStopAlarmNotReset,
 
         /// <summary>运行时无法读取急停输入状态。</summary>
-        EmergencyStopStatusUnavailable
+        EmergencyStopStatusUnavailable,
+
+        /// <summary>旧自动流程尚未完成或无法确认安全收尾；仍允许专用受控停止。</summary>
+        AutomaticFlowUnsettled
     }
 }

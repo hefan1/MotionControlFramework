@@ -10,7 +10,7 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
         /// <summary>单件产品只在明确交接完成时改变工艺阶段。</summary>
         internal sealed class Carrier
         {
-            /// <summary>扫码设备返回的产品编号。</summary>
+            /// <summary>扫码编号或运动验证的内部交接令牌。</summary>
             internal string Id;
             /// <summary>当前阶段：Loaded、Welded 或 Pressed。</summary>
             internal string Stage;
@@ -26,21 +26,25 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
         private readonly Carrier[] _nests = new Carrier[2];
         /// <summary>缓存仅允许一件产品，堵塞时不能覆盖。</summary>
         private Carrier _buffer;
-        /// <summary>本次控制器会话内已经读取过的产品编号，重复扫码不放行。</summary>
+        /// <summary>追溯模式中已经读取过的产品编号，重复扫码不放行。</summary>
         private readonly HashSet<string> _seen = new HashSet<string>(StringComparer.Ordinal);
         /// <summary>各工位最近确认进入的动作，复制到现场证据中。</summary>
         private readonly Dictionary<string, string> _stationActions = new Dictionary<string, string>();
         /// <summary>写入独立设备证据，失败时禁止其他工位继续。</summary>
         private readonly IEquipmentEvidenceStore _evidenceStore;
-        /// <summary>独立创建每件产品的完成记录。</summary>
+        /// <summary>追溯模式使用的逐件记录存储；纯运动验证可以为空。</summary>
         private readonly IEquipmentRecordStore _recordStore;
+        /// <summary>原有追溯样例要求扫码及逐件记录；纯运动验证使用内部令牌。</summary>
+        private readonly bool _traceProducts;
+        /// <summary>供设备准备与工位区分明确选择的样例，不根据读写故障降级。</summary>
+        internal bool TraceProducts { get { return _traceProducts; } }
         /// <summary>本设备实例的会话标识，与旧会话严格区分。</summary>
         private readonly string _sessionId = Guid.NewGuid().ToString("N");
         /// <summary>上一次会话已有生产证据，现场未人工核对前不得运行。</summary>
         private readonly bool _previousProduction;
         /// <summary>现场证据写入失败的原因；失败后不允许继续动作。</summary>
         private string _evidenceError;
-        /// <summary>上料中已由扫码设备返回的产品编号。</summary>
+        /// <summary>上料中的扫码编号或内部载具令牌。</summary>
         private string _loadingProduct;
         /// <summary>位于焊接侧的夹位索引；另一夹位位于压合侧。</summary>
         private int _weldNest;
@@ -50,10 +54,11 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
         private bool _started;
 
         /// <summary>绑定当前会话证据存储；读取到旧生产证据时保持禁止，不覆盖旧文件。</summary>
-        internal RotaryCarrierLine(IEquipmentEvidenceStore evidenceStore, IEquipmentRecordStore recordStore, RotaryEvidence previous)
+        internal RotaryCarrierLine(IEquipmentEvidenceStore evidenceStore, IEquipmentRecordStore recordStore, RotaryEvidence previous, bool traceProducts)
         {
             _evidenceStore = evidenceStore ?? throw new ArgumentNullException(nameof(evidenceStore));
-            _recordStore = recordStore ?? throw new ArgumentNullException(nameof(recordStore));
+            _traceProducts = traceProducts;
+            _recordStore = traceProducts ? recordStore ?? throw new ArgumentNullException(nameof(recordStore)) : recordStore;
             _previousProduction = previous != null && (previous.ProductionStarted || previous.Loading || previous.Welding
                 || previous.Pressing || previous.Unloading || previous.Rotating || previous.Inspecting
                 || previous.NestA != null || previous.NestB != null || previous.Buffer != null || !string.IsNullOrEmpty(previous.LoadingProduct));
@@ -147,10 +152,25 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
             lock (_sync)
             {
                 EnsureAvailable();
-                if (!_loading || string.IsNullOrWhiteSpace(id) || !_seen.Add(id))
+                if (!_traceProducts || !_loading || string.IsNullOrWhiteSpace(id) || !_seen.Add(id))
                     throw new InvalidOperationException("扫码编号为空、重复或当前没有上料操作。");
                 _loadingProduct = id;
                 SaveEvidence();
+            }
+        }
+
+        /// <summary>纯运动验证为一次载具交接分配会话内令牌，不表示扫码或产品编号。</summary>
+        internal string RegisterUntrackedCarrier()
+        {
+            lock (_sync)
+            {
+                EnsureAvailable();
+                if (_traceProducts || !_loading || _loadingProduct != null)
+                    throw new InvalidOperationException("当前上料状态不允许创建载具令牌。");
+                string token = "载具令牌-" + Guid.NewGuid().ToString("N");
+                _loadingProduct = token;
+                SaveEvidence();
+                return token;
             }
         }
 
@@ -332,7 +352,7 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
                     throw new InvalidOperationException("复检产品或结果未知，不能完成下料。");
                 try
                 {
-                    _recordStore.CreateRecord("RotaryWelding-" + _sessionId + "-" + id, new RotaryCompletedProduct {
+                    if (_traceProducts) _recordStore.CreateRecord("RotaryWelding-" + _sessionId + "-" + id, new RotaryCompletedProduct {
                         SessionId = _sessionId, Id = id, Nest = _buffer.Nest, Result = _buffer.Result,
                         Station = "复检分拣", Stage = "已完成",
                         Outlet = _buffer.Result == "OK" ? "合格出口" : "不良出口", CompletedUtc = DateTime.UtcNow });
@@ -355,7 +375,18 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
             {
                 if (!nest.HasValue) return null;
                 Carrier item = _nests[nest.Value];
-                return (nest.Value == 0 ? "A夹位" : "B夹位") + (item == null ? "" : " · " + item.Id + " · " + item.Stage);
+                string stage = "";
+                if (item != null)
+                {
+                    switch (item.Stage)
+                    {
+                        case "Loaded": stage = "已上料"; break;
+                        case "Welded": stage = "已焊接"; break;
+                        case "Pressed": stage = "已压合"; break;
+                        default: stage = "状态未知"; break;
+                    }
+                }
+                return (nest.Value == 0 ? "A夹位" : "B夹位") + (item == null ? "" : (_traceProducts ? " · " + item.Id : "") + " · " + stage);
             }
         }
     }

@@ -228,6 +228,8 @@ namespace MotionControl.TaskEngine.Checks
         {
             /// <summary>此检查的内存设备。</summary>
             private readonly InMemoryTaskDevice _device;
+            /// <summary>原追溯样例需要扫码模型；纯运动样例不读取扫码 IO。</summary>
+            private readonly bool _scannerConfigured;
             /// <summary>上一轮扫码触发。</summary>
             private bool _scannerTrigger;
             /// <summary>由扫码设备生成的本会话编号。</summary>
@@ -244,7 +246,7 @@ namespace MotionControl.TaskEngine.Checks
             private bool _invalidCameraLatched;
 
             /// <summary>绑定独立内存设备。</summary>
-            public RotaryTestSignals(InMemoryTaskDevice device) { _device = device; }
+            public RotaryTestSignals(InMemoryTaskDevice device, bool scannerConfigured = true) { _device = device; _scannerConfigured = scannerConfigured; }
 
             /// <summary>推进独立反馈；输出撤销不清除已锁存的相机结果。</summary>
             public void Tick()
@@ -259,16 +261,19 @@ namespace MotionControl.TaskEngine.Checks
                 }
                 foreach (var pair in new[] { new[] { "焊接启动", "焊接完成" }, new[] { "焊接启动", "焊接合格" }, new[] { "压装启动", "压装完成" }, new[] { "压装启动", "压装合格" }, new[] { "缓存交接", "缓存载具到位" }, new[] { "合格出料", "合格出料完成" }, new[] { "剔除启动", "剔除完成" } })
                     _device.SetInput(pair[1], _device.ReadOutput(pair[0]) == true);
-                bool scan = _device.ReadOutput("扫码触发") == true;
-                if (scan && !_scannerTrigger)
+                if (_scannerConfigured)
                 {
-                    int code = ++_scanCount;
-                    if (Fault == "扫码失败") code = 0;
-                    for (int i = 0; i < 16; i++) _device.SetInput("扫码数据" + i.ToString("D2"), (code & (1 << i)) != 0);
-                    _device.SetInput("扫码成功", Fault != "扫码失败"); _device.SetInput("扫码完成", true);
+                    bool scan = _device.ReadOutput("扫码触发") == true;
+                    if (scan && !_scannerTrigger)
+                    {
+                        int code = ++_scanCount;
+                        if (Fault == "扫码失败") code = 0;
+                        for (int i = 0; i < 16; i++) _device.SetInput("扫码数据" + i.ToString("D2"), (code & (1 << i)) != 0);
+                        _device.SetInput("扫码成功", Fault != "扫码失败"); _device.SetInput("扫码完成", true);
+                    }
+                    if (!scan) { _device.SetInput("扫码完成", false); _device.SetInput("扫码成功", false); }
+                    _scannerTrigger = scan;
                 }
-                if (!scan) { _device.SetInput("扫码完成", false); _device.SetInput("扫码成功", false); }
-                _scannerTrigger = scan;
                 bool camera = _device.ReadOutput("相机触发") == true;
                 if (camera && !_cameraTrigger)
                 {

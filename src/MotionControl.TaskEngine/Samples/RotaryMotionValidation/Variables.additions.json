@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "variables": [
+    {
+      "name": "RotaryMotion.WeldIsA",
+      "dataType": "Boolean",
+      "initialValue": "true",
+      "description": "双夹位样例 WeldIsA",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "RotaryMotion.InfeedOccupied",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 InfeedOccupied",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "RotaryMotion.WeldOccupied",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 WeldOccupied",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "RotaryMotion.PressOccupied",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 PressOccupied",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "RotaryMotion.BufferOccupied",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 BufferOccupied",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "RotaryMotion.WeldRequest",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 WeldRequest",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "RotaryMotion.WeldDone",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 WeldDone",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "RotaryMotion.PressRequest",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 PressRequest",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "RotaryMotion.PressDone",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 PressDone",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "RotaryMotion.GripClosed",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 GripClosed",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "RotaryMotion.GripOpen",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 GripOpen",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "RotaryMotion.AClosed",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 AClosed",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "RotaryMotion.AOpen",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 AOpen",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "RotaryMotion.BClosed",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 BClosed",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "RotaryMotion.BOpen",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 BOpen",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "RotaryMotion.VisionOK",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 VisionOK",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "RotaryMotion.VisionNG",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 VisionNG",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "RotaryMotion.BufferCarrier",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "双夹位样例 BufferCarrier",
+      "allowOperatorWrite": false
+    }
+  ]
+}

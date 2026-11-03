@@ -1,0 +1,1600 @@
+{
+  "schemaVersion": 1,
+  "taskId": "RotaryMotionTable",
+  "name": "上料与双夹位切换",
+  "revision": 1,
+  "root": {
+    "kind": "Sequence",
+    "id": "step0147",
+    "name": "双夹位生产循环",
+    "timeoutMs": 900000,
+    "children": [
+      {
+        "kind": "ResourceScope",
+        "id": "step0062",
+        "name": "占用焊接位执行取料与上料",
+        "timeoutMs": 180000,
+        "resources": [
+          "Zone:RotaryMotionWeld",
+          "Axis:Feeder_X",
+          "Axis:Feeder_Z",
+          "Axis:Load_X",
+          "Axis:Transfer_Y",
+          "Output:取料夹紧",
+          "Output:A夹紧",
+          "Output:B夹紧"
+        ],
+        "body": {
+          "kind": "Sequence",
+          "id": "step0061",
+          "name": "取料与夹位上料",
+          "timeoutMs": 900000,
+          "children": [
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0010",
+              "name": "确认Weld_Z 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Weld_Z",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0011",
+              "name": "确认Feeder_Z 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Feeder_Z",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0012",
+              "name": "确认Load_X 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Load_X",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0013",
+              "name": "确认Transfer_Y 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Transfer_Y",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitOutput",
+              "id": "step0014",
+              "name": "确认取料夹紧关闭",
+              "timeoutMs": 30000,
+              "outputName": "取料夹紧",
+              "expected": false,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitExclusiveInputs",
+              "id": "step0015",
+              "name": "确认取料夹紧到位 / 取料松开到位",
+              "timeoutMs": 30000,
+              "firstInputName": "取料夹紧到位",
+              "secondInputName": "取料松开到位",
+              "firstVariableName": "RotaryMotion.GripClosed",
+              "secondVariableName": "RotaryMotion.GripOpen",
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ],
+              "requiredFirstValue": false
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0016",
+              "name": "等待上料到位有效",
+              "timeoutMs": 30000,
+              "inputName": "上料到位",
+              "expected": true,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "SetVariable",
+              "id": "step0017",
+              "name": "更新上料位占料状态",
+              "timeoutMs": 30000,
+              "variableName": "RotaryMotion.InfeedOccupied",
+              "value": {
+                "source": "Constant",
+                "dataType": "Boolean",
+                "constant": "true"
+              }
+            },
+            {
+              "kind": "MoveAxis",
+              "id": "step0018",
+              "name": "Feeder_X 移动到 1",
+              "timeoutMs": 30000,
+              "axisName": "Feeder_X",
+              "mode": "Absolute",
+              "target": {
+                "source": "Constant",
+                "dataType": "Number",
+                "constant": "1"
+              },
+              "profile": {
+                "speed": 5,
+                "acceleration": 10,
+                "deceleration": 10
+              }
+            },
+            {
+              "kind": "MoveAxis",
+              "id": "step0019",
+              "name": "Feeder_Z 移动到 1",
+              "timeoutMs": 30000,
+              "axisName": "Feeder_Z",
+              "mode": "Absolute",
+              "target": {
+                "source": "Constant",
+                "dataType": "Number",
+                "constant": "1"
+              },
+              "profile": {
+                "speed": 5,
+                "acceleration": 10,
+                "deceleration": 10
+              }
+            },
+            {
+              "kind": "SetOutput",
+              "id": "step0020",
+              "name": "开启取料夹紧",
+              "timeoutMs": 30000,
+              "outputName": "取料夹紧",
+              "value": true
+            },
+            {
+              "kind": "WaitExclusiveInputs",
+              "id": "step0021",
+              "name": "确认取料夹紧到位 / 取料松开到位",
+              "timeoutMs": 30000,
+              "firstInputName": "取料夹紧到位",
+              "secondInputName": "取料松开到位",
+              "firstVariableName": "RotaryMotion.GripClosed",
+              "secondVariableName": "RotaryMotion.GripOpen",
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ],
+              "requiredFirstValue": true
+            },
+            {
+              "kind": "MoveAxis",
+              "id": "step0022",
+              "name": "Feeder_Z 移动到 0",
+              "timeoutMs": 30000,
+              "axisName": "Feeder_Z",
+              "mode": "Absolute",
+              "target": {
+                "source": "Constant",
+                "dataType": "Number",
+                "constant": "0"
+              },
+              "profile": {
+                "speed": 5,
+                "acceleration": 10,
+                "deceleration": 10
+              }
+            },
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0023",
+              "name": "确认Feeder_Z 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Feeder_Z",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "MoveAxis",
+              "id": "step0024",
+              "name": "Feeder_X 移动到 0",
+              "timeoutMs": 30000,
+              "axisName": "Feeder_X",
+              "mode": "Absolute",
+              "target": {
+                "source": "Constant",
+                "dataType": "Number",
+                "constant": "0"
+              },
+              "profile": {
+                "speed": 5,
+                "acceleration": 10,
+                "deceleration": 10
+              }
+            },
+            {
+              "kind": "ConditionBranch",
+              "id": "step0040",
+              "name": "确认当前夹位可接料",
+              "timeoutMs": 900000,
+              "condition": {
+                "kind": "Compare",
+                "comparison": "Equal",
+                "left": {
+                  "source": "Variable",
+                  "variableName": "RotaryMotion.WeldIsA"
+                },
+                "right": {
+                  "source": "Constant",
+                  "dataType": "Boolean",
+                  "constant": "true"
+                }
+              },
+              "whenTrue": {
+                "kind": "Sequence",
+                "id": "step0036",
+                "name": "焊接位使用 A",
+                "timeoutMs": 900000,
+                "children": [
+                  {
+                    "kind": "WaitExclusiveInputs",
+                    "id": "step0034",
+                    "name": "确认A夹紧到位 / A松开到位",
+                    "timeoutMs": 30000,
+                    "firstInputName": "A夹紧到位",
+                    "secondInputName": "A松开到位",
+                    "firstVariableName": "RotaryMotion.AClosed",
+                    "secondVariableName": "RotaryMotion.AOpen",
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ],
+                    "requiredFirstValue": false
+                  },
+                  {
+                    "kind": "WaitOutput",
+                    "id": "step0035",
+                    "name": "确认A夹紧关闭",
+                    "timeoutMs": 30000,
+                    "outputName": "A夹紧",
+                    "expected": false,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  }
+                ]
+              },
+              "whenFalse": {
+                "kind": "Sequence",
+                "id": "step0039",
+                "name": "焊接位使用 B",
+                "timeoutMs": 900000,
+                "children": [
+                  {
+                    "kind": "WaitExclusiveInputs",
+                    "id": "step0037",
+                    "name": "确认B夹紧到位 / B松开到位",
+                    "timeoutMs": 30000,
+                    "firstInputName": "B夹紧到位",
+                    "secondInputName": "B松开到位",
+                    "firstVariableName": "RotaryMotion.BClosed",
+                    "secondVariableName": "RotaryMotion.BOpen",
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ],
+                    "requiredFirstValue": false
+                  },
+                  {
+                    "kind": "WaitOutput",
+                    "id": "step0038",
+                    "name": "确认B夹紧关闭",
+                    "timeoutMs": 30000,
+                    "outputName": "B夹紧",
+                    "expected": false,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0041",
+              "name": "确认Feeder_Z 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Feeder_Z",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0042",
+              "name": "确认Weld_Z 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Weld_Z",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "MoveAxis",
+              "id": "step0043",
+              "name": "Transfer_Y 移动到 1",
+              "timeoutMs": 30000,
+              "axisName": "Transfer_Y",
+              "mode": "Absolute",
+              "target": {
+                "source": "Constant",
+                "dataType": "Number",
+                "constant": "1"
+              },
+              "profile": {
+                "speed": 5,
+                "acceleration": 10,
+                "deceleration": 10
+              }
+            },
+            {
+              "kind": "MoveAxis",
+              "id": "step0044",
+              "name": "Load_X 移动到 1",
+              "timeoutMs": 30000,
+              "axisName": "Load_X",
+              "mode": "Absolute",
+              "target": {
+                "source": "Constant",
+                "dataType": "Number",
+                "constant": "1"
+              },
+              "profile": {
+                "speed": 5,
+                "acceleration": 10,
+                "deceleration": 10
+              }
+            },
+            {
+              "kind": "ConditionBranch",
+              "id": "step0051",
+              "name": "夹紧当前焊接夹位",
+              "timeoutMs": 900000,
+              "condition": {
+                "kind": "Compare",
+                "comparison": "Equal",
+                "left": {
+                  "source": "Variable",
+                  "variableName": "RotaryMotion.WeldIsA"
+                },
+                "right": {
+                  "source": "Constant",
+                  "dataType": "Boolean",
+                  "constant": "true"
+                }
+              },
+              "whenTrue": {
+                "kind": "Sequence",
+                "id": "step0047",
+                "name": "焊接位使用 A",
+                "timeoutMs": 900000,
+                "children": [
+                  {
+                    "kind": "SetOutput",
+                    "id": "step0045",
+                    "name": "开启A夹紧",
+                    "timeoutMs": 30000,
+                    "outputName": "A夹紧",
+                    "value": true
+                  },
+                  {
+                    "kind": "WaitExclusiveInputs",
+                    "id": "step0046",
+                    "name": "确认A夹紧到位 / A松开到位",
+                    "timeoutMs": 30000,
+                    "firstInputName": "A夹紧到位",
+                    "secondInputName": "A松开到位",
+                    "firstVariableName": "RotaryMotion.AClosed",
+                    "secondVariableName": "RotaryMotion.AOpen",
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ],
+                    "requiredFirstValue": true
+                  }
+                ]
+              },
+              "whenFalse": {
+                "kind": "Sequence",
+                "id": "step0050",
+                "name": "焊接位使用 B",
+                "timeoutMs": 900000,
+                "children": [
+                  {
+                    "kind": "SetOutput",
+                    "id": "step0048",
+                    "name": "开启B夹紧",
+                    "timeoutMs": 30000,
+                    "outputName": "B夹紧",
+                    "value": true
+                  },
+                  {
+                    "kind": "WaitExclusiveInputs",
+                    "id": "step0049",
+                    "name": "确认B夹紧到位 / B松开到位",
+                    "timeoutMs": 30000,
+                    "firstInputName": "B夹紧到位",
+                    "secondInputName": "B松开到位",
+                    "firstVariableName": "RotaryMotion.BClosed",
+                    "secondVariableName": "RotaryMotion.BOpen",
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ],
+                    "requiredFirstValue": true
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "SetVariable",
+              "id": "step0053",
+              "name": "更新焊接位占料状态",
+              "timeoutMs": 30000,
+              "variableName": "RotaryMotion.WeldOccupied",
+              "value": {
+                "source": "Constant",
+                "dataType": "Boolean",
+                "constant": "true"
+              }
+            },
+            {
+              "kind": "SetOutput",
+              "id": "step0054",
+              "name": "关闭取料夹紧",
+              "timeoutMs": 30000,
+              "outputName": "取料夹紧",
+              "value": false
+            },
+            {
+              "kind": "WaitExclusiveInputs",
+              "id": "step0055",
+              "name": "确认取料夹紧到位 / 取料松开到位",
+              "timeoutMs": 30000,
+              "firstInputName": "取料夹紧到位",
+              "secondInputName": "取料松开到位",
+              "firstVariableName": "RotaryMotion.GripClosed",
+              "secondVariableName": "RotaryMotion.GripOpen",
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ],
+              "requiredFirstValue": false
+            },
+            {
+              "kind": "SetVariable",
+              "id": "step0056",
+              "name": "更新上料位占料状态",
+              "timeoutMs": 30000,
+              "variableName": "RotaryMotion.InfeedOccupied",
+              "value": {
+                "source": "Constant",
+                "dataType": "Boolean",
+                "constant": "false"
+              }
+            },
+            {
+              "kind": "MoveAxis",
+              "id": "step0057",
+              "name": "Load_X 移动到 0",
+              "timeoutMs": 30000,
+              "axisName": "Load_X",
+              "mode": "Absolute",
+              "target": {
+                "source": "Constant",
+                "dataType": "Number",
+                "constant": "0"
+              },
+              "profile": {
+                "speed": 5,
+                "acceleration": 10,
+                "deceleration": 10
+              }
+            },
+            {
+              "kind": "MoveAxis",
+              "id": "step0058",
+              "name": "Transfer_Y 移动到 0",
+              "timeoutMs": 30000,
+              "axisName": "Transfer_Y",
+              "mode": "Absolute",
+              "target": {
+                "source": "Constant",
+                "dataType": "Number",
+                "constant": "0"
+              },
+              "profile": {
+                "speed": 5,
+                "acceleration": 10,
+                "deceleration": 10
+              }
+            },
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0059",
+              "name": "确认Load_X 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Load_X",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0060",
+              "name": "确认Transfer_Y 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Transfer_Y",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "step0143",
+        "name": "更新焊接请求",
+        "timeoutMs": 30000,
+        "variableName": "RotaryMotion.WeldRequest",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "true"
+        }
+      },
+      {
+        "kind": "ConditionBranch",
+        "id": "step0132",
+        "name": "有焊接完成产品则启动压合",
+        "timeoutMs": 900000,
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "RotaryMotion.PressOccupied"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "true"
+          }
+        },
+        "whenTrue": {
+          "kind": "Sequence",
+          "id": "step0130",
+          "name": "启动压合",
+          "timeoutMs": 900000,
+          "children": [
+            {
+              "kind": "SetVariable",
+              "id": "step0129",
+              "name": "更新压合请求",
+              "timeoutMs": 30000,
+              "variableName": "RotaryMotion.PressRequest",
+              "value": {
+                "source": "Constant",
+                "dataType": "Boolean",
+                "constant": "true"
+              }
+            }
+          ]
+        },
+        "whenFalse": {
+          "kind": "Sequence",
+          "id": "step0131",
+          "name": "无压合产品",
+          "timeoutMs": 900000,
+          "children": []
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "step0144",
+        "name": "等待焊接工位完成",
+        "timeoutMs": 180000,
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "RotaryMotion.WeldDone"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "true"
+          }
+        },
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "SetVariable",
+        "id": "step0145",
+        "name": "更新焊接请求",
+        "timeoutMs": 30000,
+        "variableName": "RotaryMotion.WeldRequest",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "step0146",
+        "name": "等待焊接完成状态复位",
+        "timeoutMs": 180000,
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "RotaryMotion.WeldDone"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "false"
+          }
+        },
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "ConditionBranch",
+        "id": "step0138",
+        "name": "有产品则等待压合完成",
+        "timeoutMs": 900000,
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "RotaryMotion.PressOccupied"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "true"
+          }
+        },
+        "whenTrue": {
+          "kind": "Sequence",
+          "id": "step0136",
+          "name": "等待压合",
+          "timeoutMs": 900000,
+          "children": [
+            {
+              "kind": "WaitCondition",
+              "id": "step0133",
+              "name": "等待压合工位完成",
+              "timeoutMs": 180000,
+              "condition": {
+                "kind": "Compare",
+                "comparison": "Equal",
+                "left": {
+                  "source": "Variable",
+                  "variableName": "RotaryMotion.PressDone"
+                },
+                "right": {
+                  "source": "Constant",
+                  "dataType": "Boolean",
+                  "constant": "true"
+                }
+              },
+              "timeoutAlarmCodes": [
+                "FOUR_HANDSHAKE_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "SetVariable",
+              "id": "step0134",
+              "name": "更新压合请求",
+              "timeoutMs": 30000,
+              "variableName": "RotaryMotion.PressRequest",
+              "value": {
+                "source": "Constant",
+                "dataType": "Boolean",
+                "constant": "false"
+              }
+            },
+            {
+              "kind": "WaitCondition",
+              "id": "step0135",
+              "name": "等待压合完成状态复位",
+              "timeoutMs": 180000,
+              "condition": {
+                "kind": "Compare",
+                "comparison": "Equal",
+                "left": {
+                  "source": "Variable",
+                  "variableName": "RotaryMotion.PressDone"
+                },
+                "right": {
+                  "source": "Constant",
+                  "dataType": "Boolean",
+                  "constant": "false"
+                }
+              },
+              "timeoutAlarmCodes": [
+                "FOUR_HANDSHAKE_TIMEOUT"
+              ]
+            }
+          ]
+        },
+        "whenFalse": {
+          "kind": "Sequence",
+          "id": "step0137",
+          "name": "无需等待压合",
+          "timeoutMs": 900000,
+          "children": []
+        }
+      },
+      {
+        "kind": "ConditionBranch",
+        "id": "step0142",
+        "name": "压合位有料则交接缓存",
+        "timeoutMs": 900000,
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "RotaryMotion.PressOccupied"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "true"
+          }
+        },
+        "whenTrue": {
+          "kind": "Sequence",
+          "id": "step0140",
+          "name": "等待缓存并下料",
+          "timeoutMs": 900000,
+          "children": [
+            {
+              "kind": "WaitCondition",
+              "id": "step0139",
+              "name": "等待缓存位可接收",
+              "timeoutMs": 180000,
+              "condition": {
+                "kind": "Compare",
+                "comparison": "Equal",
+                "left": {
+                  "source": "Variable",
+                  "variableName": "RotaryMotion.BufferOccupied"
+                },
+                "right": {
+                  "source": "Constant",
+                  "dataType": "Boolean",
+                  "constant": "false"
+                }
+              },
+              "timeoutAlarmCodes": [
+                "FOUR_HANDSHAKE_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "ResourceScope",
+              "id": "step0093",
+              "name": "占用压合位和缓存区执行下料",
+              "timeoutMs": 180000,
+              "resources": [
+                "Zone:RotaryMotionPress",
+                "Zone:Buffer",
+                "Axis:Unload_X",
+                "Output:A夹紧",
+                "Output:B夹紧",
+                "Output:缓存交接"
+              ],
+              "body": {
+                "kind": "Sequence",
+                "id": "step0092",
+                "name": "压合位下料",
+                "timeoutMs": 900000,
+                "children": [
+                  {
+                    "kind": "WaitAxisPosition",
+                    "id": "step0063",
+                    "name": "确认Press_Z 在 0 且停稳",
+                    "timeoutMs": 30000,
+                    "axisName": "Press_Z",
+                    "position": 0,
+                    "tolerance": 0.01,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "WaitAxisPosition",
+                    "id": "step0064",
+                    "name": "确认Unload_X 在 0 且停稳",
+                    "timeoutMs": 30000,
+                    "axisName": "Unload_X",
+                    "position": 0,
+                    "tolerance": 0.01,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "WaitAxisPosition",
+                    "id": "step0065",
+                    "name": "确认Buffer_X 在 0 且停稳",
+                    "timeoutMs": 30000,
+                    "axisName": "Buffer_X",
+                    "position": 0,
+                    "tolerance": 0.01,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "WaitAxisPosition",
+                    "id": "step0066",
+                    "name": "确认Buffer_Y 在 0 且停稳",
+                    "timeoutMs": 30000,
+                    "axisName": "Buffer_Y",
+                    "position": 0,
+                    "tolerance": 0.01,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "WaitInput",
+                    "id": "step0067",
+                    "name": "等待缓存接收允许有效",
+                    "timeoutMs": 30000,
+                    "inputName": "缓存接收允许",
+                    "expected": true,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "WaitOutput",
+                    "id": "step0068",
+                    "name": "确认缓存交接关闭",
+                    "timeoutMs": 30000,
+                    "outputName": "缓存交接",
+                    "expected": false,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "WaitInput",
+                    "id": "step0069",
+                    "name": "等待缓存载具到位复位",
+                    "timeoutMs": 30000,
+                    "inputName": "缓存载具到位",
+                    "expected": false,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "ConditionBranch",
+                    "id": "step0076",
+                    "name": "松开压合位夹具",
+                    "timeoutMs": 900000,
+                    "condition": {
+                      "kind": "Compare",
+                      "comparison": "Equal",
+                      "left": {
+                        "source": "Variable",
+                        "variableName": "RotaryMotion.WeldIsA"
+                      },
+                      "right": {
+                        "source": "Constant",
+                        "dataType": "Boolean",
+                        "constant": "true"
+                      }
+                    },
+                    "whenTrue": {
+                      "kind": "Sequence",
+                      "id": "step0072",
+                      "name": "压合位使用 B",
+                      "timeoutMs": 900000,
+                      "children": [
+                        {
+                          "kind": "SetOutput",
+                          "id": "step0070",
+                          "name": "关闭B夹紧",
+                          "timeoutMs": 30000,
+                          "outputName": "B夹紧",
+                          "value": false
+                        },
+                        {
+                          "kind": "WaitExclusiveInputs",
+                          "id": "step0071",
+                          "name": "确认B夹紧到位 / B松开到位",
+                          "timeoutMs": 30000,
+                          "firstInputName": "B夹紧到位",
+                          "secondInputName": "B松开到位",
+                          "firstVariableName": "RotaryMotion.BClosed",
+                          "secondVariableName": "RotaryMotion.BOpen",
+                          "timeoutAlarmCodes": [
+                            "DEMO_SENSOR_TIMEOUT"
+                          ],
+                          "requiredFirstValue": false
+                        }
+                      ]
+                    },
+                    "whenFalse": {
+                      "kind": "Sequence",
+                      "id": "step0075",
+                      "name": "压合位使用 A",
+                      "timeoutMs": 900000,
+                      "children": [
+                        {
+                          "kind": "SetOutput",
+                          "id": "step0073",
+                          "name": "关闭A夹紧",
+                          "timeoutMs": 30000,
+                          "outputName": "A夹紧",
+                          "value": false
+                        },
+                        {
+                          "kind": "WaitExclusiveInputs",
+                          "id": "step0074",
+                          "name": "确认A夹紧到位 / A松开到位",
+                          "timeoutMs": 30000,
+                          "firstInputName": "A夹紧到位",
+                          "secondInputName": "A松开到位",
+                          "firstVariableName": "RotaryMotion.AClosed",
+                          "secondVariableName": "RotaryMotion.AOpen",
+                          "timeoutAlarmCodes": [
+                            "DEMO_SENSOR_TIMEOUT"
+                          ],
+                          "requiredFirstValue": false
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "MoveAxis",
+                    "id": "step0077",
+                    "name": "Unload_X 移动到 1",
+                    "timeoutMs": 30000,
+                    "axisName": "Unload_X",
+                    "mode": "Absolute",
+                    "target": {
+                      "source": "Constant",
+                      "dataType": "Number",
+                      "constant": "1"
+                    },
+                    "profile": {
+                      "speed": 5,
+                      "acceleration": 10,
+                      "deceleration": 10
+                    }
+                  },
+                  {
+                    "kind": "SetOutput",
+                    "id": "step0078",
+                    "name": "开启缓存交接",
+                    "timeoutMs": 30000,
+                    "outputName": "缓存交接",
+                    "value": true
+                  },
+                  {
+                    "kind": "WaitInput",
+                    "id": "step0079",
+                    "name": "等待缓存载具到位有效",
+                    "timeoutMs": 30000,
+                    "inputName": "缓存载具到位",
+                    "expected": true,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "ConditionBranch",
+                    "id": "step0085",
+                    "name": "记录产品所在夹位",
+                    "timeoutMs": 900000,
+                    "condition": {
+                      "kind": "Compare",
+                      "comparison": "Equal",
+                      "left": {
+                        "source": "Variable",
+                        "variableName": "RotaryMotion.WeldIsA"
+                      },
+                      "right": {
+                        "source": "Constant",
+                        "dataType": "Boolean",
+                        "constant": "true"
+                      }
+                    },
+                    "whenTrue": {
+                      "kind": "Sequence",
+                      "id": "step0082",
+                      "name": "压合位使用 B",
+                      "timeoutMs": 900000,
+                      "children": [
+                        {
+                          "kind": "SetVariable",
+                          "id": "step0081",
+                          "name": "更新产品所在夹位",
+                          "timeoutMs": 30000,
+                          "variableName": "RotaryMotion.BufferCarrier",
+                          "value": {
+                            "source": "Constant",
+                            "dataType": "String",
+                            "constant": "B"
+                          }
+                        }
+                      ]
+                    },
+                    "whenFalse": {
+                      "kind": "Sequence",
+                      "id": "step0084",
+                      "name": "压合位使用 A",
+                      "timeoutMs": 900000,
+                      "children": [
+                        {
+                          "kind": "SetVariable",
+                          "id": "step0083",
+                          "name": "更新产品所在夹位",
+                          "timeoutMs": 30000,
+                          "variableName": "RotaryMotion.BufferCarrier",
+                          "value": {
+                            "source": "Constant",
+                            "dataType": "String",
+                            "constant": "A"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "SetVariable",
+                    "id": "step0086",
+                    "name": "更新缓存位占料状态",
+                    "timeoutMs": 30000,
+                    "variableName": "RotaryMotion.BufferOccupied",
+                    "value": {
+                      "source": "Constant",
+                      "dataType": "Boolean",
+                      "constant": "true"
+                    }
+                  },
+                  {
+                    "kind": "SetVariable",
+                    "id": "step0087",
+                    "name": "更新压合位占料状态",
+                    "timeoutMs": 30000,
+                    "variableName": "RotaryMotion.PressOccupied",
+                    "value": {
+                      "source": "Constant",
+                      "dataType": "Boolean",
+                      "constant": "false"
+                    }
+                  },
+                  {
+                    "kind": "SetOutput",
+                    "id": "step0088",
+                    "name": "关闭缓存交接",
+                    "timeoutMs": 30000,
+                    "outputName": "缓存交接",
+                    "value": false
+                  },
+                  {
+                    "kind": "WaitInput",
+                    "id": "step0089",
+                    "name": "等待缓存载具到位复位",
+                    "timeoutMs": 30000,
+                    "inputName": "缓存载具到位",
+                    "expected": false,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "MoveAxis",
+                    "id": "step0090",
+                    "name": "Unload_X 移动到 0",
+                    "timeoutMs": 30000,
+                    "axisName": "Unload_X",
+                    "mode": "Absolute",
+                    "target": {
+                      "source": "Constant",
+                      "dataType": "Number",
+                      "constant": "0"
+                    },
+                    "profile": {
+                      "speed": 5,
+                      "acceleration": 10,
+                      "deceleration": 10
+                    }
+                  },
+                  {
+                    "kind": "WaitAxisPosition",
+                    "id": "step0091",
+                    "name": "确认Unload_X 在 0 且停稳",
+                    "timeoutMs": 30000,
+                    "axisName": "Unload_X",
+                    "position": 0,
+                    "tolerance": 0.01,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "whenFalse": {
+          "kind": "Sequence",
+          "id": "step0141",
+          "name": "压合位无料",
+          "timeoutMs": 900000,
+          "children": []
+        }
+      },
+      {
+        "kind": "ResourceScope",
+        "id": "step0128",
+        "name": "占用两个加工区域旋转双夹位",
+        "timeoutMs": 180000,
+        "resources": [
+          "Zone:RotaryMotionWeld",
+          "Zone:RotaryMotionPress",
+          "Axis:Conveyor_R"
+        ],
+        "body": {
+          "kind": "Sequence",
+          "id": "step0127",
+          "name": "检查让位并切换夹位",
+          "timeoutMs": 900000,
+          "children": [
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0094",
+              "name": "确认Weld_Z 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Weld_Z",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0095",
+              "name": "确认Press_Z 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Press_Z",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0096",
+              "name": "确认Feeder_Z 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Feeder_Z",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0097",
+              "name": "确认Load_X 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Load_X",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0098",
+              "name": "确认Transfer_Y 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Transfer_Y",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0099",
+              "name": "确认Unload_X 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Unload_X",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "ConditionBranch",
+              "id": "step0104",
+              "name": "确认已焊产品夹紧",
+              "timeoutMs": 900000,
+              "condition": {
+                "kind": "Compare",
+                "comparison": "Equal",
+                "left": {
+                  "source": "Variable",
+                  "variableName": "RotaryMotion.WeldIsA"
+                },
+                "right": {
+                  "source": "Constant",
+                  "dataType": "Boolean",
+                  "constant": "true"
+                }
+              },
+              "whenTrue": {
+                "kind": "Sequence",
+                "id": "step0101",
+                "name": "焊接位使用 A",
+                "timeoutMs": 900000,
+                "children": [
+                  {
+                    "kind": "WaitExclusiveInputs",
+                    "id": "step0100",
+                    "name": "确认A夹紧到位 / A松开到位",
+                    "timeoutMs": 30000,
+                    "firstInputName": "A夹紧到位",
+                    "secondInputName": "A松开到位",
+                    "firstVariableName": "RotaryMotion.AClosed",
+                    "secondVariableName": "RotaryMotion.AOpen",
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ],
+                    "requiredFirstValue": true
+                  }
+                ]
+              },
+              "whenFalse": {
+                "kind": "Sequence",
+                "id": "step0103",
+                "name": "焊接位使用 B",
+                "timeoutMs": 900000,
+                "children": [
+                  {
+                    "kind": "WaitExclusiveInputs",
+                    "id": "step0102",
+                    "name": "确认B夹紧到位 / B松开到位",
+                    "timeoutMs": 30000,
+                    "firstInputName": "B夹紧到位",
+                    "secondInputName": "B松开到位",
+                    "firstVariableName": "RotaryMotion.BClosed",
+                    "secondVariableName": "RotaryMotion.BOpen",
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ],
+                    "requiredFirstValue": true
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "ConditionBranch",
+              "id": "step0109",
+              "name": "确认空夹位松开",
+              "timeoutMs": 900000,
+              "condition": {
+                "kind": "Compare",
+                "comparison": "Equal",
+                "left": {
+                  "source": "Variable",
+                  "variableName": "RotaryMotion.WeldIsA"
+                },
+                "right": {
+                  "source": "Constant",
+                  "dataType": "Boolean",
+                  "constant": "true"
+                }
+              },
+              "whenTrue": {
+                "kind": "Sequence",
+                "id": "step0106",
+                "name": "压合位使用 B",
+                "timeoutMs": 900000,
+                "children": [
+                  {
+                    "kind": "WaitExclusiveInputs",
+                    "id": "step0105",
+                    "name": "确认B夹紧到位 / B松开到位",
+                    "timeoutMs": 30000,
+                    "firstInputName": "B夹紧到位",
+                    "secondInputName": "B松开到位",
+                    "firstVariableName": "RotaryMotion.BClosed",
+                    "secondVariableName": "RotaryMotion.BOpen",
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ],
+                    "requiredFirstValue": false
+                  }
+                ]
+              },
+              "whenFalse": {
+                "kind": "Sequence",
+                "id": "step0108",
+                "name": "压合位使用 A",
+                "timeoutMs": 900000,
+                "children": [
+                  {
+                    "kind": "WaitExclusiveInputs",
+                    "id": "step0107",
+                    "name": "确认A夹紧到位 / A松开到位",
+                    "timeoutMs": 30000,
+                    "firstInputName": "A夹紧到位",
+                    "secondInputName": "A松开到位",
+                    "firstVariableName": "RotaryMotion.AClosed",
+                    "secondVariableName": "RotaryMotion.AOpen",
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ],
+                    "requiredFirstValue": false
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "ConditionBranch",
+              "id": "step0118",
+              "name": "旋转到下一个工位",
+              "timeoutMs": 900000,
+              "condition": {
+                "kind": "Compare",
+                "comparison": "Equal",
+                "left": {
+                  "source": "Variable",
+                  "variableName": "RotaryMotion.WeldIsA"
+                },
+                "right": {
+                  "source": "Constant",
+                  "dataType": "Boolean",
+                  "constant": "true"
+                }
+              },
+              "whenTrue": {
+                "kind": "Sequence",
+                "id": "step0113",
+                "name": "焊接位使用 A",
+                "timeoutMs": 900000,
+                "children": [
+                  {
+                    "kind": "WaitAxisPosition",
+                    "id": "step0110",
+                    "name": "确认Conveyor_R 在 -90 且停稳",
+                    "timeoutMs": 30000,
+                    "axisName": "Conveyor_R",
+                    "position": -90,
+                    "tolerance": 0.01,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "MoveAxis",
+                    "id": "step0111",
+                    "name": "Conveyor_R 移动到 90",
+                    "timeoutMs": 30000,
+                    "axisName": "Conveyor_R",
+                    "mode": "Absolute",
+                    "target": {
+                      "source": "Constant",
+                      "dataType": "Number",
+                      "constant": "90"
+                    },
+                    "profile": {
+                      "speed": 30,
+                      "acceleration": 60,
+                      "deceleration": 60
+                    }
+                  },
+                  {
+                    "kind": "WaitAxisPosition",
+                    "id": "step0112",
+                    "name": "确认Conveyor_R 在 90 且停稳",
+                    "timeoutMs": 30000,
+                    "axisName": "Conveyor_R",
+                    "position": 90,
+                    "tolerance": 0.01,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  }
+                ]
+              },
+              "whenFalse": {
+                "kind": "Sequence",
+                "id": "step0117",
+                "name": "焊接位使用 B",
+                "timeoutMs": 900000,
+                "children": [
+                  {
+                    "kind": "WaitAxisPosition",
+                    "id": "step0114",
+                    "name": "确认Conveyor_R 在 90 且停稳",
+                    "timeoutMs": 30000,
+                    "axisName": "Conveyor_R",
+                    "position": 90,
+                    "tolerance": 0.01,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "MoveAxis",
+                    "id": "step0115",
+                    "name": "Conveyor_R 移动到 -90",
+                    "timeoutMs": 30000,
+                    "axisName": "Conveyor_R",
+                    "mode": "Absolute",
+                    "target": {
+                      "source": "Constant",
+                      "dataType": "Number",
+                      "constant": "-90"
+                    },
+                    "profile": {
+                      "speed": 30,
+                      "acceleration": 60,
+                      "deceleration": 60
+                    }
+                  },
+                  {
+                    "kind": "WaitAxisPosition",
+                    "id": "step0116",
+                    "name": "确认Conveyor_R 在 -90 且停稳",
+                    "timeoutMs": 30000,
+                    "axisName": "Conveyor_R",
+                    "position": -90,
+                    "tolerance": 0.01,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "SetVariable",
+              "id": "step0120",
+              "name": "更新压合位占料状态",
+              "timeoutMs": 30000,
+              "variableName": "RotaryMotion.PressOccupied",
+              "value": {
+                "source": "Constant",
+                "dataType": "Boolean",
+                "constant": "true"
+              }
+            },
+            {
+              "kind": "SetVariable",
+              "id": "step0121",
+              "name": "更新焊接位占料状态",
+              "timeoutMs": 30000,
+              "variableName": "RotaryMotion.WeldOccupied",
+              "value": {
+                "source": "Constant",
+                "dataType": "Boolean",
+                "constant": "false"
+              }
+            },
+            {
+              "kind": "ConditionBranch",
+              "id": "step0126",
+              "name": "更新焊接夹位",
+              "timeoutMs": 900000,
+              "condition": {
+                "kind": "Compare",
+                "comparison": "Equal",
+                "left": {
+                  "source": "Variable",
+                  "variableName": "RotaryMotion.WeldIsA"
+                },
+                "right": {
+                  "source": "Constant",
+                  "dataType": "Boolean",
+                  "constant": "true"
+                }
+              },
+              "whenTrue": {
+                "kind": "Sequence",
+                "id": "step0123",
+                "name": "改为 B",
+                "timeoutMs": 900000,
+                "children": [
+                  {
+                    "kind": "SetVariable",
+                    "id": "step0122",
+                    "name": "更新焊接位夹位选择",
+                    "timeoutMs": 30000,
+                    "variableName": "RotaryMotion.WeldIsA",
+                    "value": {
+                      "source": "Constant",
+                      "dataType": "Boolean",
+                      "constant": "false"
+                    }
+                  }
+                ]
+              },
+              "whenFalse": {
+                "kind": "Sequence",
+                "id": "step0125",
+                "name": "改为 A",
+                "timeoutMs": 900000,
+                "children": [
+                  {
+                    "kind": "SetVariable",
+                    "id": "step0124",
+                    "name": "更新焊接位夹位选择",
+                    "timeoutMs": 30000,
+                    "variableName": "RotaryMotion.WeldIsA",
+                    "value": {
+                      "source": "Constant",
+                      "dataType": "Boolean",
+                      "constant": "true"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

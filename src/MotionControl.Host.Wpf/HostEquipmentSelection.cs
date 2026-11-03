@@ -42,9 +42,14 @@ namespace MotionControl.Host.Wpf
                 return new RotaryWeldingEquipmentDefinition();
             }
 
+            if (string.Equals(name, "RotaryMotionValidation", StringComparison.OrdinalIgnoreCase))
+            {
+                return new RotaryWeldingEquipmentDefinition(false);
+            }
+
             throw new InvalidOperationException(
                 "设备定义配置 '" + EquipmentSelectionPath + "' 指定了未登记的设备定义：" + name
-                + "。当前版本支持：Demo、WeldingExample、RotaryWelding。");
+                + "。当前版本支持：Demo、WeldingExample、RotaryWelding、RotaryMotionValidation。");
         }
 
         /// <summary>解析 C# 工位、任务列表或手动入口；留空交由 Runtime 按工位配置判断。</summary>

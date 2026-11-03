@@ -28,17 +28,29 @@ if ($backend.backend -ne 'Virtual' -or [int]$backend.port -lt 1024 -or [int]$bac
 $port = [int]$backend.port
 $equipment = Read-RotaryConfig 'Parameters\Equipment.json'
 if ($equipment.executionOwner -notin @('TaskEngine','StationFlows')) { throw '设备运行入口不受支持。' }
+$motionOnly = $false
+$motionMarker = Join-Path $machine 'Parameters\RotaryMotionValidation.json'
+if (Test-Path -LiteralPath $motionMarker -PathType Leaf) {
+    $motionSettings = Read-RotaryConfig 'Parameters\RotaryMotionValidation.json'
+    if ($motionSettings.schemaVersion -ne 1 -or $motionSettings.motionOnly -ne $true) { throw '纯运动验证配置无效。' }
+    $motionOnly = $true
+}
+if ($equipment.executionOwner -eq 'StationFlows' -and (($motionOnly -and $equipment.definition -ne 'RotaryMotionValidation') -or (-not $motionOnly -and $equipment.definition -ne 'RotaryWelding'))) { throw '设备定义与运动验证模式不一致。' }
 $axes = @( (Read-RotaryConfig 'HardwareConfig\AxisParameters.json').axes )
 $io = Read-RotaryConfig 'HardwareConfig\IoMapping.json'
 $card = 'MotionCard01'
 $axisNames = @('Unload_X','Load_X','Press_Z','Transfer_Y','Camera_X','Camera_Z','Feeder_X','Feeder_Z','Buffer_X','Buffer_Y','Reject_Z','Conveyor_R','Weld_Z')
 $inputNames = @('上料到位','取料夹紧到位','取料松开到位','A夹紧到位','A松开到位','B夹紧到位','B松开到位','扫码完成','扫码成功','焊接完成','焊接合格','压装完成','压装合格','相机触发反馈','检测完成','检测OK','检测NG','缓存接收允许','合格出口允许','不良出口允许','剔除完成','缓存载具到位','合格出料完成')
 $outputNames = @('取料夹紧','A夹紧','B夹紧','扫码触发','焊接启动','压装启动','相机触发','相机结果复位','剔除启动','缓存交接','合格出料')
+if ($motionOnly) {
+    $inputNames = @($inputNames | Where-Object { $_ -notin @('扫码完成','扫码成功') })
+    $outputNames = @($outputNames | Where-Object { $_ -ne '扫码触发' })
+}
 $inputs = @{}
 $outputs = @{}
 foreach ($name in $inputNames) { $inputs[$name] = Get-ScenarioIoChannel -Items @($io.digitalInputs) -Name $name -ControllerId $card }
 foreach ($name in $outputNames) { $outputs[$name] = Get-ScenarioIoChannel -Items @($io.digitalOutputs) -Name $name -ControllerId $card }
-for ($bit=0; $bit -lt 16; $bit++) {
+for ($bit=0; -not $motionOnly -and $bit -lt 16; $bit++) {
     $name = '扫码数据{0:D2}' -f $bit
     $inputs[$name] = Get-ScenarioIoChannel -Items @($io.digitalInputs) -Name $name -ControllerId $card
     if ($inputs[$name] -ne 200 + $bit) { throw "扫码数据位必须连续且低位在前：$name。" }
@@ -120,7 +132,9 @@ try {
         @{Output='合格出料'; Input='合格出料完成'; Delay=300})) {
         Send-Rotary @{command='configureFeedback'; outputChannel=$outputs[$pair.Output]; inputChannel=$inputs[$pair.Input]; delayMs=$pair.Delay; activeHigh=$true} | Out-Null
     }
-    Send-Rotary @{command='configureScanner'; triggerOutputChannel=$outputs['扫码触发']; completeInputChannel=$inputs['扫码完成']; successInputChannel=$inputs['扫码成功']; dataInputStart=$inputs['扫码数据00']; processingDelayMs=300} | Out-Null
+    if (-not $motionOnly) {
+        Send-Rotary @{command='configureScanner'; triggerOutputChannel=$outputs['扫码触发']; completeInputChannel=$inputs['扫码完成']; successInputChannel=$inputs['扫码成功']; dataInputStart=$inputs['扫码数据00']; processingDelayMs=300} | Out-Null
+    }
     Send-Rotary @{command='configureCamera'; triggerOutputChannel=$outputs['相机触发']; acknowledgeInputChannel=$inputs['相机触发反馈']; completeInputChannel=$inputs['检测完成']; okInputChannel=$inputs['检测OK']; ngInputChannel=$inputs['检测NG']; resetOutputChannel=$outputs['相机结果复位']; result='OK'; processingDelayMs=500} | Out-Null
     foreach ($sensor in $sensors) {
         $bound = if ($sensor.name -eq 'Conveyor_R') { 95.0 } else { 10.0 }
@@ -134,7 +148,8 @@ try {
     }
     Send-RotaryRaw @{command='releaseLease'; leaseId=$script:LeaseId} | Out-Null
     $script:LeaseId = $null
-    Write-Host "已配置 13 轴、三套夹具、扫码、加工、视觉和出料规则；控制器 PID $($controller.Id)，端口 $port。"
+    $modeLabel = if ($motionOnly) { '十三轴运动验证（无扫码及逐件记录）' } else { '十三轴双夹位扫码样例' }
+    Write-Host "已配置 $modeLabel、三套夹具、加工、视觉和出料规则；控制器 PID $($controller.Id)，端口 $port。"
     Write-Host '供料未启用，脚本没有使能或回零轴，也没有启动生产。请在 Host 完成设备准备后再按以下命令开启供料：'
     Write-Host "  & '.\tools\MotionControl.VirtualController\ControllerCommand.ps1' -Port $port -Action StartFeeder -InputChannel $($inputs['上料到位']) -OutputChannel $($outputs['取料夹紧']) -FeederSafeAxis 6 -FeederSafePosition 0 -FeederSafeTolerance 0.01 -FeederAdditionalSafeAxes @(7,1,3)"
     if ($LaunchHost) {

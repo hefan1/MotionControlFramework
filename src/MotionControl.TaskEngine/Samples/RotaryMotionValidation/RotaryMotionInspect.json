@@ -1,0 +1,764 @@
+{
+  "schemaVersion": 1,
+  "taskId": "RotaryMotionInspect",
+  "name": "复检与分拣工位",
+  "revision": 1,
+  "root": {
+    "kind": "Sequence",
+    "id": "step0259",
+    "name": "复检循环",
+    "timeoutMs": 900000,
+    "children": [
+      {
+        "kind": "WaitCondition",
+        "id": "step0258",
+        "name": "等待缓存位有料",
+        "timeoutMs": 180000,
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "RotaryMotion.BufferOccupied"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "true"
+          }
+        },
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "ResourceScope",
+        "id": "step0257",
+        "name": "占用缓存和检测区",
+        "timeoutMs": 180000,
+        "resources": [
+          "Zone:Buffer",
+          "Axis:Buffer_X",
+          "Axis:Buffer_Y",
+          "Axis:Camera_X",
+          "Axis:Camera_Z",
+          "Axis:Reject_Z",
+          "Output:相机触发",
+          "Output:相机结果复位",
+          "Output:剔除启动",
+          "Output:合格出料"
+        ],
+        "body": {
+          "kind": "Sequence",
+          "id": "step0256",
+          "name": "检测并分拣",
+          "timeoutMs": 900000,
+          "children": [
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0214",
+              "name": "确认Camera_Z 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Camera_Z",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0215",
+              "name": "确认Reject_Z 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Reject_Z",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "MoveAxis",
+              "id": "step0216",
+              "name": "Buffer_Y 移动到 1",
+              "timeoutMs": 30000,
+              "axisName": "Buffer_Y",
+              "mode": "Absolute",
+              "target": {
+                "source": "Constant",
+                "dataType": "Number",
+                "constant": "1"
+              },
+              "profile": {
+                "speed": 5,
+                "acceleration": 10,
+                "deceleration": 10
+              }
+            },
+            {
+              "kind": "MoveAxis",
+              "id": "step0217",
+              "name": "Buffer_X 移动到 1",
+              "timeoutMs": 30000,
+              "axisName": "Buffer_X",
+              "mode": "Absolute",
+              "target": {
+                "source": "Constant",
+                "dataType": "Number",
+                "constant": "1"
+              },
+              "profile": {
+                "speed": 5,
+                "acceleration": 10,
+                "deceleration": 10
+              }
+            },
+            {
+              "kind": "MoveAxis",
+              "id": "step0218",
+              "name": "Camera_X 移动到 1",
+              "timeoutMs": 30000,
+              "axisName": "Camera_X",
+              "mode": "Absolute",
+              "target": {
+                "source": "Constant",
+                "dataType": "Number",
+                "constant": "1"
+              },
+              "profile": {
+                "speed": 5,
+                "acceleration": 10,
+                "deceleration": 10
+              }
+            },
+            {
+              "kind": "MoveAxis",
+              "id": "step0219",
+              "name": "Camera_Z 移动到 1",
+              "timeoutMs": 30000,
+              "axisName": "Camera_Z",
+              "mode": "Absolute",
+              "target": {
+                "source": "Constant",
+                "dataType": "Number",
+                "constant": "1"
+              },
+              "profile": {
+                "speed": 5,
+                "acceleration": 10,
+                "deceleration": 10
+              }
+            },
+            {
+              "kind": "WaitOutput",
+              "id": "step0220",
+              "name": "确认相机触发关闭",
+              "timeoutMs": 30000,
+              "outputName": "相机触发",
+              "expected": false,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0221",
+              "name": "等待相机触发反馈复位",
+              "timeoutMs": 30000,
+              "inputName": "相机触发反馈",
+              "expected": false,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0222",
+              "name": "等待检测完成复位",
+              "timeoutMs": 30000,
+              "inputName": "检测完成",
+              "expected": false,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0223",
+              "name": "等待检测OK复位",
+              "timeoutMs": 30000,
+              "inputName": "检测OK",
+              "expected": false,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0224",
+              "name": "等待检测NG复位",
+              "timeoutMs": 30000,
+              "inputName": "检测NG",
+              "expected": false,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "SetOutput",
+              "id": "step0225",
+              "name": "开启相机触发",
+              "timeoutMs": 30000,
+              "outputName": "相机触发",
+              "value": true
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0226",
+              "name": "等待相机触发反馈有效",
+              "timeoutMs": 30000,
+              "inputName": "相机触发反馈",
+              "expected": true,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "SetOutput",
+              "id": "step0227",
+              "name": "关闭相机触发",
+              "timeoutMs": 30000,
+              "outputName": "相机触发",
+              "value": false
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0228",
+              "name": "等待相机触发反馈复位",
+              "timeoutMs": 30000,
+              "inputName": "相机触发反馈",
+              "expected": false,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0229",
+              "name": "等待检测完成有效",
+              "timeoutMs": 30000,
+              "inputName": "检测完成",
+              "expected": true,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitExclusiveInputs",
+              "id": "step0188",
+              "name": "确认检测OK / 检测NG",
+              "timeoutMs": 30000,
+              "firstInputName": "检测OK",
+              "secondInputName": "检测NG",
+              "firstVariableName": "RotaryMotion.VisionOK",
+              "secondVariableName": "RotaryMotion.VisionNG",
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0230",
+              "name": "等待检测完成有效",
+              "timeoutMs": 30000,
+              "inputName": "检测完成",
+              "expected": true,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "SetOutput",
+              "id": "step0238",
+              "name": "开启相机结果复位",
+              "timeoutMs": 30000,
+              "outputName": "相机结果复位",
+              "value": true
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0239",
+              "name": "等待检测完成复位",
+              "timeoutMs": 30000,
+              "inputName": "检测完成",
+              "expected": false,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0240",
+              "name": "等待检测OK复位",
+              "timeoutMs": 30000,
+              "inputName": "检测OK",
+              "expected": false,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0241",
+              "name": "等待检测NG复位",
+              "timeoutMs": 30000,
+              "inputName": "检测NG",
+              "expected": false,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "SetOutput",
+              "id": "step0242",
+              "name": "关闭相机结果复位",
+              "timeoutMs": 30000,
+              "outputName": "相机结果复位",
+              "value": false
+            },
+            {
+              "kind": "MoveAxis",
+              "id": "step0243",
+              "name": "Camera_Z 移动到 0",
+              "timeoutMs": 30000,
+              "axisName": "Camera_Z",
+              "mode": "Absolute",
+              "target": {
+                "source": "Constant",
+                "dataType": "Number",
+                "constant": "0"
+              },
+              "profile": {
+                "speed": 5,
+                "acceleration": 10,
+                "deceleration": 10
+              }
+            },
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0244",
+              "name": "确认Camera_Z 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Camera_Z",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "MoveAxis",
+              "id": "step0245",
+              "name": "Camera_X 移动到 0",
+              "timeoutMs": 30000,
+              "axisName": "Camera_X",
+              "mode": "Absolute",
+              "target": {
+                "source": "Constant",
+                "dataType": "Number",
+                "constant": "0"
+              },
+              "profile": {
+                "speed": 5,
+                "acceleration": 10,
+                "deceleration": 10
+              }
+            },
+            {
+              "kind": "ConditionBranch",
+              "id": "step0249",
+              "name": "按检测结果分拣",
+              "timeoutMs": 900000,
+              "condition": {
+                "kind": "Compare",
+                "comparison": "Equal",
+                "left": {
+                  "source": "Variable",
+                  "variableName": "RotaryMotion.VisionOK"
+                },
+                "right": {
+                  "source": "Constant",
+                  "dataType": "Boolean",
+                  "constant": "true"
+                }
+              },
+              "whenTrue": {
+                "kind": "Sequence",
+                "id": "step0199",
+                "name": "合格出口",
+                "timeoutMs": 900000,
+                "children": [
+                  {
+                    "kind": "WaitInput",
+                    "id": "step0189",
+                    "name": "等待合格出口允许有效",
+                    "timeoutMs": 30000,
+                    "inputName": "合格出口允许",
+                    "expected": true,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "WaitAxisPosition",
+                    "id": "step0190",
+                    "name": "确认Camera_Z 在 0 且停稳",
+                    "timeoutMs": 30000,
+                    "axisName": "Camera_Z",
+                    "position": 0,
+                    "tolerance": 0.01,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "MoveAxis",
+                    "id": "step0191",
+                    "name": "Buffer_X 移动到 0",
+                    "timeoutMs": 30000,
+                    "axisName": "Buffer_X",
+                    "mode": "Absolute",
+                    "target": {
+                      "source": "Constant",
+                      "dataType": "Number",
+                      "constant": "0"
+                    },
+                    "profile": {
+                      "speed": 5,
+                      "acceleration": 10,
+                      "deceleration": 10
+                    }
+                  },
+                  {
+                    "kind": "MoveAxis",
+                    "id": "step0192",
+                    "name": "Buffer_Y 移动到 2",
+                    "timeoutMs": 30000,
+                    "axisName": "Buffer_Y",
+                    "mode": "Absolute",
+                    "target": {
+                      "source": "Constant",
+                      "dataType": "Number",
+                      "constant": "2"
+                    },
+                    "profile": {
+                      "speed": 5,
+                      "acceleration": 10,
+                      "deceleration": 10
+                    }
+                  },
+                  {
+                    "kind": "WaitOutput",
+                    "id": "step0193",
+                    "name": "确认合格出料关闭",
+                    "timeoutMs": 30000,
+                    "outputName": "合格出料",
+                    "expected": false,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "WaitInput",
+                    "id": "step0194",
+                    "name": "等待合格出料完成复位",
+                    "timeoutMs": 30000,
+                    "inputName": "合格出料完成",
+                    "expected": false,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "SetOutput",
+                    "id": "step0195",
+                    "name": "开启合格出料",
+                    "timeoutMs": 30000,
+                    "outputName": "合格出料",
+                    "value": true
+                  },
+                  {
+                    "kind": "WaitInput",
+                    "id": "step0196",
+                    "name": "等待合格出料完成有效",
+                    "timeoutMs": 30000,
+                    "inputName": "合格出料完成",
+                    "expected": true,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "SetOutput",
+                    "id": "step0197",
+                    "name": "关闭合格出料",
+                    "timeoutMs": 30000,
+                    "outputName": "合格出料",
+                    "value": false
+                  },
+                  {
+                    "kind": "WaitInput",
+                    "id": "step0198",
+                    "name": "等待合格出料完成复位",
+                    "timeoutMs": 30000,
+                    "inputName": "合格出料完成",
+                    "expected": false,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  }
+                ]
+              },
+              "whenFalse": {
+                "kind": "Sequence",
+                "id": "step0213",
+                "name": "不良出口",
+                "timeoutMs": 900000,
+                "children": [
+                  {
+                    "kind": "WaitInput",
+                    "id": "step0200",
+                    "name": "等待不良出口允许有效",
+                    "timeoutMs": 30000,
+                    "inputName": "不良出口允许",
+                    "expected": true,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "WaitAxisPosition",
+                    "id": "step0201",
+                    "name": "确认Camera_Z 在 0 且停稳",
+                    "timeoutMs": 30000,
+                    "axisName": "Camera_Z",
+                    "position": 0,
+                    "tolerance": 0.01,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "MoveAxis",
+                    "id": "step0202",
+                    "name": "Buffer_X 移动到 2",
+                    "timeoutMs": 30000,
+                    "axisName": "Buffer_X",
+                    "mode": "Absolute",
+                    "target": {
+                      "source": "Constant",
+                      "dataType": "Number",
+                      "constant": "2"
+                    },
+                    "profile": {
+                      "speed": 5,
+                      "acceleration": 10,
+                      "deceleration": 10
+                    }
+                  },
+                  {
+                    "kind": "MoveAxis",
+                    "id": "step0203",
+                    "name": "Buffer_Y 移动到 2",
+                    "timeoutMs": 30000,
+                    "axisName": "Buffer_Y",
+                    "mode": "Absolute",
+                    "target": {
+                      "source": "Constant",
+                      "dataType": "Number",
+                      "constant": "2"
+                    },
+                    "profile": {
+                      "speed": 5,
+                      "acceleration": 10,
+                      "deceleration": 10
+                    }
+                  },
+                  {
+                    "kind": "WaitAxisPosition",
+                    "id": "step0204",
+                    "name": "确认Reject_Z 在 0 且停稳",
+                    "timeoutMs": 30000,
+                    "axisName": "Reject_Z",
+                    "position": 0,
+                    "tolerance": 0.01,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "WaitOutput",
+                    "id": "step0205",
+                    "name": "确认剔除启动关闭",
+                    "timeoutMs": 30000,
+                    "outputName": "剔除启动",
+                    "expected": false,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "WaitInput",
+                    "id": "step0206",
+                    "name": "等待剔除完成复位",
+                    "timeoutMs": 30000,
+                    "inputName": "剔除完成",
+                    "expected": false,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "MoveAxis",
+                    "id": "step0207",
+                    "name": "Reject_Z 移动到 1",
+                    "timeoutMs": 30000,
+                    "axisName": "Reject_Z",
+                    "mode": "Absolute",
+                    "target": {
+                      "source": "Constant",
+                      "dataType": "Number",
+                      "constant": "1"
+                    },
+                    "profile": {
+                      "speed": 5,
+                      "acceleration": 10,
+                      "deceleration": 10
+                    }
+                  },
+                  {
+                    "kind": "SetOutput",
+                    "id": "step0208",
+                    "name": "开启剔除启动",
+                    "timeoutMs": 30000,
+                    "outputName": "剔除启动",
+                    "value": true
+                  },
+                  {
+                    "kind": "WaitInput",
+                    "id": "step0209",
+                    "name": "等待剔除完成有效",
+                    "timeoutMs": 30000,
+                    "inputName": "剔除完成",
+                    "expected": true,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "SetOutput",
+                    "id": "step0210",
+                    "name": "关闭剔除启动",
+                    "timeoutMs": 30000,
+                    "outputName": "剔除启动",
+                    "value": false
+                  },
+                  {
+                    "kind": "WaitInput",
+                    "id": "step0211",
+                    "name": "等待剔除完成复位",
+                    "timeoutMs": 30000,
+                    "inputName": "剔除完成",
+                    "expected": false,
+                    "timeoutAlarmCodes": [
+                      "DEMO_SENSOR_TIMEOUT"
+                    ]
+                  },
+                  {
+                    "kind": "MoveAxis",
+                    "id": "step0212",
+                    "name": "Reject_Z 移动到 0",
+                    "timeoutMs": 30000,
+                    "axisName": "Reject_Z",
+                    "mode": "Absolute",
+                    "target": {
+                      "source": "Constant",
+                      "dataType": "Number",
+                      "constant": "0"
+                    },
+                    "profile": {
+                      "speed": 5,
+                      "acceleration": 10,
+                      "deceleration": 10
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0252",
+              "name": "确认Reject_Z 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Reject_Z",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "MoveAxis",
+              "id": "step0253",
+              "name": "Buffer_X 移动到 0",
+              "timeoutMs": 30000,
+              "axisName": "Buffer_X",
+              "mode": "Absolute",
+              "target": {
+                "source": "Constant",
+                "dataType": "Number",
+                "constant": "0"
+              },
+              "profile": {
+                "speed": 5,
+                "acceleration": 10,
+                "deceleration": 10
+              }
+            },
+            {
+              "kind": "MoveAxis",
+              "id": "step0254",
+              "name": "Buffer_Y 移动到 0",
+              "timeoutMs": 30000,
+              "axisName": "Buffer_Y",
+              "mode": "Absolute",
+              "target": {
+                "source": "Constant",
+                "dataType": "Number",
+                "constant": "0"
+              },
+              "profile": {
+                "speed": 5,
+                "acceleration": 10,
+                "deceleration": 10
+              }
+            },
+            {
+              "kind": "SetVariable",
+              "id": "step0255",
+              "name": "更新缓存位占料状态",
+              "timeoutMs": 30000,
+              "variableName": "RotaryMotion.BufferOccupied",
+              "value": {
+                "source": "Constant",
+                "dataType": "Boolean",
+                "constant": "false"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

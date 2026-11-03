@@ -58,6 +58,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("工位流程异常使整机进入报警", StationFailureAlarmsMachineAsync, failures);
             await RunCheckAsync("未配置软件急停 DI 不阻止手动调试但禁止自动启动", UnconfiguredEmergencyStopAllowsManualDebugOnlyAsync, failures);
             await RunCheckAsync("手动轴和 DO 操作实时检查急停并等待复位", EmergencyStopBlocksManualOperationsAsync, failures);
+            await RunCheckAsync("旧工位收尾未确认时禁止手动动作但允许受控停止", UnsettledStationBlocksManualMotionButAllowsStopAsync, failures);
             await RunCheckAsync("急停有效时禁止复位和启动，运行期间触发会暂停流程", EmergencyStopBlocksAndStopsMachineAsync, failures);
             await RunCheckAsync("轴仍在运动时拒绝整机复位", ResetIsRejectedWhileAxisIsMovingAsync, failures);
             await RunCheckAsync("急停状态通过配置的逻辑 DI 读取", EmergencyStopStatusUsesConfiguredInputAsync, failures);
@@ -1491,6 +1492,40 @@ namespace MotionControl.ZMotionSimulatorCheck
             await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
+        /// <summary>暂停超时的旧工位退出前拒绝手动动作；受控停止仍可用，收尾后恢复手动准入。</summary>
+        private static async Task UnsettledStationBlocksManualMotionButAllowsStopAsync()
+        {
+            var flow = new DelayedStopStationFlow();
+            var runtime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { new FakeMotionCard("CardA", new FakeAxis("X")) }),
+                new IStationFlow[] { flow }, new MachineAlarmService(), new FakeSafetyStatus(), pauseTimeout: TimeSpan.FromMilliseconds(100));
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await flow.WaitUntilStartedAsync().ConfigureAwait(false);
+            await ExpectExceptionAsync<InvalidOperationException>(() => runtime.PauseAsync(CancellationToken.None)).ConfigureAwait(false);
+            Ensure(runtime.State == MachineRunState.Alarmed, "暂停超时没有保留报警状态。");
+            Ensure(await runtime.GetManualOperationBlockReasonAsync(CancellationToken.None).ConfigureAwait(false)
+                == ManualOperationBlockReason.AutomaticFlowUnsettled, "旧工位未退出时没有报告收尾未确认。");
+            bool manualCalled = false;
+            ManualOperationBlockReason manual = await runtime.RunManualOperationAsync(() => { manualCalled = true; return Task.CompletedTask; }, CancellationToken.None).ConfigureAwait(false);
+            Ensure(manual == ManualOperationBlockReason.AutomaticFlowUnsettled && !manualCalled, "旧工位未退出时错误允许手动运动或输出。");
+            bool recoveryCalled = false;
+            ManualOperationBlockReason recovery = await runtime.RunManualRecoveryOperationAsync(() => { recoveryCalled = true; return Task.CompletedTask; }, CancellationToken.None).ConfigureAwait(false);
+            Ensure(recovery == ManualOperationBlockReason.AutomaticFlowUnsettled && !recoveryCalled, "旧工位未退出时错误允许手动恢复操作。");
+            bool stopCalled = false;
+            ManualOperationBlockReason stop = await runtime.RunManualStopAsync(() => { stopCalled = true; return Task.CompletedTask; }, CancellationToken.None).ConfigureAwait(false);
+            Ensure(stop == ManualOperationBlockReason.None && stopCalled, "旧工位未退出时错误阻止受控停止。");
+            flow.Release();
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (await runtime.GetManualOperationBlockReasonAsync(CancellationToken.None).ConfigureAwait(false) != ManualOperationBlockReason.None)
+            {
+                if (DateTime.UtcNow >= deadline) throw new TimeoutException("旧工位退出后没有恢复手动准入。");
+                await Task.Delay(10).ConfigureAwait(false);
+            }
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
         /// <summary>确认急停状态未恢复时不能复位或启动，运行期间触发会停机报警。</summary>
         private static async Task EmergencyStopBlocksAndStopsMachineAsync()
         {
@@ -2302,6 +2337,36 @@ namespace MotionControl.ZMotionSimulatorCheck
 
             /// <summary>等待测试确认工位流程已经进入当前步骤。</summary>
             public Task WaitUntilStartedAsync() { return _started.Task; }
+        }
+
+        /// <summary>收到取消后等待测试释放，模拟旧工位或驱动延迟退出。</summary>
+        private sealed class DelayedStopStationFlow : IStationFlow
+        {
+            /// <summary>工位已经开始执行的通知。</summary>
+            private readonly TaskCompletionSource<bool> _started = new TaskCompletionSource<bool>();
+            /// <summary>允许旧工位结束收尾的通知。</summary>
+            private readonly TaskCompletionSource<bool> _release = new TaskCompletionSource<bool>();
+            /// <summary>测试工位名称。</summary>
+            public string StationName { get { return "延迟退出工位"; } }
+            /// <summary>测试工位当前步骤。</summary>
+            public string CurrentStepName { get { return "等待设备收尾"; } }
+            /// <summary>等待工位首次进入当前步骤。</summary>
+            public Task WaitUntilStartedAsync() { return _started.Task; }
+            /// <summary>允许测试工位处理取消并退出。</summary>
+            public void Release() { _release.TrySetResult(true); }
+            /// <summary>取消之后故意延迟返回，重现暂停超时窗口。</summary>
+            public async Task ExecuteCurrentStepAsync(CancellationToken cancellationToken)
+            {
+                _started.TrySetResult(true);
+                try { await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false); }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    await _release.Task.ConfigureAwait(false);
+                    throw;
+                }
+            }
+            /// <summary>模拟不改变步骤的工位复位。</summary>
+            public Task ResetAsync(CancellationToken cancellationToken) { cancellationToken.ThrowIfCancellationRequested(); return Task.CompletedTask; }
         }
 
         /// <summary>提供可暂停的设备初始化替身，用于验证步骤保留和连接周期行为。</summary>

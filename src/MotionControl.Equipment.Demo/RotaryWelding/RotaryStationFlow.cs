@@ -72,7 +72,7 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
                 {
                     string carrier = _line.DescribeNest(_nest);
                     return _description + (carrier == null ? "" : " · " + carrier)
-                        + (_product == null ? "" : " · " + _product) + (_result == null ? "" : " · 检测" + _result);
+                        + (_product == null || !_line.TraceProducts ? "" : " · " + _product) + (_result == null ? "" : " · 检测" + _result);
                 }
             }
         }

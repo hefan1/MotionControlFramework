@@ -20,7 +20,7 @@ namespace MotionControl.RotaryWelding.Checks
         /// <summary>执行并行、堵料、暂停和扫码失败等检查。</summary>
         private static int Main()
         {
-            try { CheckAsync().GetAwaiter().GetResult(); CheckScannerFailureAsync().GetAwaiter().GetResult(); CheckClampConflictAsync().GetAwaiter().GetResult(); CheckEvidenceWriteFailureAsync().GetAwaiter().GetResult(); CheckInterruptedOutputsAsync().GetAwaiter().GetResult(); CheckPreparationClampsAsync().GetAwaiter().GetResult(); CheckRecordFailureAsync(false).GetAwaiter().GetResult(); CheckRecordFailureAsync(true).GetAwaiter().GetResult(); Console.WriteLine("十三轴代码流程：50件、夹具准备联锁、逐件记录及故障、在途输出恢复等内部检查通过。"); return 0; }
+            try { CheckAsync().GetAwaiter().GetResult(); CheckMotionOnlyAsync().GetAwaiter().GetResult(); CheckScannerFailureAsync().GetAwaiter().GetResult(); CheckClampConflictAsync().GetAwaiter().GetResult(); CheckEvidenceWriteFailureAsync().GetAwaiter().GetResult(); CheckInterruptedOutputsAsync().GetAwaiter().GetResult(); CheckPreparationClampsAsync().GetAwaiter().GetResult(); CheckPreparationFeedbackAsync().GetAwaiter().GetResult(); CheckRecordFailureAsync(false).GetAwaiter().GetResult(); CheckRecordFailureAsync(true).GetAwaiter().GetResult(); Console.WriteLine("十三轴代码流程：纯运动、50件、准备反馈、夹具联锁、逐件记录及故障、在途输出恢复等内部检查通过。"); return 0; }
             catch (Exception error) { Console.Error.WriteLine(error); return 1; }
         }
 
@@ -96,6 +96,66 @@ namespace MotionControl.RotaryWelding.Checks
             var equipment = new RotaryWeldingEquipmentDefinition();
             await equipment.CreatePreparations(good, equipment.CreateStationFlows(good))[0].ExecuteAsync(null, CancellationToken.None);
             if (good.Axes.Values.Any(axis => axis.EnabledCalls != 1 || axis.HomeCalls != 1)) throw new InvalidOperationException("正常夹具反馈未完成逐轴准备。");
+        }
+
+        /// <summary>位置或速度未知及回零后仍有速度时，准备不能继续或误报就绪。</summary>
+        private static async Task CheckPreparationFeedbackAsync()
+        {
+            foreach (double invalid in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity })
+            {
+                foreach (bool position in new[] { true, false })
+                {
+                    var context = new FakeContext(); context.Io.NoMaterial = true;
+                    if (position) context.Axes["Feeder_Z"].ReportedPosition = invalid;
+                    else context.Axes["Feeder_Z"].ReportedVelocity = invalid;
+                    var equipment = new RotaryWeldingEquipmentDefinition();
+                    var preparation = equipment.CreatePreparations(context, equipment.CreateStationFlows(context))[0];
+                    bool rejected = false;
+                    try { await preparation.ExecuteAsync(null, CancellationToken.None); } catch (InvalidOperationException) { rejected = true; }
+                    if (!rejected || context.Axes.Values.Any(axis => axis.EnabledCalls != 0 || axis.HomeCalls != 0))
+                        throw new InvalidOperationException("轴反馈未知时不能开始使能或回零。 ");
+                    rejected = false;
+                    try { await preparation.ValidateReadyAsync(CancellationToken.None); } catch (InvalidOperationException) { rejected = true; }
+                    if (!rejected) throw new InvalidOperationException("轴反馈未知时不能标记准备就绪。 ");
+                }
+            }
+            var moving = new FakeContext(); moving.Io.NoMaterial = true;
+            moving.Axes["Feeder_Z"].VelocityAfterHome = 0.1;
+            var definition = new RotaryWeldingEquipmentDefinition();
+            var prepare = definition.CreatePreparations(moving, definition.CreateStationFlows(moving))[0];
+            bool blocked = false;
+            try { await prepare.ExecuteAsync(null, CancellationToken.None); } catch (InvalidOperationException) { blocked = true; }
+            if (!blocked || moving.Axes["Camera_Z"].HomeCalls != 0)
+                throw new InvalidOperationException("上一轴回零后仍有速度时不能继续回零其他轴。 ");
+        }
+
+        /// <summary>没有扫码映射和记录服务时，纯运动样例仍须完成准备与多工位循环。</summary>
+        private static async Task CheckMotionOnlyAsync()
+        {
+            var context = new MotionOnlyContext();
+            context.Inner.Io.NoMaterial = true;
+            context.Inner.Io.FailScan = true;
+            var equipment = new RotaryWeldingEquipmentDefinition(false);
+            var flows = equipment.CreateStationFlows(context).ToArray();
+            await equipment.CreatePreparations(context, flows)[0].ExecuteAsync(null, CancellationToken.None);
+            context.Inner.Io.NoMaterial = false;
+            using (var cancel = new CancellationTokenSource())
+            {
+                Task[] runs = flows.Select(flow => RunAsync(flow, cancel.Token)).ToArray();
+                await WaitForAsync(() => ((IStationCycleStatistics)flows[4]).CompletedCycles >= 6 || runs.Any(task => task.IsFaulted), TimeSpan.FromSeconds(35));
+                Task failed = runs.FirstOrDefault(task => task.IsFaulted);
+                if (failed != null) throw new InvalidOperationException("纯运动工位运行失败。", failed.Exception);
+                cancel.Cancel();
+                try { await Task.WhenAll(runs); } catch (OperationCanceledException) { }
+            }
+            if (context.Inner.Io.ScanCount != 0 || context.Inner.Io.RisingCount("扫码触发") != 0 || context.Inner.Records.Count != 0)
+                throw new InvalidOperationException("纯运动流程意外调用扫码或逐件记录。 ");
+            var incomplete = context.Inner.Axes.Values.Where(axis => axis.Targets.Count < 2).Select(axis => axis.Name).ToArray();
+            if (context.Inner.Io.OkCount == 0 || context.Inner.Io.NgCount == 0 || incomplete.Length != 0)
+                throw new InvalidOperationException("纯运动流程未覆盖检测分流或轴动作：OK=" + context.Inner.Io.OkCount
+                    + "，NG=" + context.Inner.Io.NgCount + "，轴=" + string.Join("、", incomplete));
+            try { new RotaryWeldingEquipmentDefinition().CreateStationFlows(context); throw new InvalidOperationException("启用追溯的旧样例错误接受了缺失的扫码和记录配置。 "); }
+            catch (InvalidOperationException error) { if (!error.Message.Contains("缺少测试输入")) throw; }
         }
 
         /// <summary>逐件记录写入失败或重名时，保留缓存证据并禁止后续继续。</summary>
@@ -214,6 +274,55 @@ namespace MotionControl.RotaryWelding.Checks
             if (context.Io.RisingCount(output) != 1) throw new InvalidOperationException("恢复时重复触发输出：" + output);
         }
 
+        /// <summary>仅提供安全现场证据，不暴露扫码 IO 或逐件记录能力。</summary>
+        private sealed class MotionOnlyContext : IEquipmentContext, IEquipmentEvidenceStore
+        {
+            /// <summary>复用测试轴和设备反馈，不提供产品记录接口。</summary>
+            internal readonly FakeContext Inner = new FakeContext();
+            /// <summary>设备标识。</summary>
+            public string EquipmentId { get { return Inner.EquipmentId; } }
+            /// <summary>保留全部测试轴映射。</summary>
+            public IReadOnlyList<AxisHardwareDefinition> AxisDefinitions { get { return Inner.AxisDefinitions; } }
+            /// <summary>不配置任何扫码输入。</summary>
+            public IReadOnlyList<DigitalIoHardwareDefinition> InputDefinitions { get { return Inner.InputDefinitions.Where(x => !x.Name.StartsWith("扫码", StringComparison.Ordinal)).ToArray(); } }
+            /// <summary>不配置扫码输出。</summary>
+            public IReadOnlyList<DigitalIoHardwareDefinition> OutputDefinitions { get { return Inner.OutputDefinitions.Where(x => x.Name != "扫码触发").ToArray(); } }
+            /// <summary>返回独立测试 IO。</summary>
+            public ILogicalIo LogicalIo { get { return new NoScannerIo(Inner.LogicalIo); } }
+            /// <summary>返回测试报警服务。</summary>
+            public IMachineAlarmService AlarmService { get { return Inner.AlarmService; } }
+            /// <summary>读取设备文件是否存在。</summary>
+            public bool FileExists(string path) { return Inner.FileExists(path); }
+            /// <summary>读取测试设备配置。</summary>
+            public T LoadJson<T>(string path) where T : class { return Inner.LoadJson<T>(path); }
+            /// <summary>按逻辑名称读取测试轴。</summary>
+            public IAxis GetAxis(string name) { return Inner.GetAxis(name); }
+            /// <summary>解析测试报警。</summary>
+            public MachineAlarmDefinition ResolveAlarm(string code) { return Inner.ResolveAlarm(code); }
+            /// <summary>保存不可自动恢复的设备现场证据。</summary>
+            public void SaveEvidence<T>(string name, T document) where T : class { Inner.SaveEvidence(name, document); }
+        }
+
+        /// <summary>模拟完全没有扫码 IO 的设备，任何误访问均直接失败。</summary>
+        private sealed class NoScannerIo : ILogicalIo
+        {
+            /// <summary>转发非扫码信号的测试设备。</summary>
+            private readonly ILogicalIo _inner;
+            /// <summary>包装设备逻辑 IO。</summary>
+            internal NoScannerIo(ILogicalIo inner) { _inner = inner; }
+            /// <summary>拒绝未配置的扫码信号。</summary>
+            private static void CheckName(string name)
+            {
+                if (name.StartsWith("扫码", StringComparison.Ordinal)) throw new InvalidOperationException("测试设备未配置扫码 IO：" + name);
+            }
+            /// <summary>读取已配置的非扫码输入。</summary>
+            public Task<bool> ReadInputAsync(string name, CancellationToken token) { CheckName(name); return _inner.ReadInputAsync(name, token); }
+            /// <summary>读取已配置的非扫码输出。</summary>
+            public Task<bool> ReadOutputAsync(string name, CancellationToken token) { CheckName(name); return _inner.ReadOutputAsync(name, token); }
+            /// <summary>写入已配置的非扫码输出。</summary>
+            public Task WriteOutputAsync(string name, bool value, CancellationToken token) { CheckName(name); return _inner.WriteOutputAsync(name, value, token); }
+        }
+
         /// <summary>提供十三根内存轴与独立的测试 IO 定义。</summary>
         private sealed class FakeContext : IEquipmentContext, IEquipmentEvidenceStore, IEquipmentRecordStore
         {
@@ -277,6 +386,8 @@ namespace MotionControl.RotaryWelding.Checks
             internal readonly HashSet<double> Targets = new HashSet<double>();
             /// <summary>记录准备过程中使能及回零请求次数。</summary>
             internal int EnabledCalls, HomeCalls;
+            /// <summary>可选位置、速度覆盖，用于模拟设备返回无效反馈。</summary>
+            internal double? ReportedPosition, ReportedVelocity, VelocityAfterHome;
             /// <summary>创建指定名称的轴。</summary>
             internal FakeAxis(string name, FakeIo io) { Name = name; _io = io; _position = name == "Conveyor_R" ? -90 : 0; }
             /// <summary>逻辑轴名称。</summary>
@@ -286,7 +397,7 @@ namespace MotionControl.RotaryWelding.Checks
             { await Task.Delay(5, token); lock (_sync) { _position = position; Targets.Add(position); } }
             /// <summary>报告测试轴状态。</summary>
             public Task<AxisStatus> ReadStatusAsync(CancellationToken token)
-            { lock (_sync) return Task.FromResult(new AxisStatus(_position, 0, true, false, true, false, false, false, false, false, null, false)); }
+            { lock (_sync) return Task.FromResult(new AxisStatus(ReportedPosition ?? _position, HomeCalls > 0 ? (VelocityAfterHome ?? ReportedVelocity ?? 0) : (ReportedVelocity ?? 0), true, false, true, false, false, false, false, false, null, false)); }
             /// <summary>测试轴无需额外使能。</summary>
             public Task EnableServoAsync(CancellationToken token) { EnabledCalls++; return Task.CompletedTask; }
             /// <summary>测试不执行断使能。</summary>
@@ -321,6 +432,8 @@ namespace MotionControl.RotaryWelding.Checks
             private bool _scanDone;
             /// <summary>相机完成状态与当前结果。</summary>
             private bool _cameraDone, _cameraNg;
+            /// <summary>无扫码场景独立交替产生检测结果。</summary>
+            private int _cameraCount;
             /// <summary>出口堵塞时拒绝下料。</summary>
             internal volatile bool BlockExit;
             /// <summary>模拟读码失败及 A 夹具双反馈冲突。</summary>
@@ -394,7 +507,7 @@ namespace MotionControl.RotaryWelding.Checks
                     if (value && !previous) { int count; _rising.TryGetValue(name, out count); _rising[name] = count + 1; if (name == HoldOutput) HeldOutput = true; }
                     if (name == "扫码触发" && value && !previous) { ScanAttempts++; _scanDone = true; _scan = FailScan ? 0 : ++ScanCount; }
                     if (name == "扫码触发" && !value) { _scan = 0; _scanDone = false; }
-                    if (name == "相机触发" && value && !previous) { _cameraDone = true; _cameraNg = ScanCount % 2 == 0; }
+                    if (name == "相机触发" && value && !previous) { _cameraDone = true; _cameraNg = ScanCount == 0 ? ++_cameraCount % 2 == 0 : ScanCount % 2 == 0; }
                     if (name == "相机结果复位" && value) _cameraDone = false;
                     if (name == "合格出料" && value && !previous) OkCount++;
                     if (name == "剔除启动" && value && !previous) NgCount++;

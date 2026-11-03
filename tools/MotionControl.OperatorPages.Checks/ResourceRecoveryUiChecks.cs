@@ -46,10 +46,31 @@ namespace MotionControl.OperatorPages.Checks
             Require(!sample.TryConfirm(device, true, "已检查", () => true, out reason) && reason.Contains("未知"), "未知输入被放行。");
             device.SetInput("Sensor", false); device.WriteOutput("Clamp", true);
             Require(!sample.TryConfirm(device, true, "已检查", () => true, out reason) && reason.Contains("仍有效"), "有效输出被放行。");
+            var activeSample = ResourceRecoverySample.Capture(device, id);
+            Require(activeSample.ActiveOutputs.SequenceEqual(new[] { "Clamp" }) && activeSample.Description.Contains("Clamp：有效")
+                && activeSample.Description.Contains("Sensor：无效"), "有效保持输出未显示，或中断了其他信号采样。");
+            VerifyActiveOutputGate(device, activeSample);
             Require(device.ReadResources().Single().State == TaskResourceState.Blocked, "检查失败移除了资源隔离。");
             device.WriteOutput("Clamp", false);
+            Require(!activeSample.TryConfirm(device, true, "已检查", () => true, out reason) && reason.Contains("重新读取"), "保持输出变化后仍沿用旧采样。");
             Require(sample.TryConfirm(device, true, "已检查现场并确认机构停止", () => true, out reason), reason);
             Require(device.ReadResources().Count == 0 && device.ReadOutput("Clamp") == false, "明确核查后没有解除目标资源或意外切换输出。");
+        }
+
+        /// <summary>有效输出允许只读查看，但不能借此放行资源或自动切换输出。</summary>
+        private static void VerifyActiveOutputGate(InMemoryTaskDevice device, ResourceRecoverySample sample)
+        {
+            var dialog = new ResourceRecoveryDialog(device, () => true, false);
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            var resources = (ComboBox)typeof(ResourceRecoveryDialog).GetField("_resources", flags).GetValue(dialog);
+            var button = (Button)typeof(ResourceRecoveryDialog).GetField("_recoverButton", flags).GetValue(dialog);
+            var confirm = (CheckBox)typeof(ResourceRecoveryDialog).GetField("_confirmed", flags).GetValue(dialog);
+            var note = (TextBox)typeof(ResourceRecoveryDialog).GetField("_confirmation", flags).GetValue(dialog);
+            resources.SelectedIndex = 0;
+            typeof(ResourceRecoveryDialog).GetField("_sample", flags).SetValue(dialog, sample);
+            confirm.IsChecked = true; note.Text = "现场已核查";
+            Require(!button.IsEnabled && device.ReadOutput("Clamp") == true, "有效保持输出时允许解除或自动切换输出。");
+            dialog.Close();
         }
 
         /// <summary>未采样、未勾选或未填写说明时，对话框不得允许提交。</summary>

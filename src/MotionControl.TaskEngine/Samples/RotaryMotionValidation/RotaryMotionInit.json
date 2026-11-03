@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 1,
+  "taskId": "RotaryMotionInit",
+  "name": "检查无料并准备双夹位",
+  "revision": 1,
+  "root": {
+    "kind": "Sequence",
+    "id": "step0008",
+    "name": "检查并初始化",
+    "timeoutMs": 900000,
+    "children": [
+      {
+        "kind": "WaitCondition",
+        "id": "step0001",
+        "name": "检查所有工位没有遗留物料",
+        "timeoutMs": 3000,
+        "condition": {
+          "kind": "All",
+          "conditions": [
+            {
+              "kind": "Compare",
+              "comparison": "Equal",
+              "left": {
+                "source": "Variable",
+                "variableName": "RotaryMotion.InfeedOccupied"
+              },
+              "right": {
+                "source": "Constant",
+                "dataType": "Boolean",
+                "constant": "false"
+              }
+            },
+            {
+              "kind": "Compare",
+              "comparison": "Equal",
+              "left": {
+                "source": "Variable",
+                "variableName": "RotaryMotion.WeldOccupied"
+              },
+              "right": {
+                "source": "Constant",
+                "dataType": "Boolean",
+                "constant": "false"
+              }
+            },
+            {
+              "kind": "Compare",
+              "comparison": "Equal",
+              "left": {
+                "source": "Variable",
+                "variableName": "RotaryMotion.PressOccupied"
+              },
+              "right": {
+                "source": "Constant",
+                "dataType": "Boolean",
+                "constant": "false"
+              }
+            },
+            {
+              "kind": "Compare",
+              "comparison": "Equal",
+              "left": {
+                "source": "Variable",
+                "variableName": "RotaryMotion.BufferOccupied"
+              },
+              "right": {
+                "source": "Constant",
+                "dataType": "Boolean",
+                "constant": "false"
+              }
+            }
+          ]
+        },
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "SetVariable",
+        "id": "step0002",
+        "name": "更新焊接请求",
+        "timeoutMs": 30000,
+        "variableName": "RotaryMotion.WeldRequest",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "step0003",
+        "name": "更新焊接完成状态",
+        "timeoutMs": 30000,
+        "variableName": "RotaryMotion.WeldDone",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "step0004",
+        "name": "更新压合请求",
+        "timeoutMs": 30000,
+        "variableName": "RotaryMotion.PressRequest",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "step0005",
+        "name": "更新压合完成状态",
+        "timeoutMs": 30000,
+        "variableName": "RotaryMotion.PressDone",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "step0006",
+        "name": "更新焊接位夹位选择",
+        "timeoutMs": 30000,
+        "variableName": "RotaryMotion.WeldIsA",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "true"
+        }
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0007",
+        "name": "确认Conveyor_R 在 -90 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Conveyor_R",
+        "position": -90,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      }
+    ]
+  }
+}

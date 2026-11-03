@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "machineId": "Machine01",
+  "name": "十三轴双夹位运动验证",
+  "revision": 1,
+  "namedResources": [
+    "Zone:RotaryMotionWeld",
+    "Zone:RotaryMotionPress",
+    "Zone:Buffer"
+  ],
+  "stations": [
+    {
+      "stationId": "RotaryMotionTable",
+      "name": "上料及双夹位切换",
+      "taskId": "RotaryMotionTable",
+      "enabled": true,
+      "mode": "Cyclic",
+      "cycleIntervalMs": 100
+    },
+    {
+      "stationId": "RotaryMotionWeld",
+      "name": "焊接工位",
+      "taskId": "RotaryMotionWeld",
+      "enabled": true,
+      "mode": "Cyclic",
+      "cycleIntervalMs": 100
+    },
+    {
+      "stationId": "RotaryMotionPress",
+      "name": "压合工位",
+      "taskId": "RotaryMotionPress",
+      "enabled": true,
+      "mode": "Cyclic",
+      "cycleIntervalMs": 100
+    },
+    {
+      "stationId": "RotaryMotionInspect",
+      "name": "复检分拣工位",
+      "taskId": "RotaryMotionInspect",
+      "enabled": true,
+      "mode": "Cyclic",
+      "cycleIntervalMs": 100
+    }
+  ],
+  "initializationTaskId": "RotaryMotionInit"
+}

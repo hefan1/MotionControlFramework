@@ -4,6 +4,8 @@
 
 `NewRotaryTestConfiguration.ps1` 只创建不存在的隔离根目录，从源 Machine01 复制硬件配置、参数和任务，不复制或修改源草稿、备份和恢复记录；写入 13 轴专用原点、限位、扫码及工位测试映射，并安装双夹位任务。可以分别创建两种入口：
 
+需要只验证运动、工位和 IO 时，在生成命令后增加 `-MotionOnly`；此选项安装独立的 `RotaryMotionValidation` 样例，不增加扫码映射、扫码模型或逐件记录步骤。C# 入口显式选择 `RotaryMotionValidation`，任务列表使用独立任务和变量；旧版扫码样例和任何已保存的数据不受影响。生成脚本仍要求先安全关闭现有 Host，不接管当前设备会话。
+
 ```powershell
 & '.\tools\MotionControl.VirtualController\NewRotaryTestConfiguration.ps1' -DestinationRoot '.\tmp\rotary-task-test' -ExecutionOwner TaskEngine -Port 19580
 & '.\tools\MotionControl.VirtualController\NewRotaryTestConfiguration.ps1' -DestinationRoot '.\tmp\rotary-code-test' -ExecutionOwner StationFlows -Port 19581

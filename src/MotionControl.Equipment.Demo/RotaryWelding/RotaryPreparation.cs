@@ -36,8 +36,12 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
             if (await _context.LogicalIo.ReadInputAsync("上料到位", token).ConfigureAwait(false))
                 throw new InvalidOperationException("检测到上料，请先处理物料再准备。");
             foreach (string name in RotaryWeldingEquipmentDefinition.OutputNames)
+            {
+                // 纯运动验证不使用扫码设备，不应要求其输出已映射。
+                if (!_line.TraceProducts && name == "扫码触发") continue;
                 if (await _context.LogicalIo.ReadOutputAsync(name, token).ConfigureAwait(false))
                     throw new InvalidOperationException("输出未关闭，不能准备：" + name);
+            }
             foreach (string clamp in new[] { "取料", "A", "B" })
             {
                 bool closed = await _context.LogicalIo.ReadInputAsync(clamp + "夹紧到位", token).ConfigureAwait(false);
@@ -50,9 +54,9 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
             foreach (string name in HomeOrder)
             {
                 AxisStatus state = await _context.GetAxis(name).ReadStatusAsync(token).ConfigureAwait(false);
-                if (state.Moving || Math.Abs(state.Velocity) > 0.001 || state.AlarmActive
+                if (!HasStoppedFeedback(state) || state.AlarmActive
                     || state.PositiveLimitActive != false || state.NegativeLimitActive != false)
-                    throw new InvalidOperationException("轴未停稳、报警或限位状态未知：" + name);
+                    throw new InvalidOperationException("轴位置或速度未知、未停稳、报警或限位状态未知：" + name);
             }
         }
 
@@ -70,7 +74,8 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
                     await active.EnableServoAsync(token).ConfigureAwait(false);
                     await active.HomeAsync(token).ConfigureAwait(false);
                     AxisStatus state = await active.ReadStatusAsync(token).ConfigureAwait(false);
-                    if (!state.ServoEnabled || !state.Homed || state.Moving || state.AlarmActive || state.RequiresHomingAfterLimitAlarm)
+                    if (!HasStoppedFeedback(state) || !state.ServoEnabled || !state.Homed || state.AlarmActive
+                        || state.RequiresHomingAfterLimitAlarm || state.PositiveLimitActive != false || state.NegativeLimitActive != false)
                         throw new InvalidOperationException(name + " 回零后状态无效。");
                 }
                 active = _context.GetAxis("Conveyor_R");
@@ -100,10 +105,19 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
             {
                 AxisStatus state = await _context.GetAxis(name).ReadStatusAsync(token).ConfigureAwait(false);
                 double expected = name == "Conveyor_R" ? -90 : 0;
-                if (!state.ServoEnabled || !state.Homed || state.Moving || state.AlarmActive || state.RequiresHomingAfterLimitAlarm
+                if (!HasStoppedFeedback(state) || !state.ServoEnabled || !state.Homed || state.AlarmActive || state.RequiresHomingAfterLimitAlarm
                     || state.PositiveLimitActive != false || state.NegativeLimitActive != false || Math.Abs(state.Position - expected) > 0.01)
                     throw new InvalidOperationException(name + " 不在准备完成位置或状态无效。");
             }
+        }
+
+        /// <summary>仅把位置、速度均可读且速度接近零的静止轴视为已停稳。</summary>
+        private static bool HasStoppedFeedback(AxisStatus state)
+        {
+            return state != null && !state.Moving
+                && !double.IsNaN(state.Position) && !double.IsInfinity(state.Position)
+                && !double.IsNaN(state.Velocity) && !double.IsInfinity(state.Velocity)
+                && Math.Abs(state.Velocity) <= 0.001;
         }
     }
 }

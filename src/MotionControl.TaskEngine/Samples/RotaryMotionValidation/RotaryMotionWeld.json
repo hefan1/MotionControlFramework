@@ -1,0 +1,254 @@
+{
+  "schemaVersion": 1,
+  "taskId": "RotaryMotionWeld",
+  "name": "焊接工位",
+  "revision": 1,
+  "root": {
+    "kind": "Sequence",
+    "id": "step0167",
+    "name": "焊接循环",
+    "timeoutMs": 900000,
+    "children": [
+      {
+        "kind": "WaitCondition",
+        "id": "step0163",
+        "name": "等待焊接请求",
+        "timeoutMs": 180000,
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "RotaryMotion.WeldRequest"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "true"
+          }
+        },
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "ResourceScope",
+        "id": "step0162",
+        "name": "占用Weld加工区",
+        "timeoutMs": 180000,
+        "resources": [
+          "Zone:RotaryMotionWeld",
+          "Axis:Weld_Z",
+          "Output:焊接启动"
+        ],
+        "body": {
+          "kind": "Sequence",
+          "id": "step0161",
+          "name": "焊接加工",
+          "timeoutMs": 900000,
+          "children": [
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0148",
+              "name": "确认Weld_Z 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Weld_Z",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitOutput",
+              "id": "step0149",
+              "name": "确认焊接启动关闭",
+              "timeoutMs": 30000,
+              "outputName": "焊接启动",
+              "expected": false,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0150",
+              "name": "等待焊接完成复位",
+              "timeoutMs": 30000,
+              "inputName": "焊接完成",
+              "expected": false,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0151",
+              "name": "等待焊接合格复位",
+              "timeoutMs": 30000,
+              "inputName": "焊接合格",
+              "expected": false,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "MoveAxis",
+              "id": "step0152",
+              "name": "Weld_Z 移动到 1",
+              "timeoutMs": 30000,
+              "axisName": "Weld_Z",
+              "mode": "Absolute",
+              "target": {
+                "source": "Constant",
+                "dataType": "Number",
+                "constant": "1"
+              },
+              "profile": {
+                "speed": 5,
+                "acceleration": 10,
+                "deceleration": 10
+              }
+            },
+            {
+              "kind": "SetOutput",
+              "id": "step0153",
+              "name": "开启焊接启动",
+              "timeoutMs": 30000,
+              "outputName": "焊接启动",
+              "value": true
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0154",
+              "name": "等待焊接完成有效",
+              "timeoutMs": 30000,
+              "inputName": "焊接完成",
+              "expected": true,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0155",
+              "name": "等待焊接合格有效",
+              "timeoutMs": 30000,
+              "inputName": "焊接合格",
+              "expected": true,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "SetOutput",
+              "id": "step0156",
+              "name": "关闭焊接启动",
+              "timeoutMs": 30000,
+              "outputName": "焊接启动",
+              "value": false
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0157",
+              "name": "等待焊接完成复位",
+              "timeoutMs": 30000,
+              "inputName": "焊接完成",
+              "expected": false,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0158",
+              "name": "等待焊接合格复位",
+              "timeoutMs": 30000,
+              "inputName": "焊接合格",
+              "expected": false,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "MoveAxis",
+              "id": "step0159",
+              "name": "Weld_Z 移动到 0",
+              "timeoutMs": 30000,
+              "axisName": "Weld_Z",
+              "mode": "Absolute",
+              "target": {
+                "source": "Constant",
+                "dataType": "Number",
+                "constant": "0"
+              },
+              "profile": {
+                "speed": 5,
+                "acceleration": 10,
+                "deceleration": 10
+              }
+            },
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0160",
+              "name": "确认Weld_Z 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Weld_Z",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "step0164",
+        "name": "更新焊接完成状态",
+        "timeoutMs": 30000,
+        "variableName": "RotaryMotion.WeldDone",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "true"
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "step0165",
+        "name": "等待焊接请求复位",
+        "timeoutMs": 180000,
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "RotaryMotion.WeldRequest"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "false"
+          }
+        },
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "SetVariable",
+        "id": "step0166",
+        "name": "更新焊接完成状态",
+        "timeoutMs": 30000,
+        "variableName": "RotaryMotion.WeldDone",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      }
+    ]
+  }
+}

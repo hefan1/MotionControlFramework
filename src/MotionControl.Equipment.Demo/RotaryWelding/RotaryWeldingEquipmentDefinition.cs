@@ -12,8 +12,14 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
     /// <summary>十三轴双夹位设备的代码样例；仅允许本机软件控制器。</summary>
     public sealed class RotaryWeldingEquipmentDefinition : IEquipmentDefinition, IEquipmentPreparationProvider
     {
+        /// <summary>是否按原焊接样例要求扫码和逐件记录；运动验证示例不依赖这两项业务能力。</summary>
+        private readonly bool _traceProducts;
+        /// <summary>创建原有扫码和逐件记录样例，保持已有设备配置行为。</summary>
+        public RotaryWeldingEquipmentDefinition() : this(true) { }
+        /// <summary>显式选择是否执行产品追溯，不能通过运行时故障自动切换。</summary>
+        public RotaryWeldingEquipmentDefinition(bool traceProducts) { _traceProducts = traceProducts; }
         /// <summary>Host 显式选择本设备示例的配置名称。</summary>
-        public string EquipmentName { get { return "RotaryWelding"; } }
+        public string EquipmentName { get { return _traceProducts ? "RotaryWelding" : "RotaryMotionValidation"; } }
 
         /// <summary>新设备目录所需的停机报警，既有设备仍采用报警库配置。</summary>
         public IReadOnlyList<MachineAlarmDefinition> CreateDefaultAlarms()
@@ -41,29 +47,35 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
                 axes.Add(name, context.GetAxis(name));
             }
             foreach (string input in InputNames)
+            {
+                if (!_traceProducts && (input == "扫码完成" || input == "扫码成功")) continue;
                 if (!context.InputDefinitions.Any(item => string.Equals(item.Name, input, StringComparison.OrdinalIgnoreCase)))
                     throw new InvalidOperationException("缺少测试输入：" + input);
-            for (int bit = 0; bit < 16; bit++)
+            }
+            for (int bit = 0; _traceProducts && bit < 16; bit++)
             {
                 string name = "扫码数据" + bit.ToString("D2");
                 if (!context.InputDefinitions.Any(item => string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase)))
                     throw new InvalidOperationException("缺少扫码数据输入：" + name);
             }
             foreach (string output in OutputNames)
+            {
+                if (!_traceProducts && output == "扫码触发") continue;
                 if (!context.OutputDefinitions.Any(item => string.Equals(item.Name, output, StringComparison.OrdinalIgnoreCase)))
                     throw new InvalidOperationException("缺少测试输出：" + output);
+            }
             MachineAlarmDefinition alarm = context.ResolveAlarm("DEMO_SENSOR_TIMEOUT");
             if (alarm.Kind != MachineAlarmKind.StopMachine) throw new InvalidOperationException("等待反馈报警必须是停机报警。");
             var evidenceStore = context as IEquipmentEvidenceStore;
             if (evidenceStore == null) throw new InvalidOperationException("双夹位流程需要设备现场证据存储；未配置时禁止启动。");
             var recordStore = context as IEquipmentRecordStore;
-            if (recordStore == null) throw new InvalidOperationException("双夹位流程需要逐件记录存储；未配置时禁止启动。");
+            if (_traceProducts && recordStore == null) throw new InvalidOperationException("双夹位流程需要逐件记录存储；未配置时禁止启动。");
             bool hasEvidence = context.FileExists("Runtime/Evidence/RotaryWelding.json");
             RotaryEvidence previous = hasEvidence ? context.LoadJson<RotaryEvidence>("Runtime/Evidence/RotaryWelding.json") : null;
             if (hasEvidence && previous == null) throw new InvalidOperationException("双夹位现场证据为空，禁止运行，请核对证据文件。");
             if (previous != null && (previous.SchemaVersion != 1 || string.IsNullOrWhiteSpace(previous.SessionId)))
                 throw new InvalidOperationException("双夹位现场证据不完整或版本无效，禁止运行，请核对证据文件。");
-            var line = new RotaryCarrierLine(evidenceStore, recordStore, previous);
+            var line = new RotaryCarrierLine(evidenceStore, recordStore, previous, _traceProducts);
             var result = new List<IStationFlow>();
             foreach (string role in new[] { "上料工位", "焊接工位", "压合工位", "旋转与下料", "复检分拣" })
                 result.Add(new RotaryStationFlow(role, axes, context.LogicalIo, line, context.AlarmService, alarm));

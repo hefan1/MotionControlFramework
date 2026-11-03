@@ -32,7 +32,10 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
                     await MoveAsync("Feeder_Z", 0, token).ConfigureAwait(false); Next(17, "取料轴移回上料位置"); return;
                 case 17:
                     await EnsureSafeAsync(token, "Feeder_Z").ConfigureAwait(false);
-                    await MoveAsync("Feeder_X", 0, token).ConfigureAwait(false); Next(18, "确认扫码反馈复位"); return;
+                    await MoveAsync("Feeder_X", 0, token).ConfigureAwait(false);
+                    if (_line.TraceProducts) Next(18, "确认扫码反馈复位");
+                    else { _product = _line.RegisterUntrackedCarrier(); Next(24, "检查夹位松开"); }
+                    return;
                 case 18:
                     if (await WaitInputAsync("扫码完成", false, token).ConfigureAwait(false)) Next(19, "触发扫码"); return;
                 case 19:
