@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$ConfigurationRoot = (Join-Path $env:LOCALAPPDATA 'MotionControlFramework\Configurations'),
     [switch]$PrepareOnly
 )
@@ -15,6 +15,7 @@ $taskStartedController = $null
 $taskStartedHost = $null
 $taskPort = 18520
 $taskLease = $null
+. (Join-Path $PSScriptRoot 'ScenarioIoMapping.ps1')
 
 # 从指定的 Machine01 读取配置；找不到或损坏时明确失败。
 function Read-ScenarioConfig([string]$RelativePath) {
@@ -90,16 +91,19 @@ try {
     $taskCards = Read-ScenarioConfig 'HardwareConfig\MotionCards.json'
     $taskCardList = @($taskCards.motionCards)
     if ($taskCardList.Count -ne 1 -or [string]::IsNullOrWhiteSpace([string]$taskCardList[0].controllerId)) { throw '四工位样例要求一张明确配置的控制器。' }
-    $taskInputs = @{ '上料到位'=4; '压装完成'=5; '检测完成'=6; '下料到位'=7 }
-    $taskOutputs = @{ '夹具夹紧'=0; '压头动作'=1; '相机触发'=2; '下料电磁阀'=3 }
-    foreach ($direction in @(@{Items=$taskIo.digitalInputs; Expected=$taskInputs}, @{Items=$taskIo.digitalOutputs; Expected=$taskOutputs})) {
-        foreach ($name in $direction.Expected.Keys) {
-            $matches = @($direction.Items | Where-Object { $_.name -eq $name })
-            if ($matches.Count -ne 1 -or $matches[0].channel -ne $direction.Expected[$name] -or $matches[0].activeHigh -ne $true -or $matches[0].controllerId -ne $taskCardList[0].controllerId) { throw "IO 映射与四工位样例不符：$name" }
-            $sameChannel = @($direction.Items | Where-Object { $_.controllerId -eq $matches[0].controllerId -and $_.channel -eq $matches[0].channel })
-            if ($sameChannel.Count -ne 1) { throw "IO 物理通道存在重复映射：$name" }
-        }
+    $taskInputs = @{}
+    foreach ($name in @('上料到位', '压装完成', '检测完成', '下料到位')) {
+        $taskInputs[$name] = Get-ScenarioIoChannel -Items @($taskIo.digitalInputs) -Name $name -ControllerId $taskCardList[0].controllerId
     }
+    $taskOutputs = @{}
+    foreach ($name in @('夹具夹紧', '压头动作', '相机触发', '下料电磁阀')) {
+        $taskOutputs[$name] = Get-ScenarioIoChannel -Items @($taskIo.digitalOutputs) -Name $name -ControllerId $taskCardList[0].controllerId
+    }
+    $taskPairs = @(
+        @{ Input=$taskInputs['压装完成']; Output=$taskOutputs['压头动作'] },
+        @{ Input=$taskInputs['检测完成']; Output=$taskOutputs['相机触发'] },
+        @{ Input=$taskInputs['下料到位']; Output=$taskOutputs['下料电磁阀'] }
+    )
     & $taskCheckExe --validate-machine $taskRoot Machine01
     if ($LASTEXITCODE -ne 0) { throw '当前设备任务清单校验失败。' }
     Assert-ScenarioHostStopped
@@ -124,26 +128,28 @@ try {
     Assert-ScenarioHostStopped
     $feeder = (Send-ScenarioRequest @{command='readFeeder'}).feederState
     if ($null -eq $feeder -or $feeder.enabled) { throw '控制器已有上料规则或无法核对，不会覆盖。' }
-    foreach ($channel in @(0,1,2,3)) {
+    foreach ($channel in @($taskOutputs['夹具夹紧'], $taskOutputs['压头动作'], $taskOutputs['相机触发'], $taskOutputs['下料电磁阀'])) {
         $output = Send-ScenarioRequest @{command='readOutput'; channel=$channel}
         if ($output.value -ne $false) { throw "DO$channel 未明确关闭，不允许配置样例规则。" }
     }
-    foreach ($channel in @(5,6,7)) {
-        $feedback = Send-ScenarioRequest @{command='readFeedback'; inputChannel=$channel} -AllowRejected
-        if ($feedback.ok -or $feedback.error -ne '该输入没有配置输出反馈规则。') { throw "DI$channel 已有反馈规则或状态无法确认，不会覆盖。" }
+    foreach ($pair in $taskPairs) {
+        $feedback = Send-ScenarioRequest @{command='readFeedback'; inputChannel=$pair.Input} -AllowRejected
+        if ($feedback.ok -or $feedback.error -ne '该输入没有配置输出反馈规则。') { throw "DI$($pair.Input) 已有反馈规则或状态无法确认，不会覆盖。" }
     }
-    foreach ($pair in @(@{Input=5; Output=1}, @{Input=6; Output=2}, @{Input=7; Output=3})) {
+    foreach ($pair in $taskPairs) {
         Send-ScenarioRequest @{command='configureFeedback'; inputChannel=$pair.Input; outputChannel=$pair.Output; delayMs=300; activeHigh=$true} | Out-Null
     }
-    Send-ScenarioRequest @{command='configureFeeder'; enabled=$true; inputChannel=4; outputChannel=0; feedDelayMs=1000; emptyDelayMs=1500} | Out-Null
+    Send-ScenarioRequest @{command='configureFeeder'; enabled=$true; inputChannel=$taskInputs['上料到位']; outputChannel=$taskOutputs['夹具夹紧']; feedDelayMs=1000; emptyDelayMs=1500} | Out-Null
     $feeder = (Send-ScenarioRequest @{command='readFeeder'}).feederState
-    if (-not $feeder.enabled -or $feeder.inputChannel -ne 4 -or $feeder.outputChannel -ne 0) { throw '上料规则读回不一致。' }
-    foreach ($pair in @(@{Input=5; Output=1}, @{Input=6; Output=2}, @{Input=7; Output=3})) {
+    if (-not $feeder.enabled -or $feeder.inputChannel -ne $taskInputs['上料到位'] -or $feeder.outputChannel -ne $taskOutputs['夹具夹紧']) { throw '上料规则读回不一致。' }
+    foreach ($pair in $taskPairs) {
         $feedback = (Send-ScenarioRequest @{command='readFeedback'; inputChannel=$pair.Input}).feedbackState
         if ($feedback.inputChannel -ne $pair.Input -or $feedback.outputChannel -ne $pair.Output -or $feedback.stuck -eq $true) { throw "DI$($pair.Input) 反馈规则读回不一致。" }
     }
     Send-ScenarioRequest @{command='releaseLease'; leaseId=[string]$taskLease.leaseId} | Out-Null
     $taskLease = $null
+    Write-Host "上料规则：DI$($taskInputs['上料到位'])，夹具命令 DO$($taskOutputs['夹具夹紧'])。"
+    foreach ($pair in $taskPairs) { Write-Host "工位反馈规则：DO$($pair.Output) -> DI$($pair.Input)。" }
     if ($PrepareOnly) {
         Write-Host "四工位软件控制器已准备，进程号 $($taskStartedController.Id)，端口 $taskPort；未启动 Host。"
         return

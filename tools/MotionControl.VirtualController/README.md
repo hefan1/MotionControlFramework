@@ -41,7 +41,7 @@ Start-Process -FilePath .\src\MotionControl.Host.Wpf\bin\Release\net48\MotionCon
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\MotionControl.VirtualController\StartLoadDemo.ps1
 ```
 
-脚本检查 Machine01 的后端、端口、控制卡和高有效“上料到位 DI4 / 夹具夹紧 DO0”映射，核对本项目控制器的进程路径和协议身份。已有上位机运行时拒绝重复启动。若控制器尚未启动，脚本启动本机控制器；已有相同上料规则时保留现有延时与缺料状态，不会重置已有规则。不同通道的现有规则、占用中的运动会话或夹具输出开启等情况会报错，脚本不会覆盖配置，也不会自动启动生产或使能伺服。
+脚本按 Machine01 的逻辑 IO 名称“上料到位”“夹具夹紧”读取实际通道，要求同一张控制卡、高有效且映射唯一；不依赖固定编号。脚本核对后端、端口、控制器进程路径和协议身份。已有上位机运行时拒绝重复启动。若控制器尚未启动，脚本启动本机控制器；已有相同上料规则时保留现有延时与缺料状态，不会重置已有规则。不同通道的现有规则、占用中的运动会话或夹具输出开启等情况会报错，脚本不会覆盖配置，也不会自动启动生产或使能伺服。
 
 只想读取当前配置和场景状态、不启动或修改任何内容时，使用：
 
@@ -51,15 +51,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\MotionControl.Virtua
 
 读取模式要求控制器已经运行。若缺料状态为 True，需要按下面的恢复供料命令明确解除；一键脚本不会代替操作员清除故障。
 
-默认不自动生成输入；需要时由测试人员显式启用上料规则。下面示例使用当前 Machine01 的 `DI4 上料到位`、`DO0 夹具夹紧`：
+默认不自动生成输入；需要时由测试人员显式启用上料规则。以下示例假定映射为 `DI4 上料到位`、`DO12 夹具夹紧`，其他配置应按实际映射指定通道：
 
 ```powershell
 $command = '.\tools\MotionControl.VirtualController\ControllerCommand.ps1'
-powershell -NoProfile -ExecutionPolicy Bypass -File $command -Action StartFeeder
+powershell -NoProfile -ExecutionPolicy Bypass -File $command -Action StartFeeder -InputChannel 4 -OutputChannel 12
 powershell -NoProfile -ExecutionPolicy Bypass -File $command -Action Status
 ```
 
-启动规则前先确认夹具输出处于关闭状态。启用时 DI4 先变为未到位，默认 1000 ms 后变为到位；检测到 DO0 打开再关闭时，DI4 变为未到位，默认经过 1500 ms 后下一件到位。通道和延迟可通过 `-InputChannel`、`-OutputChannel`、`-FeedDelayMs`、`-EmptyDelayMs` 指定。若当前输入已由输出反馈规则使用，或夹具输出仍开启，启用会报错。
+启动规则前先确认夹具输出处于关闭状态。启用时上料到位输入先变为未到位，默认 1000 ms 后变为到位；检测到夹具输出打开再关闭时，上料输入变为未到位，默认经过 1500 ms 后下一件到位。上料到位是供料规则生成的物料信号，并非夹具到位反馈。通道和延迟可通过 `-InputChannel`、`-OutputChannel`、`-FeedDelayMs`、`-EmptyDelayMs` 指定。若当前输入已由输出反馈规则使用，或夹具输出仍开启，启用会报错。
 
 检查缺料、恢复供料和停止设备规则：
 
@@ -92,15 +92,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File $command -Action StopFeeder
 
 ## 软件检查
 
-构建后运行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\MotionControl.VirtualController\SmokeChecks.ps1`。检查独立进程与协议身份、轴移动和停止、会话过期与主动释放、延迟反馈、故障及上料规则；脚本使用独立端口，端口已占用时直接退出。它不能代替正式 Host 的屏幕验证和实际设备验收。
+构建后运行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\MotionControl.VirtualController\SmokeChecks.ps1`。检查独立进程与协议身份、轴移动和停止、会话过期与主动释放、延迟反馈、故障及上料规则；脚本使用独立端口，端口已占用时直接退出。还可以运行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\MotionControl.VirtualController\ScenarioIoMappingChecks.ps1`，检查旧、新通道及无效映射拒绝。它们不能代替正式 Host 的屏幕验证和实际设备验收。
 
 ## 普通输出与输入反馈
 
-设备有多个气缸时，可以分别建立反馈。例如 DO1 对应 DI5，高电平跟随，300 ms 后到位：
+设备有多个气缸时，可以分别建立反馈。例如本示例配置的 DO5 压头动作对应 DI5 压装完成，高电平跟随，300 ms 后到位（其他配置以实际映射为准）：
 
 ```powershell
 $command = '.\tools\MotionControl.VirtualController\ControllerCommand.ps1'
-& $command -Action ConfigureFeedback -OutputChannel 1 -InputChannel 5 -FeedbackDelayMs 300
+& $command -Action ConfigureFeedback -OutputChannel 5 -InputChannel 5 -FeedbackDelayMs 300
 & $command -Action FeedbackStatus -InputChannel 5
 & $command -Action FeedbackStuck -InputChannel 5
 & $command -Action FeedbackRestore -InputChannel 5
@@ -115,15 +115,15 @@ $command = '.\tools\MotionControl.VirtualController\ControllerCommand.ps1'
 
 ```powershell
 $command = '.\tools\MotionControl.VirtualController\ControllerCommand.ps1'
-# DO1 的下一次写入已改变电平，但调用者收到失败。
-& $command -Action SetCommandFault -TargetCommand writeOutput -TargetIndex 1 -FaultMode errorAfter
-& $command -Action CommandFaultStatus -TargetCommand writeOutput -TargetIndex 1
+# 示例配置中 DO5 的下一次写入已改变电平，但调用者收到失败。
+& $command -Action SetCommandFault -TargetCommand writeOutput -TargetIndex 5 -FaultMode errorAfter
+& $command -Action CommandFaultStatus -TargetCommand writeOutput -TargetIndex 5
 # 轴 2 的下一次停轴请求直接失败，轴按原状态继续运动。
 & $command -Action SetCommandFault -TargetCommand stop -TargetIndex 2 -FaultMode reject
 # DI5 的下一次读取延迟应答 1500 毫秒，不阻塞其他连接。
 & $command -Action SetCommandFault -TargetCommand readInput -TargetIndex 5 -FaultMode delayReply -FaultDelayMs 1500
-# DO1 下一次写入延迟执行；等待期间会话失效时，旧请求不会写入。
-& $command -Action SetCommandFault -TargetCommand writeOutput -TargetIndex 1 -FaultMode delayBefore -FaultDelayMs 1500
+# DO5 下一次写入延迟执行；等待期间会话失效时，旧请求不会写入。
+& $command -Action SetCommandFault -TargetCommand writeOutput -TargetIndex 5 -FaultMode delayBefore -FaultDelayMs 1500
 & $command -Action ClearCommandFault -TargetCommand stop -TargetIndex 2
 ```
 

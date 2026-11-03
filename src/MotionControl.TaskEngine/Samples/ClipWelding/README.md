@@ -19,12 +19,12 @@ dotnet build .\tools\MotionControl.TaskEngine.Checks\MotionControl.TaskEngine.Ch
 
 | 样例工位 | 现有测试轴 | 测试输出 → 输入 |
 | --- | --- | --- |
-| 扫码 | Load_X | DO0 夹具夹紧 → DI4 上料到位，由上料规则驱动 |
-| 焊接 | Press_Z | DO1 压头动作 → DI5 压装完成 |
-| 压合 | Camera_X | DO2 相机触发 → DI6 检测完成 |
-| 复检 | Unload_X | DO3 下料电磁阀 → DI7 下料到位 |
+| 扫码 | Load_X | DO12 夹具夹紧；DI4 上料到位由供料规则产生 |
+| 焊接 | Press_Z | DO5 压头动作；DI5 压装完成 |
+| 压合 | Camera_X | DO6 相机触发；DI6 检测完成 |
+| 复检 | Unload_X | DO7 下料电磁阀；DI7 下料到位 |
 
-这些沿用的逻辑 IO 名称表示测试通道，不是夹具焊接设备的实际接线，也不表示已驱动焊机、压机或相机。软件控制器使用 0–1 mm、5 mm/s，具体现场行程和速度须另行设计。
+这是本测试配置的通道约定：DO0–DO4 留空，DI4 是上料有料信号，不是夹具夹紧反馈；夹具没有独立到位输入，DI12 留空。DI 与 DO 为独立端子，同号仅用于便于查找，输入要由设备或软件控制器规则产生。上述逻辑 IO 不是实际焊接设备接线，也不表示已驱动焊机、压机或相机。软件控制器使用 0–1 mm、5 mm/s，具体现场行程和速度须另行设计；使用不同配置时以 IO 映射为准。
 
 焊接、压合和复检在轴运动前及发出对应测试输出前各确认一次反馈复位；反馈卡在有效时超时报停，不会将旧反馈当成本次动作完成。此检查仅是样例流程前置条件，不能替代真实设备的时序和安全联锁。
 
@@ -34,17 +34,17 @@ dotnet build .\tools\MotionControl.TaskEngine.Checks\MotionControl.TaskEngine.Ch
 
 ```powershell
 $clipCommand = '.\tools\MotionControl.VirtualController\ControllerCommand.ps1'
-& $clipCommand -Action StartFeeder
-& $clipCommand -Action ConfigureFeedback -OutputChannel 1 -InputChannel 5
-& $clipCommand -Action ConfigureFeedback -OutputChannel 2 -InputChannel 6
-& $clipCommand -Action ConfigureFeedback -OutputChannel 3 -InputChannel 7
+& $clipCommand -Action StartFeeder -OutputChannel 12 -InputChannel 4
+& $clipCommand -Action ConfigureFeedback -OutputChannel 5 -InputChannel 5
+& $clipCommand -Action ConfigureFeedback -OutputChannel 6 -InputChannel 6
+& $clipCommand -Action ConfigureFeedback -OutputChannel 7 -InputChannel 7
 ```
 
 在正式 Host 核对软件控制器连接、四轴使能回零和 IO，再读取任务、复位、启动；任务运行页查看各工位当前步骤、等待条件和完成次数。设备变量页可查看 `Clip.Scan/Weld/Press/Inspect.Occupied`、各工位 `Product/Carrier/Result`，及 `Clip.LastProduct/LastCarrier/LastResult/LastDestination`。本地变量只是测试观察值；工位不占用时保留上次数据，应结合 `Occupied` 判断。
 
 `Clip.ReceiveEnabled` 默认 `true`，允许人工写入；设为 `false` 可阻塞复检后的测试下料。设备变量页限制运行中写入，建议在待复位或就绪状态写入 `false`，启动后观察两个以上工位有料；暂停、复位回就绪并确认 UI 允许写入后设回 `true`，再启动。实际窗口是否允许在相应阶段写入以正式 Host 实测为准，不要绕过运行中写入限制。超过等待时限会产生停机报警。
 
-结束时在 Host 停止任务，确认所有轴停止、DO0–DO3 关闭；停止供料并移除三组测试反馈，确认 DI4–DI7 恢复安全值。故障暂停可能保持某些输出，不能假定停止即关闭夹具或气缸。
+结束时在 Host 停止任务，确认所有轴停止、DO5–DO7 及 DO12 关闭；停止供料并移除三组测试反馈，确认 DI4–DI7 恢复安全值。故障暂停可能保持某些输出，不能假定停止即关闭夹具或气缸。
 
 ## 焊接与压合工位准备
 

@@ -19,10 +19,12 @@ dotnet build .\tools\MotionControl.TaskEngine.Checks\MotionControl.TaskEngine.Ch
 
 | 用途 | 逻辑名 | 控制器通道 |
 | --- | --- | --- |
-| 上料输入 / 夹具输出 | 上料到位 / 夹具夹紧 | DI4 / DO0 |
-| 压装反馈 / 压头输出 | 压装完成 / 压头动作 | DI5 / DO1 |
-| 检测反馈 / 检测输出 | 检测完成 / 相机触发 | DI6 / DO2 |
-| 下料反馈 / 下料输出 | 下料到位 / 下料电磁阀 | DI7 / DO3 |
+| 上料输入 / 夹具输出 | 上料到位 / 夹具夹紧 | DI4 / DO12 |
+| 压装反馈 / 压头输出 | 压装完成 / 压头动作 | DI5 / DO5 |
+| 检测反馈 / 检测输出 | 检测完成 / 相机触发 | DI6 / DO6 |
+| 下料反馈 / 下料输出 | 下料到位 / 下料电磁阀 | DI7 / DO7 |
+
+这是软件测试配置的编号约定，DI 与 DO 是独立端子；DI4 为物料到位信号，不是夹具位置反馈，DI12 留空。实际设备应按电气图配置，不能假定同号通道会自动联动。
 
 脚本会追加 `Press.Request`、`Press.Complete`、`Inspect.Request`、`Inspect.Complete`、`Unload.Request`、`Unload.Complete` 六个 bool 变量和两个样例报警，保留原变量、报警及旧任务。此样例也使用现有的 `DEMO_SENSOR_TIMEOUT` 停机报警和 `LOAD_MATERIAL_MISSING` 非停机报警。
 
@@ -40,13 +42,13 @@ dotnet build .\tools\MotionControl.TaskEngine.Checks\MotionControl.TaskEngine.Ch
 
 ```powershell
 $taskCommand = '.\tools\MotionControl.VirtualController\ControllerCommand.ps1'
-& $taskCommand -Action StartFeeder
-& $taskCommand -Action ConfigureFeedback -OutputChannel 1 -InputChannel 5
-& $taskCommand -Action ConfigureFeedback -OutputChannel 2 -InputChannel 6
-& $taskCommand -Action ConfigureFeedback -OutputChannel 3 -InputChannel 7
+& $taskCommand -Action StartFeeder -OutputChannel 12 -InputChannel 4
+& $taskCommand -Action ConfigureFeedback -OutputChannel 5 -InputChannel 5
+& $taskCommand -Action ConfigureFeedback -OutputChannel 6 -InputChannel 6
+& $taskCommand -Action ConfigureFeedback -OutputChannel 7 -InputChannel 7
 ```
 
-启动正式 Host 后，核对连接、轴使能及回零，在任务运行页读取任务、检查现场、复位并启动。压装反馈异常可通过 `& $taskCommand -Action FeedbackStuck -InputChannel 5` 保持当前反馈；该输入下一次应变为有效时将等待超时。解除故障使用 `& $taskCommand -Action FeedbackRestore -InputChannel 5`，在 Host 确认报警原因、机构和输出后复位并启动。压装故障时 DO1 可能仍保持有效，不能把暂停视为输出已关闭。
+启动正式 Host 后，核对连接、轴使能及回零，在任务运行页读取任务、检查现场、复位并启动。压装反馈异常可通过 `& $taskCommand -Action FeedbackStuck -InputChannel 5` 保持当前反馈；该输入下一次应变为有效时将等待超时。解除故障使用 `& $taskCommand -Action FeedbackRestore -InputChannel 5`，在 Host 确认报警原因、机构和输出后复位并启动。压装故障时 DO5 可能仍保持有效，不能把暂停视为输出已关闭。
 
 测试结束，通过 Host 停止任务并确认四轴停止、相关 DO 均关闭，停止上料规则并移除反馈规则，确认 DI 恢复安全值。软件控制器不模拟真实惯量、限位、机械碰撞、安全回路、相机或压装工艺。
 

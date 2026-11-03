@@ -1,12 +1,19 @@
-﻿param([switch]$CheckOnly)
+﻿param(
+    [switch]$CheckOnly,
+    [string]$ConfigurationRoot = (Join-Path $env:LOCALAPPDATA 'MotionControlFramework\Configurations')
+)
 
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $controllerExe = Join-Path $repositoryRoot 'tools\MotionControl.VirtualController\bin\Release\net48\MotionControl.VirtualController.exe'
 $hostExe = Join-Path $repositoryRoot 'src\MotionControl.Host.Wpf\bin\Release\net48\MotionControl.Host.Wpf.exe'
-$backendPath = Join-Path $env:LOCALAPPDATA 'MotionControlFramework\Configurations\Machine01\Parameters\ControllerBackend.json'
-$ioMappingPath = Join-Path $env:LOCALAPPDATA 'MotionControlFramework\Configurations\Machine01\HardwareConfig\IoMapping.json'
-$cardMappingPath = Join-Path $env:LOCALAPPDATA 'MotionControlFramework\Configurations\Machine01\HardwareConfig\MotionCards.json'
+$configurationRootPath = [IO.Path]::GetFullPath($ConfigurationRoot)
+$defaultConfigurationRoot = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'MotionControlFramework\Configurations'))
+$machineDirectory = Join-Path $configurationRootPath 'Machine01'
+$backendPath = Join-Path $machineDirectory 'Parameters\ControllerBackend.json'
+$ioMappingPath = Join-Path $machineDirectory 'HardwareConfig\IoMapping.json'
+$cardMappingPath = Join-Path $machineDirectory 'HardwareConfig\MotionCards.json'
+. (Join-Path $PSScriptRoot 'ScenarioIoMapping.ps1')
 $startedController = $null
 $port = 18520
 
@@ -68,6 +75,9 @@ function Assert-ControllerIdentity {
 }
 
 try {
+    if (-not $CheckOnly -and -not [string]::Equals($configurationRootPath, $defaultConfigurationRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw '正式 Host 使用本机默认配置目录；其他目录只能用于 CheckOnly 检查。'
+    }
     if (-not (Test-Path -LiteralPath $backendPath -PathType Leaf)) {
         throw "未找到 Machine01 后端配置：$backendPath。请先显式选择 Virtual；本脚本不会创建或覆盖配置。"
     }
@@ -88,26 +98,19 @@ try {
     if (-not (Test-Path -LiteralPath $ioMappingPath -PathType Leaf)) { throw "找不到 Machine01 IO 映射：$ioMappingPath" }
     try { $ioMapping = Get-Content -LiteralPath $ioMappingPath -Raw -Encoding UTF8 | ConvertFrom-Json }
     catch { throw "Machine01 IO 映射不是有效 JSON：$($_.Exception.Message)" }
-    $inputs = @($ioMapping.digitalInputs | Where-Object { $_.name -eq '上料到位' })
-    $outputs = @($ioMapping.digitalOutputs | Where-Object { $_.name -eq '夹具夹紧' })
     if (-not (Test-Path -LiteralPath $cardMappingPath -PathType Leaf)) { throw "找不到 Machine01 控制卡配置：$cardMappingPath" }
     try { $cardMapping = Get-Content -LiteralPath $cardMappingPath -Raw -Encoding UTF8 | ConvertFrom-Json }
     catch { throw "Machine01 控制卡配置不是有效 JSON：$($_.Exception.Message)" }
     $cards = @($cardMapping.motionCards)
-    if ($inputs.Count -ne 1 -or $outputs.Count -ne 1 -or
-        $inputs[0].channel -ne 4 -or $outputs[0].channel -ne 0 -or
-        $inputs[0].activeHigh -ne $true -or $outputs[0].activeHigh -ne $true -or
-        [string]::IsNullOrWhiteSpace([string]$inputs[0].controllerId) -or
-        $inputs[0].controllerId -ne $outputs[0].controllerId -or
-        $cards.Count -ne 1 -or $cards[0].controllerId -ne $inputs[0].controllerId) {
-        throw '当前 IO 映射不是同一张卡的高有效“上料到位 DI4 / 夹具夹紧 DO0”，不会套用示例场景。'
-    }
+    if ($cards.Count -ne 1 -or [string]::IsNullOrWhiteSpace([string]$cards[0].controllerId)) { throw '上料样例要求一张明确配置的控制器。' }
+    $feedInputChannel = Get-ScenarioIoChannel -Items @($ioMapping.digitalInputs) -Name '上料到位' -ControllerId $cards[0].controllerId
+    $clampOutputChannel = Get-ScenarioIoChannel -Items @($ioMapping.digitalOutputs) -Name '夹具夹紧' -ControllerId $cards[0].controllerId
 
     if ($CheckOnly) {
         if (-not (Test-ControllerPort $port)) { throw "配置检查通过，但端口 $port 上没有控制器。检查模式不会启动进程。" }
         Assert-ControllerIdentity
         $status = (Send-ControllerRequest @{ command = 'readFeeder' }).feederState
-        Write-Host "Machine01 后端：Virtual；控制器协议：2；本机端口：$port。"
+        Write-Host "Machine01 后端：Virtual；控制器协议：2；本机端口：$port；上料到位 DI$feedInputChannel / 夹具夹紧 DO$clampOutputChannel。"
         $status | Format-List
         exit 0
     }
@@ -138,7 +141,7 @@ try {
     # 只读取现有规则；已有规则不得自动复位、覆盖或清除缺料故障。
     $feeder = (Send-ControllerRequest @{ command = 'readFeeder' }).feederState
     if ($null -eq $feeder) { throw '控制器没有返回上料规则状态。' }
-    if ($feeder.enabled -and ($feeder.inputChannel -ne 4 -or $feeder.outputChannel -ne 0)) {
+    if ($feeder.enabled -and ($feeder.inputChannel -ne $feedInputChannel -or $feeder.outputChannel -ne $clampOutputChannel)) {
         throw "已有上料规则使用 DI$($feeder.inputChannel) / DO$($feeder.outputChannel)，本脚本不会覆盖。"
     }
 
@@ -150,19 +153,19 @@ try {
         # 获得租约后再次检查，避免准备期间覆盖另一操作者启用的规则。
         $feeder = (Send-ControllerRequest @{ command = 'readFeeder' }).feederState
         if ($feeder.enabled) {
-            if ($feeder.inputChannel -ne 4 -or $feeder.outputChannel -ne 0) {
+            if ($feeder.inputChannel -ne $feedInputChannel -or $feeder.outputChannel -ne $clampOutputChannel) {
                 throw '上料规则在准备期间发生变化，本脚本不会覆盖。'
             }
-            Write-Host "保留现有上料规则：DI4 / DO0；缺料故障=$($feeder.fault)，首次延迟=$($feeder.feedDelayMs) ms，后续延迟=$($feeder.emptyDelayMs) ms。"
+            Write-Host "保留现有上料规则：DI$feedInputChannel / DO$clampOutputChannel；缺料故障=$($feeder.fault)，首次延迟=$($feeder.feedDelayMs) ms，后续延迟=$($feeder.emptyDelayMs) ms。"
         }
         else {
-            $clampOutput = (Send-ControllerRequest @{ command = 'readOutput'; channel = 0 }).value
+            $clampOutput = (Send-ControllerRequest @{ command = 'readOutput'; channel = $clampOutputChannel }).value
             if ($clampOutput) { throw '夹具输出当前已开启，不允许启用上料规则。' }
             if (@(Get-Process -Name 'MotionControl.Host.Wpf' -ErrorAction SilentlyContinue).Count -gt 0) {
                 throw '准备期间检测到上位机已启动，不会改变上料规则。'
             }
-            Send-ControllerRequest @{ command = 'configureFeeder'; enabled = $true; inputChannel = 4; outputChannel = 0; feedDelayMs = 1000; emptyDelayMs = 1500 } | Out-Null
-            Write-Host '已启用上料规则：DI4 上料到位，DO0 夹具；首次 1000 ms、后续 1500 ms。'
+            Send-ControllerRequest @{ command = 'configureFeeder'; enabled = $true; inputChannel = $feedInputChannel; outputChannel = $clampOutputChannel; feedDelayMs = 1000; emptyDelayMs = 1500 } | Out-Null
+            Write-Host "已启用上料规则：DI$feedInputChannel 上料到位，DO$clampOutputChannel 夹具；首次 1000 ms、后续 1500 ms。"
         }
     }
     finally {
