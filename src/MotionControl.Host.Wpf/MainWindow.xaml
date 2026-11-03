@@ -6,6 +6,7 @@
         Width="1440"
         MinHeight="700"
         MinWidth="1024"
+        SizeChanged="Window_SizeChanged"
         Background="#F1F3F5"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
@@ -84,6 +85,7 @@
                             Orientation="Horizontal"
                             VerticalAlignment="Center">
                     <ToggleButton Tag="Home" Content="⌂" ToolTip="{DynamicResource 首页}" IsChecked="True" Style="{StaticResource PrimaryNavigationButton}" Click="PrimaryNavigationButton_Click" />
+                    <ToggleButton Tag="MotionControl" Content="{DynamicResource 运动控制导航简称}" FontSize="14" ToolTip="{DynamicResource 运动控制}" Style="{StaticResource PrimaryNavigationButton}" Click="PrimaryNavigationButton_Click" />
                     <ToggleButton Tag="Statistics" Content="▥" ToolTip="{DynamicResource 统计}" Style="{StaticResource PrimaryNavigationButton}" Click="PrimaryNavigationButton_Click" />
                     <ToggleButton Tag="Monitor" Content="◉" ToolTip="{DynamicResource 监控}" Style="{StaticResource PrimaryNavigationButton}" Click="PrimaryNavigationButton_Click" />
                     <ToggleButton Tag="Manual" Content="☞" ToolTip="{DynamicResource 手动}" Style="{StaticResource PrimaryNavigationButton}" Click="PrimaryNavigationButton_Click" />
@@ -227,6 +229,8 @@
                                        HorizontalAlignment="Center" />
                         </StackPanel>
                         <ContentControl x:Name="ManualDebugContent" Visibility="Collapsed" />
+                        <TextBlock x:Name="EmptySectionMessage" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="#596B7D" FontSize="16" Text="{DynamicResource 分类暂无页面说明}" TextWrapping="Wrap" />
                     </Grid>
                 </Grid>
             </Border>

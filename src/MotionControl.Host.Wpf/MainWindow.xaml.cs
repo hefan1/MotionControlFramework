@@ -20,6 +20,7 @@ namespace MotionControl.Host.Wpf
         private readonly Dictionary<string, string> _sectionTitles = new Dictionary<string, string>
         {
             { "Home", "首页" },
+            { "MotionControl", "运动控制" },
             { "Statistics", "统计" },
             { "Monitor", "监控" },
             { "Manual", "手动" },
@@ -32,12 +33,13 @@ namespace MotionControl.Host.Wpf
         /// <summary>按导航分区保存左侧子页面的中文资源键。</summary>
         private readonly Dictionary<string, string[]> _pagesBySection = new Dictionary<string, string[]>
         {
-            { "Home", new[] { "设备总览", "设备准备", "运行日志" } },
+            { "Home", new[] { "运行日志" } },
+            { "MotionControl", new[] { "设备总览", "设备准备", "流程状态", "任务接入状态", "轴监控", "IO监控", "当前报警", "历史报警", "轴手动", "IO手动", "轴映射配置", "IO映射", "安全联锁", "任务配置", "设备变量", "报警库", "设备工程" } },
             { "Statistics", new[] { "产量统计", "节拍统计", "运行统计" } },
-            { "Monitor", new[] { "轴监控", "IO监控", "流程状态", "任务接入状态", "设备变量" } },
-            { "Manual", new[] { "轴手动", "IO手动", "气缸手动", "通讯调试" } },
-            { "Settings", new[] { "轴映射配置", "IO映射", "安全联锁", "报警库", "通讯设置", "数据采集", "任务配置", "设备工程" } },
-            { "Alarms", new[] { "当前报警", "历史报警", "报警统计", "操作日志" } },
+            { "Monitor", new string[0] },
+            { "Manual", new[] { "气缸手动", "通讯调试" } },
+            { "Settings", new[] { "通讯设置", "数据采集" } },
+            { "Alarms", new[] { "报警统计", "操作日志" } },
             { "Users", new[] { "密码登录", "刷卡登录", "权限管理" } },
             { "Help", new[] { "软件信息", "使用说明" } }
         };
@@ -140,7 +142,7 @@ namespace MotionControl.Host.Wpf
 
             CurrentLanguage = "zh-CN";
             CreateOperationPages();
-            NavigateToSection("Home");
+            NavigateToSection("MotionControl");
             UpdateMachineStateDisplay();
 
             _clockTimer = new DispatcherTimer
@@ -186,6 +188,31 @@ namespace MotionControl.Host.Wpf
             NavigateToSection(navigationButton.Tag as string);
         }
 
+        /// <summary>窗口较窄时缩小导航图标间距，为设备状态及原有命令保留空间。</summary>
+        private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (PrimaryNavigation == null) return;
+            double buttonWidth = Math.Max(38, Math.Min(60, (e.NewSize.Width - 560) / 9 - 8));
+            foreach (object item in PrimaryNavigation.Children)
+                if (item is ToggleButton button) button.Width = buttonWidth;
+        }
+
+        /// <summary>集中分区复用原页面，调用方还须检查具体页面名称。</summary>
+        private bool IsCurrentPageInSection(string sectionKey)
+        {
+            return string.Equals(_currentSectionKey, sectionKey, StringComparison.Ordinal)
+                || (string.Equals(_currentSectionKey, "MotionControl", StringComparison.Ordinal)
+                    && Array.IndexOf(_pagesBySection["MotionControl"], _currentPageResourceKey) >= 0);
+        }
+
+        /// <summary>已迁移的页面始终进入运动控制分区，其他页面沿用原分类。</summary>
+        private void NavigateToRelatedPage(string page, string defaultSection)
+        {
+            bool isMotionControlPage = Array.IndexOf(_pagesBySection["MotionControl"], page) >= 0;
+            _currentPageResourceKey = page;
+            NavigateToSection(isMotionControlPage ? "MotionControl" : defaultSection);
+        }
+
         /// <summary>
         /// 根据功能分区生成左侧导航，并显示该分区的默认页面。
         /// </summary>
@@ -221,6 +248,18 @@ namespace MotionControl.Host.Wpf
 
             foreach (string pageResourceKey in pageResourceKeys)
             {
+                if (sectionKey == "MotionControl")
+                {
+                    string groupKey = pageResourceKey == "设备总览" ? "运动控制导航.运行监控"
+                        : pageResourceKey == "轴手动" ? "运动控制导航.手动调试"
+                        : pageResourceKey == "轴映射配置" ? "运动控制导航.工程配置" : null;
+                    if (groupKey != null)
+                        SidebarNavigation.Children.Add(new TextBlock
+                        {
+                            Text = GetLocalizedText(groupKey), Margin = new Thickness(14, 9, 4, 3),
+                            Foreground = Brushes.DimGray, FontSize = 12, FontWeight = FontWeights.SemiBold
+                        });
+                }
                 ToggleButton pageButton = new ToggleButton
                 {
                     Content = GetLocalizedText(pageResourceKey),
@@ -241,6 +280,18 @@ namespace MotionControl.Host.Wpf
                 }
             }
 
+            if (firstPageButton == null)
+            {
+                _currentPageResourceKey = null;
+                _selectInputTabWhenOpeningIoMonitor = false;
+                ManualDebugContent.Content = null;
+                ManualDebugContent.Visibility = Visibility.Collapsed;
+                PagePlaceholder.Visibility = Visibility.Collapsed;
+                EmptySectionMessage.Visibility = Visibility.Visible;
+                PageTitle.Text = GetLocalizedText(sectionTitleResourceKey);
+                PageDescription.SetResourceReference(TextBlock.TextProperty, "分类暂无页面说明");
+                return;
+            }
             SelectSidebarPage(currentPageButton ?? firstPageButton);
         }
 
@@ -262,6 +313,8 @@ namespace MotionControl.Host.Wpf
             {
                 return;
             }
+
+            EmptySectionMessage.Visibility = Visibility.Collapsed;
 
             foreach (object item in SidebarNavigation.Children)
             {
@@ -444,15 +497,17 @@ namespace MotionControl.Host.Wpf
         /// <summary>将导航目标放入原内容区，已接入页优先显示，其余页面保留占位。</summary>
         private void UpdatePageContent()
         {
+            // 空分类没有可选择的页面，保留已显示的分类说明。
+            if (string.IsNullOrEmpty(_currentPageResourceKey)) return;
             if (TryShowOperationPage()) return;
             if (TryShowEquipmentProjectPage()) return;
-            if (_taskConfigurationPage != null && _currentSectionKey == "Settings" && _currentPageResourceKey == "任务配置")
+            if (_taskConfigurationPage != null && IsCurrentPageInSection("Settings") && _currentPageResourceKey == "任务配置")
             {
                 ManualDebugContent.Content = _taskConfigurationPage; ManualDebugContent.Visibility = Visibility.Visible;
                 PagePlaceholder.Visibility = Visibility.Collapsed;
                 PageDescription.SetResourceReference(TextBlock.TextProperty, "任务配置页面说明"); return;
             }
-            if (_taskMonitorPage != null && _currentSectionKey == "Monitor" && _currentPageResourceKey == "任务接入状态")
+            if (_taskMonitorPage != null && IsCurrentPageInSection("Monitor") && _currentPageResourceKey == "任务接入状态")
             {
                 ManualDebugContent.Content = _taskMonitorPage;
                 ManualDebugContent.Visibility = Visibility.Visible;
@@ -461,7 +516,7 @@ namespace MotionControl.Host.Wpf
                 return;
             }
             var isAxisMappingPage = _axisMappingConfigurationPage != null
-                && string.Equals(_currentSectionKey, "Settings", StringComparison.Ordinal)
+                && IsCurrentPageInSection("Settings")
                 && string.Equals(_currentPageResourceKey, "轴映射配置", StringComparison.Ordinal);
 
             if (isAxisMappingPage)
@@ -474,7 +529,7 @@ namespace MotionControl.Host.Wpf
             }
 
             var isIoMappingPage = _ioMappingConfigurationPage != null
-                && string.Equals(_currentSectionKey, "Settings", StringComparison.Ordinal)
+                && IsCurrentPageInSection("Settings")
                 && string.Equals(_currentPageResourceKey, "IO映射", StringComparison.Ordinal);
 
             if (isIoMappingPage)
@@ -487,7 +542,7 @@ namespace MotionControl.Host.Wpf
             }
 
             var isAxisMonitorPage = _axisMonitorPage != null
-                && string.Equals(_currentSectionKey, "Monitor", StringComparison.Ordinal)
+                && IsCurrentPageInSection("Monitor")
                 && string.Equals(_currentPageResourceKey, "轴监控", StringComparison.Ordinal);
 
             if (isAxisMonitorPage)
@@ -500,7 +555,7 @@ namespace MotionControl.Host.Wpf
             }
 
             var isIoMonitorPage = _ioMonitorPage != null
-                && string.Equals(_currentSectionKey, "Monitor", StringComparison.Ordinal)
+                && IsCurrentPageInSection("Monitor")
                 && string.Equals(_currentPageResourceKey, "IO监控", StringComparison.Ordinal);
 
             if (isIoMonitorPage)
@@ -519,7 +574,7 @@ namespace MotionControl.Host.Wpf
             }
 
             var isFlowStatusPage = _flowStatusPage != null
-                && string.Equals(_currentSectionKey, "Monitor", StringComparison.Ordinal)
+                && IsCurrentPageInSection("Monitor")
                 && string.Equals(_currentPageResourceKey, "流程状态", StringComparison.Ordinal);
 
             if (isFlowStatusPage)
@@ -532,7 +587,7 @@ namespace MotionControl.Host.Wpf
             }
 
             var isDeviceVariablePage = _deviceVariablePage != null
-                && string.Equals(_currentSectionKey, "Monitor", StringComparison.Ordinal)
+                && IsCurrentPageInSection("Monitor")
                 && string.Equals(_currentPageResourceKey, "设备变量", StringComparison.Ordinal);
 
             if (isDeviceVariablePage)
@@ -545,7 +600,7 @@ namespace MotionControl.Host.Wpf
             }
 
             var isSafetyInterlockPage = _safetyInterlockConfigurationPage != null
-                && string.Equals(_currentSectionKey, "Settings", StringComparison.Ordinal)
+                && IsCurrentPageInSection("Settings")
                 && string.Equals(_currentPageResourceKey, "安全联锁", StringComparison.Ordinal);
 
             if (isSafetyInterlockPage)
@@ -558,7 +613,7 @@ namespace MotionControl.Host.Wpf
             }
 
             var isAlarmCatalogPage = _alarmCatalogConfigurationPage != null
-                && string.Equals(_currentSectionKey, "Settings", StringComparison.Ordinal)
+                && IsCurrentPageInSection("Settings")
                 && string.Equals(_currentPageResourceKey, "报警库", StringComparison.Ordinal);
 
             if (isAlarmCatalogPage)
@@ -571,7 +626,7 @@ namespace MotionControl.Host.Wpf
             }
 
             var isAxisManualPage = _manualMotionDebugPage != null
-                && string.Equals(_currentSectionKey, "Manual", StringComparison.Ordinal)
+                && IsCurrentPageInSection("Manual")
                 && string.Equals(_currentPageResourceKey, "轴手动", StringComparison.Ordinal);
 
             if (isAxisManualPage)
@@ -584,7 +639,7 @@ namespace MotionControl.Host.Wpf
             }
 
             var isIoManualPage = _manualIoDebugPage != null
-                && string.Equals(_currentSectionKey, "Manual", StringComparison.Ordinal)
+                && IsCurrentPageInSection("Manual")
                 && string.Equals(_currentPageResourceKey, "IO手动", StringComparison.Ordinal);
 
             if (isIoManualPage)

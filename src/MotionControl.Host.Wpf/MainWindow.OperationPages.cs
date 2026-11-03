@@ -61,17 +61,17 @@ namespace MotionControl.Host.Wpf
         {
             UserControl page = null;
             string description = null;
-            if (_currentSectionKey == "Home" && _currentPageResourceKey == "设备总览")
+            if (IsCurrentPageInSection("Home") && _currentPageResourceKey == "设备总览")
             {
                 if (_axisMappingConfigurationPage is AxisMappingConfigurationView axisMappingPage)
                     _equipmentOverviewPage.SetAxisMappingStatus(axisMappingPage.ConfiguredAxisCount, axisMappingPage.ConfiguredAxisTotal);
                 page = _equipmentOverviewPage; description = "设备总览页面说明";
             }
-            if (_currentSectionKey == "Alarms" && _currentPageResourceKey == "当前报警")
+            if (IsCurrentPageInSection("Alarms") && _currentPageResourceKey == "当前报警")
             { page = _currentAlarmsPage; description = "当前报警页面说明"; }
-            if (_currentSectionKey == "Alarms" && _currentPageResourceKey == "历史报警")
+            if (IsCurrentPageInSection("Alarms") && _currentPageResourceKey == "历史报警")
             { page = _alarmHistoryPage; description = "历史报警页面说明"; }
-            if (_currentSectionKey == "Home" && _currentPageResourceKey == "设备准备")
+            if (IsCurrentPageInSection("Home") && _currentPageResourceKey == "设备准备")
             { page = _equipmentPreparationPage; description = "设备准备页面说明"; }
             if (page == null) return false;
             ManualDebugContent.Content = page; ManualDebugContent.Visibility = Visibility.Visible;
@@ -92,14 +92,13 @@ namespace MotionControl.Host.Wpf
                 return;
             }
             SetOperationReturnTarget(_currentSectionKey, _currentPageResourceKey);
-            _currentPageResourceKey = e.Page;
             string section = e.Page == "当前报警" || e.Page == "历史报警" ? "Alarms"
                 : e.Page == "设备准备" ? "Home"
                 : e.Page == "轴映射配置" ? "Settings"
                 : e.Page == "轴手动" ? "Manual"
                 : e.Page == "IO监控" || e.Page == "流程状态" ? "Monitor"
                 : "Monitor";
-            NavigateToSection(section);
+            NavigateToRelatedPage(e.Page, section);
             if (e.Page == "IO监控" && _ioMonitorPage is IoMonitorView ioMonitorPage)
             {
                 if (string.IsNullOrWhiteSpace(e.IoPointName)) ioMonitorPage.SelectDigitalInputs();

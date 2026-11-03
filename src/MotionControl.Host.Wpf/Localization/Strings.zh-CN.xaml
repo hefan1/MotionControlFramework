@@ -5,6 +5,12 @@
     <sys:String x:Key="运动控制上位机">运动控制上位机</sys:String>
     <sys:String x:Key="隔离配置标识">隔离测试配置</sys:String>
     <sys:String x:Key="首页">首页</sys:String>
+    <sys:String x:Key="运动控制">运动控制</sys:String>
+    <sys:String x:Key="运动控制导航简称">运控</sys:String>
+    <sys:String x:Key="运动控制导航.运行监控">运行与监控</sys:String>
+    <sys:String x:Key="运动控制导航.手动调试">手动调试</sys:String>
+    <sys:String x:Key="运动控制导航.工程配置">工程配置</sys:String>
+    <sys:String x:Key="分类暂无页面说明">此分类暂无页面；运动控制相关功能请进入“运动控制”。</sys:String>
     <sys:String x:Key="统计">统计</sys:String>
     <sys:String x:Key="监控">监控</sys:String>
     <sys:String x:Key="手动">手动</sys:String>

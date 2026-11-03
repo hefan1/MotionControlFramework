@@ -10,6 +10,12 @@
     <sys:String x:Key="运动控制上位机">Motion Control Host</sys:String>
     <sys:String x:Key="隔离配置标识">Isolated test configuration</sys:String>
     <sys:String x:Key="首页">Home</sys:String>
+    <sys:String x:Key="运动控制">Motion control</sys:String>
+    <sys:String x:Key="运动控制导航简称">Motion</sys:String>
+    <sys:String x:Key="运动控制导航.运行监控">Operation</sys:String>
+    <sys:String x:Key="运动控制导航.手动调试">Manual controls</sys:String>
+    <sys:String x:Key="运动控制导航.工程配置">Configuration</sys:String>
+    <sys:String x:Key="分类暂无页面说明">No pages in this category. Open Motion control for motion-related functions.</sys:String>
     <sys:String x:Key="统计">Statistics</sys:String>
     <sys:String x:Key="监控">Monitor</sys:String>
     <sys:String x:Key="手动">Manual</sys:String>

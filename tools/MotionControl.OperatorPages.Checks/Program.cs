@@ -49,6 +49,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("IO 关联反馈显示与独立读取", IoFeedbackMonitorChecks.Run, ref failures);
             Check("控制器后端选择与设备映射保护", HostBackendSelectionChecks.Run, ref failures);
             Check("Host导航和返回原页面", HostNavigation, ref failures);
+            Check("运动控制集中导航及关联返回", MotionControlNavigationChecks.Run, ref failures);
             Check("设备工程页面和应用后重启保护", EquipmentProjectPageChecks.Run, ref failures);
             Check("工程导入等待映射回滚续体", ProjectGateContinuationChecks.Run, ref failures);
             Check("工程应用后退出保留原恢复记录", ShutdownEvidenceChecks.Run, ref failures);
@@ -327,14 +328,11 @@ namespace MotionControl.OperatorPages.Checks
                 var sidebar = (StackPanel)window.FindName("SidebarNavigation");
                 Assert(!sidebar.Children.OfType<ToggleButton>().Any(button => Equals(button.Tag, "IO状态")),
                     "首页重复列出了独立的 IO 状态页。");
-                var monitorButton = primaryNavigation.Children.OfType<ToggleButton>()
-                    .Single(button => Equals(button.Tag, "Monitor"));
-                monitorButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                var motionControlButton = primaryNavigation.Children.OfType<ToggleButton>()
+                    .Single(button => Equals(button.Tag, "MotionControl"));
+                motionControlButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 Assert(sidebar.Children.OfType<ToggleButton>().Count(button => Equals(button.Tag, "IO监控")) == 1,
-                    "监控区没有唯一的 IO 监控入口。");
-                var homeButton = primaryNavigation.Children.OfType<ToggleButton>()
-                    .Single(button => Equals(button.Tag, "Home"));
-                homeButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                    "运动控制区没有唯一的 IO 监控入口。");
 
                 var flowStatus = new FlowStatusView(runtime);
                 string crossPageAlarmSummary = "当前报警 2 条（停机 1，非停机 1）";
@@ -395,9 +393,7 @@ namespace MotionControl.OperatorPages.Checks
 
                 var taskConfiguration = new UserControl();
                 window.SetTaskConfigurationPage(taskConfiguration);
-                var settingsButton = primaryNavigation.Children.OfType<ToggleButton>()
-                    .Single(button => Equals(button.Tag, "Settings"));
-                settingsButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                motionControlButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 var taskConfigurationButton = sidebar.Children.OfType<ToggleButton>()
                     .Single(button => Equals(button.Tag, "任务配置"));
                 taskConfigurationButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
@@ -419,7 +415,7 @@ namespace MotionControl.OperatorPages.Checks
                     "从任务配置查看任务运行没有打开任务页及返回入口。");
                 ((Button)window.FindName("OperationReturnButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Assert(ReferenceEquals(content.Content, taskConfiguration), "任务运行没有返回原任务配置页。");
-                homeButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                motionControlButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 Assert(((Button)window.FindName("OperationReturnButton")).Visibility == Visibility.Collapsed,
                     "普通主导航没有清除上一次操作路径的返回入口。");
             }

@@ -73,8 +73,7 @@ namespace MotionControl.Host.Wpf
         internal void ShowEquipmentOverview()
         {
             SetOperationReturnTarget(_currentSectionKey, _currentPageResourceKey);
-            _currentPageResourceKey = "设备总览";
-            NavigateToSection("Home");
+            NavigateToRelatedPage("设备总览", "Home");
             Activate();
         }
 
@@ -82,8 +81,7 @@ namespace MotionControl.Host.Wpf
         internal void ShowEquipmentPreparation()
         {
             SetOperationReturnTarget(_currentSectionKey, _currentPageResourceKey);
-            _currentPageResourceKey = "设备准备";
-            NavigateToSection("Home");
+            NavigateToRelatedPage("设备准备", "Home");
             Activate();
         }
 
@@ -91,8 +89,7 @@ namespace MotionControl.Host.Wpf
         public void ShowFlowStatus()
         {
             SetOperationReturnTarget(_currentSectionKey, _currentPageResourceKey);
-            _currentPageResourceKey = "流程状态";
-            NavigateToSection("Monitor");
+            NavigateToRelatedPage("流程状态", "Monitor");
             Activate();
         }
 
@@ -100,8 +97,7 @@ namespace MotionControl.Host.Wpf
         public void ShowTaskRun()
         {
             SetOperationReturnTarget(_currentSectionKey, _currentPageResourceKey);
-            _currentPageResourceKey = "任务接入状态";
-            NavigateToSection("Monitor");
+            NavigateToRelatedPage("任务接入状态", "Monitor");
             Activate();
         }
 
@@ -114,8 +110,7 @@ namespace MotionControl.Host.Wpf
             }
 
             SetOperationReturnTarget(_currentSectionKey, _currentPageResourceKey);
-            _currentPageResourceKey = page;
-            NavigateToSection(page == "设备变量" ? "Monitor" : "Settings");
+            NavigateToRelatedPage(page, page == "设备变量" ? "Monitor" : "Settings");
             Activate();
         }
 
@@ -128,8 +123,7 @@ namespace MotionControl.Host.Wpf
             }
             string section = page == "轴映射配置" || page == "IO映射" ? "Settings" : page == "轴手动" ? "Manual" : "Monitor";
             SetOperationReturnTarget(_currentSectionKey, _currentPageResourceKey);
-            _currentPageResourceKey = page;
-            NavigateToSection(section);
+            NavigateToRelatedPage(page, section);
             bool found = FocusTaskReference(page, name, direction);
             string suffix = string.IsNullOrEmpty(direction) ? string.Empty : " (" + direction + ")";
             PageDescription.Text += " · " + GetLocalizedText("任务关联对象") + "：" + name + suffix + " · "

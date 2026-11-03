@@ -18,7 +18,7 @@ namespace MotionControl.Host.Wpf
         /// <summary>只在设置分区选择设备工程时创建并显示该页。</summary>
         private bool TryShowEquipmentProjectPage()
         {
-            if (!string.Equals(_currentSectionKey, "Settings", StringComparison.Ordinal)
+            if (!IsCurrentPageInSection("Settings")
                 || !string.Equals(_currentPageResourceKey, "设备工程", StringComparison.Ordinal)) return false;
             if (_equipmentProjectPage == null && Application.Current is App app)
             {
