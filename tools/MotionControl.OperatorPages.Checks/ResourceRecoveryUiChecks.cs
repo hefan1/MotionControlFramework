@@ -30,7 +30,9 @@ namespace MotionControl.OperatorPages.Checks
             var task = new TaskDefinition { TaskId = "RecoveryUi", Name = "核查工位", Root = new SequenceNode {
                 Id = "root", Name = "步骤", Children = new List<TaskNode> { scope } } };
             TaskRun run = new TaskExecutionEngine().Start(task, device);
-            Require(SpinWait.SpinUntil(() => device.ReadResources().Any(item => item.State == TaskResourceState.Held), 5000), "任务未持有资源。");
+            Require(SpinWait.SpinUntil(() => device.ReadResources().Any(item => item.State == TaskResourceState.Held)
+                && run.GetSnapshot().Nodes.Any(item => item.NodeId == "delay" && item.State == TaskNodeState.Waiting), 5000),
+                "任务未进入资源范围内的等待步骤。 ");
             run.Cancel(); Require(run.Completion.Wait(TimeSpan.FromSeconds(5)), "任务取消未退出。");
             string id = device.ReadResources().Single(item => item.State == TaskResourceState.Blocked).RequestId;
             var sample = ResourceRecoverySample.Capture(device, id);

@@ -381,8 +381,14 @@ namespace MotionControl.Host.Wpf.Tasks
                 dialog.Owner = Window.GetWindow(this);
                 dialog.ShowDialog();
             }
-            catch (Exception error) { ShowError(error, "任务停止失败", "任务运行复位建议"); }
+            catch (Exception error) { ShowResourceRecoveryOpenError(error); }
             finally { _commandInProgress = false; UpdateRunStatus(); UpdateCommandAvailability(); }
+        }
+
+        /// <summary>区分核查窗口打开失败和任务停止失败，保留隔离并提示重新核查。</summary>
+        private void ShowResourceRecoveryOpenError(Exception error)
+        {
+            ShowError(error, "资源核查窗口打开失败", null);
         }
 
         /// <summary>在后台创建真实任务设备并载入已应用的任务定义，未装载时不接管设备。</summary>
@@ -709,7 +715,7 @@ namespace MotionControl.Host.Wpf.Tasks
             _recoverResourcesButton.Visibility = hasBlockedResources ? Visibility.Visible : Visibility.Collapsed;
             _recoverResourcesButton.IsEnabled = hasBlockedResources && connected && taskState == TaskMachineState.Stopped
                 && !_commandInProgress && !_runtime.IsPreparing;
-            UpdateNextAction(connected, taskState);
+            UpdateNextAction(connected, taskState, hasBlockedResources);
             _host.RefreshMachineStateDisplay();
         }
 
@@ -801,7 +807,17 @@ namespace MotionControl.Host.Wpf.Tasks
             var missingFile = _lastError as FileNotFoundException;
             if (missingFile != null && !string.IsNullOrWhiteSpace(missingFile.FileName))
                 reason = string.Format(GetText("任务配置文件不存在"), Path.GetFileName(missingFile.FileName));
-            _status.Text = GetText(_failureOperationKey) + "\n" + reason + "\n" + GetText(_failureAdviceKey);
+            string operation = _failureOperationKey == "资源核查窗口打开失败"
+                ? PageText("资源核查窗口打开失败", "Unable to open resource inspection")
+                : GetText(_failureOperationKey);
+            string advice = _failureOperationKey == "任务停止失败"
+                ? PageText("请核查任务资源及现场状态；处理完成后重试停止并关闭。保持输出不会自动切换。",
+                    "Inspect task resources and the equipment. Retry stop and close after inspection; holding outputs will not be switched automatically.")
+                : _failureOperationKey == "资源核查窗口打开失败"
+                    ? PageText("资源仍待确认，请检查连接及诊断信息后重试核查；保持输出不会自动切换。",
+                        "Resources remain pending inspection. Check the connection and diagnostics, then retry inspection; holding outputs will not be switched automatically.")
+                    : GetText(_failureAdviceKey);
+            _status.Text = operation + "\n" + reason + "\n" + advice;
         }
 
         /// <summary>成功后清除过期的错误详情。</summary>
@@ -818,7 +834,7 @@ namespace MotionControl.Host.Wpf.Tasks
         }
 
         /// <summary>根据连接和任务状态说明下一步，不改变原有按钮控制条件。</summary>
-        private void UpdateNextAction(bool connected, TaskMachineState? state)
+        private void UpdateNextAction(bool connected, TaskMachineState? state, bool hasBlockedResources)
         {
             string recoveryReason = connected && !_commandInProgress && _runtime.State != MachineRunState.Running
                 && _runtime.State != MachineRunState.Pausing ? _recoveryStartBlockReason?.Invoke() : null;
@@ -829,6 +845,9 @@ namespace MotionControl.Host.Wpf.Tasks
             else if (!string.IsNullOrWhiteSpace(_runtime.RecoveryBlockReason))
                 _nextAction.Text = PageText("设备恢复信息未确认，不能准备或启动：", "Recovery information is not verified; preparation and start are blocked: ")
                     + _runtime.RecoveryBlockReason;
+            else if (hasBlockedResources)
+                _nextAction.Text = GetBlockedResourceGuidance(state,
+                    string.Equals(_host.CurrentLanguage, "en-US", StringComparison.OrdinalIgnoreCase));
             else if (state == TaskMachineState.Paused && _runtime.State == MachineRunState.Paused
                 && IsSettledPauseAwaitingReset(state, _runtime.State,
                 _session != null && _session.Machine.IsPauseSettlementConfirmed,
@@ -861,6 +880,18 @@ namespace MotionControl.Host.Wpf.Tasks
                 _nextAction.Text = PageText("请处理报警并检查机构和输出，再复位、启动。", "Resolve alarms and check the equipment and outputs before reset and start.");
             else
                 _nextAction.Text = PageText("请检查任务状态，必要时停止并重新读取任务。", "Check task status; stop and reload tasks if needed.");
+        }
+
+        /// <summary>待确认资源优先于回零提示；不会暗示保持输出可自动关闭。</summary>
+        private static string GetBlockedResourceGuidance(TaskMachineState? state, bool english)
+        {
+            if (state == TaskMachineState.Stopped)
+                return english
+                    ? "Resources need inspection. Select Inspect blocked resources; active holding outputs will not be switched automatically."
+                    : "任务资源待确认，请选择“核查待确认资源”检查现场；夹紧、吸附等保持输出不会自动关闭。";
+            return english
+                ? "Resources need inspection. Stop the task and confirm motion has stopped before inspecting them."
+                : "任务资源待确认，请先停止任务并确认机构停稳，再核查待确认资源。";
         }
 
         /// <summary>只对已确认收尾的正常暂停隐藏等待复位的标记提示；其他保护原因继续显示。</summary>

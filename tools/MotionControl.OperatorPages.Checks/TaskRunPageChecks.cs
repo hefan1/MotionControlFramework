@@ -28,6 +28,7 @@ namespace MotionControl.OperatorPages.Checks
             {
                 var type = typeof(MainWindow).Assembly.GetType("MotionControl.Host.Wpf.Tasks.TaskMonitorLauncher", true);
                 CheckPausedGuidance(type);
+                CheckBlockedGuidance(type);
                 var store = new MachineConfigurationStore(Path.Combine(Path.GetTempPath(), "TaskRunPageChecks"));
                 var page = Activator.CreateInstance(type, BindingFlags.Instance | BindingFlags.NonPublic,
                     null, new object[] { store, "MissingMachine", host, null }, null);
@@ -45,6 +46,12 @@ namespace MotionControl.OperatorPages.Checks
                 var runtime = new MachineRuntime(group, new IStationFlow[] { new ReadOnlyFlow() }, new MachineAlarmService(), new GuardSafety());
                 type.GetField("_runtime", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(page, runtime);
                 type.GetField("_motionCards", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(page, group);
+                var updateNext = type.GetMethod("UpdateNextAction", BindingFlags.Instance | BindingFlags.NonPublic);
+                updateNext.Invoke(page, new object[] { true, TaskMachineState.Stopped, true });
+                Require(guidance.Text.Contains("核查待确认资源") && !guidance.Text.Contains("先在设备准备页"),
+                    "资源待确认时页面错误引导操作员先回零。 ");
+                updateNext.Invoke(page, new object[] { true, TaskMachineState.Stopped, false });
+                Require(!guidance.Text.Contains("核查待确认资源"), "没有隔离资源时错误提示仍待核查。 ");
                 var refresh = type.GetMethod("RefreshConnectionDisplay", BindingFlags.Instance | BindingFlags.NonPublic);
                 var lost = type.GetMethod("MarkControllerConnectionLost", BindingFlags.Instance | BindingFlags.NonPublic);
                 var monitor = Field<ContentControl>(type, page, "_monitorContent");
@@ -90,8 +97,33 @@ namespace MotionControl.OperatorPages.Checks
                 Require(!details.IsExpanded, "错误发生后诊断区不应遮挡操作页面。");
                 updateSuccess.Invoke(page, new object[] { TaskMachineState.Faulted, true });
                 Require(status.Text == message, "状态变化隐藏了真实错误提示。");
+
+                showError.Invoke(page, new object[] { new InvalidOperationException("任务资源状态待确认。"), "任务停止失败", "任务运行复位建议" });
+                Require(status.Text.Contains("核查任务资源") && status.Text.Contains("重试停止并关闭")
+                    && status.Text.Contains("保持输出不会自动切换") && !status.Text.Contains("重新复位"),
+                    "停止未完成时错误引导操作员直接复位或忽略保持输出。 ");
+
+                var showResourceError = type.GetMethod("ShowResourceRecoveryOpenError", BindingFlags.Instance | BindingFlags.NonPublic);
+                showResourceError.Invoke(page, new object[] { new InvalidOperationException("窗口初始化失败。") });
+                Require(status.Text.Contains("资源核查窗口打开失败") && status.Text.Contains("窗口初始化失败")
+                    && status.Text.Contains("资源仍待确认") && status.Text.Contains("重试核查")
+                    && !status.Text.Contains("任务停止失败") && !status.Text.Contains("重试停止"),
+                    "资源核查窗口故障被错误描述为任务停止失败。 ");
             }
             finally { host.Close(); }
+        }
+
+        /// <summary>待确认资源应先提示现场核查，不误导操作员先回零或关闭保持输出。</summary>
+        private static void CheckBlockedGuidance(Type type)
+        {
+            var method = type.GetMethod("GetBlockedResourceGuidance", BindingFlags.Static | BindingFlags.NonPublic);
+            string stopped = (string)method.Invoke(null, new object[] { TaskMachineState.Stopped, false });
+            string paused = (string)method.Invoke(null, new object[] { TaskMachineState.Paused, false });
+            string english = (string)method.Invoke(null, new object[] { TaskMachineState.Stopped, true });
+            Require(stopped.Contains("核查待确认资源") && stopped.Contains("不会自动关闭") && !stopped.Contains("先回零"),
+                "已停止的隔离资源没有给出安全核查入口。 ");
+            Require(paused.Contains("停止任务") && paused.Contains("停稳"), "任务未终止时没有提示先停止并确认停稳。 ");
+            Require(english.Contains("Inspect blocked resources"), "英文状态缺少资源核查入口。 ");
         }
 
         /// <summary>仅正常停稳且无报警时优先给出复位操作提示，其他保护原因不能隐藏。</summary>
