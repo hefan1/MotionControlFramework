@@ -132,7 +132,7 @@
                             AutomationProperties.Name="{DynamicResource 顶部受控停止说明}">
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                             <TextBlock Text="{DynamicResource 停止}" FontSize="14" HorizontalAlignment="Center" />
-                            <TextBlock Text="{DynamicResource 顶部停止保留工步}" FontSize="11" HorizontalAlignment="Center" />
+                            <TextBlock Text="{DynamicResource 顶部停止待核查}" FontSize="11" HorizontalAlignment="Center" />
                         </StackPanel>
                     </Button>
                     <Button x:Name="MachineResetButton"

@@ -173,6 +173,17 @@ namespace MotionControl.TaskEngine.Machine
             finally { EndPauseSettlement(); }
         }
 
+        /// <summary>向整机入口提供真实任务暂停；故障态不能冒充暂停成功。</summary>
+        public async Task PauseAutomaticProductionAsync()
+        {
+            await PauseAsync().ConfigureAwait(false);
+            lock (_sync)
+            {
+                if (_state != TaskMachineState.Paused || HasUnsettledPauseWork())
+                    throw new InvalidOperationException("任务未能确认暂停和设备动作收尾；请查看任务状态及报警。");
+            }
+        }
+
         /// <summary>更新外部停机条件；解除条件后仍须复位，不能自动继续。</summary>
         public void SetStopAlarm(string code, string message, bool active)
         {

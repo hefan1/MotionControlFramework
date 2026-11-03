@@ -16,6 +16,7 @@ namespace MotionControl.Framework.Runtime.Machine
             try
             {
                 if (IsShutdownInProgress) throw new InvalidOperationException("设备正在安全退出，不能修改控制卡配置。");
+                EnsureStopFeedbackReadSettled();
                 if (State == MachineRunState.Disconnected)
                     throw new InvalidOperationException("控制卡尚未连接，不能在线应用配置。");
                 if (State == MachineRunState.Running || State == MachineRunState.Pausing || _flowScheduler.IsRunning)

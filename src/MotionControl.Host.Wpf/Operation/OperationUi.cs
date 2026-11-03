@@ -30,6 +30,7 @@ namespace MotionControl.Host.Wpf.Operation
                 case MachineRunState.Ready: return "设备已就绪";
                 case MachineRunState.Pausing: return "设备暂停中";
                 case MachineRunState.Paused: return "设备已暂停";
+                case MachineRunState.Stopped: return "设备已停止";
                 case MachineRunState.Alarmed: return "设备有停机报警";
                 case MachineRunState.ResetRequired: return "设备等待复位";
                 case MachineRunState.Disconnected: return "设备未连接";
@@ -46,6 +47,7 @@ namespace MotionControl.Host.Wpf.Operation
                 case MachineRunState.Running: return "正在执行步骤";
                 case MachineRunState.Pausing:
                 case MachineRunState.Paused: return "暂停保留步骤";
+                case MachineRunState.Stopped: return "停止保留步骤";
                 case MachineRunState.Alarmed: return "报警停留步骤";
                 default: return "当前步骤";
             }

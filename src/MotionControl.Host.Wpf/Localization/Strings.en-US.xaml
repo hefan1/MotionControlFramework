@@ -54,11 +54,13 @@
     <sys:String x:Key="启动">▶ Start</sys:String>
     <sys:String x:Key="暂停">Ⅱ Pause</sys:String>
     <sys:String x:Key="停止">■ Stop</sys:String>
-    <sys:String x:Key="顶部停止保留工步">Keep step</sys:String>
-    <sys:String x:Key="顶部受控停止说明">Stop, keep step</sys:String>
+    <sys:String x:Key="顶部停止待核查">Review</sys:String>
+    <sys:String x:Key="顶部受控停止说明">Stop production, review required</sys:String>
     <sys:String x:Key="自动启动提示">Start the configured station after the machine is ready.</sys:String>
     <sys:String x:Key="自动暂停提示">Pause all automatic stations in a controlled manner and retain their current steps. Reset alarms before pressing Start to continue.</sys:String>
-    <sys:String x:Key="自动停止提示">Stop pauses all automatic stations in a controlled manner and retains their current steps. Confirm the equipment is safe, reset alarms, and press Start to continue.</sys:String>
+    <sys:String x:Key="自动停止提示">Stop automatic production while retaining steps and outputs. Review the equipment through alarm reset before continuing old steps.</sys:String>
+    <sys:String x:Key="停止后核查标题">Review after production stop</sys:String>
+    <sys:String x:Key="停止后核查提示">Production was stopped or a stop was requested. Previous steps, resources and outputs may still be retained.&#x0a;&#x0a;Does the current equipment condition and process permit continuing those steps? Yes performs reset only; Start must still be pressed. Reset does not clear material or begin a new cycle.&#x0a;&#x0a;Choose No if material clearance or a new production baseline is needed, and follow the equipment procedure.</sys:String>
     <sys:String x:Key="自动流程命令失败标题">Automatic Sequence Command Failed</sys:String>
     <sys:String x:Key="工位流程状态说明">View run information and alarms for the current control mode.</sys:String>
     <sys:String x:Key="流程页.待启动步骤">Next steps before Start</sys:String>
@@ -188,6 +190,7 @@
     <sys:String x:Key="状态运行中">Running</sys:String>
     <sys:String x:Key="状态暂停中">Pausing</sys:String>
     <sys:String x:Key="状态已暂停">Paused</sys:String>
+    <sys:String x:Key="状态已停止">Stopped</sys:String>
     <sys:String x:Key="状态报警">Alarmed</sys:String>
     <sys:String x:Key="尚未配置轴">No logical axes are configured for this machine yet. After you map the axes, this page will show manual jog, homing, and positioning controls.</sys:String>
     <sys:String x:Key="当前位置">Position</sys:String>

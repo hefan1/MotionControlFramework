@@ -166,6 +166,8 @@ namespace MotionControl.Framework.Runtime.Machine
         private ManualOperationBlockReason GetManualOperationStateBlockReason(bool allowUnsettledStop = false)
         {
             if (IsShutdownInProgress && !allowUnsettledStop) return ManualOperationBlockReason.AutomaticFlowUnsettled;
+            if (!allowUnsettledStop && !Volatile.Read(ref _stopFeedbackInFlight).IsCompleted)
+                return ManualOperationBlockReason.AutomaticFlowUnsettled;
             if (IsPreparing) return ManualOperationBlockReason.AutomaticFlowActive;
             if (IsTaskEngineControlClaimed)
             {

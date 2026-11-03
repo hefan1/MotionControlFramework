@@ -62,6 +62,8 @@ namespace MotionControl.MachineDevice.Checks
             Run("工位输出故障先隔离父范围再进入复位等待", StationOutputFaultBlocksBeforeRecovery, ref failures);
             Run("停止先于状态读取且调用令牌取消仍发出", StopBeforeStatusRead, ref failures);
             Run("动作接收失败或空凭证立即隔离", BeginFailureIsIsolated, ref failures);
+            Run("整机停止通过真实任务设备暂停并保留核查门禁", ProductionStopUsesTaskOwner, ref failures);
+            Run("任务轴停止失败时整机保持报警和核查门禁", ProductionStopFailureIsNotConfirmed, ref failures);
             Run("停止失败隔离临时轴与父范围", EndFailureIsIsolated, ref failures);
             Run("收尾回调重复及迟到不会停止新动作", LateStopDoesNotTouchNextMove, ref failures);
             Run("正常收尾未完成时暂停等待且故障隔离", PauseWaitsForNormalEnd, ref failures);
@@ -69,7 +71,7 @@ namespace MotionControl.MachineDevice.Checks
             Run("设备凭证跨设备及迟到调用保护", DeviceMoveTokenOwnership, ref failures);
             Run("命令前拒绝与命令后异常严格区分", PreflightDoesNotMaskStartedMotion, ref failures);
 
-            Console.WriteLine("真机任务设备检查：共 36 组，失败 " + failures + "。未连接控制器。");
+            Console.WriteLine("真机任务设备检查：共 39 组，失败 " + failures + "。未连接控制器。");
             return failures == 0 ? 0 : 1;
         }
 
@@ -315,7 +317,7 @@ namespace MotionControl.MachineDevice.Checks
             catch (Exception error)
             {
                 failures++;
-                Console.WriteLine("[失败] " + name + "：" + error.Message);
+                Console.WriteLine("[失败] " + name + "：" + error);
             }
         }
 

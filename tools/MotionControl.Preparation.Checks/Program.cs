@@ -246,7 +246,7 @@ namespace MotionControl.Preparation.Checks
             var axis = new Axis();
             var runtime = new MachineRuntime(new MotionCardGroup(new[] { new Card(axis) }), new[] { new Flow() },
                 alarm, new Safety(), controlOwner: MachineControlOwner.TaskEngine);
-            object owner = new object();
+            object owner = new PauseOwner();
             await runtime.ConnectAsync(CancellationToken.None);
             await runtime.AcquireTaskEngineControlAsync(owner, CancellationToken.None);
             await runtime.ResetAsync(CancellationToken.None);
@@ -407,12 +407,16 @@ namespace MotionControl.Preparation.Checks
                 fixture.Runtime.SetBeforeAutomaticRun(() => { attempts++; throw new InvalidOperationException("运行记录写入失败"); });
                 await fixture.ConnectAsync();
                 await fixture.Runtime.ResetAsync(CancellationToken.None);
+                object taskOwner = owner == MachineControlOwner.TaskEngine ? new PauseOwner() : null;
+                if (taskOwner != null) await fixture.Runtime.AcquireTaskEngineControlAsync(taskOwner, CancellationToken.None);
                 if (owner == MachineControlOwner.StationFlows)
                     await RejectAsync(() => fixture.Runtime.StartAsync(CancellationToken.None), "标记写入失败仍允许 C# 生产");
                 else
                     await RejectAsync(() => fixture.Runtime.BeginTaskEngineRunAsync(CancellationToken.None), "标记写入失败仍允许任务生产");
                 Ensure(attempts == 1 && fixture.Flow.Executions == 0 && fixture.Runtime.State != MachineRunState.Running,
                     "标记写入失败后状态或工位被启动。");
+                if (taskOwner != null) fixture.Runtime.ReleaseTaskEngineControl(taskOwner);
+                await fixture.Runtime.DisconnectAsync(CancellationToken.None);
             }
         }
 
@@ -426,12 +430,15 @@ namespace MotionControl.Preparation.Checks
                 fixture.Runtime.SetRecoveryBlockReason("测试恢复记录损坏");
                 await fixture.ConnectAsync();
                 await fixture.Runtime.ResetAsync(CancellationToken.None);
+                object taskOwner = owner == MachineControlOwner.TaskEngine ? new PauseOwner() : null;
+                if (taskOwner != null) await fixture.Runtime.AcquireTaskEngineControlAsync(taskOwner, CancellationToken.None);
                 Ensure((await fixture.Runtime.GetAutomaticStartBlockReasonAsync(CancellationToken.None)).Contains("恢复记录损坏"), "启动提示遗漏恢复原因");
                 await RejectAsync(() => fixture.Runtime.PrepareAsync(null, CancellationToken.None), "恢复损坏时允许回零");
                 if (owner == MachineControlOwner.StationFlows)
                     await RejectAsync(() => fixture.Runtime.StartAsync(CancellationToken.None), "恢复损坏时允许C#启动");
                 else
                     await RejectAsync(() => fixture.Runtime.BeginTaskEngineRunAsync(CancellationToken.None), "恢复损坏时允许任务启动");
+                if (taskOwner != null) fixture.Runtime.ReleaseTaskEngineControl(taskOwner);
                 bool manual = false;
                 var result = await fixture.Runtime.RunManualOperationAsync(() => { manual = true; return Task.CompletedTask; }, CancellationToken.None);
                 Ensure(result == ManualOperationBlockReason.None && manual, "恢复门禁错误阻断手动排查");
@@ -549,7 +556,7 @@ namespace MotionControl.Preparation.Checks
         private static async Task TaskEntryGuardAsync()
         {
             var fixture = new Fixture();
-            object owner = new object();
+            object owner = new PauseOwner();
             fixture.Runtime.ConfigurePreparations(new[] { new Preparation("TaskPreparation", fixture) });
             await fixture.ConnectAsync();
             await fixture.Runtime.AcquireTaskEngineControlAsync(owner, CancellationToken.None);
@@ -626,7 +633,16 @@ namespace MotionControl.Preparation.Checks
         /// <summary>断言用户可见安全语义。</summary>
         private static void Ensure(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
 
-        /// <summary>一个完全独立的内存设备环境。</summary>
+        /// <summary>为准备检查提供受控暂停能力，不连接任务设备。</summary>
+        private sealed class PauseOwner : IAutomaticProductionPause
+        {
+            /// <summary>测试替身没有真实在途动作。</summary>
+            public bool IsAutomaticPauseConfirmed { get { return true; } }
+            /// <summary>测试替身的暂停不访问硬件。</summary>
+            public Task PauseAutomaticProductionAsync() { return Task.CompletedTask; }
+        }
+
+        /// <summary>集中保存准备测试使用的卡、轴、工位和运行时。</summary>
         private sealed class Fixture
         {
             /// <summary>可控轴替身。</summary>

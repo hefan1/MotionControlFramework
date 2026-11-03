@@ -211,7 +211,13 @@ namespace MotionControl.TaskEngine.Resources
             {
                 if (_shutdownFrozen) throw new InvalidOperationException("资源正在交接退出，不能申请资源。");
                 RequirePresent(request);
-                if (request.State != TaskResourceState.Waiting) throw new InvalidOperationException("申请不处于等待状态。");
+                if (request.State != TaskResourceState.Waiting)
+                {
+                    if (request.State == TaskResourceState.Blocked && request.JournalWrite != null
+                        && (request.JournalWrite.IsFaulted || request.JournalWrite.IsCanceled))
+                        throw new InvalidOperationException(request.Detail ?? "资源记录写入失败，保持隔离。", request.JournalWrite.Exception);
+                    throw new InvalidOperationException("申请不处于等待状态。");
+                }
                 TaskResourceRequest blocker = FindBlocker(request);
                 reason = blocker == null ? "已取得全部资源。" : DescribeBlocker(blocker);
                 if (blocker != null) return false;

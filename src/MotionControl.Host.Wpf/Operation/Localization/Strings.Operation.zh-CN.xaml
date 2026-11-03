@@ -84,6 +84,9 @@
  <sys:String x:Key="操作页.打开轴手动">打开轴手动</sys:String>
  <sys:String x:Key="操作页.设备暂停中">设备暂停中</sys:String>
  <sys:String x:Key="操作页.设备已暂停">设备已暂停</sys:String>
+ <sys:String x:Key="操作页.设备已停止">设备已停止</sys:String>
+ <sys:String x:Key="操作页.停止保留步骤">停止保留步骤</sys:String>
+ <sys:String x:Key="操作页.生产已停止；如需继续旧工步，请从顶部报警复位核查">生产已停止；如需继续旧工步，请从顶部报警复位核查</sys:String>
  <sys:String x:Key="操作页.设备有停机报警">设备有停机报警</sys:String>
  <sys:String x:Key="操作页.设备等待复位">设备等待复位</sys:String>
  <sys:String x:Key="操作页.设备未连接">设备未连接</sys:String>

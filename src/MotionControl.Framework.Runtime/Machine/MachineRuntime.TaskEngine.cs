@@ -19,7 +19,11 @@ namespace MotionControl.Framework.Runtime.Machine
             {
                 if (ControlOwner != MachineControlOwner.TaskEngine)
                     throw new InvalidOperationException("当前设备控制权不属于图形化任务执行入口。");
+                lock (_controlOwnerLock)
+                    if (!(_taskEngineOwner is IAutomaticProductionPause))
+                        throw new InvalidOperationException("任务执行入口未提供受控暂停能力，不能启动生产。");
                 EnsureOneOfStates(new[] { MachineRunState.Ready }, "设备必须先复位到就绪状态，再启动任务。");
+                if (ProductionStopReviewRequired) throw new InvalidOperationException("生产已停止，旧工步尚未明确核查，不能启动任务。");
                 EnsureRecoveryTrusted();
                 await EnsurePreparationsReadyForStartAsync(cancellationToken).ConfigureAwait(false);
                 if (_flowScheduler.IsRunning)

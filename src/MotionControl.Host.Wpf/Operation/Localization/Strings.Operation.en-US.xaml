@@ -84,6 +84,9 @@
  <sys:String x:Key="操作页.打开轴手动">Open axis manual page</sys:String>
  <sys:String x:Key="操作页.设备暂停中">Machine pausing</sys:String>
  <sys:String x:Key="操作页.设备已暂停">Machine paused</sys:String>
+ <sys:String x:Key="操作页.设备已停止">Production stopped</sys:String>
+ <sys:String x:Key="操作页.停止保留步骤">Step retained after stop</sys:String>
+ <sys:String x:Key="操作页.生产已停止；如需继续旧工步，请从顶部报警复位核查">Production stopped. Use the top alarm reset to review before continuing the previous step.</sys:String>
  <sys:String x:Key="操作页.设备有停机报警">Stop alarm present</sys:String>
  <sys:String x:Key="操作页.设备等待复位">Reset required</sys:String>
  <sys:String x:Key="操作页.设备未连接">Machine disconnected</sys:String>

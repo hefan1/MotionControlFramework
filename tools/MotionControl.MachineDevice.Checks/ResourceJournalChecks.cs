@@ -86,6 +86,9 @@ namespace MotionControl.MachineDevice.Checks
                 var denied = failed.Enqueue("run", "task", "焊接", "step", "退离", "call", new[] { "Zone:Weld" });
                 try { failed.TryAcquire(denied, out _); } catch { }
                 Ensure(SpinWait.SpinUntil(() => failed.Read().Any(x => x.State == TaskResourceState.Blocked), 5000), "写失败没有隔离资源。");
+                try { failed.TryAcquire(denied, out _); throw new InvalidOperationException("资源记录故障被误认为可获取。"); }
+                catch (InvalidOperationException error)
+                { Ensure(error.InnerException != null && error.Message.Contains("资源记录写入失败"), "资源记录原始错误被隐藏。"); }
                 failed.Release(denied);
                 Ensure(!failed.Recover(denied) && failed.Read().Count == 1, "写失败可被普通恢复绕过。");
             }

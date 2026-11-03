@@ -133,6 +133,7 @@ namespace MotionControl.Host.Wpf.Tasks
         {
             get { return IsControllerConnected() && _session != null && !_commandInProgress
                 && _runtime != null && _runtime.State == MachineRunState.Ready && _runtime.IsPrepared
+                && !_runtime.ProductionStopReviewRequired
                 && string.IsNullOrWhiteSpace(_runtime.RecoveryBlockReason)
                 && string.IsNullOrWhiteSpace(_recoveryStartBlockReason?.Invoke())
                 && _session.Machine.GetSnapshot().State == TaskMachineState.Ready; }
@@ -144,6 +145,18 @@ namespace MotionControl.Host.Wpf.Tasks
             get { return _session != null && !_commandInProgress
                 && _runtime != null && _runtime.State == MachineRunState.Running
                 && _session.Machine.GetSnapshot().State == TaskMachineState.Running; }
+        }
+
+        /// <summary>运行或暂停的同一任务会话可由顶部停止生产，不直接销毁会话。</summary>
+        internal bool CanStopFromHost
+        {
+            get
+            {
+                if (_session == null || _commandInProgress || _runtime == null) return false;
+                var state = _session.Machine.GetSnapshot().State;
+                return (_runtime.State == MachineRunState.Running && state == TaskMachineState.Running)
+                    || (_runtime.State == MachineRunState.Paused && state == TaskMachineState.Paused);
+            }
         }
 
         /// <summary>设备已就绪但任务仍等待复位时，顶部复位也应可用。</summary>
@@ -160,6 +173,7 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>说明任务入口尚不能从顶部启动的原因；仅查询状态，不发设备命令。</summary>
         internal string GetHostStartBlockReason()
         {
+            if (_runtime?.ProductionStopReviewRequired == true) return "生产已停止，旧工步尚未明确核查。";
             if (!string.IsNullOrWhiteSpace(_runtime?.RecoveryBlockReason))
                 return "设备恢复信息未确认，不能准备或启动：" + _runtime.RecoveryBlockReason;
             string recoveryReason = _recoveryStartBlockReason?.Invoke();
@@ -457,7 +471,7 @@ namespace MotionControl.Host.Wpf.Tasks
         }
 
         /// <summary>顶部报警复位复用任务侧条件核对，不绕过任务故障锁存。</summary>
-        internal async Task ResetFromHostAsync()
+        internal async Task ResetFromHostAsync(bool confirmedStoppedProduction)
         {
             if (_commandInProgress) throw new InvalidOperationException("任务命令正在执行，请等待完成。");
             _commandInProgress = true;
@@ -465,7 +479,7 @@ namespace MotionControl.Host.Wpf.Tasks
             {
                 RequireTaskSession();
                 await _session.Machine.ValidateResetPrerequisitesAsync();
-                if (_runtime.State != MachineRunState.Ready) await _runtime.ResetAsync(CancellationToken.None);
+                if (_runtime.State != MachineRunState.Ready) await _runtime.ResetAsync(CancellationToken.None, confirmedStoppedProduction);
                 await _session.Machine.ResetAsync();
             }
             finally { _commandInProgress = false; UpdateCommandAvailability(); }
@@ -515,7 +529,7 @@ namespace MotionControl.Host.Wpf.Tasks
             await RunCommandAsync(PauseTaskCoreAsync, "任务暂停失败", "任务运行复位建议").ConfigureAwait(true);
         }
 
-        /// <summary>受控停轴并保留任务工步，供任务页及顶部暂停、停止共用。</summary>
+        /// <summary>受控停轴并保留任务工步，供任务页及顶部暂停共用。</summary>
         private async Task PauseTaskCoreAsync()
         {
             RequireTaskSession();
@@ -677,7 +691,7 @@ namespace MotionControl.Host.Wpf.Tasks
             TaskMachineSnapshot snapshot = _session.Machine.GetSnapshot();
             if (!_faultStatusSyncing && snapshot.State == TaskMachineState.Faulted
                 && (_runtime?.State == MachineRunState.Running || _runtime?.State == MachineRunState.Pausing
-                    || _runtime?.State == MachineRunState.Paused))
+                    || _runtime?.State == MachineRunState.Paused || _runtime?.State == MachineRunState.Stopped))
             {
                 _faultStatusSyncing = true;
                 try
@@ -753,15 +767,16 @@ namespace MotionControl.Host.Wpf.Tasks
             TaskMachineState? taskState = snapshot?.State;
             bool hasBlockedResources = snapshot != null && snapshot.Resources.Any(item => item.State == TaskResourceState.Blocked);
             _loadButton.IsEnabled = connected && _session == null && !_commandInProgress && !_runtime.IsPreparing;
-            _resetButton.IsEnabled = connected && taskState.HasValue && !_commandInProgress
+            _resetButton.IsEnabled = connected && taskState.HasValue && !_commandInProgress && !_runtime.ProductionStopReviewRequired
                 && taskState != TaskMachineState.Running && taskState != TaskMachineState.Pausing
                 && _runtime.State != MachineRunState.Running && _runtime.State != MachineRunState.Pausing && !_runtime.IsPreparing;
             _startButton.IsEnabled = connected && taskState == TaskMachineState.Ready && !_commandInProgress
-                && _runtime.State == MachineRunState.Ready && _runtime.IsPrepared
+                && _runtime.State == MachineRunState.Ready && _runtime.IsPrepared && !_runtime.ProductionStopReviewRequired
                 && string.IsNullOrWhiteSpace(_runtime.RecoveryBlockReason)
                 && string.IsNullOrWhiteSpace(_recoveryStartBlockReason?.Invoke());
-            _pauseButton.IsEnabled = taskState == TaskMachineState.Running && !_commandInProgress;
-            _stopButton.IsEnabled = _session != null && !_commandInProgress && !_runtime.IsPreparing;
+            _pauseButton.IsEnabled = taskState == TaskMachineState.Running && !_commandInProgress && !_runtime.ProductionStopReviewRequired;
+            _stopButton.IsEnabled = _session != null && !_commandInProgress && !_runtime.IsPreparing
+                && (!_runtime.ProductionStopReviewRequired || _runtime.State == MachineRunState.Stopped);
             _recoverResourcesButton.Visibility = hasBlockedResources ? Visibility.Visible : Visibility.Collapsed;
             _recoverResourcesButton.IsEnabled = hasBlockedResources && connected && taskState == TaskMachineState.Stopped
                 && !_commandInProgress && !_runtime.IsPreparing;
@@ -898,6 +913,8 @@ namespace MotionControl.Host.Wpf.Tasks
             else if (hasBlockedResources)
                 _nextAction.Text = GetBlockedResourceGuidance(state,
                     string.Equals(_host.CurrentLanguage, "en-US", StringComparison.OrdinalIgnoreCase));
+            else if (_runtime.ProductionStopReviewRequired)
+                _nextAction.Text = PageText("生产已请求停止，旧工步和输出仍保留；需要继续旧工步时，请从顶部报警复位核查。", "Production stop requested; steps and outputs are retained. Use the top reset to review before resuming.");
             else if (state == TaskMachineState.Paused && _runtime.State == MachineRunState.Paused
                 && IsSettledPauseAwaitingReset(state, _runtime.State,
                 _session != null && _session.Machine.IsPauseSettlementConfirmed,

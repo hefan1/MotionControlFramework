@@ -25,6 +25,9 @@ namespace MotionControl.Framework.Runtime.Machine
         Alarmed,
 
         /// <summary>正在执行独立设备准备；完成后等待操作员启动生产。</summary>
-        Preparing
+        Preparing,
+
+        /// <summary>自动生产已受控停止；旧工步保留，继续前须明确核查。</summary>
+        Stopped
     }
 }

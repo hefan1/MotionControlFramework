@@ -340,6 +340,7 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>读取自动启动拦截原因，供操作页在启动前显示具体就绪条件。</summary>
         public async Task<string> GetAutomaticStartBlockReasonAsync(CancellationToken cancellationToken)
         {
+            if (ProductionStopReviewRequired) return "生产已停止，旧工步尚未明确核查。";
             if (RecoveryBlockReason != null) return "设备恢复信息未确认，不能准备或启动：" + RecoveryBlockReason;
             if (State != MachineRunState.Ready)
             {
@@ -433,6 +434,7 @@ namespace MotionControl.Framework.Runtime.Machine
             try
             {
                 EnsureShutdownOutputReadsSettled();
+                EnsureStopFeedbackReadSettled();
                 EnsureNoPreparationInProgress("断开控制卡");
                 if (State == MachineRunState.Running || State == MachineRunState.Pausing || _flowScheduler.IsRunning)
                 {
@@ -482,8 +484,14 @@ namespace MotionControl.Framework.Runtime.Machine
             }
         }
 
-        /// <summary>确认所有轴停稳且安全条件恢复后，复位运动轴、设备流程和停机报警。</summary>
-        public async Task ResetAsync(CancellationToken cancellationToken)
+        /// <summary>正常复位不会代替停止后的现场核查。</summary>
+        public Task ResetAsync(CancellationToken cancellationToken)
+        {
+            return ResetAsync(cancellationToken, false);
+        }
+
+        /// <summary>确认停稳并复位报警；仅调用方已明确核查旧工步时允许解除停止门禁。</summary>
+        public async Task ResetAsync(CancellationToken cancellationToken, bool confirmedStoppedProduction)
         {
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
@@ -491,8 +499,15 @@ namespace MotionControl.Framework.Runtime.Machine
                 if (IsShutdownInProgress) throw new InvalidOperationException("设备正在安全退出，不能复位或重新运行。");
                 EnsureNoPreparationInProgress("报警复位");
                 EnsureOneOfStates(
-                    new[] { MachineRunState.ResetRequired, MachineRunState.Paused, MachineRunState.Alarmed },
+                    new[] { MachineRunState.ResetRequired, MachineRunState.Paused, MachineRunState.Stopped, MachineRunState.Alarmed },
                     "设备当前状态不允许复位。");
+
+                if (ProductionStopReviewRequired && !confirmedStoppedProduction)
+                    throw new InvalidOperationException("生产已停止，旧工步仍保留；请先通过顶部报警复位入口核查并明确确认。");
+                EnsureStopFeedbackReadSettled();
+
+                if (ProductionStopReviewRequired && !_flowScheduler.IsSettlementConfirmed)
+                    throw new InvalidOperationException("工位停止收尾尚未确认，不能复位或继续生产。");
 
                 if (_flowScheduler.IsRunning)
                 {
@@ -583,7 +598,7 @@ namespace MotionControl.Framework.Runtime.Machine
                     }
 
                     _alarmService.ResetStopAlarms();
-                    SetReadyIfNoStopAlarm();
+                    SetReadyIfNoStopAlarm(confirmedStoppedProduction);
                 }
                 catch (Exception resetError)
                 {
@@ -613,6 +628,7 @@ namespace MotionControl.Framework.Runtime.Machine
             try
             {
                 if (IsShutdownInProgress) throw new InvalidOperationException("设备正在安全退出，不能接管或重新运行。");
+                EnsureStopFeedbackReadSettled();
                 EnsureNoPreparationInProgress("切换任务执行入口");
                 EnsureNoManualOperationsInProgress("切换任务执行入口");
                 lock (_controlOwnerLock)
@@ -666,6 +682,7 @@ namespace MotionControl.Framework.Runtime.Machine
             try
             {
                 if (_shutdownSealed) throw new InvalidOperationException("设备已封存退出交接，不能提前释放任务控制权。");
+                EnsureStopFeedbackReadSettled();
                 EnsureNoPreparationInProgress("关闭任务会话");
                 lock (_controlOwnerLock)
                 {
@@ -710,6 +727,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 }
 
                 EnsureState(MachineRunState.Ready, "启动前必须先成功复位设备。");
+                if (ProductionStopReviewRequired) throw new InvalidOperationException("生产已停止，旧工步尚未明确核查，不能启动。");
                 EnsureRecoveryTrusted();
                 await EnsurePreparationsReadyForStartAsync(cancellationToken).ConfigureAwait(false);
                 EnsureNoManualOperationsInProgress("启动自动流程");
@@ -802,6 +820,25 @@ namespace MotionControl.Framework.Runtime.Machine
             if (IsPreparing)
             {
                 await StopPreparationAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
+            if (ControlOwner == MachineControlOwner.TaskEngine)
+            {
+                IAutomaticProductionPause taskPause;
+                lock (_controlOwnerLock) taskPause = _taskEngineOwner as IAutomaticProductionPause;
+                if (taskPause == null)
+                    throw new InvalidOperationException("任务执行入口未提供受控暂停能力，不能确认生产暂停。");
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    await taskPause.PauseAutomaticProductionAsync().ConfigureAwait(false);
+                    await FinishTaskEngineRunAsync(false, null).ConfigureAwait(false);
+                }
+                catch (Exception error)
+                {
+                    await FinishTaskEngineRunAsync(true, error).ConfigureAwait(false);
+                    throw;
+                }
                 return;
             }
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);

@@ -131,7 +131,7 @@ namespace MotionControl.Host.Wpf.Operation
             bool noNamedAxes = _axisMappingStatusKnown && _configuredAxisCount == 0;
             NextActionText.Text = connectionLost ? T("控制器断开后请核对状态") : startBlocked ? _automaticStartBlockReason
                 : startChecking ? T("正在检查启动条件")
-                : showTask && displayState != MachineRunState.Alarmed && displayState != MachineRunState.Paused ? T("任务入口操作提示")
+                : showTask && displayState != MachineRunState.Alarmed && displayState != MachineRunState.Paused && displayState != MachineRunState.Stopped ? T("任务入口操作提示")
                 : T(_isCardConnected && noNamedAxes
                     ? "先配置设备轴映射再进行手动调试"
                     : NextAction(snapshot));
@@ -228,6 +228,7 @@ namespace MotionControl.Host.Wpf.Operation
                 switch (snapshot.State)
                 {
                     case MachineRunState.Paused: return "设备已暂停，确认现场状态后按整机复位";
+                    case MachineRunState.Stopped: return "生产已停止；如需继续旧工步，请从顶部报警复位核查";
                     case MachineRunState.Alarmed: return "先查看报警并处理原因，条件恢复后按整机复位";
                     case MachineRunState.Ready: return "未启用自动工位，可进入轴手动和 IO 手动页面调试";
                     case MachineRunState.ResetRequired: return "检查急停与轴状态，整机复位后可进行手动调试";
@@ -237,6 +238,7 @@ namespace MotionControl.Host.Wpf.Operation
             {
                 case MachineRunState.Running: return "设备自动运行中；需要人工介入时请先暂停";
                 case MachineRunState.Paused: return "保留当前步骤，确认现场后按设备规则复位再启动";
+                case MachineRunState.Stopped: return "生产已停止；如需继续旧工步，请从顶部报警复位核查";
                 case MachineRunState.Alarmed: return "先查看报警并处理原因，条件恢复后复位再启动";
                 case MachineRunState.Ready: return "设备已就绪，使用顶部启动按钮";
                 default: return "检查连接与就绪条件，按设备规则复位后启动";
@@ -283,6 +285,8 @@ namespace MotionControl.Host.Wpf.Operation
                 case MachineRunState.Pausing:
                 case MachineRunState.Paused:
                     return T("整机暂停时的处理建议");
+                case MachineRunState.Stopped:
+                    return T("生产已停止；如需继续旧工步，请从顶部报警复位核查");
                 case MachineRunState.Alarmed:
                     return snapshot.Alarms.Count == 0
                         ? T("整机报警但没有报警记录时的处理建议")

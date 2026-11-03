@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Alarms;
+using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.TaskEngine.Configuration;
 using MotionControl.TaskEngine.Definitions;
@@ -13,7 +14,7 @@ using MotionControl.TaskEngine.Execution;
 namespace MotionControl.TaskEngine.Machine
 {
     /// <summary>一台设备的多工位任务入口；统一运行许可，各工位按任务定义独立执行。</summary>
-    public sealed partial class TaskMachineController
+    public sealed partial class TaskMachineController : IAutomaticProductionPause
     {
         /// <summary>保护整机状态和工位记录，锁内不等待任务完成。</summary>
         private readonly object _sync = new object();
@@ -72,6 +73,12 @@ namespace MotionControl.TaskEngine.Machine
                     return !HasUnsettledPauseWork();
                 }
             }
+        }
+
+        /// <summary>仅任务处于暂停状态且全部动作收尾时，允许整机确认生产停止。</summary>
+        public bool IsAutomaticPauseConfirmed
+        {
+            get { lock (_sync) return _state == TaskMachineState.Paused && !HasUnsettledPauseWork(); }
         }
 
         /// <summary>先校验并冻结清单和任务库，再取得设备控制权；构造不会运行任务或修改场景值。</summary>

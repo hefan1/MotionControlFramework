@@ -206,7 +206,7 @@ namespace MotionControl.Framework.Runtime.Machine
         }
 
         /// <summary>无未复位停机报警时把设备状态切换到就绪。</summary>
-        private void SetReadyIfNoStopAlarm()
+        private void SetReadyIfNoStopAlarm(bool confirmedStoppedProduction)
         {
             var hasStopAlarm = false;
 
@@ -220,6 +220,9 @@ namespace MotionControl.Framework.Runtime.Machine
                 }
                 else
                 {
+                    if (_productionStopReviewRequired && !confirmedStoppedProduction)
+                        throw new InvalidOperationException("生产停止后的旧工步尚未明确核查，不能进入就绪。");
+                    _productionStopReviewRequired = false;
                     _state = MachineRunState.Ready;
                     _lastError = null;
                 }

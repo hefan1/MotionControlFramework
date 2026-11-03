@@ -281,6 +281,7 @@ namespace MotionControl.Host.Wpf
                 case MachineRunState.Running: return "状态运行中";
                 case MachineRunState.Pausing: return "状态暂停中";
                 case MachineRunState.Paused: return "状态已暂停";
+                case MachineRunState.Stopped: return "状态已停止";
                 case MachineRunState.Alarmed: return "状态报警";
                 default: return "状态未连接";
             }

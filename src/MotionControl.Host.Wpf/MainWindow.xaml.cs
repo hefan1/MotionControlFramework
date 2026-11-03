@@ -728,13 +728,19 @@ namespace MotionControl.Host.Wpf
             await PauseMachineAsync("暂停");
         }
 
-        /// <summary>顶部停止执行受控暂停，保留当前工步供复位后继续。</summary>
+        /// <summary>停止本次自动生产，保留现场并要求继续前明确核查。</summary>
         private async void MachineStopButton_Click(object sender, RoutedEventArgs e)
         {
-            await PauseMachineAsync("停止");
+            MachineRuntime runtime = _machineRuntime;
+            if (runtime == null || _isMachineCommandRunning) return;
+            _isMachineCommandRunning = true;
+            UpdateMachineStateDisplay();
+            try { await runtime.StopAutomaticProductionAsync(CancellationToken.None); }
+            catch (Exception error) { ShowMachineCommandError("停止", error); }
+            finally { _isMachineCommandRunning = false; UpdateMachineStateDisplay(); }
         }
 
-        /// <summary>串行执行页面的暂停或停止请求，并报告 Runtime 返回的具体错误。</summary>
+        /// <summary>串行执行页面的暂停请求，并报告 Runtime 返回的具体错误。</summary>
         private async System.Threading.Tasks.Task PauseMachineAsync(string commandName)
         {
             MachineRuntime runtime = _machineRuntime;
@@ -814,6 +820,8 @@ namespace MotionControl.Host.Wpf
                     return "状态暂停中";
                 case MachineRunState.Paused:
                     return "状态已暂停";
+                case MachineRunState.Stopped:
+                    return "状态已停止";
                 case MachineRunState.Alarmed:
                     return "状态报警";
                 case MachineRunState.Preparing:
@@ -858,6 +866,7 @@ namespace MotionControl.Host.Wpf
                 && (!taskOwner || taskLauncher?.IsCommandInProgress != true)
                 && (state == MachineRunState.ResetRequired
                     || state == MachineRunState.Paused
+                    || state == MachineRunState.Stopped
                     || state == MachineRunState.Alarmed
                     || (state == MachineRunState.Ready && taskOwner && taskLauncher?.NeedsResetFromHost == true));
             MachineStartButton.IsEnabled = !_isResetting && !_isMachineCommandRunning
@@ -873,8 +882,8 @@ namespace MotionControl.Host.Wpf
                     || (taskOwner && taskLauncher?.CanPauseFromHost == true) || _machineRuntime.IsPreparing);
             MachineStopButton.IsEnabled = !_isMachineCommandRunning
                 && _machineRuntime != null
-                && ((_machineRuntime.ControlOwner == MachineControlOwner.StationFlows && (actualState == MachineRunState.Running || actualState == MachineRunState.Pausing))
-                    || (taskOwner && taskLauncher?.CanPauseFromHost == true) || _machineRuntime.IsPreparing);
+                && ((_machineRuntime.ControlOwner == MachineControlOwner.StationFlows && (actualState == MachineRunState.Running || actualState == MachineRunState.Pausing || actualState == MachineRunState.Paused))
+                    || (taskOwner && taskLauncher?.CanStopFromHost == true) || _machineRuntime.IsPreparing);
         }
 
         /// <summary>把同一份启动就绪结果同步到设备总览和流程状态页。</summary>
@@ -911,9 +920,21 @@ namespace MotionControl.Host.Wpf
             UpdateMachineStateDisplay();
             try
             {
+                bool confirmedStoppedProduction = false;
+                if (runtime.ProductionStopReviewRequired)
+                {
+                    string message = GetLocalizedText("停止后核查提示");
+                    if (MessageBox.Show(message, GetLocalizedText("停止后核查标题"), MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+                    confirmedStoppedProduction = true;
+                }
                 var launcher = _taskMonitorPage as Tasks.TaskMonitorLauncher;
-                if (runtime.IsTaskEngineControlClaimed && launcher != null) await launcher.ResetFromHostAsync();
-                else await runtime.ResetAsync(CancellationToken.None);
+                if (runtime.IsTaskEngineControlClaimed)
+                {
+                    if (launcher == null) throw new InvalidOperationException("任务运行入口尚未就绪，不能核查并复位任务。");
+                    await launcher.ResetFromHostAsync(confirmedStoppedProduction);
+                }
+                else await runtime.ResetAsync(CancellationToken.None, confirmedStoppedProduction);
             }
             catch (Exception error)
             {

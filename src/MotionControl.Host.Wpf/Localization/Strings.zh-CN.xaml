@@ -61,11 +61,13 @@
     <sys:String x:Key="启动">▶ 启动</sys:String>
     <sys:String x:Key="暂停">Ⅱ 暂停</sys:String>
     <sys:String x:Key="停止">■ 停止</sys:String>
-    <sys:String x:Key="顶部停止保留工步">保留工步</sys:String>
-    <sys:String x:Key="顶部受控停止说明">停止，保留工步</sys:String>
+    <sys:String x:Key="顶部停止待核查">待核查</sys:String>
+    <sys:String x:Key="顶部受控停止说明">停止生产，待核查</sys:String>
     <sys:String x:Key="自动启动提示">复位就绪后启动已配置的自动工位。</sys:String>
     <sys:String x:Key="自动暂停提示">受控暂停全部自动工位并保留当前工步；继续运行前按报警复位，再按启动。</sys:String>
-    <sys:String x:Key="自动停止提示">停止会受控暂停全部自动工位并保留当前工步；现场确认安全后，按报警复位再启动。</sys:String>
+    <sys:String x:Key="自动停止提示">停止自动生产并保留工步和输出；继续旧工步前，须通过报警复位明确核查现场。</sys:String>
+    <sys:String x:Key="停止后核查标题">停止后的现场核查</sys:String>
+    <sys:String x:Key="停止后核查提示">生产已请求停止，原工步、资源和输出可能仍被保留。&#x0a;&#x0a;确认现场及设备工艺允许继续原工步吗？选择“是”将执行复位，之后仍须手动按启动；复位不会自动清料或从新周期开始。&#x0a;&#x0a;需要清料或重新建立生产起点时，请选择“否”，按设备规定处理。</sys:String>
     <sys:String x:Key="自动流程命令失败标题">自动流程命令失败</sys:String>
     <sys:String x:Key="工位流程状态说明">查看当前执行入口的运行信息和报警。</sys:String>
     <sys:String x:Key="流程页.待启动步骤">待启动步骤</sys:String>
@@ -196,6 +198,7 @@
     <sys:String x:Key="状态运行中">运行中</sys:String>
     <sys:String x:Key="状态暂停中">暂停中</sys:String>
     <sys:String x:Key="状态已暂停">已暂停</sys:String>
+    <sys:String x:Key="状态已停止">已停止</sys:String>
     <sys:String x:Key="状态报警">报警</sys:String>
     <sys:String x:Key="尚未配置轴">当前设备没有配置逻辑轴。完成轴映射后，本页会显示手动点动、回零和定位操作。</sys:String>
     <sys:String x:Key="当前位置">位置</sys:String>

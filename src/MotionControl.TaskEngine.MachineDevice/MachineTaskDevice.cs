@@ -21,7 +21,7 @@ namespace MotionControl.TaskEngine.MachineDevice
     /// 变量走 IDeviceVariableStore，整机控制权通过 MachineRuntime 统一仲裁。
     /// 轴组插补和有条件的资源范围互锁尚未接入，调用时明确报错，不退化执行。
     /// </summary>
-    public sealed partial class MachineTaskDevice : ITaskDevice, ITaskInterlockSupport, ITaskResourceRecoveryState, ITaskResourceJournalCleanup, ITaskRecordSink, ITaskShutdownHandoff
+    public sealed partial class MachineTaskDevice : ITaskDevice, ITaskInterlockSupport, ITaskResourceRecoveryState, ITaskResourceJournalCleanup, ITaskRecordSink, ITaskShutdownHandoff, IAutomaticProductionPause
     {
         /// <summary>未指定所有者时使用的匿名所有权标记，保证同一实例内的所有权比对稳定。</summary>
         private static readonly object AnonymousOwner = new object();
@@ -75,6 +75,27 @@ namespace MotionControl.TaskEngine.MachineDevice
 
         /// <summary>当前独占本设备的对象；为空表示没有整机控制者。</summary>
         private object _machineOwner;
+
+        /// <summary>向 Runtime 提供当前任务控制器的暂停收尾状态；没有控制器时不确认。</summary>
+        public bool IsAutomaticPauseConfirmed
+        {
+            get
+            {
+                IAutomaticProductionPause participant;
+                lock (_sync) participant = _machineOwner as IAutomaticProductionPause;
+                return participant != null && participant.IsAutomaticPauseConfirmed;
+            }
+        }
+
+        /// <summary>把整机暂停请求转交给持有本设备的任务控制器，不能只改变 Runtime 状态。</summary>
+        public Task PauseAutomaticProductionAsync()
+        {
+            IAutomaticProductionPause participant;
+            lock (_sync) participant = _machineOwner as IAutomaticProductionPause;
+            if (participant == null)
+                throw new InvalidOperationException("任务会话未提供受控暂停能力，不能确认生产已暂停。");
+            return participant.PauseAutomaticProductionAsync();
+        }
 
         /// <summary>用已连接的控制卡、逻辑 IO、变量存储和整机运行时建立任务设备。</summary>
         public MachineTaskDevice(

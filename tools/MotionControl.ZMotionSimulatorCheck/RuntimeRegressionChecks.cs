@@ -39,6 +39,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("当前正运动 Host 拒绝多卡配置", ZMotionHostRejectsMultipleCardsAsync, failures);
             await RunCheckAsync("未配置自动流程时允许连接手动调试但禁止启动", ManualOnlyRuntimeConnectsButCannotStartAsync, failures);
             await RunCheckAsync("工位流程与任务执行入口互斥，同一时刻只有一个能启动", ControlOwnerExcludesTaskExecutionAsync, failures);
+            await RunCheckAsync("任务入口缺少受控暂停能力时禁止启动", TaskEntryRequiresPauseCapabilityAsync, failures);
             await RunCheckAsync("设备定义按设备环境创建工位并拒绝越行程配置", EquipmentDefinitionCreatesStationsFromContextAsync, failures);
             await RunCheckAsync("执行入口可由设备配置指定", ConfiguredControlOwnerIsHonoredAsync, failures);
             await RunCheckAsync("任一轴仍在运动时禁止启动自动流程", MovingAxisBlocksAutomaticStartAsync, failures);
@@ -51,6 +52,9 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("轴组整体占用并在等待取消时归还已申请轴", AxisGroupResourcesReleaseAfterCancellationAsync, failures);
             await RunCheckAsync("多卡断开先检查所有轴，不留下半连接状态", MovingAxisPreventsPartialCardDisconnectAsync, failures);
             await RunCheckAsync("必须复位后启动，暂停后保留当前步骤", ResetAndPauseKeepCurrentStepAsync, failures);
+            await RunCheckAsync("停止独立锁定旧工步并拒绝未知停稳反馈", ProductionStopRequiresReviewAsync, failures);
+            await RunCheckAsync("停止等待旧工位收尾且禁止并发复位启动", ProductionStopWaitsForSettlementAsync, failures);
+            await RunCheckAsync("停止反馈读取超时后禁止复位、手动及断卡", StopFeedbackTimeoutRetainsGuardAsync, failures);
             await RunCheckAsync("关闭时自动等待工位停止且超时保留保护", ShutdownStopsAndWaitsForStationAsync, failures);
             await RunCheckAsync("准备取消不阻塞停轴及异常收尾", PreparationCancellationDoesNotBlockStopAsync, failures);
             await RunCheckAsync("在线映射与整机命令互斥", OnlineMappingRespectsMachineCommandsAsync, failures);
@@ -316,12 +320,16 @@ namespace MotionControl.ZMotionSimulatorCheck
         }
 
         /// <summary>可控资源状态替身，只用于检查运行标记，不访问控制卡。</summary>
-        private sealed class RecoveryResourceOwner : ITaskResourceRecoveryState
+        private sealed class RecoveryResourceOwner : ITaskResourceRecoveryState, IAutomaticProductionPause
         {
             /// <summary>当前测试的资源状态。</summary>
             public TaskResourceRecoveryState State { get; set; }
             /// <summary>返回测试设置的资源状态。</summary>
             public TaskResourceRecoveryState GetResourceRecoveryState() { return State; }
+            /// <summary>测试所有者不执行真实生产动作。</summary>
+            public bool IsAutomaticPauseConfirmed { get { return true; } }
+            /// <summary>测试所有者的暂停无需停止硬件。</summary>
+            public Task PauseAutomaticProductionAsync() { return Task.CompletedTask; }
         }
 
         /// <summary>自动运行与暂停后均保留标记；重启和新的连接周期不能自动复用现场状态。</summary>
@@ -613,6 +621,21 @@ namespace MotionControl.ZMotionSimulatorCheck
                 () => runtime.AcquireTaskEngineControlAsync(new object(), CancellationToken.None)).ConfigureAwait(false);
             runtime.ReleaseTaskEngineControl(session);
             Ensure(runtime.ControlOwner == MachineControlOwner.TaskEngine, "归还后未保留配置指定的任务入口。");
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        /// <summary>没有停止协作能力的任务所有者不能进入生产运行。</summary>
+        private static async Task TaskEntryRequiresPauseCapabilityAsync()
+        {
+            var runtime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { new FakeMotionCard("测试卡", new FakeAxis("X")) }),
+                new IStationFlow[0], new MachineAlarmService(), new FakeSafetyStatus());
+            object owner = new object();
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.AcquireTaskEngineControlAsync(owner, CancellationToken.None).ConfigureAwait(false);
+            await ExpectExceptionAsync<InvalidOperationException>(() => runtime.BeginTaskEngineRunAsync(CancellationToken.None)).ConfigureAwait(false);
+            Ensure(runtime.State == MachineRunState.Ready, "缺少暂停能力的任务入口错误进入运行状态。");
+            runtime.ReleaseTaskEngineControl(owner);
             await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
@@ -1289,6 +1312,88 @@ namespace MotionControl.ZMotionSimulatorCheck
                 () => runtime.StartAsync(CancellationToken.None)).ConfigureAwait(false);
             await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
             Ensure(flow.CurrentStepName == "等待取料到位", "复位改变了工位当前步骤。");
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        /// <summary>停止与暂停有不同门禁；拒绝未确认停稳，也不清除现场工步。</summary>
+        private static async Task ProductionStopRequiresReviewAsync()
+        {
+            var flow = new WaitingStationFlow("停止检查工位", "保持当前工步");
+            var axis = new FakeAxis("停止检查轴");
+            var runtime = CreateRuntime(flow, new MachineAlarmService(), axis: axis);
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await flow.WaitUntilStartedAsync().ConfigureAwait(false);
+            await runtime.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(runtime.State == MachineRunState.Paused && !runtime.ProductionStopReviewRequired,
+                "普通暂停不应锁定停止核查。");
+            await runtime.StopAutomaticProductionAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(runtime.State == MachineRunState.Stopped && runtime.ProductionStopReviewRequired
+                && flow.CurrentStepName == "保持当前工步", "停止没有保留工步并进入独立的待核查状态。");
+            await ExpectExceptionAsync<InvalidOperationException>(() => runtime.ResetAsync(CancellationToken.None)).ConfigureAwait(false);
+            await ExpectExceptionAsync<InvalidOperationException>(() => runtime.StartAsync(CancellationToken.None)).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None, true).ConfigureAwait(false);
+            Ensure(runtime.State == MachineRunState.Ready && !runtime.ProductionStopReviewRequired
+                && flow.CurrentStepName == "保持当前工步", "明确核查并复位后状态或工步不正确。");
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await WaitForStartCountAsync(flow, 2).ConfigureAwait(false);
+            axis.ReturnNullStatus = true;
+            await ExpectExceptionAsync<InvalidOperationException>(() => runtime.StopAutomaticProductionAsync(CancellationToken.None)).ConfigureAwait(false);
+            Ensure(runtime.State == MachineRunState.Alarmed && runtime.ProductionStopReviewRequired,
+                "停止反馈未知时错误报告停止成功或清除了核查门禁。");
+            axis.ReturnNullStatus = false;
+            await ExpectExceptionAsync<InvalidOperationException>(() => runtime.ResetAsync(CancellationToken.None)).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None, true).ConfigureAwait(false);
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        /// <summary>停止请求期间不允许把尚在收尾的工位显示为已停止或允许新启动。</summary>
+        private static async Task ProductionStopWaitsForSettlementAsync()
+        {
+            var flow = new DelayedStopStationFlow();
+            var runtime = CreateRuntime(flow, new MachineAlarmService());
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await flow.WaitUntilStartedAsync().ConfigureAwait(false);
+            Task stop = runtime.StopAutomaticProductionAsync(CancellationToken.None);
+            await Task.Delay(50).ConfigureAwait(false);
+            Ensure(!stop.IsCompleted && runtime.State != MachineRunState.Stopped && runtime.ProductionStopReviewRequired,
+                "工位仍在收尾时错误报告已停止。");
+            Task prematureStart = runtime.StartAsync(CancellationToken.None);
+            await Task.Delay(50).ConfigureAwait(false);
+            Ensure(!prematureStart.IsCompleted, "停止收尾期间没有阻止并发启动。");
+            flow.Release();
+            await stop.ConfigureAwait(false);
+            await ExpectExceptionAsync<InvalidOperationException>(() => prematureStart).ConfigureAwait(false);
+            Ensure(runtime.State == MachineRunState.Stopped, "工位实际退出后未进入已停止。");
+            await ExpectExceptionAsync<InvalidOperationException>(() => runtime.ResetAsync(CancellationToken.None)).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None, true).ConfigureAwait(false);
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        /// <summary>驱动读取超时后，原调用未结束时不允许其他操作把状态当作已确认。</summary>
+        private static async Task StopFeedbackTimeoutRetainsGuardAsync()
+        {
+            var axis = new FakeAxis("慢反馈轴");
+            var flow = new WaitingStationFlow("慢反馈工位", "等待输入");
+            var runtime = CreateRuntime(flow, new MachineAlarmService(), axis: axis);
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await flow.WaitUntilStartedAsync().ConfigureAwait(false);
+            var pending = new TaskCompletionSource<AxisStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
+            axis.PendingStatus = pending;
+            await ExpectExceptionAsync<TimeoutException>(() => runtime.StopAutomaticProductionAsync(CancellationToken.None)).ConfigureAwait(false);
+            Ensure(runtime.State == MachineRunState.Alarmed && runtime.ProductionStopReviewRequired, "反馈超时没有保持停止保护。");
+            await ExpectExceptionAsync<InvalidOperationException>(() => runtime.ResetAsync(CancellationToken.None, true)).ConfigureAwait(false);
+            await ExpectExceptionAsync<InvalidOperationException>(() => runtime.DisconnectAsync(CancellationToken.None)).ConfigureAwait(false);
+            var manual = await runtime.RunManualOperationAsync(() => Task.CompletedTask, CancellationToken.None).ConfigureAwait(false);
+            Ensure(manual == ManualOperationBlockReason.AutomaticFlowUnsettled, "旧状态读取未返回时错误允许手动动作。");
+            axis.PendingStatus = null;
+            pending.TrySetResult(new AxisStatus(0, 0, true, false, true, false, false, false, false, false, null, false));
+            await runtime.ResetAsync(CancellationToken.None, true).ConfigureAwait(false);
             await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
@@ -2157,6 +2262,9 @@ namespace MotionControl.ZMotionSimulatorCheck
             /// <summary>模拟控制器返回空的轴状态。</summary>
             public bool ReturnNullStatus { get; set; }
 
+            /// <summary>可延迟返回的停止反馈，供回归验证在途读取保护。</summary>
+            public TaskCompletionSource<AxisStatus> PendingStatus { get; set; }
+
             /// <summary>记录测试期间收到的轴报警复位次数。</summary>
             public int AlarmResetCount { get; private set; }
 
@@ -2167,6 +2275,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             public Task<AxisStatus> ReadStatusAsync(CancellationToken cancellationToken)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (PendingStatus != null) return PendingStatus.Task;
                 if (ReturnNullStatus) return Task.FromResult<AxisStatus>(null);
                 return Task.FromResult(new AxisStatus(
                     0,

@@ -64,7 +64,7 @@ namespace MotionControl.Framework.Runtime.Machine
                     || State == MachineRunState.Pausing || _flowScheduler.IsRunning || !_flowScheduler.IsSettlementConfirmed)
                     return false;
                 if (_motionCards.Cards.Any(card => card.IsConnected) && !_motionCards.IsConnected) return false;
-                try { EnsureNoManualOperationsInProgress("取消关闭"); EnsureShutdownOutputReadsSettled(); }
+                try { EnsureNoManualOperationsInProgress("取消关闭"); EnsureShutdownOutputReadsSettled(); EnsureStopFeedbackReadSettled(); }
                 catch (InvalidOperationException) { return false; }
                 _shutdownIntent = false;
                 return true;
@@ -105,6 +105,7 @@ namespace MotionControl.Framework.Runtime.Machine
             {
                 if (!_shutdownIntent) throw new InvalidOperationException("尚未登记退出意图，不能交接任务控制权。");
                 EnsureNoPreparationInProgress("结束设备会话");
+                EnsureStopFeedbackReadSettled();
                 EnsureNoManualOperationsInProgress("结束设备会话");
                 lock (_controlOwnerLock)
                     if (!ReferenceEquals(_taskEngineOwner, owner))

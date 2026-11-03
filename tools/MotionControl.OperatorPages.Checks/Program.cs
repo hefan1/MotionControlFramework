@@ -425,7 +425,7 @@ namespace MotionControl.OperatorPages.Checks
             }
             finally { window.Close(); }
         }
-        /// <summary>检查暂停和停止的提示准确说明当前受控暂停及复位恢复顺序。</summary>
+        /// <summary>检查暂停与停止的提示分别说明工步保留和停止后的核查门禁。</summary>
         private static void MachineCommandGuidance()
         {
             var chinese = new ResourceDictionary { Source = new Uri("/MotionControl.Host.Wpf;component/Localization/Strings.zh-CN.xaml", UriKind.Relative) };
@@ -433,18 +433,18 @@ namespace MotionControl.OperatorPages.Checks
             var stop = (string)chinese["自动停止提示"];
             Assert(pause.Contains("受控暂停") && pause.Contains("保留当前工步")
                 && pause.Contains("报警复位") && pause.Contains("启动"), "中文暂停提示没有说明保留工步和恢复顺序。");
-            Assert(stop.Contains("受控暂停") && stop.Contains("保留当前工步")
-                && stop.Contains("现场确认安全") && stop.Contains("报警复位"), "中文停止提示没有说明当前处理方式和现场确认步骤。");
-            Assert((string)chinese["顶部停止保留工步"] == "保留工步", "顶部停止按钮没有明确显示保留工步。");
+            Assert(stop.Contains("停止自动生产") && stop.Contains("保留工步和输出")
+                && stop.Contains("核查现场") && stop.Contains("报警复位"), "中文停止提示没有说明现场保留及核查要求。");
+            Assert((string)chinese["顶部停止待核查"] == "待核查", "顶部停止按钮没有明确显示待核查。");
 
             var english = new ResourceDictionary { Source = new Uri("/MotionControl.Host.Wpf;component/Localization/Strings.en-US.xaml", UriKind.Relative) };
             var englishPause = (string)english["自动暂停提示"];
             var englishStop = (string)english["自动停止提示"];
             Assert(englishPause.Contains("controlled manner") && englishPause.Contains("retain")
                 && englishPause.Contains("Reset alarms") && englishPause.Contains("Start"), "English pause guidance omits step retention or recovery order.");
-            Assert(englishStop.Contains("Stop pauses") && englishStop.Contains("retains")
-                && englishStop.Contains("Confirm the equipment is safe") && englishStop.Contains("reset alarms"), "English stop guidance omits the current behavior or equipment check.");
-            Assert((string)english["顶部停止保留工步"] == "Keep step", "The stop button does not indicate retained steps in English.");
+            Assert(englishStop.Contains("Stop automatic production") && englishStop.Contains("retaining")
+                && englishStop.Contains("Review") && englishStop.Contains("alarm reset"), "English stop guidance omits retained context or equipment review.");
+            Assert((string)english["顶部停止待核查"] == "Review", "The stop button does not indicate the review requirement in English.");
         }
         /// <summary>版本与草稿来自实际文件，多轴表只显示选中轴参数，切换后逐轴保存。</summary>
         private static void EditorIntegration()
