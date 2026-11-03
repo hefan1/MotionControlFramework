@@ -70,7 +70,7 @@ namespace MotionControl.VirtualController
                 if (feedback.Output == trigger) throw new InvalidOperationException("扫码触发输出已被其他反馈使用。");
             foreach (int input in inputs)
             {
-                if (_inputs[input] || AxisSensorUsesInput(input) || ActuatorUsesInput(input) || CameraUsesInput(input)
+                if (_inputs[input] || AxisSensorUsesInput(input) || ActuatorUsesInput(input) || CameraUsesInput(input) || MaterialSensorUsesInput(input)
                     || _feedback.ContainsKey(input) || (_feeder.Enabled && _feeder.Input == input))
                     throw new InvalidOperationException("扫码输入已占用或未复位：DI" + input);
             }

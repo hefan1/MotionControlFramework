@@ -20,8 +20,58 @@ namespace MotionControl.RotaryWelding.Checks
         /// <summary>执行并行、堵料、暂停和扫码失败等检查。</summary>
         private static int Main()
         {
-            try { CheckAsync().GetAwaiter().GetResult(); CheckMotionOnlyAsync().GetAwaiter().GetResult(); CheckScannerFailureAsync().GetAwaiter().GetResult(); CheckClampConflictAsync().GetAwaiter().GetResult(); CheckEvidenceWriteFailureAsync().GetAwaiter().GetResult(); CheckInterruptedOutputsAsync().GetAwaiter().GetResult(); CheckPreparationClampsAsync().GetAwaiter().GetResult(); CheckPreparationFeedbackAsync().GetAwaiter().GetResult(); CheckRecordFailureAsync(false).GetAwaiter().GetResult(); CheckRecordFailureAsync(true).GetAwaiter().GetResult(); Console.WriteLine("十三轴代码流程：纯运动、50件、准备反馈、夹具联锁、逐件记录及故障、在途输出恢复等内部检查通过。"); return 0; }
+            try { CheckMaterialInspectionAsync().GetAwaiter().GetResult(); CheckAsync().GetAwaiter().GetResult(); CheckMotionOnlyAsync().GetAwaiter().GetResult(); CheckScannerFailureAsync().GetAwaiter().GetResult(); CheckClampConflictAsync().GetAwaiter().GetResult(); CheckEvidenceWriteFailureAsync().GetAwaiter().GetResult(); CheckInterruptedOutputsAsync().GetAwaiter().GetResult(); CheckPreparationClampsAsync().GetAwaiter().GetResult(); CheckPreparationFeedbackAsync().GetAwaiter().GetResult(); CheckRecordFailureAsync(false).GetAwaiter().GetResult(); CheckRecordFailureAsync(true).GetAwaiter().GetResult(); Console.WriteLine("十三轴代码流程：独立物料反馈、纯运动、50件、准备反馈、夹具联锁、逐件记录及故障、在途输出恢复等内部检查通过。"); return 0; }
             catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+        }
+
+        /// <summary>独立反馈必须明确区分有料、空料、未知、冲突、变化及读取失败。</summary>
+        private static async Task CheckMaterialInspectionAsync()
+        {
+            var io = new MaterialReadFake();
+            io.Values["A夹位有料"] = true;
+            io.Values["B夹位无料"] = true;
+            io.Values["缓存位有料"] = true;
+            io.Values["缓存位无料"] = true;
+            var states = await RotaryMaterialInspection.ReadAsync(io, CancellationToken.None);
+            if (states.Count != 4 || states[0].Condition != RotaryMaterialCondition.Present
+                || states[1].Condition != RotaryMaterialCondition.Empty || states[2].Condition != RotaryMaterialCondition.Conflict
+                || states[3].Condition != RotaryMaterialCondition.Unknown)
+                throw new InvalidOperationException("未区分有料、空料、冲突和未知。 ");
+            io.ChangeName = "A夹位有料";
+            states = await RotaryMaterialInspection.ReadAsync(io, CancellationToken.None);
+            if (states[0].Condition != RotaryMaterialCondition.Unstable) throw new InvalidOperationException("反馈变化被误判为稳定。 ");
+            io.ChangeName = null; io.FailName = "B夹位有料";
+            bool rejected = false;
+            try { await RotaryMaterialInspection.ReadAsync(io, CancellationToken.None); }
+            catch (InvalidOperationException error) { rejected = error.Message.Contains("模拟读取失败"); }
+            if (!rejected) throw new InvalidOperationException("读取失败被误判为无料。 ");
+        }
+
+        /// <summary>只读测试 IO，可指定反馈变化或读取失败，不接受输出操作。</summary>
+        private sealed class MaterialReadFake : ILogicalIo
+        {
+            /// <summary>按逻辑名称保存反馈电平，未设置的输入默认为无效。</summary>
+            internal readonly Dictionary<string, bool> Values = new Dictionary<string, bool>();
+            /// <summary>指定第二次读取时反转的输入名称。</summary>
+            internal string ChangeName;
+            /// <summary>指定读取失败的输入名称。</summary>
+            internal string FailName;
+            /// <summary>跟踪变化输入的本轮读取次数。</summary>
+            private int _changeReads;
+            /// <summary>读取测试输入；对变化通道第二次读取返回相反电平。</summary>
+            public Task<bool> ReadInputAsync(string name, CancellationToken token)
+            {
+                token.ThrowIfCancellationRequested();
+                if (name == FailName) throw new InvalidOperationException("模拟读取失败：" + name);
+                bool value;
+                Values.TryGetValue(name, out value);
+                if (name == ChangeName && ++_changeReads == 2) value = !value;
+                return Task.FromResult(value);
+            }
+            /// <summary>只读核查不应读取输出。</summary>
+            public Task<bool> ReadOutputAsync(string name, CancellationToken token) { throw new NotSupportedException(); }
+            /// <summary>只读核查不应切换输出。</summary>
+            public Task WriteOutputAsync(string name, bool value, CancellationToken token) { throw new NotSupportedException(); }
         }
 
         /// <summary>运行五个代码工位，核对全部轴动作、载具顺序和堵料恢复。</summary>

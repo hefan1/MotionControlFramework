@@ -49,10 +49,13 @@ namespace MotionControl.VirtualAdapter.Checks
             int port = args.Length == 0 ? 18521 : int.Parse(args[0]);
             var definition = new AxisHardwareDefinition { Name = "X", ControllerId = "Test", AxisNumber = 1, PositionTolerance = 0.01, SoftLimitEnabled = true, MinimumPosition = -10, MaximumPosition = 10 };
             var input = new DigitalIoHardwareDefinition { Name = "Input", Channel = 4, ActiveHigh = false };
+            var materialPresent = new DigitalIoHardwareDefinition { Name = "A夹位有料", Channel = 69, ActiveHigh = true };
+            var materialEmpty = new DigitalIoHardwareDefinition { Name = "A夹位无料", Channel = 70, ActiveHigh = true };
             var output = new DigitalIoHardwareDefinition { Name = "Output", Channel = 0, ActiveHigh = false };
-            var card = new VirtualMotionCard("Test", new[] { definition }, new[] { input }, new[] { output }, port, DiagnosticsRoot);
+            var card = new VirtualMotionCard("Test", new[] { definition }, new[] { input, materialPresent, materialEmpty }, new[] { output }, port, DiagnosticsRoot);
             var token = CancellationToken.None;
             card.ConnectAsync(token).GetAwaiter().GetResult();
+            AssertMaterialInputsThroughAdapter(card, port, token);
             SendRaw(port, "{\"command\":\"setInput\",\"channel\":4,\"value\":true}");
             if (card.ReadInputAsync("Input", token).GetAwaiter().GetResult()) throw new Exception("低有效 DI 极性错误");
             SendRaw(port, "{\"command\":\"setInput\",\"channel\":4,\"value\":false}");
@@ -101,6 +104,32 @@ namespace MotionControl.VirtualAdapter.Checks
             AssertHeartbeatDiagnostic(false);
             AssertHeartbeatDiagnostic(true);
             Console.WriteLine("虚拟控制器适配器往返检查通过。");
+        }
+
+        /// <summary>通过正式虚拟卡适配器读取独立物料输入，核对未知、变化、冲突和输出隔离。</summary>
+        private static void AssertMaterialInputsThroughAdapter(VirtualMotionCard card, int port, CancellationToken token)
+        {
+            string configured = SendRaw(port, "{\"command\":\"configureMaterialSensors\",\"name\":\"A\",\"presentInputChannel\":69,\"emptyInputChannel\":70}");
+            if (!configured.Contains("\"ok\":true")) throw new Exception("未能配置独立物料反馈。");
+            foreach (var scenario in new[] {
+                (State: "unknown", Present: false, Empty: false),
+                (State: "present", Present: true, Empty: false),
+                (State: "empty", Present: false, Empty: true),
+                (State: "conflict", Present: true, Empty: true) })
+            {
+                string response = SendRaw(port, "{\"command\":\"setMaterialSensorState\",\"name\":\"A\",\"state\":\"" + scenario.State + "\"}");
+                if (!response.Contains("\"ok\":true")) throw new Exception("设置物料测试状态失败：" + scenario.State);
+                bool present = card.ReadInputAsync("A夹位有料", token).GetAwaiter().GetResult();
+                bool empty = card.ReadInputAsync("A夹位无料", token).GetAwaiter().GetResult();
+                if (present != scenario.Present || empty != scenario.Empty) throw new Exception("适配器物料反馈不一致：" + scenario.State);
+            }
+            card.WriteOutputAsync("Output", false, token).GetAwaiter().GetResult();
+            if (!card.ReadDigitalOutputChannelsAsync(new[] { 0 }, token).GetAwaiter().GetResult()[0])
+                throw new Exception("未能在测试中改变物理输出电平。");
+            if (!card.ReadInputAsync("A夹位有料", token).GetAwaiter().GetResult()
+                || !card.ReadInputAsync("A夹位无料", token).GetAwaiter().GetResult())
+                throw new Exception("输出变化错误改写独立物料反馈。");
+            card.WriteOutputAsync("Output", true, token).GetAwaiter().GetResult();
         }
         /// <summary>启动运动后直接退出，模拟 Host 未执行任何断开清理。</summary>
         private static void StartMotionAndExit(int port)

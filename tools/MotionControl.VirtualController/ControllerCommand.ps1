@@ -1,6 +1,6 @@
 ﻿param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Status', 'StartFeeder', 'StopFeeder', 'MissingMaterial', 'RestoreFeeder', 'SetInput', 'AxisAlarm', 'ConfigureAxisSensors', 'AxisSensorsStatus', 'AxisSensorFault', 'RemoveAxisSensors', 'ConfigureFeedback', 'FeedbackStatus', 'FeedbackStuck', 'FeedbackRestore', 'RemoveFeedback', 'ConfigureCamera', 'CameraStatus', 'CameraResult', 'CameraResolve', 'CameraNoCompletion', 'CameraRestore', 'CameraResume', 'CameraReset', 'RemoveCamera', 'ConfigureActuator', 'ActuatorStatus', 'ActuatorStuck', 'ActuatorRestore', 'ActuatorConflict', 'ActuatorConflictRestore', 'RemoveActuator', 'ConfigureScanner', 'ScannerStatus', 'ScannerFault', 'RemoveScanner', 'SetCommandFault', 'CommandFaultStatus', 'ClearCommandFault')]
+    [ValidateSet('Status', 'StartFeeder', 'StopFeeder', 'MissingMaterial', 'RestoreFeeder', 'SetInput', 'AxisAlarm', 'ConfigureAxisSensors', 'AxisSensorsStatus', 'AxisSensorFault', 'RemoveAxisSensors', 'ConfigureFeedback', 'FeedbackStatus', 'FeedbackStuck', 'FeedbackRestore', 'RemoveFeedback', 'ConfigureCamera', 'CameraStatus', 'CameraResult', 'CameraResolve', 'CameraNoCompletion', 'CameraRestore', 'CameraResume', 'CameraReset', 'RemoveCamera', 'ConfigureActuator', 'ActuatorStatus', 'ActuatorStuck', 'ActuatorRestore', 'ActuatorConflict', 'ActuatorConflictRestore', 'RemoveActuator', 'ConfigureScanner', 'ScannerStatus', 'ScannerFault', 'RemoveScanner', 'ConfigureMaterialSensors', 'MaterialSensorsStatus', 'SetMaterialSensorState', 'ConfigureRotaryClearancePlant', 'RotaryClearancePlantStatus', 'SetCommandFault', 'CommandFaultStatus', 'ClearCommandFault')]
     [string]$Action,
     [int]$Port = 18520,
     [int]$InputChannel = 4,
@@ -32,6 +32,11 @@
     [int]$ScannerDelayMs = 300,
     [ValidateSet('normal', 'fail', 'noCompletion')]
     [string]$ScannerFaultMode = 'normal',
+    [string]$MaterialSensorName,
+    [int]$MaterialPresentInput,
+    [int]$MaterialEmptyInput,
+    [ValidateSet('present', 'empty', 'unknown', 'conflict')]
+    [string]$MaterialSensorState,
     [int]$Axis = 1,
     [int]$AxisOriginInput,
     [int]$AxisNegativeInput,
@@ -63,6 +68,9 @@ try {
     }
     if ($Action -in @('ConfigureAxisSensors', 'AxisSensorsStatus', 'AxisSensorFault', 'RemoveAxisSensors') -and -not $PSBoundParameters.ContainsKey('Axis')) {
         throw '轴传感器命令必须显式指定 Axis。'
+    }
+    if ($Action -in @('ConfigureMaterialSensors', 'MaterialSensorsStatus', 'SetMaterialSensorState') -and [string]::IsNullOrWhiteSpace($MaterialSensorName)) {
+        throw '物料传感器命令必须显式指定 MaterialSensorName。'
     }
     switch ($Action) {
         'Status' { $request = @{ command = 'readFeeder' } }
@@ -145,7 +153,20 @@ try {
         'ScannerStatus' { $request = @{command='readScanner'} }
         'ScannerFault' { $request = @{command='setScannerFault'; mode=$ScannerFaultMode} }
         'RemoveScanner' { $request = @{command='removeScanner'} }
+        'ConfigureMaterialSensors' {
+            foreach ($name in @('MaterialPresentInput', 'MaterialEmptyInput')) {
+                if (-not $PSBoundParameters.ContainsKey($name)) { throw "配置物料反馈必须显式指定 $name。" }
+            }
+            $request = @{ command='configureMaterialSensors'; name=$MaterialSensorName; presentInputChannel=$MaterialPresentInput; emptyInputChannel=$MaterialEmptyInput }
+        }
+        'MaterialSensorsStatus' { $request = @{command='readMaterialSensors'; name=$MaterialSensorName} }
+        'SetMaterialSensorState' {
+            if (-not $PSBoundParameters.ContainsKey('MaterialSensorState')) { throw '必须显式指定 MaterialSensorState。' }
+            $request = @{command='setMaterialSensorState'; name=$MaterialSensorName; state=$MaterialSensorState}
+        }
         'SetCommandFault' { $request = @{ command = 'setCommandFault'; targetCommand = $TargetCommand; targetIndex = $TargetIndex; mode = $FaultMode; delayMs = $FaultDelayMs } }
+        'ConfigureRotaryClearancePlant' { $request = @{ command = 'configureRotaryClearancePlant' } }
+        'RotaryClearancePlantStatus' { $request = @{ command = 'readRotaryClearancePlant' } }
         'CommandFaultStatus' { $request = @{ command = 'readCommandFault'; targetCommand = $TargetCommand; targetIndex = $TargetIndex } }
         'ClearCommandFault' { $request = @{ command = 'clearCommandFault'; targetCommand = $TargetCommand; targetIndex = $TargetIndex } }
     }
@@ -186,6 +207,9 @@ try {
         elseif ($Action -eq 'ScannerStatus') {
             if ($response.configured) { $response.scannerState | Format-List }
             else { Write-Host '扫码器规则未配置。' }
+        }
+        elseif ($Action -eq 'MaterialSensorsStatus') {
+            $response.materialState | Format-List
         }
         elseif ($Action -eq 'AxisSensorsStatus') {
             $response.axisSensors | Format-List

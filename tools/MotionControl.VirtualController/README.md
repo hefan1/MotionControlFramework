@@ -6,6 +6,10 @@
 
 需要只验证运动、工位和 IO 时，在生成命令后增加 `-MotionOnly`；此选项安装独立的 `RotaryMotionValidation` 样例，不增加扫码映射、扫码模型或逐件记录步骤。C# 入口显式选择 `RotaryMotionValidation`，任务列表使用独立任务和变量；旧版扫码样例和任何已保存的数据不受影响。生成脚本仍要求先安全关闭现有 Host，不接管当前设备会话。
 
+纯运动配置为 A/B、缓存和下料位分别提供有料/无料双输入，并配置独立下料夹具的夹紧及松开反馈。物料反馈启动时为未知：场景可通过 `ControllerCommand.ps1 -Action SetMaterialSensorState -MaterialSensorName 'A夹位' -MaterialSensorState present` 明确注入有料，或指定 `empty`、`unknown`、`conflict`；`MaterialSensorsStatus` 可读取两路值。该模型不会根据夹具输出自动生成物料状态，测试场景必须显式驱动物料反馈，不能把它当作机械运动或自动清料已验证。
+
+软件控制器另提供仅供该十三轴示例使用的交接状态模型，**默认关闭，也不接入已有生产流程**。只在隔离测试控制器已配置全部指定物料、夹具、轴和反馈模型后，显式执行 `ControllerCommand.ps1 -Port <测试端口> -Action ConfigureRotaryClearancePlant`，用 `RotaryClearancePlantStatus` 查看阶段和锁存故障。模型在轴已回零并停稳、位置和独立夹持反馈满足时模拟共同夹持、下料、缓存与剔除；物料未知时等待，交接中外部更改占料或相关读取故障时锁存并停止迁移。它是受控测试模型，不代表设备安全联锁已经接入，也不代表正式上位机已能自动清料。
+
 ```powershell
 & '.\tools\MotionControl.VirtualController\NewRotaryTestConfiguration.ps1' -DestinationRoot '.\tmp\rotary-task-test' -ExecutionOwner TaskEngine -Port 19580
 & '.\tools\MotionControl.VirtualController\NewRotaryTestConfiguration.ps1' -DestinationRoot '.\tmp\rotary-code-test' -ExecutionOwner StationFlows -Port 19581

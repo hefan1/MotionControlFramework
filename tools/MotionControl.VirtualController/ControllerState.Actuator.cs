@@ -60,6 +60,7 @@ namespace MotionControl.VirtualController
             if (ScannerUsesOutput(output)) throw new InvalidOperationException("输出已被扫码器规则使用。");
             if (AxisSensorUsesInput(clamped) || AxisSensorUsesInput(released)
                 || ActuatorUsesInput(clamped) || ActuatorUsesInput(released) || CameraUsesInput(clamped) || CameraUsesInput(released) || ScannerUsesInput(clamped) || ScannerUsesInput(released)
+                || MaterialSensorUsesInput(clamped) || MaterialSensorUsesInput(released)
                 || _feedback.ContainsKey(clamped) || _feedback.ContainsKey(released)
                 || (_feeder.Enabled && (_feeder.Input == clamped || _feeder.Input == released)))
                 throw new InvalidOperationException("夹具到位输入已被其他设备规则占用。");

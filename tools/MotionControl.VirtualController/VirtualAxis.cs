@@ -156,6 +156,8 @@ namespace MotionControl.VirtualController
             if (_velocity != 0)
             {
                 double next = _position + _velocity * (now - _lastSeconds);
+                // 有限定位不能越过已接受的目标；先截断再检查传感器，避免慢轮询凭空触发目标之外的限位。
+                if (_positioning && (_velocity > 0 ? next > _target : next < _target)) next = _target;
                 if (_sensorRule != null && HandleSensorMotion(next)) { _lastSeconds = now; return; }
                 bool arrived = _positioning && (_velocity > 0 ? next >= _target : next <= _target);
                 if (arrived)

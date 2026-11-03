@@ -80,7 +80,7 @@ namespace MotionControl.VirtualController
             foreach (int input in new[] { acknowledge, complete, ok, ng })
             {
                 if (input < 0) continue;
-                if (_feedback.ContainsKey(input) || ActuatorUsesInput(input) || AxisSensorUsesInput(input) || ScannerUsesInput(input) || (_feeder.Enabled && _feeder.Input == input))
+                if (_feedback.ContainsKey(input) || ActuatorUsesInput(input) || AxisSensorUsesInput(input) || ScannerUsesInput(input) || MaterialSensorUsesInput(input) || (_feeder.Enabled && _feeder.Input == input))
                     throw new InvalidOperationException("相机输入已被其他设备规则占用。");
                 if (_inputs[input]) throw new InvalidOperationException("安装相机规则前，相机输入须均为低电平。");
             }

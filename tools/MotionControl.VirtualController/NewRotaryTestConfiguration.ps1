@@ -96,9 +96,26 @@ if ($MotionOnly) {
     $inputMap.Remove('扫码成功')
     $inputMap.Remove('扫码完成')
     $outputMap.Remove('扫码触发')
+    # 物料状态采用互相独立的有料/空料反馈；没有对应输出，不占用同号 DO。
+    $inputMap['A夹位有料'] = 69
+    $inputMap['A夹位无料'] = 70
+    $inputMap['B夹位有料'] = 71
+    $inputMap['B夹位无料'] = 72
+    $inputMap['缓存位有料'] = 73
+    $inputMap['缓存位无料'] = 74
+    $inputMap['下料夹紧到位'] = 51
+    $inputMap['下料松开到位'] = 75
+    $inputMap['下料位有料'] = 76
+    $inputMap['下料位无料'] = 77
+    $outputMap['下料夹紧'] = 51
 }
 foreach ($name in $inputMap.Keys) { Set-RotaryIo $inputs $name $inputMap[$name] $card }
 foreach ($name in $outputMap.Keys) { Set-RotaryIo $outputs $name $outputMap[$name] $card }
+if ($MotionOnly) {
+    # 独立物料与松开反馈没有相应输出，若源配置已有同号 DO 则保守报错，不覆盖用户映射。
+    $unrelated = @($outputs | Where-Object { $_.controllerId -eq $card -and [int]$_.channel -ge 69 -and [int]$_.channel -le 77 })
+    if ($unrelated.Count -gt 0) { throw "清料反馈对应同号 DO 已有配置，请核对隔离测试映射：$($unrelated[0].name)。" }
+}
 if (-not $MotionOnly) {
     for ($bit=0; $bit -lt 16; $bit++) { Set-RotaryIo $inputs ('扫码数据{0:D2}' -f $bit) (200 + $bit) $card }
 }

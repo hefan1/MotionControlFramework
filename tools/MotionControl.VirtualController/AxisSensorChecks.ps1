@@ -139,6 +139,22 @@ try {
     $interrupted = (Send-Ok @{command='readAxis'; axis=3}).axisState
     if ($interrupted.moving -or $interrupted.homed) { throw '中断回零不应判定为完成。' }
 
+    # 定位周期可能跨越目标：目标在限位内时不能因过冲计算伪报限位；目标越限仍须报警。
+    Send-Ok @{command='configureAxisSensors'; axis=5; originInputChannel=140; negativeInputChannel=141; positiveInputChannel=142; originPosition=0; originHalfWidth=0.1; negativeLimit=-100; positiveLimit=100} | Out-Null
+    Send-Ok @{command='servo'; axis=5; value=$true} | Out-Null
+    Send-Ok @{command='home'; axis=5} | Out-Null
+    $null = Wait-Stop 5
+    foreach ($target in @(90,-90)) {
+        Send-Ok @{command='move'; axis=5; position=$target; speed=10000} | Out-Null
+        Start-Sleep -Milliseconds 100
+        $positioned = Wait-Stop 5
+        if ($positioned.alarmActive -or [Math]::Abs($positioned.position - $target) -gt 0.001) { throw "高速定位 $target 时误报限位或未到目标。" }
+    }
+    Send-Ok @{command='move'; axis=5; position=110; speed=10000} | Out-Null
+    Start-Sleep -Milliseconds 100
+    $beyond = Wait-Stop 5
+    if (-not $beyond.alarmActive -or -not $beyond.positiveLimitActive) { throw '目标越过正限位时没有报警。' }
+
     # 调试命令必须要求显式轴号和传感器参数，不能悄悄使用默认轴。
     $command = Join-Path $PSScriptRoot 'ControllerCommand.ps1'
     $ErrorActionPreference = 'Continue'

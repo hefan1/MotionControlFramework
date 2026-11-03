@@ -57,6 +57,7 @@ namespace MotionControl.VirtualController
                 RefreshAxisSensors();
                 ExpireLeaseIfNeeded();
                 RefreshFeederSafetyGate();
+                RefreshRotaryClearancePlant();
                 if (RequiresLease(command)) RequireLease(request);
                 fault = TakeCommandFault(command, request);
                 if (fault != null && fault.Mode == "reject")
@@ -64,6 +65,7 @@ namespace MotionControl.VirtualController
                 result = fault != null && fault.Mode == "delayBefore" ? null : ExecuteLocked(command, request);
                 RefreshAxisSensors();
                 RefreshFeederSafetyGate();
+                RefreshRotaryClearancePlant();
             }
             // 故障仅影响该次应答，绝不持有状态锁等待，否则心跳和独立停轴也会被人为卡死。
             if (fault != null && fault.Mode == "delayBefore")
@@ -74,10 +76,12 @@ namespace MotionControl.VirtualController
                     RefreshAxisSensors();
                     ExpireLeaseIfNeeded();
                     RefreshFeederSafetyGate();
+                    RefreshRotaryClearancePlant();
                     if (RequiresLease(command)) RequireLease(request);
                     result = ExecuteLocked(command, request);
                     RefreshAxisSensors();
                     RefreshFeederSafetyGate();
+                    RefreshRotaryClearancePlant();
                 }
             }
             if (fault != null && fault.Mode == "delayReply") Thread.Sleep(fault.DelayMilliseconds);
@@ -111,6 +115,9 @@ namespace MotionControl.VirtualController
                         int inputChannel = IoIndex(request, "channel");
                         if (AxisSensorUsesInput(inputChannel)) throw new InvalidOperationException("该输入已由轴传感器模型控制，不能手动改写。");
                         if (ScannerUsesInput(inputChannel)) throw new InvalidOperationException("该输入已由扫码器模型控制，不能手动改写。");
+                        if (MaterialSensorUsesInput(inputChannel)) throw new InvalidOperationException("该输入已由物料传感器模型控制，请通过物料状态设置。");
+                        if (_rotaryClearancePlant != null && (ActuatorUsesInput(inputChannel) || _feedback.ContainsKey(inputChannel)))
+                            throw new InvalidOperationException("交接模型已启用，不能直接改写夹具或完成反馈。");
                         if (_feeder.Enabled && _feeder.SafeAxis >= 0 && _feeder.Input == inputChannel)
                             throw new InvalidOperationException("该输入已由带安全位门禁的供料规则控制，不能手动改写。");
                         _inputs[inputChannel] = RequireBool(request, "value");
@@ -123,14 +130,14 @@ namespace MotionControl.VirtualController
                     case "stop": Axis(request).Stop(); return Ok();
                     case "resetAlarm": Axis(request).ResetAlarm(); return Ok();
                     case "setAxisAlarm": Axis(request).SetAlarm(RequireBool(request, "value")); return Ok();
-                    case "configureAxisSensors": ConfigureAxisSensors(request); return Ok();
+                    case "configureAxisSensors": EnsureClearanceModelsMutable(); ConfigureAxisSensors(request); return Ok();
                     case "readAxisSensors": return ReadAxisSensors(request);
                     case "setAxisSensorFault": SetAxisSensorFault(request); return Ok();
-                    case "removeAxisSensors": RemoveAxisSensors(request); return Ok();
-                    case "configureFeedback": ConfigureFeedback(request); return Ok();
+                    case "removeAxisSensors": EnsureClearanceModelsMutable(); RemoveAxisSensors(request); return Ok();
+                    case "configureFeedback": EnsureClearanceModelsMutable(); ConfigureFeedback(request); return Ok();
                     case "setFeedbackFault": SetFeedbackFault(request); return Ok();
                     case "readFeedback": return ReadFeedback(request);
-                    case "removeFeedback": RemoveFeedback(request); return Ok();
+                    case "removeFeedback": EnsureClearanceModelsMutable(); RemoveFeedback(request); return Ok();
                     case "configureFeeder": ConfigureFeeder(request); return Ok();
                     case "setFeederFault": SetFeederFault(request); return Ok();
                     case "readFeeder": return ReadFeeder();
@@ -142,15 +149,20 @@ namespace MotionControl.VirtualController
                     case "resolveCameraResult": ResolveCameraResult(request); return Ok();
                     case "resetCamera": ResetCamera(); return Ok();
                     case "removeCamera": RemoveCamera(); return Ok();
-                    case "configureActuator": ConfigureActuator(request); return Ok();
+                    case "configureActuator": EnsureClearanceModelsMutable(); ConfigureActuator(request); return Ok();
                     case "readActuator": return ReadActuator(request);
                     case "setActuatorFault": SetActuatorFault(request); return Ok();
                     case "setActuatorConflict": SetActuatorConflict(request); return Ok();
-                    case "removeActuator": RemoveActuator(request); return Ok();
+                    case "removeActuator": EnsureClearanceModelsMutable(); RemoveActuator(request); return Ok();
                     case "configureScanner": ConfigureScanner(request); return Ok();
                     case "readScanner": return ReadScanner();
                     case "setScannerFault": SetScannerFault(request); return Ok();
                     case "removeScanner": RemoveScanner(); return Ok();
+                    case "configureMaterialSensors": EnsureClearanceModelsMutable(); ConfigureMaterialSensors(request); return Ok();
+                    case "setMaterialSensorState": SetMaterialSensorState(request); return Ok();
+                    case "readMaterialSensors": return ReadMaterialSensors(request);
+                    case "configureRotaryClearancePlant": ConfigureRotaryClearancePlant(); return Ok();
+                    case "readRotaryClearancePlant": return ReadRotaryClearancePlant();
                     case "setCommandFault": SetCommandFault(request); return Ok();
                     case "clearCommandFault": ClearCommandFault(request); return Ok();
                     case "readCommandFault": return ReadCommandFault(request);
@@ -371,7 +383,7 @@ namespace MotionControl.VirtualController
             int input = IoIndex(request, "inputChannel");
             if (CameraUsesInput(input))
                 throw new InvalidOperationException("该输入已由相机规则使用，不能同时配置输出反馈。");
-            if (AxisSensorUsesInput(input) || ActuatorUsesInput(input) || ScannerUsesInput(input))
+            if (AxisSensorUsesInput(input) || ActuatorUsesInput(input) || ScannerUsesInput(input) || MaterialSensorUsesInput(input))
                 throw new InvalidOperationException("该输入已由夹具规则使用，不能同时配置输出反馈。");
             if (_feeder.Enabled && _feeder.Input == input)
                 throw new InvalidOperationException("该输入已由上料规则使用，不能同时配置输出反馈。");
@@ -462,7 +474,7 @@ namespace MotionControl.VirtualController
             int input = IoIndex(request, "inputChannel");
             if (CameraUsesInput(input))
                 throw new InvalidOperationException("该输入已由相机规则使用，不能同时配置上料规则。");
-            if (AxisSensorUsesInput(input) || ActuatorUsesInput(input) || ScannerUsesInput(input))
+            if (AxisSensorUsesInput(input) || ActuatorUsesInput(input) || ScannerUsesInput(input) || MaterialSensorUsesInput(input))
                 throw new InvalidOperationException("该输入已由夹具规则使用，不能同时配置上料规则。");
             if (_feedback.ContainsKey(input))
                 throw new InvalidOperationException("该输入已由输出反馈规则使用，不能同时配置上料规则。");
