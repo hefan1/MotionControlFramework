@@ -55,6 +55,7 @@ namespace MotionControl.MachineDevice.Checks
             Run("设备互锁有条件时拒绝执行", InterlockRejectsConfiguredConditions, ref failures);
             Run("进入与退出互锁在任务接管前拒绝", InterlocksRejectedBeforeTaskControl, ref failures);
             Run("隔离资源阻止关闭会话且恢复后可重试", BlockedResourcesPreventClose, ref failures);
+            Run("退出交接保留隔离、保持输出并禁止新动作", ShutdownHandoffChecks, ref failures);
             Run("资源记录持久化、异常重启与写失败拦截", ResourceJournalChecks, ref failures);
             Run("安全关闭后清理资源记录，失败保留控制权", ResourceJournalCloseChecks, ref failures);
             Run("输出写入或回读失败隔离资源", FailedOutputIsIsolated, ref failures);
@@ -68,7 +69,7 @@ namespace MotionControl.MachineDevice.Checks
             Run("设备凭证跨设备及迟到调用保护", DeviceMoveTokenOwnership, ref failures);
             Run("命令前拒绝与命令后异常严格区分", PreflightDoesNotMaskStartedMotion, ref failures);
 
-            Console.WriteLine("真机任务设备检查：共 35 组，失败 " + failures + "。未连接控制器。");
+            Console.WriteLine("真机任务设备检查：共 36 组，失败 " + failures + "。未连接控制器。");
             return failures == 0 ? 0 : 1;
         }
 
@@ -609,7 +610,8 @@ namespace MotionControl.MachineDevice.Checks
             out DeviceVariableStore variables,
             out MachineRuntime runtime,
             bool withStationFlow = false, TaskResourceJournal journal = null, FakeSafetyStatus safety = null,
-            TimeSpan? pauseTimeout = null, IEnumerable<string> namedResources = null)
+            TimeSpan? pauseTimeout = null, IEnumerable<string> namedResources = null, bool outputPreserved = false,
+            Exception disconnectError = null)
         {
             TaskResourceCatalog catalog = new TaskResourceCatalog(
                 new[] { new TaskAxisInfo("X", "CardA", "mm", -100, 100) },
@@ -634,7 +636,7 @@ namespace MotionControl.MachineDevice.Checks
                 new DeviceVariableDefinition { Name = "Unknown", DataType = "Boolean", InitialValue = null, AllowOperatorWrite = false }
             });
 
-            var card = new FakeMotionCard("CardA", axis);
+            var card = new FakeMotionCard("CardA", axis) { PreservesDigitalOutputsOnDisconnect = outputPreserved, DisconnectError = disconnectError };
             var group = new MotionCardGroup(new IMotionCard[] { card });
             var flows = withStationFlow
                 ? new IStationFlow[] { new WaitingStationFlow() }
@@ -880,6 +882,10 @@ namespace MotionControl.MachineDevice.Checks
             internal int OutputWrites;
             /// <summary>记录输出读取次数，用于等待动作后回读阶段。</summary>
             internal int OutputReads;
+            /// <summary>可选的延迟写入任务，用于检查退出等待驱动真实收尾。</summary>
+            internal TaskCompletionSource<bool> PendingOutputWrite;
+            /// <summary>可选的延迟读取任务，用于模拟驱动查询超时后迟到返回。</summary>
+            internal TaskCompletionSource<bool> PendingOutputRead;
             /// <summary>读取 DI 时抛出的异常；为空表示正常返回假值。</summary>
             internal Exception ReadError { get; set; }
 
@@ -913,6 +919,7 @@ namespace MotionControl.MachineDevice.Checks
             {
                 Interlocked.Increment(ref OutputReads);
                 if (OutputReadError != null) throw OutputReadError;
+                if (PendingOutputRead != null) return PendingOutputRead.Task;
                 bool value = OutputValue;
                 if (FlipOutputAfterRead) OutputValue = !OutputValue;
                 return Task.FromResult(value);
@@ -924,12 +931,12 @@ namespace MotionControl.MachineDevice.Checks
                 Interlocked.Increment(ref OutputWrites);
                 OutputValue = value;
                 if (WriteError != null) throw WriteError;
-                return Task.CompletedTask;
+                return PendingOutputWrite == null ? Task.CompletedTask : PendingOutputWrite.Task;
             }
         }
 
         /// <summary>只有一个逻辑轴的测试控制卡。</summary>
-        private sealed class FakeMotionCard : IMotionCard
+        private sealed class FakeMotionCard : IMotionCard, IOutputStatePreservingDisconnect
         {
             /// <summary>建立只包含一根轴的控制卡。</summary>
             internal FakeMotionCard(string controllerId, IAxis axis)
@@ -940,6 +947,12 @@ namespace MotionControl.MachineDevice.Checks
 
             /// <summary>控制卡标识。</summary>
             public string ControllerId { get; }
+
+            /// <summary>是否声明断连后保持输出，默认未知。</summary>
+            public bool PreservesDigitalOutputsOnDisconnect { get; internal set; }
+
+            /// <summary>可注入断卡失败，验证退出封存及证据继续保留。</summary>
+            internal Exception DisconnectError { get; set; }
 
             /// <summary>当前连接状态；检查不建立真实连接。</summary>
             public bool IsConnected
@@ -959,6 +972,7 @@ namespace MotionControl.MachineDevice.Checks
             /// <summary>检查不需要真实断开。</summary>
             public Task DisconnectAsync(CancellationToken cancellationToken)
             {
+                if (DisconnectError != null) throw DisconnectError;
                 return Task.CompletedTask;
             }
         }

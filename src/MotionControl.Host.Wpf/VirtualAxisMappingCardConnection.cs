@@ -73,6 +73,13 @@ namespace MotionControl.Host.Wpf
         /// <summary>加载现有轴和 IO 映射后连接独立控制器；失败时不保存或修改设备映射。</summary>
         public async Task ConnectAsync(MotionCardSettingsDocument settings, CancellationToken cancellationToken)
         {
+            using (await HostProjectOperationGate.EnterConnectAsync(_store, _machineId, cancellationToken).ConfigureAwait(false))
+                await ConnectCoreAsync(settings, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>在工程操作门内读取配置并建立控制器会话。</summary>
+        private async Task ConnectCoreAsync(MotionCardSettingsDocument settings, CancellationToken cancellationToken)
+        {
             if (settings == null) throw new ArgumentNullException(nameof(settings));
             if (IsConnected) return;
             if (_card != null)

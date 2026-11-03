@@ -64,6 +64,7 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>任务执行器实际接受生产启动后确认会话已进入生产；仅打开运行保护不算生产开始。</summary>
         public void ConfirmTaskEngineProductionStarted()
         {
+            if (IsShutdownInProgress) throw new InvalidOperationException("设备正在安全退出，不能确认新的生产启动。");
             if (ControlOwner != MachineControlOwner.TaskEngine || IsPreparing)
                 throw new InvalidOperationException("当前没有可确认的任务生产启动。");
             MachineRunState state = State;

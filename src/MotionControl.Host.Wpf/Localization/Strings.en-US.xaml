@@ -696,6 +696,8 @@
     <sys:String x:Key="任务关联定位成功">Item located</sys:String>
     <sys:String x:Key="任务关联定位未找到">Item is not present on this page</sys:String>
     <sys:String x:Key="任务配置">Task configuration</sys:String>
+    <sys:String x:Key="设备工程">Equipment project</sys:String>
+    <sys:String x:Key="设备工程页面说明">Import, export or inspect backups of this equipment project. Review settings before applying.</sys:String>
     <sys:String x:Key="任务配置页面说明">Edit station assignment, task library and step drafts. Saving or applying configuration does not start the equipment.</sys:String>
     <sys:String x:Key="报警库">Alarm catalog</sys:String>
     <sys:String x:Key="报警库页面说明">Maintain alarm codes, stop behavior and operator guidance. Runtime and task alarms use this catalog.</sys:String>

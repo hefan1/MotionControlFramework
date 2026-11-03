@@ -332,7 +332,10 @@ namespace MotionControl.Framework.Runtime.Machine
 
         /// <summary>恢复数据不可信时禁止开始自动动作。</summary>
         private void EnsureRecoveryTrusted()
-        { if (RecoveryBlockReason != null) throw new InvalidOperationException("设备恢复信息未确认，不能准备或启动：" + RecoveryBlockReason); }
+        {
+            if (IsShutdownInProgress) throw new InvalidOperationException("设备正在安全退出，不能准备或启动。");
+            if (RecoveryBlockReason != null) throw new InvalidOperationException("设备恢复信息未确认，不能准备或启动：" + RecoveryBlockReason);
+        }
 
         /// <summary>读取自动启动拦截原因，供操作页在启动前显示具体就绪条件。</summary>
         public async Task<string> GetAutomaticStartBlockReasonAsync(CancellationToken cancellationToken)
@@ -398,6 +401,7 @@ namespace MotionControl.Framework.Runtime.Machine
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                if (IsShutdownInProgress) throw new InvalidOperationException("设备正在安全退出，不能重新连接。");
                 EnsureState(MachineRunState.Disconnected, "只有断开状态的设备可以连接运动控制卡。");
                 try
                 {
@@ -428,6 +432,7 @@ namespace MotionControl.Framework.Runtime.Machine
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                EnsureShutdownOutputReadsSettled();
                 EnsureNoPreparationInProgress("断开控制卡");
                 if (State == MachineRunState.Running || State == MachineRunState.Pausing || _flowScheduler.IsRunning)
                 {
@@ -436,7 +441,7 @@ namespace MotionControl.Framework.Runtime.Machine
 
                 lock (_controlOwnerLock)
                 {
-                    if (_taskEngineOwner != null)
+                    if (_taskEngineOwner != null && !_shutdownSealed)
                         throw new InvalidOperationException("任务执行会话仍占用设备；请先在任务运行页停止并关闭会话，再断开控制卡。");
                 }
 
@@ -483,6 +488,7 @@ namespace MotionControl.Framework.Runtime.Machine
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                if (IsShutdownInProgress) throw new InvalidOperationException("设备正在安全退出，不能复位或重新运行。");
                 EnsureNoPreparationInProgress("报警复位");
                 EnsureOneOfStates(
                     new[] { MachineRunState.ResetRequired, MachineRunState.Paused, MachineRunState.Alarmed },
@@ -606,6 +612,7 @@ namespace MotionControl.Framework.Runtime.Machine
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                if (IsShutdownInProgress) throw new InvalidOperationException("设备正在安全退出，不能接管或重新运行。");
                 EnsureNoPreparationInProgress("切换任务执行入口");
                 EnsureNoManualOperationsInProgress("切换任务执行入口");
                 lock (_controlOwnerLock)
@@ -658,6 +665,7 @@ namespace MotionControl.Framework.Runtime.Machine
             if (!_commandLock.Wait(0)) throw new InvalidOperationException("设备命令仍在执行，不能关闭任务会话。");
             try
             {
+                if (_shutdownSealed) throw new InvalidOperationException("设备已封存退出交接，不能提前释放任务控制权。");
                 EnsureNoPreparationInProgress("关闭任务会话");
                 lock (_controlOwnerLock)
                 {

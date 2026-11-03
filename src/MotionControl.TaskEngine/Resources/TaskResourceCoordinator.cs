@@ -20,6 +20,8 @@ namespace MotionControl.TaskEngine.Resources
         private readonly TaskResourceJournal _journal;
         /// <summary>受控清料期间保留原隔离及额外声明的资源；未结算时不得退还。</summary>
         private TaskClearanceLease _clearance;
+        /// <summary>交接退出期间冻结资源队列，防止复核与控制权封存之间发生变更。</summary>
+        private bool _shutdownFrozen;
 
         /// <summary>复制设备目录，不使用静态共享队列。</summary>
         public TaskResourceCoordinator(IEnumerable<string> names, TaskResourceJournal journal = null)
@@ -40,7 +42,7 @@ namespace MotionControl.TaskEngine.Resources
                 group.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList(), exitInterlock, exitCondition);
             lock (_sync)
             {
-                if (_clearance != null) throw new InvalidOperationException("受控清料占用设备，不能登记普通资源申请。");
+                if (_clearance != null || _shutdownFrozen) throw new InvalidOperationException("受控清料或退出交接占用设备，不能登记普通资源申请。");
                 _requests.Add(request);
             }
             return request;
@@ -61,6 +63,7 @@ namespace MotionControl.TaskEngine.Resources
                 throw new InvalidOperationException("清料资源必须已登记且不得重复。");
             lock (_sync)
             {
+                if (_shutdownFrozen) throw new InvalidOperationException("资源正在交接退出，不能开始清料。");
                 if (_clearance != null) throw new InvalidOperationException("已有受控清料占用设备。");
                 if (_requests.Any(request => request.State != TaskResourceState.Blocked))
                     throw new InvalidOperationException("仍有资源运行、等待或收尾，不能开始清料。");
@@ -206,6 +209,7 @@ namespace MotionControl.TaskEngine.Resources
         {
             lock (_sync)
             {
+                if (_shutdownFrozen) throw new InvalidOperationException("资源正在交接退出，不能申请资源。");
                 RequirePresent(request);
                 if (request.State != TaskResourceState.Waiting) throw new InvalidOperationException("申请不处于等待状态。");
                 TaskResourceRequest blocker = FindBlocker(request);
@@ -279,6 +283,31 @@ namespace MotionControl.TaskEngine.Resources
             try { await Task.WhenAll(pending.Select(item => item.JournalWrite)).ConfigureAwait(false); }
             catch { /* 写入失败由隔离状态和后续检查处理。 */ }
             foreach (var item in pending) FinishJournalWrite(item, item.JournalWrite);
+        }
+
+        /// <summary>冻结全部待确认资源并逐项复读持久记录；交接失败时恢复人工核查能力。</summary>
+        internal async Task FreezeBlockedForShutdownAsync()
+        {
+            await SettleJournalWritesAsync().ConfigureAwait(false);
+            TaskResourceRequest[] blocked;
+            lock (_sync)
+            {
+                if (_shutdownFrozen || _clearance != null) throw new InvalidOperationException("资源已被清料或退出交接占用。");
+                if (_journal == null) throw new InvalidOperationException("任务设备未配置持久资源记录，不能保留隔离后退出。");
+                if (_requests.Count == 0 || _requests.Any(item => item.State != TaskResourceState.Blocked
+                    || item.JournalWrite == null || item.JournalWrite.Status != TaskStatus.RanToCompletion))
+                    throw new InvalidOperationException("存在未结算、未隔离或未持久保存的任务资源，不能交接退出。");
+                blocked = _requests.ToArray();
+                _shutdownFrozen = true;
+            }
+            try { await Task.Run(() => _journal.VerifyRetained(blocked)).ConfigureAwait(false); }
+            catch { CancelShutdownFreeze(); throw; }
+        }
+
+        /// <summary>交接失败后恢复原有资源隔离；不会删除记录或放行资源。</summary>
+        internal void CancelShutdownFreeze()
+        {
+            lock (_sync) _shutdownFrozen = false;
         }
 
         /// <summary>写入未完成，或已失败但尚未完成隔离时，不能允许复位越过结算窗口。</summary>
@@ -362,7 +391,7 @@ namespace MotionControl.TaskEngine.Resources
         /// <summary>设备完成退出条件复核后移除同一条记录，旧凭证不能释放新申请。</summary>
         internal bool Recover(TaskResourceRequest request)
         {
-            lock (_sync) return _clearance == null && request.State == TaskResourceState.Blocked
+            lock (_sync) return !_shutdownFrozen && _clearance == null && request.State == TaskResourceState.Blocked
                 && (request.JournalWrite == null || request.JournalWrite.Status == TaskStatus.RanToCompletion)
                 && _requests.Remove(request);
         }

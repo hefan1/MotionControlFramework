@@ -51,6 +51,8 @@ namespace MotionControl.TaskEngine.Machine
         private Task _abortTask;
         /// <summary>关闭和归还所有权的唯一任务。</summary>
         private Task _closeTask;
+        /// <summary>保留已隔离资源的退出交接任务；防止和普通关闭并发。</summary>
+        private Task _shutdownCloseTask;
         /// <summary>已冻结任务但尚未完成停轴、异常分类或资源落盘的暂停与报警处理数量。</summary>
         private int _activePauseSettlements;
         /// <summary>有收尾在途时等待全部收尾退出；为空表示当前没有待等待的批次。</summary>

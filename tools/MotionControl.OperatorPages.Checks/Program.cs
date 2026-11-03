@@ -49,6 +49,9 @@ namespace MotionControl.OperatorPages.Checks
             Check("IO 关联反馈显示与独立读取", IoFeedbackMonitorChecks.Run, ref failures);
             Check("控制器后端选择与设备映射保护", HostBackendSelectionChecks.Run, ref failures);
             Check("Host导航和返回原页面", HostNavigation, ref failures);
+            Check("设备工程页面和应用后重启保护", EquipmentProjectPageChecks.Run, ref failures);
+            Check("工程导入等待映射回滚续体", ProjectGateContinuationChecks.Run, ref failures);
+            Check("工程应用后退出保留原恢复记录", ShutdownEvidenceChecks.Run, ref failures);
             Check("暂停和停止的现场恢复提示", MachineCommandGuidance, ref failures);
             Check("恢复拦截只读诊断和设备目录", RecoveryEvidenceGuidance, ref failures);
             Check("设备准备页轴使能提示和只读导航", PreparationAxisGuidance, ref failures);
@@ -56,7 +59,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("产品记录只读显示两种来源及错误", ProductRecordChecks.Run, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：22 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：25 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }

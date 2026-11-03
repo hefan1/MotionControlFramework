@@ -90,7 +90,12 @@ namespace MotionControl.VirtualAdapter.Checks
             if (stopped.Moving) throw new Exception("取消后轴仍在运动");
             if (stopped.Position <= 1 || stopped.Position >= 9) throw new Exception("停止位置不在运动路径内");
             card.WriteDigitalOutputChannelAsync(0, false, token).GetAwaiter().GetResult();
+            var outputGuarantee = card as IOutputStatePreservingDisconnect;
+            if (outputGuarantee == null || !outputGuarantee.PreservesDigitalOutputsOnDisconnect)
+                throw new Exception("软件控制器未声明断连后保持输出");
             card.DisconnectAsync(token).GetAwaiter().GetResult();
+            string retainedOutput = SendRaw(port, "{\"command\":\"readOutput\",\"channel\":0}");
+            if (!retainedOutput.Contains("\"value\":false")) throw new Exception("释放会话后输出电平发生变化");
             AssertLeaseStopsAfterExit(port);
             AssertLeaseStopsAfterLostReply(port);
             var unreachable = new VirtualMotionCard("Offline", new[] { definition }, new[] { input }, new[] { output }, 18522, DiagnosticsRoot);

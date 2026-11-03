@@ -34,17 +34,8 @@ namespace MotionControl.TaskEngine.Resources
         /// <summary>先写入并刷新完整记录，返回后调用方才能授予资源。</summary>
         internal void Save(TaskResourceRequest request)
         {
-            var record = new JObject {
-                ["Version"] = 1, ["MachineId"] = _machineId,
-                ["TaskId"] = request.TaskId, ["TaskName"] = request.TaskName,
-                ["NodeId"] = request.NodeId, ["NodeName"] = request.NodeName,
-                ["Resources"] = JArray.FromObject(request.Names),
-                ["ExitInterlock"] = request.ExitInterlock == null ? JValue.CreateNull() : JToken.FromObject(request.ExitInterlock),
-                ["ExitCondition"] = request.ExitCondition == null ? JValue.CreateNull() : JToken.FromObject(request.ExitCondition)
-            };
-            byte[] bytes = Encoding.UTF8.GetBytes(record.ToString(Formatting.None));
-            string key;
-            using (var hash = SHA256.Create()) key = BitConverter.ToString(hash.ComputeHash(bytes)).Replace("-", "");
+            byte[] bytes = CreateRecordBytes(request);
+            string key = RecordKey(bytes);
             lock (_sync)
             {
                 Directory.CreateDirectory(_session);
@@ -61,6 +52,41 @@ namespace MotionControl.TaskEngine.Resources
                 {
                     // 只有已有文件与本次完整内容一致才能复用，半写文件一律报错。
                     if (!File.Exists(path) || !File.ReadAllBytes(path).SequenceEqual(bytes)) throw;
+                }
+            }
+        }
+
+        /// <summary>按原始写入格式生成一条资源记录，供退出交接逐项复核。</summary>
+        private byte[] CreateRecordBytes(TaskResourceRequest request)
+        {
+            var record = new JObject {
+                ["Version"] = 1, ["MachineId"] = _machineId,
+                ["TaskId"] = request.TaskId, ["TaskName"] = request.TaskName,
+                ["NodeId"] = request.NodeId, ["NodeName"] = request.NodeName,
+                ["Resources"] = JArray.FromObject(request.Names),
+                ["ExitInterlock"] = request.ExitInterlock == null ? JValue.CreateNull() : JToken.FromObject(request.ExitInterlock),
+                ["ExitCondition"] = request.ExitCondition == null ? JValue.CreateNull() : JToken.FromObject(request.ExitCondition)
+            };
+            return Encoding.UTF8.GetBytes(record.ToString(Formatting.None));
+        }
+
+        /// <summary>按内容生成记录文件名，便于检测缺失或不完整的原始记录。</summary>
+        private static string RecordKey(byte[] bytes)
+        {
+            using (var hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(bytes)).Replace("-", "");
+        }
+
+        /// <summary>退出交接前逐项复读当前会话的完整记录；不删除或修改任何证据。</summary>
+        internal void VerifyRetained(IEnumerable<TaskResourceRequest> requests)
+        {
+            lock (_sync)
+            {
+                foreach (TaskResourceRequest request in requests)
+                {
+                    byte[] expected = CreateRecordBytes(request);
+                    string path = Path.Combine(_session, RecordKey(expected) + ".guard");
+                    if (!File.Exists(path) || !File.ReadAllBytes(path).SequenceEqual(expected))
+                        throw new InvalidDataException("任务待确认资源记录缺失或损坏，不能结束会话：" + string.Join("、", request.Names));
                 }
             }
         }

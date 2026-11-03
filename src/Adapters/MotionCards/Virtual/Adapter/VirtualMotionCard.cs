@@ -16,8 +16,11 @@ using MotionControl.Framework.Contracts.Motion;
 namespace MotionControl.Adapter.MotionCard.Virtual
 {
     /// <summary>通过本机 TCP 与独立软件控制器通讯的运动卡适配器。</summary>
-    public sealed class VirtualMotionCard : IMotionCard, ILogicalIo, IPhysicalDigitalIoMonitor, IPhysicalDigitalIoBatchMonitor, IMotionCardIoCapabilityProvider
+    public sealed class VirtualMotionCard : IMotionCard, ILogicalIo, IPhysicalDigitalIoMonitor, IPhysicalDigitalIoBatchMonitor, IMotionCardIoCapabilityProvider, IOutputStatePreservingDisconnect
     {
+        /// <summary>软件控制器释放租约和租约过期时均保留数字输出；不代表实体运动卡行为。</summary>
+        public bool PreservesDigitalOutputsOnDisconnect { get { return true; } }
+
         /// <summary>控制器本机监听端口。</summary>
         private readonly int _port;
         /// <summary>设备中已配置的轴实例。</summary>

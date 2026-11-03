@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><AssemblyName>MotionControl.MachineProject.Checks</AssemblyName></PropertyGroup>
+  <ItemGroup><ProjectReference Include="..\..\src\MotionControl.TaskEngine\MotionControl.TaskEngine.csproj" /></ItemGroup>
+</Project>

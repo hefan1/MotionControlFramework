@@ -8,6 +8,13 @@ namespace MotionControl.Host.Wpf
     /// <summary>根据单独的工程配置选择运动卡后端，不改动设备的卡与轴映射。</summary>
     internal static class HostMotionCardBackendSelection
     {
+        /// <summary>正运动控制器后端的配置名称。</summary>
+        private const string ZMotionBackend = "ZMotion";
+        /// <summary>独立软件控制器后端的配置名称。</summary>
+        private const string VirtualBackend = "Virtual";
+        /// <summary>当前 Host 支持的控制器后端名称，供工程导入校验使用。</summary>
+        internal static readonly string[] SupportedBackends = { ZMotionBackend, VirtualBackend };
+
         /// <summary>后端选择文件；缺省时始终选择原有正运动连接。</summary>
         internal const string ConfigurationPath = "Parameters/ControllerBackend.json";
 
@@ -26,13 +33,13 @@ namespace MotionControl.Host.Wpf
             if (settings == null || string.IsNullOrWhiteSpace(settings.Backend))
                 throw new InvalidOperationException("运动卡后端配置缺少 backend，不能启动设备连接。");
 
-            if (string.Equals(settings.Backend.Trim(), "ZMotion", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(settings.Backend.Trim(), ZMotionBackend, StringComparison.OrdinalIgnoreCase))
             {
                 Trace.TraceInformation("运动卡后端：ZMotion（工程配置）。");
                 return new ZMotionAxisMappingCardConnection(store, machineId);
             }
 
-            if (string.Equals(settings.Backend.Trim(), "Virtual", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(settings.Backend.Trim(), VirtualBackend, StringComparison.OrdinalIgnoreCase))
             {
                 if (settings.Port < 1 || settings.Port > 65535)
                     throw new InvalidOperationException("运动卡后端端口必须在 1 到 65535 之间。");

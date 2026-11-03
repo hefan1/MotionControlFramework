@@ -36,7 +36,7 @@ namespace MotionControl.Host.Wpf
             { "Statistics", new[] { "产量统计", "节拍统计", "运行统计" } },
             { "Monitor", new[] { "轴监控", "IO监控", "流程状态", "任务接入状态", "设备变量" } },
             { "Manual", new[] { "轴手动", "IO手动", "气缸手动", "通讯调试" } },
-            { "Settings", new[] { "轴映射配置", "IO映射", "安全联锁", "报警库", "通讯设置", "数据采集", "任务配置" } },
+            { "Settings", new[] { "轴映射配置", "IO映射", "安全联锁", "报警库", "通讯设置", "数据采集", "任务配置", "设备工程" } },
             { "Alarms", new[] { "当前报警", "历史报警", "报警统计", "操作日志" } },
             { "Users", new[] { "密码登录", "刷卡登录", "权限管理" } },
             { "Help", new[] { "软件信息", "使用说明" } }
@@ -445,6 +445,7 @@ namespace MotionControl.Host.Wpf
         private void UpdatePageContent()
         {
             if (TryShowOperationPage()) return;
+            if (TryShowEquipmentProjectPage()) return;
             if (_taskConfigurationPage != null && _currentSectionKey == "Settings" && _currentPageResourceKey == "任务配置")
             {
                 ManualDebugContent.Content = _taskConfigurationPage; ManualDebugContent.Visibility = Visibility.Visible;

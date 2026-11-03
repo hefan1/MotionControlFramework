@@ -209,6 +209,9 @@ namespace MotionControl.Host.Wpf.Configuration
             StatusText.Foreground = Brush("#176BD0");
         }
 
+        /// <summary>当前报警库存在尚未保存的编辑时为真。</summary>
+        public bool HasUnsavedChanges { get { return _dirty; } }
+
         /// <summary>关闭 Host 前处理尚未保存的报警目录修改。</summary>
         public bool ConfirmClose()
         {

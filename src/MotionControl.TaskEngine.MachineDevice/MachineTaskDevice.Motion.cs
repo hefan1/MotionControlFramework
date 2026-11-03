@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Motion;
+using MotionControl.Framework.Runtime.Machine;
 using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Device;
 
@@ -60,9 +61,20 @@ namespace MotionControl.TaskEngine.MachineDevice
                 }
 
                 var move = new MachineAxisMove(this, name, status.Position, end, home, axis);
-                // 下发前登记；同步异常或空任务无法证明原动作结束，故继续保留凭证。
-                lock (_sync) _unsettledMoves.Add(move);
-                try { move.StartMotion(profile); }
+                // 在关闭意图门内先登记再发出命令，避免关闭已开始却发出新的轴动作。
+                try
+                {
+                    _runtime.BeginTaskDeviceCommand(() =>
+                    {
+                        lock (_sync) _unsettledMoves.Add(move);
+                        move.StartMotion(profile);
+                        return true;
+                    });
+                }
+                catch (ShutdownCommandRejectedException error)
+                {
+                    throw new TaskMoveRejectedBeforeCommandException(error.Message, error);
+                }
                 catch (Exception error)
                 {
                     // 调用厂商运动入口后无法证明命令未下发，即使内层异常名字表示前置拒绝也不能放行。

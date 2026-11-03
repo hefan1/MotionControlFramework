@@ -28,7 +28,7 @@ using MotionControl.Framework.Runtime.Variables;
 namespace MotionControl.ZMotionSimulatorCheck
 {
     /// <summary>用不连接硬件的替身检查 Runtime 状态、报警和工位步骤行为。</summary>
-    internal static class RuntimeRegressionChecks
+    internal static partial class RuntimeRegressionChecks
     {
         /// <summary>依次运行核心 Runtime 回归检查；任一失败时返回错误信息。</summary>
         public static async Task<IReadOnlyList<string>> RunAsync()
@@ -51,6 +51,8 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("轴组整体占用并在等待取消时归还已申请轴", AxisGroupResourcesReleaseAfterCancellationAsync, failures);
             await RunCheckAsync("多卡断开先检查所有轴，不留下半连接状态", MovingAxisPreventsPartialCardDisconnectAsync, failures);
             await RunCheckAsync("必须复位后启动，暂停后保留当前步骤", ResetAndPauseKeepCurrentStepAsync, failures);
+            await RunCheckAsync("关闭时自动等待工位停止且超时保留保护", ShutdownStopsAndWaitsForStationAsync, failures);
+            await RunCheckAsync("准备取消不阻塞停轴及异常收尾", PreparationCancellationDoesNotBlockStopAsync, failures);
             await RunCheckAsync("在线映射与整机命令互斥", OnlineMappingRespectsMachineCommandsAsync, failures);
             await RunCheckAsync("有效或不可读的输出不能被更换映射", OutputMappingSafetyChecks.RunAsync, failures);
             await RunCheckAsync("停机报警暂停流程并要求复位", StopAlarmPausesMachineUntilResetAsync, failures);
@@ -1290,6 +1292,60 @@ namespace MotionControl.ZMotionSimulatorCheck
             await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
+        /// <summary>关闭时自动停止运行工位；超时后禁止将未结束的收尾当作安全退出。</summary>
+        private static async Task ShutdownStopsAndWaitsForStationAsync()
+        {
+            var normal = new WaitingStationFlow("退出测试工位", "等待信号");
+            var card = new FakeMotionCard("ExitCard", new FakeAxis("X")) { PreservesDigitalOutputsOnDisconnect = true };
+            var outputIo = new FakeLogicalIo();
+            var runtime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { card }), new IStationFlow[] { normal },
+                new MachineAlarmService(), new FakeSafetyStatus(), controlInputIo: outputIo);
+            await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await normal.WaitUntilStartedAsync().ConfigureAwait(false);
+            await runtime.BeginShutdownAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.StopStationFlowsForShutdownAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(runtime.State == MachineRunState.Paused, "关窗没有等待工位进入暂停状态。");
+            Ensure(normal.CurrentStepName == "等待信号", "关窗停止不应清空旧工步。");
+            await ExpectExceptionAsync<InvalidOperationException>(() => runtime.ResetAsync(CancellationToken.None)).ConfigureAwait(false);
+            bool manualIssued = false;
+            var denied = await runtime.RunManualOperationAsync(() => { manualIssued = true; return Task.CompletedTask; }, CancellationToken.None).ConfigureAwait(false);
+            Ensure(!manualIssued && denied != ManualOperationBlockReason.None, "关窗与断卡之间错误放行手动动作。");
+            outputIo.OutputReadError = new InvalidOperationException("模拟输出故障");
+            await ExpectExceptionAsync<InvalidOperationException>(() => runtime.VerifyShutdownOutputsAsync(new[] { "夹具" }, CancellationToken.None)).ConfigureAwait(false);
+            Ensure(!await runtime.TryCancelShutdownAsync().ConfigureAwait(false), "输出核验失败后错误解除退出保护。");
+            await ExpectExceptionAsync<InvalidOperationException>(() => runtime.StartAsync(CancellationToken.None)).ConfigureAwait(false);
+            manualIssued = false;
+            denied = await runtime.RunManualOperationAsync(() => { manualIssued = true; return Task.CompletedTask; }, CancellationToken.None).ConfigureAwait(false);
+            Ensure(!manualIssued && denied != ManualOperationBlockReason.None, "输出未知时错误放行手动操作。");
+            outputIo.OutputReadError = null;
+            await runtime.VerifyShutdownOutputsAsync(new[] { "夹具" }, CancellationToken.None).ConfigureAwait(false);
+            Ensure(await runtime.TryCancelShutdownAsync().ConfigureAwait(false), "输出复核成功后不能按条件解除退出保护。");
+            await runtime.BeginShutdownAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtime.VerifyShutdownOutputsAsync(new[] { "夹具" }, CancellationToken.None).ConfigureAwait(false);
+            await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+            Ensure(!card.IsConnected, "确认输出保持后未能关闭控制器会话。");
+            await ExpectExceptionAsync<InvalidOperationException>(() => runtime.ConnectAsync(CancellationToken.None)).ConfigureAwait(false);
+
+            var delayed = new DelayedStopStationFlow();
+            var delayedRuntime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { new FakeMotionCard("ExitCard", new FakeAxis("ExitAxis")) }),
+                new IStationFlow[] { delayed }, new MachineAlarmService(), new FakeSafetyStatus(), pauseTimeout: TimeSpan.FromMilliseconds(100));
+            await delayedRuntime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+            await delayedRuntime.ResetAsync(CancellationToken.None).ConfigureAwait(false);
+            await delayedRuntime.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            await delayed.WaitUntilStartedAsync().ConfigureAwait(false);
+            await delayedRuntime.BeginShutdownAsync(CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                await ExpectExceptionAsync<InvalidOperationException>(() => delayedRuntime.StopStationFlowsForShutdownAsync(CancellationToken.None)).ConfigureAwait(false);
+                Ensure(delayedRuntime.State == MachineRunState.Alarmed, "关窗停止超时未保留报警状态。");
+                Ensure(!await delayedRuntime.TryCancelShutdownAsync().ConfigureAwait(false), "工位仍在收尾时错误解除了退出门禁。");
+                await ExpectExceptionAsync<InvalidOperationException>(() => delayedRuntime.DisconnectAsync(CancellationToken.None)).ConfigureAwait(false);
+            }
+            finally { delayed.Release(); }
+        }
+
         /// <summary>确认停机报警会暂停流程、锁存状态，并要求条件恢复后先复位。</summary>
         private static async Task StopAlarmPausesMachineUntilResetAsync()
         {
@@ -2040,7 +2096,7 @@ namespace MotionControl.ZMotionSimulatorCheck
         }
 
         /// <summary>提供可成功连接或按设置失败的运动卡替身。</summary>
-        private sealed class FakeMotionCard : IMotionCard
+        private sealed class FakeMotionCard : IMotionCard, IOutputStatePreservingDisconnect
         {
             /// <summary>保存卡标识和该卡上的逻辑轴。</summary>
             public FakeMotionCard(string controllerId, params IAxis[] axes)
@@ -2050,6 +2106,9 @@ namespace MotionControl.ZMotionSimulatorCheck
             }
 
             public string ControllerId { get; private set; }
+
+            /// <summary>模拟适配器明确声明已验证断连后保持输出；默认未知。</summary>
+            public bool PreservesDigitalOutputsOnDisconnect { get; set; }
 
             public bool IsConnected { get; private set; }
 
@@ -2299,6 +2358,8 @@ namespace MotionControl.ZMotionSimulatorCheck
             private Exception _readError;
 
             public string LastReadInputName { get; private set; }
+            /// <summary>注入输出读取故障，核对退出保护是否锁存。</summary>
+            public Exception OutputReadError { get; set; }
 
             /// <summary>为 DI 读取注入通讯异常，验证监控报警和恢复逻辑。</summary>
             public Exception ReadError
@@ -2341,6 +2402,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             public Task<bool> ReadOutputAsync(string outputName, CancellationToken cancellationToken)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (OutputReadError != null) throw OutputReadError;
                 return Task.FromResult(false);
             }
 

@@ -168,6 +168,13 @@ namespace MotionControl.Host.Wpf
         /// <summary>校验单卡配置后连接正运动仿真器；发现多卡配置时拒绝只连接其中一张。</summary>
         public async Task ConnectAsync(MotionCardSettingsDocument settings, CancellationToken cancellationToken)
         {
+            using (await HostProjectOperationGate.EnterConnectAsync(_configurationStore, _machineId, cancellationToken).ConfigureAwait(false))
+                await ConnectCoreAsync(settings, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>在工程操作门内加载配置并连接控制卡。</summary>
+        private async Task ConnectCoreAsync(MotionCardSettingsDocument settings, CancellationToken cancellationToken)
+        {
             if (settings == null)
             {
                 throw new ArgumentNullException(nameof(settings));

@@ -27,6 +27,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             CheckCoordinatorRestoresOnlyKnownStepsAndInvalidatesOnStart();
             CheckUntrustedRecoveryDoesNotOverwrite();
             CheckResourceRecordErrorPresentation();
+            CheckRetainedTaskResourceBlocksRestart();
             CheckClearanceEvidenceKeepsOldRecoveryBlocked();
             return Task.CompletedTask;
         }
@@ -256,6 +257,32 @@ namespace MotionControl.ZMotionSimulatorCheck
                 }
                 using (SHA256 sha = SHA256.Create())
                     return BitConverter.ToString(sha.ComputeHash(content.ToArray())).Replace("-", string.Empty);
+            }
+        }
+
+        /// <summary>保留待确认资源并退出后，新会话仍必须阻止旧流程启动。</summary>
+        private static void CheckRetainedTaskResourceBlocksRestart()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "ShutdownGuard_" + Guid.NewGuid().ToString("N"));
+            var store = new MachineConfigurationStore(root);
+            try
+            {
+                string session = Path.Combine(store.GetMachineDirectory("Machine01"), "Runtime", "ResourceGuards", "session");
+                Directory.CreateDirectory(session);
+                string guard = Path.Combine(session, "retained.guard");
+                File.WriteAllText(guard, "{\"Version\":1,\"MachineId\":\"Machine01\",\"TaskId\":\"T\",\"NodeName\":\"清料前待确认\",\"Resources\":[\"Axis:X\"],\"ExitInterlock\":null,\"ExitCondition\":null}");
+                var coordinator = new MachineRecoveryCoordinator(new MachineRecoveryStore(store, "Machine01"),
+                    new DeviceVariableStore(new DeviceVariableDefinition[0]), "Machine01");
+                coordinator.Load(out string warning);
+                Ensure(warning != null && warning.Contains("Axis:X") && coordinator.GetAutomaticStartBlockReason(null) != null,
+                    "重新打开后未保留待确认资源或错误放行启动。");
+                coordinator.SaveForShutdown(null, false);
+                Ensure(File.Exists(guard), "新会话关闭时错误删除旧资源证据。");
+            }
+            finally
+            {
+                string temp = Path.GetFullPath(Path.GetTempPath());
+                if (Path.GetFullPath(root).StartsWith(temp, StringComparison.OrdinalIgnoreCase) && Directory.Exists(root)) Directory.Delete(root, true);
             }
         }
 

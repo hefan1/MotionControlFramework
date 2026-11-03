@@ -21,7 +21,7 @@ namespace MotionControl.TaskEngine.MachineDevice
     /// 变量走 IDeviceVariableStore，整机控制权通过 MachineRuntime 统一仲裁。
     /// 轴组插补和有条件的资源范围互锁尚未接入，调用时明确报错，不退化执行。
     /// </summary>
-    public sealed partial class MachineTaskDevice : ITaskDevice, ITaskInterlockSupport, ITaskResourceRecoveryState, ITaskResourceJournalCleanup, ITaskRecordSink
+    public sealed partial class MachineTaskDevice : ITaskDevice, ITaskInterlockSupport, ITaskResourceRecoveryState, ITaskResourceJournalCleanup, ITaskRecordSink, ITaskShutdownHandoff
     {
         /// <summary>未指定所有者时使用的匿名所有权标记，保证同一实例内的所有权比对稳定。</summary>
         private static readonly object AnonymousOwner = new object();
@@ -58,6 +58,11 @@ namespace MotionControl.TaskEngine.MachineDevice
 
         /// <summary>尚未收尾的任务运行编号。</summary>
         private readonly HashSet<string> _activeRuns = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>已进入驱动但尚未结束的输出写入；退出时不能以队列空闲代替完成。</summary>
+        private readonly HashSet<Task> _pendingOutputWrites = new HashSet<Task>();
+        /// <summary>写入结果不确定的输出，须保留对应资源或现场复核。</summary>
+        private readonly HashSet<string> _unconfirmedOutputs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>已发出或可能发出、但原轴动作尚未结束的凭证；防止旧异步停止影响新动作。</summary>
         private readonly HashSet<MachineAxisMove> _unsettledMoves = new HashSet<MachineAxisMove>();
@@ -120,7 +125,28 @@ namespace MotionControl.TaskEngine.MachineDevice
         /// <summary>写入逻辑 DO；写入失败时抛出错误，不静默忽略。</summary>
         public void WriteOutput(string name, bool value)
         {
-            Wait(_logicalIo.WriteOutputAsync(name, value, CancellationToken.None));
+            Task write = _runtime.BeginTaskDeviceCommand(() =>
+            {
+                try
+                {
+                    Task issued = _logicalIo.WriteOutputAsync(name, value, CancellationToken.None);
+                    if (issued == null) throw new InvalidOperationException("输出写入没有返回任务：" + name);
+                    lock (_sync) _pendingOutputWrites.Add(issued);
+                    return issued;
+                }
+                catch
+                {
+                    lock (_sync) _unconfirmedOutputs.Add(name);
+                    throw;
+                }
+            });
+            try { Wait(write); }
+            catch
+            {
+                lock (_sync) _unconfirmedOutputs.Add(name);
+                throw;
+            }
+            finally { lock (_sync) if (write.IsCompleted) _pendingOutputWrites.Remove(write); }
         }
 
         /// <summary>按目录中的变量类型写入流程值；类型不支持时明确报错。</summary>
@@ -217,7 +243,8 @@ namespace MotionControl.TaskEngine.MachineDevice
             lock (_sync)
             {
                 RemoveSettledMoves();
-                if (_unsettledMoves.Count != 0 || _pendingStops.Count != 0 || _beginningAxes.Count != 0) return TaskResourceRecoveryState.Held;
+                if (_unsettledMoves.Count != 0 || _pendingStops.Count != 0 || _beginningAxes.Count != 0
+                    || _pendingOutputWrites.Count != 0 || _unconfirmedOutputs.Count != 0) return TaskResourceRecoveryState.Held;
             }
             return TaskResourceRecoveryState.Clear;
         }
@@ -237,6 +264,8 @@ namespace MotionControl.TaskEngine.MachineDevice
                 RemoveSettledMoves();
                 if (_unsettledMoves.Any(move => !move.IsQuiescent) || _pendingStops.Count != 0 || _beginningAxes.Count != 0)
                 { reason = "轴动作或取消收尾仍未结束，不能解除资源隔离。"; return false; }
+                if (_pendingOutputWrites.Count != 0)
+                { reason = "输出写入仍在执行，不能解除资源隔离。"; return false; }
                 if (_activeRuns.Count != 0 || _runtime.IsPreparing || _runtime.State == MachineRunState.Running || _runtime.State == MachineRunState.Pausing)
                 { reason = "任务或设备仍在运行或收尾，不能解除资源隔离。"; return false; }
                 try
@@ -252,6 +281,7 @@ namespace MotionControl.TaskEngine.MachineDevice
                     // 仅在现场条件复核成功后退休该范围内已退出但曾收尾失败的动作。
                     _unsettledMoves.RemoveWhere(move => move.IsQuiescent
                         && request.Names.Contains("Axis:" + move.AxisName, StringComparer.OrdinalIgnoreCase));
+                    foreach (string name in firstOutputs.Keys) _unconfirmedOutputs.Remove(name);
                     reason = "已解除待确认状态；确认说明：" + confirmation + "。旧任务不会自动重启。";
                     return true;
                 }
@@ -381,6 +411,8 @@ namespace MotionControl.TaskEngine.MachineDevice
                     throw new InvalidOperationException("轴动作或取消收尾仍未结束，不能归还设备命令权。");
                 if (_resources.Read().Any(resource => resource.State == TaskResourceState.Held || resource.State == TaskResourceState.Blocked))
                     throw new InvalidOperationException("存在仍被占用或待确认的资源区域，不能关闭任务会话或归还设备控制权；请先核实并解除隔离。");
+                if (_pendingOutputWrites.Count != 0 || _unconfirmedOutputs.Count != 0)
+                    throw new InvalidOperationException("输出写入仍在执行或结果未确认，不能归还设备命令权。");
                 if (_journal != null && !_journalCleared)
                     throw new InvalidOperationException("资源记录尚未安全清理，不能归还设备控制权。");
                 _runtime.ReleaseTaskEngineControl(this);
@@ -395,6 +427,7 @@ namespace MotionControl.TaskEngine.MachineDevice
             lock (_sync)
             {
                 if (_closing) throw new InvalidOperationException("任务会话正在关闭，不能登记新运行。");
+                if (_runtime.IsShutdownInProgress) throw new InvalidOperationException("设备正在安全退出，不能登记新任务运行。");
                 if (_machineOwner == null || !ReferenceEquals(_machineOwner, token))
                 {
                     throw new InvalidOperationException("任务必须先取得整机控制权，不能使用独立任务入口。");
@@ -411,7 +444,8 @@ namespace MotionControl.TaskEngine.MachineDevice
             lock (_sync)
             {
                 RemoveSettledMoves();
-                if (_activeRuns.Count != 0 || _unsettledMoves.Count != 0 || _pendingStops.Count != 0 || _beginningAxes.Count != 0)
+                if (_activeRuns.Count != 0 || _unsettledMoves.Count != 0 || _pendingStops.Count != 0 || _beginningAxes.Count != 0
+                    || _pendingOutputWrites.Count != 0 || _unconfirmedOutputs.Count != 0)
                     throw new InvalidOperationException("任务、轴动作或资源尚未全部收尾，不能清理资源记录。");
                 _closing = true;
             }

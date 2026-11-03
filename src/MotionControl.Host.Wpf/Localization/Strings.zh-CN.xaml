@@ -706,6 +706,8 @@
     <sys:String x:Key="任务关联定位成功">已定位到对应项目</sys:String>
     <sys:String x:Key="任务关联定位未找到">当前页面未找到该项目</sys:String>
     <sys:String x:Key="任务配置">任务配置</sys:String>
+    <sys:String x:Key="设备工程">设备工程</sys:String>
+    <sys:String x:Key="设备工程页面说明">导入、导出或查看当前设备工程的备份；导入前请核对配置。</sys:String>
     <sys:String x:Key="任务配置页面说明">编辑工位安排、任务库与步骤草稿。保存和应用配置不会自动启动设备。</sys:String>
     <sys:String x:Key="报警库">报警库</sys:String>
     <sys:String x:Key="报警库页面说明">维护报警代码、停机类别和现场指导。Runtime 报警和任务节点报警共用此目录。</sys:String>

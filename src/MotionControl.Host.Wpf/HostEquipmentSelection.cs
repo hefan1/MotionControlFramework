@@ -12,6 +12,17 @@ namespace MotionControl.Host.Wpf
     /// <summary>读取设备选择配置，显式选择设备项目与运行入口；不创建运行时或启动设备。</summary>
     internal static class HostEquipmentSelection
     {
+        /// <summary>通用示例设备的配置名称。</summary>
+        private const string DemoDefinition = "Demo";
+        /// <summary>焊接示例设备的配置名称。</summary>
+        private const string WeldingDefinition = "WeldingExample";
+        /// <summary>带记录的双夹位示例设备配置名称。</summary>
+        private const string RotaryDefinition = "RotaryWelding";
+        /// <summary>纯运动双夹位示例设备配置名称。</summary>
+        private const string RotaryMotionDefinition = "RotaryMotionValidation";
+        /// <summary>当前程序显式支持的设备定义名称，供工程导入校验使用。</summary>
+        internal static readonly string[] SupportedDefinitions = { DemoDefinition, WeldingDefinition, RotaryDefinition, RotaryMotionDefinition };
+
         /// <summary>设备定义与执行入口在设备配置目录内使用的相对路径。</summary>
         private const string EquipmentSelectionPath = "Parameters/Equipment.json";
 
@@ -24,25 +35,25 @@ namespace MotionControl.Host.Wpf
                 : settings.Definition.Trim();
             if (name.Length == 0)
             {
-                name = "Demo";
+                name = DemoDefinition;
             }
 
-            if (string.Equals(name, "Demo", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(name, DemoDefinition, StringComparison.OrdinalIgnoreCase))
             {
                 return new DemoEquipmentDefinition();
             }
 
-            if (string.Equals(name, "WeldingExample", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(name, WeldingDefinition, StringComparison.OrdinalIgnoreCase))
             {
                 return new WeldingExampleEquipmentDefinition();
             }
 
-            if (string.Equals(name, "RotaryWelding", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(name, RotaryDefinition, StringComparison.OrdinalIgnoreCase))
             {
                 return new RotaryWeldingEquipmentDefinition();
             }
 
-            if (string.Equals(name, "RotaryMotionValidation", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(name, RotaryMotionDefinition, StringComparison.OrdinalIgnoreCase))
             {
                 return new RotaryWeldingEquipmentDefinition(false);
             }

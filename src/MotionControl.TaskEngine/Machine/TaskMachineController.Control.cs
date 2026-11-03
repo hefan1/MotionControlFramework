@@ -391,8 +391,58 @@ namespace MotionControl.TaskEngine.Machine
         {
             lock (_sync)
             {
+                if (_shutdownCloseTask != null && !_shutdownCloseTask.IsCompleted)
+                    throw new InvalidOperationException("任务退出交接正在执行，请等待完成。");
                 if (_closeTask == null || _closeTask.IsFaulted || _closeTask.IsCanceled) _closeTask = CloseCoreAsync();
                 return _closeTask;
+            }
+        }
+
+        /// <summary>仅用于 Host 退出：记录完整且设备确认停稳时保留 Blocked，而不逐条解除资源。</summary>
+        public Task CloseForShutdownAsync()
+        {
+            lock (_sync)
+            {
+                if (_closeTask != null && !_closeTask.IsCompleted)
+                    throw new InvalidOperationException("任务会话关闭正在执行，请等待完成。");
+                if (_shutdownCloseTask == null || _shutdownCloseTask.IsFaulted || _shutdownCloseTask.IsCanceled)
+                    _shutdownCloseTask = CloseForShutdownCoreAsync();
+                return _shutdownCloseTask;
+            }
+        }
+
+        /// <summary>等待终止和报警收尾，保留资源日志，并由设备验证可安全断连后封存运行时。</summary>
+        private async Task CloseForShutdownCoreAsync()
+        {
+            await AbortAsync().ConfigureAwait(false);
+            var drain = AlarmService as IMachineStopAlarmNotificationDrain;
+            var handoff = _device as ITaskShutdownHandoff;
+            if (drain == null || handoff == null)
+                throw new InvalidOperationException("设备未提供可验证的资源退出交接能力，保留会话和隔离。");
+            AlarmService.StopAlarmRaised -= AlarmService_StopAlarmRaised;
+            try
+            {
+                await drain.WaitForStopNotificationDispatchAsync().ConfigureAwait(false);
+                Task pendingSettlements;
+                lock (_sync) pendingSettlements = _activePauseSettlements == 0 ? Task.CompletedTask : _pauseSettlementsIdle.Task;
+                await pendingSettlements.ConfigureAwait(false);
+                lock (_sync)
+                    if (_pauseSettlementUnconfirmed || _activePauseSettlements != 0
+                        || AllStations().Any(station => station.CurrentRun != null && station.CurrentRun.HasUnsettledPauseOperations)
+                        || _device.Resources.HasPendingJournalWrites)
+                        throw new InvalidOperationException("任务停止或设备调用仍未确认，保留会话和资源隔离。");
+                await handoff.PreserveBlockedForShutdownAsync(this).ConfigureAwait(false);
+                lock (_sync)
+                {
+                    // 原控制权与资源隔离继续保留在封存运行时，直到控制卡成功断开。
+                    _lifetime.Dispose();
+                    _state = TaskMachineState.Closed;
+                }
+            }
+            catch
+            {
+                AlarmService.StopAlarmRaised += AlarmService_StopAlarmRaised;
+                throw;
             }
         }
 

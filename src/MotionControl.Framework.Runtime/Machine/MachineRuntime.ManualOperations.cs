@@ -165,6 +165,7 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>根据整机状态返回当前是否允许手动轴或 IO 操作。</summary>
         private ManualOperationBlockReason GetManualOperationStateBlockReason(bool allowUnsettledStop = false)
         {
+            if (IsShutdownInProgress && !allowUnsettledStop) return ManualOperationBlockReason.AutomaticFlowUnsettled;
             if (IsPreparing) return ManualOperationBlockReason.AutomaticFlowActive;
             if (IsTaskEngineControlClaimed)
             {

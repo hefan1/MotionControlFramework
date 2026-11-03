@@ -57,6 +57,12 @@ namespace MotionControl.Framework.Runtime.Machine
         private bool _preparing;
         /// <summary>取消当前准备步骤；必须等后台任务和轴停止后才能归还命令权。</summary>
         private CancellationTokenSource _preparationCancellation;
+        /// <summary>外部令牌仅转发停止请求，不在调用方线程执行设备步骤的取消回调。</summary>
+        private CancellationTokenRegistration _preparationCallerCancellation;
+        /// <summary>保存异步取消回调的执行，结束前不能释放准备命令权或释放令牌源。</summary>
+        private Task _preparationCancellationTask = Task.CompletedTask;
+        /// <summary>在取消回调排队前锁存停止意图，阻止后续工步或完成资格。</summary>
+        private volatile bool _preparationStopRequested;
         /// <summary>当前准备操作及其受控停止收尾。</summary>
         private Task _preparationTask = Task.CompletedTask;
         /// <summary>最近一次停轴收尾；超时后仍保留引用，禁止与尚未结束的停轴命令交错。</summary>
@@ -97,6 +103,7 @@ namespace MotionControl.Framework.Runtime.Machine
             if (!_commandLock.Wait(0)) throw new InvalidOperationException("设备命令正在执行，不能更新准备配置。");
             try
             {
+                if (IsShutdownInProgress) throw new InvalidOperationException("设备正在安全退出，不能更新准备配置。");
                 EnsureNoPreparationInProgress("更新准备配置");
                 if (State == MachineRunState.Running || State == MachineRunState.Pausing || _flowScheduler.IsRunning)
                     throw new InvalidOperationException("生产仍在运行，不能更新准备配置。");
@@ -162,7 +169,9 @@ namespace MotionControl.Framework.Runtime.Machine
                             _preparing = true;
                             _preparationStopUnconfirmed = false;
                             _preparationProductionStarted = false;
-                            _preparationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                            _preparationCancellation = new CancellationTokenSource();
+                            _preparationCancellationTask = Task.CompletedTask;
+                            _preparationStopRequested = false;
                             foreach (IStationPreparation item in selected)
                                 if (!_preparationStates[item.StationId].IsPrepared)
                                     _preparationStates[item.StationId] = new StationPreparationSnapshot(item.StationId,
@@ -173,10 +182,15 @@ namespace MotionControl.Framework.Runtime.Machine
                     });
                 }
                 RaiseStatusChanged();
+                CancellationTokenSource currentPreparation;
+                lock (_preparationSync) currentPreparation = _preparationCancellation;
                 try { StartEmergencyStopMonitor(); }
                 catch
                 {
-                    lock (_preparationSync) { _preparing = false; _preparationCancellation.Dispose(); _preparationCancellation = null; }
+                    Task pendingCancellation;
+                    lock (_preparationSync) { _preparing = false; pendingCancellation = _preparationCancellationTask; _preparationCancellation = null; }
+                    _preparationCallerCancellation.Dispose();
+                    _ = pendingCancellation.ContinueWith(_ => currentPreparation.Dispose(), TaskScheduler.Default);
                     SetStatus(MachineRunState.Alarmed, new InvalidOperationException("设备准备安全监控未能启动。"));
                     throw;
                 }
@@ -185,6 +199,11 @@ namespace MotionControl.Framework.Runtime.Machine
                     CancellationTokenSource runCancellation = _preparationCancellation;
                     operation = _preparationTask = Task.Run(() => RunPreparationAsync(selected, runCancellation));
                 }
+                _preparationCallerCancellation = cancellationToken.Register(() =>
+                {
+                    RequestPreparationStop(currentPreparation);
+                    _ = StopPreparationAfterAlarmAsync(currentPreparation);
+                });
             }
             finally { _commandLock.Release(); }
             RaisePreparationChanged();
@@ -206,6 +225,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 return;
             }
             Task operation;
+            Task cancellationTask;
             bool recoveringStop;
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
@@ -222,12 +242,15 @@ namespace MotionControl.Framework.Runtime.Machine
             finally { _commandLock.Release(); }
             try
             {
-                RequestPreparationStop();
+                RequestPreparationStop(expectedPreparation);
+                lock (_preparationSync) cancellationTask = _preparationCancellationTask;
                 await StopPreparationAxesAsync().ConfigureAwait(false);
-                Task completed = await Task.WhenAny(operation, Task.Delay(_pauseTimeout, cancellationToken)).ConfigureAwait(false);
+                Task settlement = Task.WhenAll(operation.ContinueWith(_ => { }, TaskScheduler.Default), cancellationTask);
+                Task completed = await Task.WhenAny(settlement, Task.Delay(_pauseTimeout, cancellationToken)).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
-                if (!ReferenceEquals(completed, operation))
-                    throw new TimeoutException("设备准备停止超时；准备任务仍占用设备，请检查当前步骤与轴状态。");
+                if (!ReferenceEquals(completed, settlement))
+                    throw new TimeoutException("设备准备停止超时；准备任务或取消回调仍占用设备，请检查当前步骤与轴状态。");
+                await cancellationTask.ConfigureAwait(false);
                 try { await operation.ConfigureAwait(false); }
                 catch (OperationCanceledException) { /* 操作员停止已由准备快照记录，轴停稳确认在上方完成。 */ }
                 catch (Exception) when (recoveringStop) { /* 原准备失败仍保留为报警，此处仅重新确认停止结果。 */ }
@@ -242,6 +265,8 @@ namespace MotionControl.Framework.Runtime.Machine
             finally
             {
                 Exception finishError = null;
+                CancellationTokenSource completedCancellation = null;
+                CancellationTokenRegistration completedRegistration = default(CancellationTokenRegistration);
                 await _commandLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
                 try
                 {
@@ -256,11 +281,20 @@ namespace MotionControl.Framework.Runtime.Machine
                         try { CompletePreparationRecord(); }
                         catch (Exception error) { finishError = error; }
                     }
-                    lock (_preparationSync) if (lastStop) _preparing = false;
+                    lock (_preparationSync) if (lastStop)
+                    {
+                        _preparing = false;
+                        completedCancellation = _preparationCancellation;
+                        _preparationCancellation = null;
+                        completedRegistration = _preparationCallerCancellation;
+                        _preparationCallerCancellation = default(CancellationTokenRegistration);
+                        _preparationStopRequested = false;
+                    }
                     if (finishError != null) SetStatus(MachineRunState.Alarmed, finishError);
                     else if (lastStop) TryConfirmPreparationRecordReuse();
                 }
                 finally { _commandLock.Release(); }
+                if (completedCancellation != null) { completedRegistration.Dispose(); completedCancellation.Dispose(); }
                 RaisePreparationChanged();
                 RaiseStatusChanged();
                 if (finishError != null) throw new InvalidOperationException("准备安全结束记录保存失败，请联系维护人员。", finishError);
@@ -275,14 +309,26 @@ namespace MotionControl.Framework.Runtime.Machine
         }
 
         /// <summary>只请求取消，不等待后台步骤，供停机报警事件使用。</summary>
-        private CancellationTokenSource RequestPreparationStop()
+        private CancellationTokenSource RequestPreparationStop(CancellationTokenSource expected = null)
         {
             lock (_preparationSync)
             {
                 CancellationTokenSource current = _preparationCancellation;
-                if (current != null) current.Cancel();
+                // 受控清料有独立的停止意图与取消任务，不能与普通准备重复调用取消。
+                if (!_clearing && current != null && (expected == null || ReferenceEquals(expected, current)) && !_preparationStopRequested)
+                {
+                    _preparationStopRequested = true;
+                    _preparationCancellationTask = Task.Run(() => current.Cancel());
+                }
                 return current;
             }
+        }
+
+        /// <summary>准备步骤之间检查停止意图，避免异步取消尚未开始时继续执行新工步。</summary>
+        private void ThrowIfPreparationStopRequested(CancellationToken token)
+        {
+            lock (_preparationSync) if (_preparationStopRequested) throw new OperationCanceledException(token);
+            token.ThrowIfCancellationRequested();
         }
 
         /// <summary>先核对全部所选工位前提，再按依赖执行；任何失败或取消都不得给出完成资格。</summary>
@@ -293,18 +339,19 @@ namespace MotionControl.Framework.Runtime.Machine
             Exception failure = null;
             bool stopped = false;
             bool stopUnconfirmed = false;
+            CancellationTokenRegistration completedRegistration = default(CancellationTokenRegistration);
             try
             {
                 foreach (IStationPreparation item in selected)
                 {
                     active = item;
-                    token.ThrowIfCancellationRequested();
+                    ThrowIfPreparationStopRequested(token);
                     await item.ValidateStartAsync(token).ConfigureAwait(false);
                 }
                 foreach (IStationPreparation item in selected)
                 {
                     active = item;
-                    token.ThrowIfCancellationRequested();
+                    ThrowIfPreparationStopRequested(token);
                     bool alreadyReady;
                     lock (_preparationSync) alreadyReady = _preparationStates[item.StationId].IsPrepared;
                     if (alreadyReady)
@@ -339,15 +386,15 @@ namespace MotionControl.Framework.Runtime.Machine
                     });
                     try { await item.ExecuteAsync(progress, token).ConfigureAwait(false); }
                     finally { lock (_preparationSync) acceptingProgress = false; }
-                    token.ThrowIfCancellationRequested();
+                    ThrowIfPreparationStopRequested(token);
                     await item.ValidateReadyAsync(token).ConfigureAwait(false);
                     await EnsurePreparationAxesStoppedAsync(token, true).ConfigureAwait(false);
-                    token.ThrowIfCancellationRequested();
+                    ThrowIfPreparationStopRequested(token);
                     SetPreparationSnapshot(item, StationPreparationState.Ready, "准备完成", "等待启动生产。");
                 }
-                token.ThrowIfCancellationRequested();
+                ThrowIfPreparationStopRequested(token);
             }
-            catch (OperationCanceledException) when (token.IsCancellationRequested) { stopped = true; }
+            catch (OperationCanceledException) when (token.IsCancellationRequested || _preparationStopRequested) { stopped = true; }
             catch (Exception error) { failure = error; }
             finally
             {
@@ -389,13 +436,18 @@ namespace MotionControl.Framework.Runtime.Machine
                     lock (_preparationSync)
                     {
                         // 与停止请求在同一把锁中提交最终结果，避免最后一步刚完成就取消时误标成功。
-                        if (token.IsCancellationRequested && !stopped && failure == null)
+                        if ((token.IsCancellationRequested || _preparationStopRequested) && !stopped && failure == null)
                         {
                             stopped = true;
                             stoppedAtCompletion = true;
                         }
                         _preparationStopUnconfirmed |= stopUnconfirmed;
-                        _preparationCancellation = null;
+                        if (!_preparationStopRequested)
+                        {
+                            _preparationCancellation = null;
+                            completedRegistration = _preparationCallerCancellation;
+                            _preparationCallerCancellation = default(CancellationTokenRegistration);
+                        }
                     }
                     if (stoppedAtCompletion && active != null)
                     {
@@ -403,7 +455,7 @@ namespace MotionControl.Framework.Runtime.Machine
                         SetPreparationSnapshot(active, StationPreparationState.Stopped, "回零已停止", "检查现场后重新执行工位回零。");
                     }
                     bool canCompleteRecord;
-                    lock (_preparationSync) canCompleteRecord = failure == null && !_preparationStopUnconfirmed && _preparationStopRequests == 0;
+                    lock (_preparationSync) canCompleteRecord = failure == null && !_preparationStopUnconfirmed && _preparationStopRequests == 0 && !_preparationStopRequested;
                     if (canCompleteRecord && !_alarmService.HasLatchedStopAlarm && State != MachineRunState.Alarmed)
                     {
                         try { CompletePreparationRecord(); }
@@ -417,7 +469,7 @@ namespace MotionControl.Framework.Runtime.Machine
                             }
                         }
                     }
-                    lock (_preparationSync) _preparing = _preparationStopUnconfirmed || _preparationStopRequests != 0;
+                    lock (_preparationSync) _preparing = _preparationStopUnconfirmed || _preparationStopRequests != 0 || _preparationStopRequested;
                     Exception previousFailure = failure;
                     failure = SetPreparationCompletionStatus(stopped, failure);
                     if (previousFailure == null && failure != null && active != null)
@@ -427,7 +479,13 @@ namespace MotionControl.Framework.Runtime.Machine
                     }
                     if (failure == null) TryConfirmPreparationRecordReuse();
                 }
-                finally { _commandLock.Release(); cancellation.Dispose(); }
+                finally
+                {
+                    _commandLock.Release();
+                    bool disposeCancellation;
+                    lock (_preparationSync) disposeCancellation = !ReferenceEquals(_preparationCancellation, cancellation);
+                    if (disposeCancellation) { completedRegistration.Dispose(); cancellation.Dispose(); }
+                }
                 if (failure != null)
                 {
                     string source = active == null ? "设备准备" : active.StationName;

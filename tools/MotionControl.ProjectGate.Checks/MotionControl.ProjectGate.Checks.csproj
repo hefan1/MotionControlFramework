@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><AssemblyName>MotionControl.ProjectGate.Checks</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="WindowsBase" />
+    <ProjectReference Include="..\..\src\MotionControl.Framework.Runtime\MotionControl.Framework.Runtime.csproj" />
+    <Compile Include="..\..\src\MotionControl.Host.Wpf\HostProjectOperationGate.cs" Link="HostProjectOperationGate.cs" />
+  </ItemGroup>
+</Project>

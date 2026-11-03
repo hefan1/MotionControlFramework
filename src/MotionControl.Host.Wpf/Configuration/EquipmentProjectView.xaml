@@ -1,0 +1,56 @@
+<UserControl x:Class="MotionControl.Host.Wpf.Configuration.EquipmentProjectView"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="#F3F6FA">
+ <UserControl.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries>
+  <ResourceDictionary Source="/MotionControl.TaskEngine.Wpf;component/Styles/TaskMonitorStyles.xaml"/>
+  <ResourceDictionary Source="/MotionControl.Framework.Wpf;component/Styles/ScrollBarStyles.xaml"/>
+ </ResourceDictionary.MergedDictionaries></ResourceDictionary></UserControl.Resources>
+ <Grid Margin="14,8,14,12">
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <Border Background="#F7F9FC" BorderBrush="#D8E2EE" BorderThickness="1" CornerRadius="6" Padding="10,8">
+   <WrapPanel>
+    <Button x:Name="ExportButton" Click="Export_Click" Padding="14,7"/>
+    <Button x:Name="ImportButton" Click="Import_Click" Padding="14,7"/>
+    <Button x:Name="BackupsButton" Click="Backups_Click" Padding="14,7"/>
+    <Button x:Name="ApplyButton" Click="Apply_Click" Padding="14,7" Background="#2375D1" Foreground="White"/>
+    <Button x:Name="CloseButton" Click="Close_Click" Padding="14,7" Visibility="Collapsed"/>
+   </WrapPanel>
+  </Border>
+  <StackPanel Grid.Row="1" Margin="2,12,2,10">
+   <TextBlock x:Name="HintText" Foreground="#40536A" TextWrapping="Wrap"/>
+   <TextBlock x:Name="StatusText" Foreground="#176BD0" TextWrapping="Wrap" Margin="0,6,0,0"/>
+   <Expander x:Name="StatusDetails" Visibility="Collapsed" IsExpanded="True" Margin="0,5,0,0">
+    <TextBox x:Name="StatusDetailsText" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="150" VerticalScrollBarVisibility="Auto"/>
+   </Expander>
+  </StackPanel>
+  <Border Grid.Row="2" Style="{StaticResource 内容边框}" Padding="12">
+   <TabControl x:Name="DetailsTabs">
+    <TabItem x:Name="PreviewTab">
+     <Grid Margin="8"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="1*"/><RowDefinition Height="Auto"/><RowDefinition Height="2*"/></Grid.RowDefinitions>
+      <TextBlock x:Name="PreviewSummary" TextWrapping="Wrap" Margin="0,0,0,8"/>
+      <TextBox x:Name="PreviewText" Grid.Row="1" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Microsoft YaHei UI" FontSize="13"
+               VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+      <ComboBox x:Name="PreviewFilePicker" Grid.Row="2" Margin="0,8,0,8" MinHeight="30" SelectionChanged="PreviewFile_SelectionChanged"/>
+      <Grid Grid.Row="3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+       <Grid Grid.Column="0"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <TextBlock x:Name="CurrentFileLabel" Margin="0,0,0,5"/>
+        <TextBox x:Name="CurrentFileText" Grid.Row="1" IsReadOnly="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+       </Grid>
+       <Grid Grid.Column="2"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <TextBlock x:Name="IncomingFileLabel" Margin="0,0,0,5"/>
+        <TextBox x:Name="IncomingFileText" Grid.Row="1" IsReadOnly="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+       </Grid>
+      </Grid>
+     </Grid>
+    </TabItem>
+    <TabItem x:Name="BackupsTab">
+     <Grid Margin="8"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+      <TextBlock x:Name="BackupsHint" TextWrapping="Wrap" Margin="0,0,0,8"/>
+      <ListBox x:Name="BackupsList" Grid.Row="1" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto"/>
+     </Grid>
+    </TabItem>
+   </TabControl>
+  </Border>
+  <TextBlock x:Name="FooterText" Grid.Row="3" Foreground="#596B7D" Margin="2,10,2,0" TextWrapping="Wrap"/>
+ </Grid>
+</UserControl>

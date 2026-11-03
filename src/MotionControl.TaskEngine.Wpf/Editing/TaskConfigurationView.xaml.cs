@@ -777,6 +777,9 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             var task = _workspace.Tasks.FirstOrDefault(item => item.Definition.TaskId == issue.TaskId);
             if (task != null) { OpenEditor(task); _editor?.FocusIssue(issue); } else { MainTabs.SelectedIndex = 0; SetStatusText(issue.Message); }
         }
+        /// <summary>任务清单或当前编辑器存在尚未保存的内容时为真。</summary>
+        public bool HasUnsavedChanges { get { return _dirty || (_editor != null && _editor.IsDirty); } }
+
         /// <summary>Host 关闭时允许保存、放弃或取消；不能因关闭丢失人员编辑。</summary>
         public bool ConfirmClose()
         {

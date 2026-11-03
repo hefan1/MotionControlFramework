@@ -558,16 +558,56 @@ namespace MotionControl.Host.Wpf.Tasks
             await RunCommandAsync(async () =>
             {
                 RequireTaskSession();
-                await _session.Machine.AbortAsync().ConfigureAwait(true);
-                if (_runtime.State == MachineRunState.Running || _runtime.State == MachineRunState.Pausing)
-                    await _runtime.FinishTaskEngineRunAsync(false, null).ConfigureAwait(true);
-                await CloseTaskSessionAsync().ConfigureAwait(true);
+                await StopTaskSessionCoreAsync().ConfigureAwait(true);
                 SetSuccessText("任务执行已停止");
             }, "任务停止失败", "任务运行复位建议").ConfigureAwait(true);
         }
 
+        /// <summary>应用退出时沿用任务页的终止及收尾，不跳过设备控制权和资源检查。</summary>
+        internal async Task StopTaskSessionForShutdownAsync()
+        {
+            if (_session == null) return;
+            if (_commandInProgress) throw new InvalidOperationException("任务命令正在执行，请等待结束后重试关闭。");
+            _commandInProgress = true;
+            UpdateCommandAvailability();
+            try { await StopTaskSessionCoreAsync(true).ConfigureAwait(true); }
+            finally
+            {
+                _commandInProgress = false;
+                UpdateRunStatus();
+                UpdateCommandAvailability();
+                _host.RefreshMachineStateDisplay();
+            }
+        }
+
+        /// <summary>终止任务、等待后台动作退出，再通过既有关闭屏障归还设备控制权。</summary>
+        private async Task StopTaskSessionCoreAsync(bool allowBlockedHandoff = false)
+        {
+            TaskMonitorSession session = _session;
+            if (session == null) return;
+            await WaitForShutdownSettlementAsync(session.Machine.AbortAsync(), "任务终止").ConfigureAwait(true);
+            if (_runtime.State == MachineRunState.Running || _runtime.State == MachineRunState.Pausing)
+                await _runtime.FinishTaskEngineRunAsync(false, null).ConfigureAwait(true);
+            bool preserveBlocked = allowBlockedHandoff && session.TaskDevice.ReadResources()
+                .Any(resource => resource.State == TaskResourceState.Blocked);
+            await WaitForShutdownSettlementAsync(CloseTaskSessionAsync(preserveBlocked), "任务会话关闭").ConfigureAwait(true);
+        }
+
+        /// <summary>等待在途操作有界结束；超时只提示未确认，后台任务和资源保护继续保留。</summary>
+        private static async Task WaitForShutdownSettlementAsync(Task work, string operation)
+        {
+            if (await Task.WhenAny(work, Task.Delay(TimeSpan.FromSeconds(15))).ConfigureAwait(true) != work)
+            {
+                // 继续观察迟到异常；不能把超时理解为任务或轴已停止。
+                _ = work.ContinueWith(task => { var ignored = task.Exception; }, CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                throw new TimeoutException(operation + "尚未完成，设备状态待确认；请检查任务和轴状态后重试。");
+            }
+            await work.ConfigureAwait(true);
+        }
+
         /// <summary>检查会话未运行后关闭任务执行器；断卡和应用退出均复用此安全收尾。</summary>
-        internal async Task CloseTaskSessionAsync()
+        internal async Task CloseTaskSessionAsync(bool preserveBlockedForShutdown = false)
         {
             TaskMonitorSession session = _session;
             if (session == null) return;
@@ -577,8 +617,18 @@ namespace MotionControl.Host.Wpf.Tasks
                 throw new InvalidOperationException("任务仍在运行或等待停轴；先在任务运行页暂停或停止并确认安全状态。");
 
             _stateTimer.Stop();
-            await session.Machine.CloseAsync().ConfigureAwait(true);
-            _runtime?.ConfigurePreparations(_equipmentPreparations);
+            try
+            {
+                if (preserveBlockedForShutdown) await session.Machine.CloseForShutdownAsync().ConfigureAwait(true);
+                else await session.Machine.CloseAsync().ConfigureAwait(true);
+            }
+            catch
+            {
+                // 关闭失败仍须持续刷新资源待确认和报警状态，便于维护后重试。
+                _stateTimer.Start();
+                throw;
+            }
+            if (_runtime != null && !_runtime.IsShutdownInProgress) _runtime.ConfigurePreparations(_equipmentPreparations);
             _session = null;
             _monitor = null;
             _monitorContent.Content = null;
