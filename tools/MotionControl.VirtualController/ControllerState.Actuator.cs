@@ -20,6 +20,8 @@ namespace MotionControl.VirtualController
         public bool Pending;
         /// <summary>故障时不产生新的到位反馈，当前静止到位状态保留。</summary>
         public bool Stuck;
+        /// <summary>测试注入两个到位同时有效的传感器矛盾。</summary>
+        public bool Conflict;
         /// <summary>使取消、反向动作或故障前的延迟任务失效。</summary>
         public int Version;
     }
@@ -55,8 +57,9 @@ namespace MotionControl.VirtualController
             if (_actuators.ContainsKey(output)) throw new InvalidOperationException("输出已配置夹具规则，请先检查并移除。");
             if (_camera != null && (_camera.TriggerOutput == output || _camera.ResetOutput == output))
                 throw new InvalidOperationException("输出已被相机规则使用，不能同时驱动夹具。");
+            if (ScannerUsesOutput(output)) throw new InvalidOperationException("输出已被扫码器规则使用。");
             if (AxisSensorUsesInput(clamped) || AxisSensorUsesInput(released)
-                || ActuatorUsesInput(clamped) || ActuatorUsesInput(released) || CameraUsesInput(clamped) || CameraUsesInput(released)
+                || ActuatorUsesInput(clamped) || ActuatorUsesInput(released) || CameraUsesInput(clamped) || CameraUsesInput(released) || ScannerUsesInput(clamped) || ScannerUsesInput(released)
                 || _feedback.ContainsKey(clamped) || _feedback.ContainsKey(released)
                 || (_feeder.Enabled && (_feeder.Input == clamped || _feeder.Input == released)))
                 throw new InvalidOperationException("夹具到位输入已被其他设备规则占用。");
@@ -80,6 +83,12 @@ namespace MotionControl.VirtualController
         {
             int version = ++actuator.Version;
             actuator.Pending = true;
+            if (actuator.Conflict)
+            {
+                _inputs[actuator.ClampedInput] = true;
+                _inputs[actuator.ReleasedInput] = true;
+                return;
+            }
             _inputs[actuator.ClampedInput] = false;
             _inputs[actuator.ReleasedInput] = false;
             if (actuator.Stuck) return;
@@ -91,7 +100,7 @@ namespace MotionControl.VirtualController
                 {
                     ActuatorRule current;
                     if (!_actuators.TryGetValue(actuator.Output, out current) || !ReferenceEquals(current, actuator)
-                        || version != actuator.Version || actuator.Stuck) return;
+                        || version != actuator.Version || actuator.Stuck || actuator.Conflict) return;
                     _inputs[actuator.ClampedInput] = targetClamped;
                     _inputs[actuator.ReleasedInput] = !targetClamped;
                     actuator.Pending = false;
@@ -110,6 +119,16 @@ namespace MotionControl.VirtualController
             if (!stuck && actuator.Pending) ScheduleActuatorMove(actuator);
         }
 
+        /// <summary>注入互相矛盾的到位反馈；解除后重新执行完整反馈延时。</summary>
+        private void SetActuatorConflict(JObject request)
+        {
+            ActuatorRule actuator = FindActuator(request);
+            bool conflict = RequireBool(request, "value");
+            if (actuator.Conflict == conflict) return;
+            actuator.Conflict = conflict;
+            ScheduleActuatorMove(actuator);
+        }
+
         /// <summary>只读返回通道、电平、待完成状态和卡滞故障。</summary>
         private JObject ReadActuator(JObject request)
         {
@@ -118,7 +137,8 @@ namespace MotionControl.VirtualController
                 ["outputChannel"] = actuator.Output, ["outputValue"] = _outputs[actuator.Output],
                 ["clampInputChannel"] = actuator.ClampedInput, ["clampInputValue"] = _inputs[actuator.ClampedInput],
                 ["releaseInputChannel"] = actuator.ReleasedInput, ["releaseInputValue"] = _inputs[actuator.ReleasedInput],
-                ["delayMs"] = actuator.DelayMs, ["pending"] = actuator.Pending, ["stuck"] = actuator.Stuck } };
+                ["delayMs"] = actuator.DelayMs, ["pending"] = actuator.Pending, ["stuck"] = actuator.Stuck,
+                ["conflict"] = actuator.Conflict } };
         }
 
         /// <summary>查找已配置的输出规则，未配置时明确报错。</summary>

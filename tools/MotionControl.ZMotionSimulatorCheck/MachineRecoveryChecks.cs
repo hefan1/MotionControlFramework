@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -22,10 +23,98 @@ namespace MotionControl.ZMotionSimulatorCheck
         {
             CheckDeviceVariableValuesRestoreByNameAndType();
             CheckRecoveryFileRoundTripAndConfigurationChange();
+            CheckRuntimeRecordsDoNotChangeConfigurationSignature();
             CheckCoordinatorRestoresOnlyKnownStepsAndInvalidatesOnStart();
             CheckUntrustedRecoveryDoesNotOverwrite();
             CheckResourceRecordErrorPresentation();
             return Task.CompletedTask;
+        }
+
+        /// <summary>验证运行记录不改变签名、配置和草稿仍生效，旧签名无法证明兼容时保留原记录。</summary>
+        private static void CheckRuntimeRecordsDoNotChangeConfigurationSignature()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "RecoverySignature_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var configuration = new MachineConfigurationStore(root);
+                string machine = configuration.GetMachineDirectory("Machine01");
+                string parameters = Path.Combine(machine, "Parameters");
+                string drafts = Path.Combine(machine, "Drafts");
+                string runtime = Path.Combine(machine, "Runtime");
+                Directory.CreateDirectory(parameters);
+                Directory.CreateDirectory(drafts);
+                Directory.CreateDirectory(runtime);
+                string parameterFile = Path.Combine(parameters, "Axis.json");
+                string draftFile = Path.Combine(drafts, "Task.json");
+                File.WriteAllText(parameterFile, "{\"axis\":1}");
+                File.WriteAllText(draftFile, "{\"draft\":1}");
+                var store = new MachineRecoveryStore(configuration, "Machine01");
+                string initial = store.GetConfigurationSignature();
+                Ensure(initial == CalculateLegacySignature(machine), "旧版没有额外运行 JSON 时签名应保持一致。");
+                store.Save(new MachineRecoveryDocument { CanResume = true, EquipmentInitializationCompleted = true });
+                string snapshotFile = Path.Combine(runtime, "RecoverySnapshot.json");
+                string original = File.ReadAllText(snapshotFile);
+                string recordDirectory = Path.Combine(runtime, "Production", "Evidence");
+                Directory.CreateDirectory(recordDirectory);
+                string recordFile = Path.Combine(recordDirectory, "Record.json");
+                File.WriteAllText(recordFile, "{\"count\":1}");
+                Ensure(store.GetConfigurationSignature() == initial, "新增生产证据改变了配置签名。");
+                File.WriteAllText(recordFile, "{\"count\":2}");
+                File.WriteAllText(Path.Combine(runtime, "Event.json"), "{\"event\":1}");
+                Ensure(store.GetConfigurationSignature() == initial, "修改运行记录改变了配置签名。");
+                var loaded = store.Load(out string warning);
+                Ensure(loaded.CanResume && string.IsNullOrEmpty(warning), "只有运行记录变化时错误阻止续跑。");
+
+                File.AppendAllText(draftFile, " ");
+                Ensure(store.GetConfigurationSignature() != initial && !store.Load(out warning).CanResume, "草稿变更没有阻止续跑。");
+                File.WriteAllText(draftFile, "{\"draft\":1}");
+                File.AppendAllText(parameterFile, " ");
+                Ensure(store.GetConfigurationSignature() != initial && !store.Load(out warning).CanResume, "配置变更没有阻止续跑。");
+                File.WriteAllText(parameterFile, "{\"axis\":1}");
+
+                // 模拟旧版曾将运行记录算进签名；无法从哈希证明旧配置未变，必须阻止并保留原文件。
+                var legacy = new MachineRecoveryDocument { MachineId = "Machine01", CanResume = true,
+                    EquipmentInitializationCompleted = true, ConfigurationSignature = CalculateLegacySignature(machine) };
+                configuration.SaveJson("Machine01", "Runtime/RecoverySnapshot.json", legacy);
+                string legacyFile = File.ReadAllText(snapshotFile);
+                Ensure(legacy.ConfigurationSignature != store.GetConfigurationSignature(), "回归样例没有形成旧版不兼容签名。");
+                var coordinator = new MachineRecoveryCoordinator(store,
+                    new DeviceVariableStore(new DeviceVariableDefinition[0]), "Machine01");
+                coordinator.Load(out warning);
+                Ensure(!string.IsNullOrWhiteSpace(coordinator.RecoveryBlockReason), "旧版签名无法证明兼容时没有阻断。");
+                coordinator.SaveForShutdown(null, false);
+                Ensure(File.ReadAllText(snapshotFile) == legacyFile, "无法证明兼容时覆盖了原恢复记录。");
+                Ensure(original != legacyFile, "旧版恢复记录样例没有变化。");
+            }
+            finally
+            {
+                if (Directory.Exists(root)) Directory.Delete(root, true);
+            }
+        }
+
+        /// <summary>独立复现旧版签名算法，用于检验旧快照兼容边界。</summary>
+        private static string CalculateLegacySignature(string machineDirectory)
+        {
+            string prefix = machineDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar;
+            string recoveryPath = Path.GetFullPath(Path.Combine(machineDirectory, "Runtime", "RecoverySnapshot.json"));
+            string[] files = Directory.GetFiles(machineDirectory, "*.json", SearchOption.AllDirectories)
+                .Where(path => !string.Equals(Path.GetFullPath(path), recoveryPath, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToArray();
+            using (var content = new MemoryStream())
+            {
+                foreach (string file in files)
+                {
+                    byte[] name = Encoding.UTF8.GetBytes(file.Substring(prefix.Length).Replace(Path.DirectorySeparatorChar, '/'));
+                    content.Write(name, 0, name.Length);
+                    content.WriteByte(0);
+                    byte[] bytes = File.ReadAllBytes(file);
+                    content.Write(bytes, 0, bytes.Length);
+                    content.WriteByte(0xFF);
+                }
+                using (SHA256 sha = SHA256.Create())
+                    return BitConverter.ToString(sha.ComputeHash(content.ToArray())).Replace("-", string.Empty);
+            }
         }
 
         /// <summary>损坏或不可读取的资源记录继续拦截，界面只显示中文，诊断保留完整异常。</summary>

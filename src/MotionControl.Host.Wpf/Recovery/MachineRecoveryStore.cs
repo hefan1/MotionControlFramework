@@ -128,9 +128,10 @@ namespace MotionControl.Host.Wpf.Recovery
                 currentSignature,
                 StringComparison.OrdinalIgnoreCase))
             {
+                document.ConfigurationSignatureMismatch = true;
                 document.CanResume = false;
                 document.EquipmentInitializationCompleted = false;
-                document.ResumeBlockedReason = "设备配置自上次暂停后发生变化；变量中名称和类型仍匹配的值已保留，流程不会自动续跑。";
+                document.ResumeBlockedReason = "设备配置或旧版恢复校验范围发生变化，无法确认原恢复记录仍适用；请联系维护人员核对，流程不会自动续跑。";
                 warningMessage = document.ResumeBlockedReason;
             }
 
@@ -162,7 +163,7 @@ namespace MotionControl.Host.Wpf.Recovery
             _configurationStore.SaveJson(_machineId, RecoveryFilePath, document);
         }
 
-        /// <summary>计算设备配置 JSON 文件的稳定校验值，排除恢复文件自身。</summary>
+        /// <summary>计算设备配置和草稿 JSON 的稳定校验值；整个 Runtime 只含运行状态，不参与校验。</summary>
         public string GetConfigurationSignature()
         {
             string machineDirectory = _configurationStore.GetMachineDirectory(_machineId);
@@ -171,17 +172,12 @@ namespace MotionControl.Host.Wpf.Recovery
                 return string.Empty;
             }
 
-            string recoveryFullPath = Path.GetFullPath(Path.Combine(
-                machineDirectory,
-                RecoveryFilePath.Replace('/', Path.DirectorySeparatorChar)));
-            string[] configurationFiles = Directory.GetFiles(
-                    machineDirectory,
-                    "*.json",
-                    SearchOption.AllDirectories)
-                .Where(path => !string.Equals(
-                    Path.GetFullPath(path),
-                    recoveryFullPath,
-                    StringComparison.OrdinalIgnoreCase))
+            // 不遍历 Runtime：生产记录不断变化，且运行数据不可读不应伪装成配置变化。
+            // 其他目录仍使用原有的排序与哈希格式，以兼容没有额外运行 JSON 的旧快照。
+            string[] configurationFiles = Directory.GetFiles(machineDirectory, "*.json", SearchOption.TopDirectoryOnly)
+                .Concat(Directory.GetDirectories(machineDirectory)
+                    .Where(path => !string.Equals(Path.GetFileName(path), "Runtime", StringComparison.OrdinalIgnoreCase))
+                    .SelectMany(path => Directory.GetFiles(path, "*.json", SearchOption.AllDirectories)))
                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
 

@@ -177,6 +177,11 @@ namespace MotionControl.Host.Wpf.Recovery
                 return;
             }
 
+            // 签名不匹配既可能是配置变化，也可能是旧版把运行记录纳入签名。
+            // 无法证明兼容时保留原件并阻断，不能在退出时用新签名覆盖证据。
+            if (_document.ConfigurationSignatureMismatch && RecoveryBlockReason == null)
+                RecoveryBlockReason = warningMessage;
+
             var validCheckpoints = _document.DeviceVariables
                 .Where(checkpoint => checkpoint != null)
                 .ToList();
@@ -228,7 +233,11 @@ namespace MotionControl.Host.Wpf.Recovery
             {
                 _document.CanResume = false;
                 _document.EquipmentInitializationCompleted = false;
-                warningMessage = RecoveryBlockReason;
+                // 变量恢复的具体错误也要保留，方便维护人员定位；阻断原因不因细节而丢失。
+                warningMessage = string.IsNullOrWhiteSpace(warningMessage)
+                    || string.Equals(warningMessage, RecoveryBlockReason, StringComparison.Ordinal)
+                    ? RecoveryBlockReason
+                    : warningMessage + Environment.NewLine + RecoveryBlockReason;
             }
             _loadWarningMessage = warningMessage;
         }

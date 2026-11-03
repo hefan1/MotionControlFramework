@@ -21,7 +21,7 @@ namespace MotionControl.TaskEngine.MachineDevice
     /// 变量走 IDeviceVariableStore，整机控制权通过 MachineRuntime 统一仲裁。
     /// 轴组插补和有条件的资源范围互锁尚未接入，调用时明确报错，不退化执行。
     /// </summary>
-    public sealed partial class MachineTaskDevice : ITaskDevice, ITaskInterlockSupport, ITaskResourceRecoveryState, ITaskResourceJournalCleanup
+    public sealed partial class MachineTaskDevice : ITaskDevice, ITaskInterlockSupport, ITaskResourceRecoveryState, ITaskResourceJournalCleanup, ITaskRecordSink
     {
         /// <summary>未指定所有者时使用的匿名所有权标记，保证同一实例内的所有权比对稳定。</summary>
         private static readonly object AnonymousOwner = new object();
@@ -30,6 +30,8 @@ namespace MotionControl.TaskEngine.MachineDevice
         private readonly TaskResourceCoordinator _resources;
         /// <summary>正式设备的会话资源记录，内存测试可不启用。</summary>
         private readonly TaskResourceJournal _journal;
+        /// <summary>可选的独立任务记录存储。</summary>
+        private readonly ITaskRecordSink _recordSink;
         /// <summary>开始安全关闭后不再接受新任务登记。</summary>
         private bool _closing;
         /// <summary>当前设备会话的资源记录已完整清理。</summary>
@@ -75,7 +77,7 @@ namespace MotionControl.TaskEngine.MachineDevice
             MotionCardGroup motionCards,
             ILogicalIo logicalIo,
             IDeviceVariableStore variables,
-            MachineRuntime runtime, TaskResourceJournal journal = null)
+            MachineRuntime runtime, TaskResourceJournal journal = null, ITaskRecordSink recordSink = null)
         {
             Catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
             _motionCards = motionCards ?? throw new ArgumentNullException(nameof(motionCards));
@@ -83,7 +85,15 @@ namespace MotionControl.TaskEngine.MachineDevice
             _variables = variables ?? throw new ArgumentNullException(nameof(variables));
             _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
             _journal = journal;
+            _recordSink = recordSink;
             _resources = new TaskResourceCoordinator(catalog.Resources, journal);
+        }
+
+        /// <summary>提交完整记录，未配置存储时拒绝继续。</summary>
+        public void CommitRecord(string executionId, string taskId, string nodeId, string category, DateTimeOffset recordedAtUtc, IReadOnlyDictionary<string, string> fields)
+        {
+            if (_recordSink == null) throw new InvalidOperationException("任务记录存储未配置。");
+            _recordSink.CommitRecord(executionId, taskId, nodeId, category, recordedAtUtc, fields);
         }
 
         /// <summary>本设备的只读资源目录。</summary>
@@ -171,8 +181,8 @@ namespace MotionControl.TaskEngine.MachineDevice
                 name,
                 status.Position,
                 status.ServoEnabled,
-                status.Homed,
-                status.Moving,
+                status.Homed && !status.RequiresHomingAfterLimitAlarm,
+                status.Moving || double.IsNaN(status.Velocity) || double.IsInfinity(status.Velocity) || Math.Abs(status.Velocity) > 0.001,
                 status.AlarmActive ? status.AlarmMessage : null,
                 AcceptedCommands(name));
         }
@@ -231,7 +241,12 @@ namespace MotionControl.TaskEngine.MachineDevice
                 try
                 {
                     // 设备状态可能变化；两次检查均成功才尝试移除原凭证。仍不能代替连续硬件互锁。
-                    if (!CheckResourceRecovery(request, out reason) || !CheckResourceRecovery(request, out reason)) return false;
+                    Dictionary<string, bool> firstOutputs, secondOutputs;
+                    if (!ReadRecoveryResourceOutputs(request, out firstOutputs, out reason)
+                        || !CheckResourceRecovery(request, out reason)
+                        || !ReadRecoveryResourceOutputs(request, out secondOutputs, out reason)
+                        || !CheckResourceRecovery(request, out reason)) return false;
+                    if (!RecoveryOutputsMatch(firstOutputs, secondOutputs, out reason)) return false;
                     if (!_resources.Recover(request)) { reason = "资源状态已改变，请重新读取后核实。"; return false; }
                     // 仅在现场条件复核成功后退休该范围内已退出但曾收尾失败的动作。
                     _unsettledMoves.RemoveWhere(move => move.IsQuiescent

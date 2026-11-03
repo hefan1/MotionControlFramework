@@ -154,6 +154,29 @@ try {
     Start-Sleep -Milliseconds 650
     if ((Send-Ok @{command='readInput'; channel=4}).value) { throw '停止规则后旧供料计时仍生效。' }
 
+    # 多轴门禁不能因主轴安全而忽视其他机构；中途离位也要重新计时。
+    if ((Send-Request @{command='configureFeeder'; enabled=$true; inputChannel=4; outputChannel=12; feedDelayMs=300; emptyDelayMs=500; additionalSafeAxes=@(1)}).ok) { throw '没有主安全轴时不应接受附加轴。' }
+    if ((Send-Request @{command='configureFeeder'; enabled=$true; inputChannel=4; outputChannel=12; feedDelayMs=300; emptyDelayMs=500; safeAxis=0; safePosition=0; safeTolerance=0.01; additionalSafeAxes=@(0)}).ok) { throw '不应接受与主轴重复的附加轴。' }
+    Send-Ok @{command='configureFeeder'; enabled=$true; inputChannel=4; outputChannel=12; feedDelayMs=300; emptyDelayMs=500; safeAxis=0; safePosition=0; safeTolerance=0.01; additionalSafeAxes=@(1,3)} | Out-Null
+    Start-Sleep -Milliseconds 400
+    if ((Send-Ok @{command='readInput'; channel=4}).value) { throw '附加轴未使能和回零时错误供料。' }
+    foreach ($axis in @(1,3)) {
+        Send-Ok @{command='servo'; axis=$axis; value=$true} | Out-Null
+        Send-Ok @{command='home'; axis=$axis} | Out-Null
+    }
+    Wait-Material $true
+    Take-Material
+    Send-Ok @{command='move'; axis=3; position=1; speed=5} | Out-Null
+    Start-Sleep -Milliseconds 700
+    $state = (Send-Ok @{command='readFeeder'}).feederState
+    if ($state.inputValue -or $state.gateSatisfied -or $state.additionalSafeAxes.Count -ne 2) { throw '附加轴离位时错误供料。' }
+    Send-Ok @{command='move'; axis=3; position=0; speed=5} | Out-Null
+    Start-Sleep -Milliseconds 280
+    if ((Send-Ok @{command='readInput'; channel=4}).value) { throw '附加轴返回后没有重新等待完整延时。' }
+    Wait-Material $true
+    Take-Material
+    Send-Ok @{command='configureFeeder'; enabled=$false} | Out-Null
+
     # 显式 CLI 参数及旧无门禁模式均继续可用。
     $command = Join-Path $PSScriptRoot 'ControllerCommand.ps1'
     $ErrorActionPreference = 'Continue'

@@ -72,6 +72,25 @@ namespace MotionControl.TaskEngine.Configuration
                     Require(data, "inputName", JTokenType.String);
                     Require(data, "variableName", JTokenType.String);
                     break;
+                case "WriteRecord":
+                    node = new WriteRecordNode();
+                    Require(data, "category", JTokenType.String);
+                    Require(data, "fields", JTokenType.Object);
+                    break;
+                case "ReadInputWord":
+                    node = new ReadInputWordNode();
+                    Require(data, "inputNames", JTokenType.Array);
+                    Require(data, "validInputName", JTokenType.String);
+                    Require(data, "successInputName", JTokenType.String);
+                    Require(data, "targetVariable", JTokenType.String);
+                    Require(data, "prefix", JTokenType.String);
+                    break;
+                case "WaitAxisPosition":
+                    node = new WaitAxisPositionNode();
+                    Require(data, "axisName", JTokenType.String);
+                    RequireNumber(data, "position");
+                    RequireNumber(data, "tolerance");
+                    break;
                 case "WaitExclusiveInputs":
                     node = new WaitExclusiveInputsNode();
                     Require(data, "firstInputName", JTokenType.String);
@@ -153,6 +172,14 @@ namespace MotionControl.TaskEngine.Configuration
         public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
         {
             throw new NotSupportedException("节点写入使用标准 JSON 属性序列化。");
+        }
+
+        /// <summary>轴位置允许 JSON 整数或浮点数，但不接受缺失和其他类型。</summary>
+        private static void RequireNumber(JObject data, string name)
+        {
+            JToken token = data[name];
+            if (token == null || (token.Type != JTokenType.Integer && token.Type != JTokenType.Float))
+                throw new JsonSerializationException("节点 " + data["id"] + " 的数字字段缺失或类型错误：" + name + "。");
         }
 
         /// <summary>必填字段必须有指定 JSON 类型；组内目标沿用所属节点编号并保留具体字段路径。</summary>

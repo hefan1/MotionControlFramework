@@ -153,5 +153,8 @@
  <sys:String x:Key="操作页.未准备">Not prepared</sys:String>
  <sys:String x:Key="操作页.回零已停止，请检查当前机构状态后重新回零。">Preparation stopped. Check the current equipment state before retrying.</sys:String>
  <sys:String x:Key="操作页.查看轴状态">View axes</sys:String>
+ <sys:String x:Key="操作页.检查轴使能">Check servo enable</sys:String>
+ <sys:String x:Key="操作页.回零前请确认相关轴已使能、工位与物料状态安全。如需使能，请先暂停并确认轴停稳，在生产流程停止并关闭任务，再到轴手动操作。">Before homing, check that the required axes are enabled and the stations and materials are safe. To enable servos, first pause and confirm the axes have stopped, then stop and close the task from production before opening manual axes.</sys:String>
+ <sys:String x:Key="操作页.回零前请确认相关轴已使能、工位与物料状态安全；回零完成后再核对其他启动条件。">Before homing, check that the required axes are enabled and the stations and materials are safe. Verify remaining start conditions after homing.</sys:String>
  <sys:String x:Key="操作页.正在准备设备，完成后等待启动；需要中断时按停止">Preparing equipment. Production will remain stopped; press Stop to interrupt</sys:String>
 </ResourceDictionary>

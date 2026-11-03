@@ -1,6 +1,6 @@
 ﻿param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Status', 'StartFeeder', 'StopFeeder', 'MissingMaterial', 'RestoreFeeder', 'SetInput', 'AxisAlarm', 'ConfigureAxisSensors', 'AxisSensorsStatus', 'AxisSensorFault', 'RemoveAxisSensors', 'ConfigureFeedback', 'FeedbackStatus', 'FeedbackStuck', 'FeedbackRestore', 'RemoveFeedback', 'ConfigureCamera', 'CameraStatus', 'CameraResult', 'CameraResolve', 'CameraNoCompletion', 'CameraRestore', 'CameraResume', 'CameraReset', 'RemoveCamera', 'ConfigureActuator', 'ActuatorStatus', 'ActuatorStuck', 'ActuatorRestore', 'RemoveActuator', 'SetCommandFault', 'CommandFaultStatus', 'ClearCommandFault')]
+    [ValidateSet('Status', 'StartFeeder', 'StopFeeder', 'MissingMaterial', 'RestoreFeeder', 'SetInput', 'AxisAlarm', 'ConfigureAxisSensors', 'AxisSensorsStatus', 'AxisSensorFault', 'RemoveAxisSensors', 'ConfigureFeedback', 'FeedbackStatus', 'FeedbackStuck', 'FeedbackRestore', 'RemoveFeedback', 'ConfigureCamera', 'CameraStatus', 'CameraResult', 'CameraResolve', 'CameraNoCompletion', 'CameraRestore', 'CameraResume', 'CameraReset', 'RemoveCamera', 'ConfigureActuator', 'ActuatorStatus', 'ActuatorStuck', 'ActuatorRestore', 'ActuatorConflict', 'ActuatorConflictRestore', 'RemoveActuator', 'ConfigureScanner', 'ScannerStatus', 'ScannerFault', 'RemoveScanner', 'SetCommandFault', 'CommandFaultStatus', 'ClearCommandFault')]
     [string]$Action,
     [int]$Port = 18520,
     [int]$InputChannel = 4,
@@ -10,6 +10,7 @@
     [int]$FeederSafeAxis,
     [double]$FeederSafePosition,
     [double]$FeederSafeTolerance,
+    [int[]]$FeederAdditionalSafeAxes,
     [int]$FeedbackDelayMs = 300,
     [bool]$FeedbackActiveHigh = $true,
     [int]$CameraTriggerOutput,
@@ -24,6 +25,13 @@
     [int]$ActuatorClampedInput,
     [int]$ActuatorReleasedInput,
     [int]$ActuatorDelayMs = 300,
+    [int]$ScannerTriggerOutput,
+    [int]$ScannerCompleteInput,
+    [int]$ScannerSuccessInput,
+    [int]$ScannerDataInputStart,
+    [int]$ScannerDelayMs = 300,
+    [ValidateSet('normal', 'fail', 'noCompletion')]
+    [string]$ScannerFaultMode = 'normal',
     [int]$Axis = 1,
     [int]$AxisOriginInput,
     [int]$AxisNegativeInput,
@@ -50,7 +58,7 @@ $ErrorActionPreference = 'Stop'
 # 本脚本只连接本机测试控制器，失败时返回非零退出码。
 try {
     $cameraResultValue = if ($CameraResult -ieq 'Invalid') { 'Invalid' } else { $CameraResult.ToUpperInvariant() }
-    if ($Action -in @('ActuatorStatus', 'ActuatorStuck', 'ActuatorRestore', 'RemoveActuator') -and -not $PSBoundParameters.ContainsKey('OutputChannel')) {
+    if ($Action -in @('ActuatorStatus', 'ActuatorStuck', 'ActuatorRestore', 'ActuatorConflict', 'ActuatorConflictRestore', 'RemoveActuator') -and -not $PSBoundParameters.ContainsKey('OutputChannel')) {
         throw '夹具命令必须显式指定 OutputChannel。'
     }
     if ($Action -in @('ConfigureAxisSensors', 'AxisSensorsStatus', 'AxisSensorFault', 'RemoveAxisSensors') -and -not $PSBoundParameters.ContainsKey('Axis')) {
@@ -67,7 +75,9 @@ try {
                 $request.safeAxis = $FeederSafeAxis
                 $request.safePosition = $FeederSafePosition
                 $request.safeTolerance = $FeederSafeTolerance
+                if ($PSBoundParameters.ContainsKey('FeederAdditionalSafeAxes')) { $request.additionalSafeAxes = @($FeederAdditionalSafeAxes) }
             }
+            elseif ($PSBoundParameters.ContainsKey('FeederAdditionalSafeAxes')) { throw '附加安全轴必须同时指定主轴、安全位置和容差。' }
         }
         'StopFeeder' {
             $request = @{ command = 'configureFeeder'; enabled = $false; inputChannel = $InputChannel; outputChannel = $OutputChannel; feedDelayMs = $FeedDelayMs; emptyDelayMs = $EmptyDelayMs }
@@ -123,7 +133,18 @@ try {
         'ActuatorStatus' { $request = @{ command = 'readActuator'; outputChannel = $OutputChannel } }
         'ActuatorStuck' { $request = @{ command = 'setActuatorFault'; outputChannel = $OutputChannel; value = $true } }
         'ActuatorRestore' { $request = @{ command = 'setActuatorFault'; outputChannel = $OutputChannel; value = $false } }
+        'ActuatorConflict' { $request = @{ command = 'setActuatorConflict'; outputChannel = $OutputChannel; value = $true } }
+        'ActuatorConflictRestore' { $request = @{ command = 'setActuatorConflict'; outputChannel = $OutputChannel; value = $false } }
         'RemoveActuator' { $request = @{ command = 'removeActuator'; outputChannel = $OutputChannel } }
+        'ConfigureScanner' {
+            foreach ($name in @('ScannerTriggerOutput', 'ScannerCompleteInput', 'ScannerSuccessInput', 'ScannerDataInputStart')) {
+                if (-not $PSBoundParameters.ContainsKey($name)) { throw "配置扫码器必须显式指定 $name。" }
+            }
+            $request = @{ command='configureScanner'; triggerOutputChannel=$ScannerTriggerOutput; completeInputChannel=$ScannerCompleteInput; successInputChannel=$ScannerSuccessInput; dataInputStart=$ScannerDataInputStart; processingDelayMs=$ScannerDelayMs }
+        }
+        'ScannerStatus' { $request = @{command='readScanner'} }
+        'ScannerFault' { $request = @{command='setScannerFault'; mode=$ScannerFaultMode} }
+        'RemoveScanner' { $request = @{command='removeScanner'} }
         'SetCommandFault' { $request = @{ command = 'setCommandFault'; targetCommand = $TargetCommand; targetIndex = $TargetIndex; mode = $FaultMode; delayMs = $FaultDelayMs } }
         'CommandFaultStatus' { $request = @{ command = 'readCommandFault'; targetCommand = $TargetCommand; targetIndex = $TargetIndex } }
         'ClearCommandFault' { $request = @{ command = 'clearCommandFault'; targetCommand = $TargetCommand; targetIndex = $TargetIndex } }
@@ -161,6 +182,10 @@ try {
         }
         elseif ($Action -eq 'ActuatorStatus') {
             $response.actuatorState | Format-List
+        }
+        elseif ($Action -eq 'ScannerStatus') {
+            if ($response.configured) { $response.scannerState | Format-List }
+            else { Write-Host '扫码器规则未配置。' }
         }
         elseif ($Action -eq 'AxisSensorsStatus') {
             $response.axisSensors | Format-List

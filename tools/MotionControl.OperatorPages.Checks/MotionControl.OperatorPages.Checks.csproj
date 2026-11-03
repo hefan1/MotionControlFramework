@@ -3,5 +3,8 @@
  <ItemGroup>
   <ProjectReference Include="../../src/MotionControl.Host.Wpf/MotionControl.Host.Wpf.csproj"/>
   <Compile Include="../../src/MotionControl.Host.Wpf/Tasks/TaskAlarmGrid.cs" Link="TaskAlarmGrid.cs"/>
+  <Compile Include="../../src/MotionControl.Host.Wpf/Tasks/ResourceRecoverySample.cs" Link="ResourceRecoverySample.cs"/>
+  <Compile Include="../../src/MotionControl.Host.Wpf/Tasks/ResourceRecoveryDialog.cs" Link="ResourceRecoveryDialog.cs"/>
+  <Compile Include="../../src/MotionControl.Host.Wpf/Tasks/ProductRecordReader.cs" Link="ProductRecordReader.cs"/>
  </ItemGroup>
 </Project>

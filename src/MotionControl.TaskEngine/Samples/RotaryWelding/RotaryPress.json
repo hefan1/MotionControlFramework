@@ -1,0 +1,254 @@
+{
+  "schemaVersion": 1,
+  "taskId": "RotaryPress",
+  "name": "压合工位",
+  "revision": 1,
+  "root": {
+    "kind": "Sequence",
+    "id": "step0187",
+    "name": "压合循环",
+    "timeoutMs": 900000,
+    "children": [
+      {
+        "kind": "WaitCondition",
+        "id": "step0183",
+        "name": "等待压合请求",
+        "timeoutMs": 180000,
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Rotary.PressRequest"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "true"
+          }
+        },
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "ResourceScope",
+        "id": "step0182",
+        "name": "占用Press加工区",
+        "timeoutMs": 180000,
+        "resources": [
+          "Zone:RotaryPress",
+          "Axis:Press_Z",
+          "Output:压装启动"
+        ],
+        "body": {
+          "kind": "Sequence",
+          "id": "step0181",
+          "name": "压合加工",
+          "timeoutMs": 900000,
+          "children": [
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0168",
+              "name": "确认Press_Z 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Press_Z",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitOutput",
+              "id": "step0169",
+              "name": "确认压装启动关闭",
+              "timeoutMs": 30000,
+              "outputName": "压装启动",
+              "expected": false,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0170",
+              "name": "等待压装完成复位",
+              "timeoutMs": 30000,
+              "inputName": "压装完成",
+              "expected": false,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0171",
+              "name": "等待压装合格复位",
+              "timeoutMs": 30000,
+              "inputName": "压装合格",
+              "expected": false,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "MoveAxis",
+              "id": "step0172",
+              "name": "Press_Z 移动到 1",
+              "timeoutMs": 30000,
+              "axisName": "Press_Z",
+              "mode": "Absolute",
+              "target": {
+                "source": "Constant",
+                "dataType": "Number",
+                "constant": "1"
+              },
+              "profile": {
+                "speed": 5,
+                "acceleration": 10,
+                "deceleration": 10
+              }
+            },
+            {
+              "kind": "SetOutput",
+              "id": "step0173",
+              "name": "开启压装启动",
+              "timeoutMs": 30000,
+              "outputName": "压装启动",
+              "value": true
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0174",
+              "name": "等待压装完成有效",
+              "timeoutMs": 30000,
+              "inputName": "压装完成",
+              "expected": true,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0175",
+              "name": "等待压装合格有效",
+              "timeoutMs": 30000,
+              "inputName": "压装合格",
+              "expected": true,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "SetOutput",
+              "id": "step0176",
+              "name": "关闭压装启动",
+              "timeoutMs": 30000,
+              "outputName": "压装启动",
+              "value": false
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0177",
+              "name": "等待压装完成复位",
+              "timeoutMs": 30000,
+              "inputName": "压装完成",
+              "expected": false,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "WaitInput",
+              "id": "step0178",
+              "name": "等待压装合格复位",
+              "timeoutMs": 30000,
+              "inputName": "压装合格",
+              "expected": false,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            },
+            {
+              "kind": "MoveAxis",
+              "id": "step0179",
+              "name": "Press_Z 移动到 0",
+              "timeoutMs": 30000,
+              "axisName": "Press_Z",
+              "mode": "Absolute",
+              "target": {
+                "source": "Constant",
+                "dataType": "Number",
+                "constant": "0"
+              },
+              "profile": {
+                "speed": 5,
+                "acceleration": 10,
+                "deceleration": 10
+              }
+            },
+            {
+              "kind": "WaitAxisPosition",
+              "id": "step0180",
+              "name": "确认Press_Z 在 0 且停稳",
+              "timeoutMs": 30000,
+              "axisName": "Press_Z",
+              "position": 0,
+              "tolerance": 0.01,
+              "timeoutAlarmCodes": [
+                "DEMO_SENSOR_TIMEOUT"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "kind": "SetVariable",
+        "id": "step0184",
+        "name": "更新压合完成状态",
+        "timeoutMs": 30000,
+        "variableName": "Rotary.PressDone",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "true"
+        }
+      },
+      {
+        "kind": "WaitCondition",
+        "id": "step0185",
+        "name": "等待压合请求复位",
+        "timeoutMs": 180000,
+        "condition": {
+          "kind": "Compare",
+          "comparison": "Equal",
+          "left": {
+            "source": "Variable",
+            "variableName": "Rotary.PressRequest"
+          },
+          "right": {
+            "source": "Constant",
+            "dataType": "Boolean",
+            "constant": "false"
+          }
+        },
+        "timeoutAlarmCodes": [
+          "FOUR_HANDSHAKE_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "SetVariable",
+        "id": "step0186",
+        "name": "更新压合完成状态",
+        "timeoutMs": 30000,
+        "variableName": "Rotary.PressDone",
+        "value": {
+          "source": "Constant",
+          "dataType": "Boolean",
+          "constant": "false"
+        }
+      }
+    ]
+  }
+}

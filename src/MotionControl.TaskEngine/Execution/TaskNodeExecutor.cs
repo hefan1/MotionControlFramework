@@ -110,6 +110,9 @@ namespace MotionControl.TaskEngine.Execution
             else if (node is DelayNode delay) await DelayAsync(scope, delay.Milliseconds).ConfigureAwait(false);
             else if (node is WaitInputNode input) await WaitInputAsync(scope, input).ConfigureAwait(false);
             else if (node is WaitOutputNode outputWait) await WaitOutputAsync(scope, outputWait).ConfigureAwait(false);
+            else if (node is WaitAxisPositionNode axisWait) await WaitAxisPositionAsync(scope, axisWait).ConfigureAwait(false);
+            else if (node is WriteRecordNode record) await WriteRecordAsync(scope, record).ConfigureAwait(false);
+            else if (node is ReadInputWordNode word) await ReadInputWordAsync(scope, word).ConfigureAwait(false);
             else if (node is WaitExclusiveInputsNode pair) await WaitExclusiveInputsAsync(scope, pair).ConfigureAwait(false);
             else if (node is ReadInputNode sample)
                 await scope.StepAsync(() =>

@@ -49,6 +49,8 @@ namespace MotionControl.TaskEngine.Execution
         internal bool ExpansionLimitHit { get { lock (_sync) return _expansionLimitHit; } }
         /// <summary>当前整体状态。</summary>
         private TaskRunState _state = TaskRunState.Running;
+        /// <summary>每次暂停递增，丢弃暂停前尚未提交的现场采样。</summary>
+        private long _pauseVersion;
         /// <summary>本次终态错误。</summary>
         private TaskExecutionException _error;
         /// <summary>主任务编号。</summary>
@@ -65,6 +67,19 @@ namespace MotionControl.TaskEngine.Execution
         internal double ActiveMilliseconds { get { lock (_sync) return _clock.Elapsed.TotalMilliseconds; } }
         /// <summary>读取当前运行是否处于暂停门控内。</summary>
         internal bool IsPaused { get { lock (_sync) return _state == TaskRunState.Paused; } }
+        /// <summary>取得现场采样开始时的暂停版本。</summary>
+        internal long PauseVersion { get { lock (_sync) return _pauseVersion; } }
+
+        /// <summary>仅在采样期间没有暂停时提交内存结果；动作不得访问控制器。</summary>
+        internal bool TryCommitSample(long version, Action action)
+        {
+            lock (_sync)
+            {
+                if (_state != TaskRunState.Running || _pauseVersion != version) return false;
+                action();
+                return true;
+            }
+        }
         /// <summary>暂停时仍有动作、错误隔离或受控停止未完成，不能复位或释放安全记录。</summary>
         internal bool HasUnsettledPauseOperations
         {
@@ -209,6 +224,7 @@ namespace MotionControl.TaskEngine.Execution
             Task resumed;
             lock (_sync)
             {
+                Cancellation.ThrowIfCancellationRequested();
                 if (_state != TaskRunState.Paused) return;
                 stopped = _pauseStopCompletion.Task;
                 resumed = _resume.Task;
@@ -216,6 +232,7 @@ namespace MotionControl.TaskEngine.Execution
 
             await stopped.ConfigureAwait(false);
             await resumed.ConfigureAwait(false);
+            Cancellation.ThrowIfCancellationRequested();
         }
 
         /// <summary>从冻结点继续，不重发已经接受的相对位移。</summary>
@@ -239,6 +256,8 @@ namespace MotionControl.TaskEngine.Execution
                 if (_state != TaskRunState.Running && _state != TaskRunState.Paused) return false;
                 _state = TaskRunState.Cancelling;
                 _cancellation.Cancel();
+                // 取消不是恢复：唤醒暂停等待者，让它在停轴收尾后观察取消并退出。
+                _resume?.TrySetResult(true);
                 return true;
             }
         }
@@ -287,6 +306,7 @@ namespace MotionControl.TaskEngine.Execution
         /// <summary>开始一次暂停周期并停止任务活动计时。</summary>
         private void BeginPause()
         {
+            _pauseVersion++;
             _state = TaskRunState.Paused;
             _clock.Stop();
             _resume = NewSignal();

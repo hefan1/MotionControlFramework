@@ -21,6 +21,7 @@ using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Execution;
 using MotionControl.TaskEngine.Machine;
 using MotionControl.TaskEngine.Device.InMemory;
+using MotionControl.TaskEngine.Resources;
 using MotionControl.TaskEngine.Wpf.Monitoring;
 using MotionControl.TaskEngine.Wpf.Simulation;
 using MotionControl.TaskEngine.Wpf.Views;
@@ -54,6 +55,7 @@ namespace MotionControl.TaskMonitor.Checks
         private static async Task ExampleLifecycle()
         {
             var session = TaskMonitorExample.Create();
+            bool requireBlockedClose = false;
             try
             {
                 Assert(session.Machine.GetSnapshot().State == TaskMachineState.NeedsReset, "构造自动启动了任务。");
@@ -75,9 +77,59 @@ namespace MotionControl.TaskMonitor.Checks
                 session.Machine.Reset(); session.Machine.Start();
                 await Until(() => session.Machine.GetSnapshot().Stations.Single(station => station.StationId == "inspect").CompletedCycles > 0, 25000);
                 Assert(session.Machine.GetSnapshot().State == TaskMachineState.Running, "示例恢复后出现故障。");
+                await Until(() => session.Device.ReadResources().Any(item => item.State == TaskResourceState.Held));
+                requireBlockedClose = true;
             }
-            finally { await session.Machine.CloseAsync(); }
+            finally { await CloseExampleSessionAsync(session, requireBlockedClose); }
             Assert(session.Machine.GetSnapshot().State == TaskMachineState.Closed, "会话没有收尾。");
+        }
+
+        /// <summary>关闭示例时保留隔离，核实内存设备的停止及报警状态后才显式恢复。</summary>
+        private static async Task CloseExampleSessionAsync(TaskMonitorSession session, bool requireBlockedClose)
+        {
+            InvalidOperationException closeFailure = null;
+            try { await session.Machine.CloseAsync(); }
+            catch (InvalidOperationException error) { closeFailure = error; }
+            if (closeFailure == null)
+            {
+                Assert(!requireBlockedClose, "资源被占用时关闭未保留待确认状态。");
+                return;
+            }
+            var blocked = session.Device.ReadResources().Where(item => item.State == TaskResourceState.Blocked).ToArray();
+            if (blocked.Length == 0) throw closeFailure;
+            Assert(session.Machine.GetSnapshot().State != TaskMachineState.Closed, "资源待确认时错误关闭了整机会话。");
+            ConfirmMemoryResources(session, blocked);
+            await session.Machine.CloseAsync();
+        }
+
+        /// <summary>模拟人员清理内存场景；无退出位置配置时只验证示例实际定义的条件，不推断现场安全。</summary>
+        private static void ConfirmMemoryResources(TaskMonitorSession session, TaskResourceSnapshot[] blocked)
+        {
+            foreach (string output in session.Device.Catalog.Outputs)
+            {
+                session.Device.WriteOutput(output, false);
+                Assert(session.Device.ReadOutput(output) == false, "内存输出未复位：" + output);
+            }
+            var axes = blocked.SelectMany(item => item.Resources)
+                .Where(name => name.StartsWith("Axis:", StringComparison.OrdinalIgnoreCase))
+                .Select(name => name.Substring(5)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            Assert(axes.Length > 0, "示例资源没有用于确认的轴。");
+            foreach (string axisName in axes)
+            {
+                var axis = session.Device.ReadAxis(axisName);
+                Assert(!axis.IsBusy && axis.Enabled && axis.Homed && string.IsNullOrEmpty(axis.Alarm),
+                    "内存轴未停止、未就绪或有报警：" + axisName);
+            }
+            // 验证确认入口会拒绝仍有轴报警的区域，然后才模拟修复该报警。
+            var first = blocked.First(item => item.Resources.Any(name => name.StartsWith("Axis:", StringComparison.OrdinalIgnoreCase)));
+            string firstAxis = first.Resources.First(name => name.StartsWith("Axis:", StringComparison.OrdinalIgnoreCase)).Substring(5);
+            session.Device.SetAxisAlarm(firstAxis, "测试报警");
+            string reason;
+            Assert(!session.Device.TryRecoverResources(first.RequestId, "已核实内存场景", out reason), "存在轴报警时错误解除资源隔离。");
+            session.Device.SetAxisAlarm(firstAxis, null);
+            foreach (var resource in blocked)
+                Assert(session.Device.TryRecoverResources(resource.RequestId, "内存检查：已复位输出并核对轴停止", out reason),
+                    "确认内存资源失败：" + reason);
         }
 
         /// <summary>两次同名子任务必须匹配不同父调用；条件不选中的子树标记未选择。</summary>
@@ -301,7 +353,7 @@ namespace MotionControl.TaskMonitor.Checks
             {
                 pendingWindow?.Close();
                 if (pendingSession != null) pendingSession.Machine.CloseAsync().GetAwaiter().GetResult();
-                session.Machine.CloseAsync().GetAwaiter().GetResult();
+                CloseExampleSessionAsync(session, false).GetAwaiter().GetResult();
                 application.Shutdown();
             }
         }
@@ -311,6 +363,7 @@ namespace MotionControl.TaskMonitor.Checks
         {
             var session = TaskMonitorExample.Create();
             TaskSimulationWindow window = null;
+            bool requireBlockedClose = false;
             try
             {
                 window = new TaskSimulationWindow(session)
@@ -379,17 +432,31 @@ namespace MotionControl.TaskMonitor.Checks
                 WaitWithDispatcher(() => ProductionCycleCounts(session).Zip(beforePhysicalButtons, (current, prior) => current > prior).All(value => value),
                     30000, "实体 DI 按钮启动后，三个工位没有全部继续生产。");
                 Console.WriteLine("[通过] 操作界面：停止、复位、启动 DI 按钮按瞬时信号执行并自动释放");
+                WaitWithDispatcher(() => session.Device.ReadResources().Any(item => item.State == TaskResourceState.Held),
+                    5000, "未观察到示例占用资源，无法验证关闭保护。");
+                requireBlockedClose = true;
             }
             finally
             {
                 if (window != null && window.IsVisible)
                 {
                     window.Close();
+                    if (requireBlockedClose)
+                    {
+                        var feedback = (TextBlock)window.FindName("CommandFeedback");
+                        WaitWithDispatcher(() => window.IsVisible && window.IsEnabled
+                            && session.Device.ReadResources().Any(item => item.State == TaskResourceState.Blocked)
+                            && feedback.Text.Contains("待确认"), 10000, "资源待确认时窗口没有保留并显示原因。");
+                        Assert(session.Machine.GetSnapshot().State != TaskMachineState.Closed,
+                            "资源待确认时窗口错误关闭了整机会话。");
+                        ConfirmMemoryResources(session, session.Device.ReadResources().Where(item => item.State == TaskResourceState.Blocked).ToArray());
+                        window.Close();
+                    }
                     WaitWithDispatcher(() => !window.IsVisible
                         && session.Machine.GetSnapshot().State == TaskMachineState.Closed,
                         30000, "操作员关闭窗口后，整机会话或窗口没有完成收尾。");
                 }
-                else session.Machine.CloseAsync().GetAwaiter().GetResult();
+                else CloseExampleSessionAsync(session, false).GetAwaiter().GetResult();
             }
         }
 

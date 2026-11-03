@@ -1,0 +1,1245 @@
+{
+  "schemaVersion": 1,
+  "taskId": "RotaryPrepare",
+  "name": "十三轴设备准备",
+  "revision": 1,
+  "root": {
+    "kind": "Sequence",
+    "id": "step0368",
+    "name": "确认无料与回零",
+    "timeoutMs": 900000,
+    "children": [
+      {
+        "kind": "WaitInput",
+        "id": "step0260",
+        "name": "等待上料到位复位",
+        "timeoutMs": 30000,
+        "inputName": "上料到位",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitOutput",
+        "id": "step0261",
+        "name": "确认取料夹紧关闭",
+        "timeoutMs": 30000,
+        "outputName": "取料夹紧",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitOutput",
+        "id": "step0262",
+        "name": "确认A夹紧关闭",
+        "timeoutMs": 30000,
+        "outputName": "A夹紧",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitOutput",
+        "id": "step0263",
+        "name": "确认B夹紧关闭",
+        "timeoutMs": 30000,
+        "outputName": "B夹紧",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitOutput",
+        "id": "step0264",
+        "name": "确认扫码触发关闭",
+        "timeoutMs": 30000,
+        "outputName": "扫码触发",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitOutput",
+        "id": "step0265",
+        "name": "确认焊接启动关闭",
+        "timeoutMs": 30000,
+        "outputName": "焊接启动",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitOutput",
+        "id": "step0266",
+        "name": "确认压装启动关闭",
+        "timeoutMs": 30000,
+        "outputName": "压装启动",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitOutput",
+        "id": "step0267",
+        "name": "确认相机触发关闭",
+        "timeoutMs": 30000,
+        "outputName": "相机触发",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitOutput",
+        "id": "step0268",
+        "name": "确认相机结果复位关闭",
+        "timeoutMs": 30000,
+        "outputName": "相机结果复位",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitOutput",
+        "id": "step0269",
+        "name": "确认剔除启动关闭",
+        "timeoutMs": 30000,
+        "outputName": "剔除启动",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitOutput",
+        "id": "step0270",
+        "name": "确认缓存交接关闭",
+        "timeoutMs": 30000,
+        "outputName": "缓存交接",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitOutput",
+        "id": "step0271",
+        "name": "确认合格出料关闭",
+        "timeoutMs": 30000,
+        "outputName": "合格出料",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitExclusiveInputs",
+        "id": "step0272",
+        "name": "确认取料夹紧到位 / 取料松开到位",
+        "timeoutMs": 30000,
+        "firstInputName": "取料夹紧到位",
+        "secondInputName": "取料松开到位",
+        "firstVariableName": "Rotary.GripClosed",
+        "secondVariableName": "Rotary.GripOpen",
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ],
+        "requiredFirstValue": false
+      },
+      {
+        "kind": "WaitExclusiveInputs",
+        "id": "step0273",
+        "name": "确认A夹紧到位 / A松开到位",
+        "timeoutMs": 30000,
+        "firstInputName": "A夹紧到位",
+        "secondInputName": "A松开到位",
+        "firstVariableName": "Rotary.AClosed",
+        "secondVariableName": "Rotary.AOpen",
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ],
+        "requiredFirstValue": false
+      },
+      {
+        "kind": "WaitExclusiveInputs",
+        "id": "step0274",
+        "name": "确认B夹紧到位 / B松开到位",
+        "timeoutMs": 30000,
+        "firstInputName": "B夹紧到位",
+        "secondInputName": "B松开到位",
+        "firstVariableName": "Rotary.BClosed",
+        "secondVariableName": "Rotary.BOpen",
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ],
+        "requiredFirstValue": false
+      },
+      {
+        "kind": "WaitInput",
+        "id": "step0275",
+        "name": "等待上料到位复位",
+        "timeoutMs": 30000,
+        "inputName": "上料到位",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "AxisCommand",
+        "id": "step0276",
+        "name": "Feeder_Z 回零",
+        "timeoutMs": 60000,
+        "axisName": "Feeder_Z",
+        "command": "Home"
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0277",
+        "name": "确认Feeder_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Feeder_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitInput",
+        "id": "step0278",
+        "name": "等待上料到位复位",
+        "timeoutMs": 30000,
+        "inputName": "上料到位",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "AxisCommand",
+        "id": "step0279",
+        "name": "Camera_Z 回零",
+        "timeoutMs": 60000,
+        "axisName": "Camera_Z",
+        "command": "Home"
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0280",
+        "name": "确认Camera_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Camera_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitInput",
+        "id": "step0281",
+        "name": "等待上料到位复位",
+        "timeoutMs": 30000,
+        "inputName": "上料到位",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "AxisCommand",
+        "id": "step0282",
+        "name": "Weld_Z 回零",
+        "timeoutMs": 60000,
+        "axisName": "Weld_Z",
+        "command": "Home"
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0283",
+        "name": "确认Weld_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Weld_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitInput",
+        "id": "step0284",
+        "name": "等待上料到位复位",
+        "timeoutMs": 30000,
+        "inputName": "上料到位",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "AxisCommand",
+        "id": "step0285",
+        "name": "Press_Z 回零",
+        "timeoutMs": 60000,
+        "axisName": "Press_Z",
+        "command": "Home"
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0286",
+        "name": "确认Press_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Press_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitInput",
+        "id": "step0287",
+        "name": "等待上料到位复位",
+        "timeoutMs": 30000,
+        "inputName": "上料到位",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "AxisCommand",
+        "id": "step0288",
+        "name": "Reject_Z 回零",
+        "timeoutMs": 60000,
+        "axisName": "Reject_Z",
+        "command": "Home"
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0289",
+        "name": "确认Reject_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Reject_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0290",
+        "name": "确认Feeder_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Feeder_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0291",
+        "name": "确认Camera_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Camera_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0292",
+        "name": "确认Weld_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Weld_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0293",
+        "name": "确认Press_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Press_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0294",
+        "name": "确认Reject_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Reject_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitInput",
+        "id": "step0295",
+        "name": "等待上料到位复位",
+        "timeoutMs": 30000,
+        "inputName": "上料到位",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "AxisCommand",
+        "id": "step0296",
+        "name": "Feeder_X 回零",
+        "timeoutMs": 60000,
+        "axisName": "Feeder_X",
+        "command": "Home"
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0297",
+        "name": "确认Feeder_X 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Feeder_X",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0298",
+        "name": "确认Feeder_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Feeder_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0299",
+        "name": "确认Camera_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Camera_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0300",
+        "name": "确认Weld_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Weld_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0301",
+        "name": "确认Press_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Press_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0302",
+        "name": "确认Reject_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Reject_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitInput",
+        "id": "step0303",
+        "name": "等待上料到位复位",
+        "timeoutMs": 30000,
+        "inputName": "上料到位",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "AxisCommand",
+        "id": "step0304",
+        "name": "Load_X 回零",
+        "timeoutMs": 60000,
+        "axisName": "Load_X",
+        "command": "Home"
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0305",
+        "name": "确认Load_X 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Load_X",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0306",
+        "name": "确认Feeder_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Feeder_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0307",
+        "name": "确认Camera_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Camera_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0308",
+        "name": "确认Weld_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Weld_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0309",
+        "name": "确认Press_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Press_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0310",
+        "name": "确认Reject_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Reject_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitInput",
+        "id": "step0311",
+        "name": "等待上料到位复位",
+        "timeoutMs": 30000,
+        "inputName": "上料到位",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "AxisCommand",
+        "id": "step0312",
+        "name": "Transfer_Y 回零",
+        "timeoutMs": 60000,
+        "axisName": "Transfer_Y",
+        "command": "Home"
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0313",
+        "name": "确认Transfer_Y 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Transfer_Y",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0314",
+        "name": "确认Feeder_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Feeder_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0315",
+        "name": "确认Camera_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Camera_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0316",
+        "name": "确认Weld_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Weld_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0317",
+        "name": "确认Press_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Press_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0318",
+        "name": "确认Reject_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Reject_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitInput",
+        "id": "step0319",
+        "name": "等待上料到位复位",
+        "timeoutMs": 30000,
+        "inputName": "上料到位",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "AxisCommand",
+        "id": "step0320",
+        "name": "Unload_X 回零",
+        "timeoutMs": 60000,
+        "axisName": "Unload_X",
+        "command": "Home"
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0321",
+        "name": "确认Unload_X 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Unload_X",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0322",
+        "name": "确认Feeder_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Feeder_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0323",
+        "name": "确认Camera_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Camera_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0324",
+        "name": "确认Weld_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Weld_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0325",
+        "name": "确认Press_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Press_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0326",
+        "name": "确认Reject_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Reject_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitInput",
+        "id": "step0327",
+        "name": "等待上料到位复位",
+        "timeoutMs": 30000,
+        "inputName": "上料到位",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "AxisCommand",
+        "id": "step0328",
+        "name": "Buffer_X 回零",
+        "timeoutMs": 60000,
+        "axisName": "Buffer_X",
+        "command": "Home"
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0329",
+        "name": "确认Buffer_X 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Buffer_X",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0330",
+        "name": "确认Feeder_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Feeder_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0331",
+        "name": "确认Camera_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Camera_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0332",
+        "name": "确认Weld_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Weld_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0333",
+        "name": "确认Press_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Press_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0334",
+        "name": "确认Reject_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Reject_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitInput",
+        "id": "step0335",
+        "name": "等待上料到位复位",
+        "timeoutMs": 30000,
+        "inputName": "上料到位",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "AxisCommand",
+        "id": "step0336",
+        "name": "Buffer_Y 回零",
+        "timeoutMs": 60000,
+        "axisName": "Buffer_Y",
+        "command": "Home"
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0337",
+        "name": "确认Buffer_Y 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Buffer_Y",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0338",
+        "name": "确认Feeder_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Feeder_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0339",
+        "name": "确认Camera_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Camera_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0340",
+        "name": "确认Weld_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Weld_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0341",
+        "name": "确认Press_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Press_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0342",
+        "name": "确认Reject_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Reject_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitInput",
+        "id": "step0343",
+        "name": "等待上料到位复位",
+        "timeoutMs": 30000,
+        "inputName": "上料到位",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "AxisCommand",
+        "id": "step0344",
+        "name": "Camera_X 回零",
+        "timeoutMs": 60000,
+        "axisName": "Camera_X",
+        "command": "Home"
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0345",
+        "name": "确认Camera_X 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Camera_X",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0346",
+        "name": "确认Feeder_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Feeder_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0347",
+        "name": "确认Camera_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Camera_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0348",
+        "name": "确认Weld_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Weld_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0349",
+        "name": "确认Press_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Press_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0350",
+        "name": "确认Reject_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Reject_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitInput",
+        "id": "step0351",
+        "name": "等待上料到位复位",
+        "timeoutMs": 30000,
+        "inputName": "上料到位",
+        "expected": false,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "AxisCommand",
+        "id": "step0352",
+        "name": "Conveyor_R 回零",
+        "timeoutMs": 60000,
+        "axisName": "Conveyor_R",
+        "command": "Home"
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0353",
+        "name": "确认Conveyor_R 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Conveyor_R",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0354",
+        "name": "确认Feeder_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Feeder_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0355",
+        "name": "确认Camera_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Camera_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0356",
+        "name": "确认Weld_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Weld_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0357",
+        "name": "确认Press_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Press_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0358",
+        "name": "确认Reject_Z 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Reject_Z",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0359",
+        "name": "确认Feeder_X 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Feeder_X",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0360",
+        "name": "确认Load_X 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Load_X",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0361",
+        "name": "确认Transfer_Y 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Transfer_Y",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0362",
+        "name": "确认Unload_X 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Unload_X",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0363",
+        "name": "确认Buffer_X 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Buffer_X",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0364",
+        "name": "确认Buffer_Y 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Buffer_Y",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0365",
+        "name": "确认Camera_X 在 0 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Camera_X",
+        "position": 0,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      },
+      {
+        "kind": "MoveAxis",
+        "id": "step0366",
+        "name": "Conveyor_R 移动到 -90",
+        "timeoutMs": 30000,
+        "axisName": "Conveyor_R",
+        "mode": "Absolute",
+        "target": {
+          "source": "Constant",
+          "dataType": "Number",
+          "constant": "-90"
+        },
+        "profile": {
+          "speed": 30,
+          "acceleration": 60,
+          "deceleration": 60
+        }
+      },
+      {
+        "kind": "WaitAxisPosition",
+        "id": "step0367",
+        "name": "确认Conveyor_R 在 -90 且停稳",
+        "timeoutMs": 30000,
+        "axisName": "Conveyor_R",
+        "position": -90,
+        "tolerance": 0.01,
+        "timeoutAlarmCodes": [
+          "DEMO_SENSOR_TIMEOUT"
+        ]
+      }
+    ]
+  }
+}

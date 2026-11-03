@@ -51,7 +51,7 @@ namespace MotionControl.TaskEngine.Validation
             if (!ValidName(node.Name)) Error(node, path + ".name", "请填写清楚的步骤名称。");
             if (node.TimeoutMs <= 0) Error(node, path + ".timeoutMs", "时限必须大于零。");
 
-            if ((node is WaitInputNode || node is WaitOutputNode || node is WaitExclusiveInputsNode || node is WaitConditionNode)
+            if ((node is WaitInputNode || node is WaitOutputNode || node is WaitExclusiveInputsNode || node is WaitConditionNode || node is WaitAxisPositionNode || node is ReadInputWordNode)
                 && node.TimeoutMs > 0 && earliestAncestor != null
                 && earliestAncestor.TimeoutMs > 0 && earliestAncestor.TimeoutMs <= node.TimeoutMs)
             {

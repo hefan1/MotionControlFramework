@@ -200,4 +200,12 @@
  <sys:String x:Key="任务监控.第二路输入">Second input</sys:String>
  <sys:String x:Key="任务监控.第一路目标变量">First target variable</sys:String>
  <sys:String x:Key="任务监控.第二路目标变量">Second target variable</sys:String>
+ <sys:String x:Key="任务监控.等待轴到位">Wait for axis position</sys:String>
+ <sys:String x:Key="任务监控.读取锁存编码">Read latched code</sys:String>
+ <sys:String x:Key="任务监控.期望位置">Expected position</sys:String>
+ <sys:String x:Key="任务监控.数据有效输入">Data valid input</sys:String>
+ <sys:String x:Key="任务监控.读取成功输入">Read successful input</sys:String>
+ <sys:String x:Key="任务监控.保存记录">Save record</sys:String>
+ <sys:String x:Key="任务监控.记录类别">Record category</sys:String>
+ <sys:String x:Key="任务监控.所有字段取同一次变量快照；记录失败时停止后续步骤">All fields use one variable snapshot; a failed record stops subsequent steps.</sys:String>
 </ResourceDictionary>

@@ -2,6 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Configuration;
 using MotionControl.Framework.Contracts.Equipment;
@@ -16,7 +19,7 @@ namespace MotionControl.Host.Wpf
     /// 把 Host 当前已加载的设备配置、硬件映射和控制卡连接包装成设备定义可用的环境，
     /// 使设备定义不必引用配置存储、控制卡连接或 WPF 页面。
     /// </summary>
-    internal sealed class HostEquipmentContext : IEquipmentContext
+    internal sealed class HostEquipmentContext : IEquipmentContext, IEquipmentEvidenceStore, IEquipmentRecordStore
     {
         /// <summary>当前设备的 JSON 配置存储。</summary>
         private readonly MachineConfigurationStore _configurationStore;
@@ -128,6 +131,51 @@ namespace MotionControl.Host.Wpf
         public T LoadJson<T>(string relativePath) where T : class
         {
             return _configurationStore.LoadJson<T>(_equipmentId, relativePath);
+        }
+
+        /// <summary>原子写入独立的设备证据文件；不覆盖框架运行恢复记录或自动批准恢复。</summary>
+        public void SaveEvidence<T>(string evidenceName, T document) where T : class
+        {
+            if (string.IsNullOrWhiteSpace(evidenceName) || evidenceName.Any(ch => !char.IsLetterOrDigit(ch) && ch != '-' && ch != '_'))
+                throw new ArgumentException("设备证据名称只能包含字母、数字、横线或下划线。", nameof(evidenceName));
+            if (document == null) throw new ArgumentNullException(nameof(document));
+            string directory = Path.Combine(_configurationStore.GetMachineDirectory(_equipmentId), "Runtime", "Evidence");
+            Directory.CreateDirectory(directory);
+            string destination = Path.Combine(directory, evidenceName + ".json");
+            string temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                string json = JsonConvert.SerializeObject(document, Formatting.Indented,
+                    new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() });
+                byte[] bytes = new UTF8Encoding(false).GetBytes(json + Environment.NewLine);
+                using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                { stream.Write(bytes, 0, bytes.Length); stream.Flush(true); }
+                if (File.Exists(destination)) File.Replace(temporary, destination, null, true);
+                else File.Move(temporary, destination);
+            }
+            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        }
+
+        /// <summary>原子创建单件记录，目标存在时拒绝覆盖；该目录与框架恢复记录独立。</summary>
+        public void CreateRecord<T>(string recordName, T document) where T : class
+        {
+            if (string.IsNullOrWhiteSpace(recordName) || recordName.Any(ch => !char.IsLetterOrDigit(ch) && ch != '-' && ch != '_'))
+                throw new ArgumentException("设备记录名称只能包含字母、数字、横线或下划线。", nameof(recordName));
+            if (document == null) throw new ArgumentNullException(nameof(document));
+            string directory = Path.Combine(_configurationStore.GetMachineDirectory(_equipmentId), "Runtime", "EquipmentRecords");
+            Directory.CreateDirectory(directory);
+            string destination = Path.Combine(directory, recordName + ".json");
+            string temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                string json = JsonConvert.SerializeObject(document, Formatting.Indented,
+                    new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() });
+                byte[] bytes = new UTF8Encoding(false).GetBytes(json + Environment.NewLine);
+                using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                { stream.Write(bytes, 0, bytes.Length); stream.Flush(true); }
+                File.Move(temporary, destination);
+            }
+            finally { if (File.Exists(temporary)) File.Delete(temporary); }
         }
 
         /// <summary>按报警代码从设备报警库取出报警定义，代码缺失时报告可定位的错误。</summary>

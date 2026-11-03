@@ -181,7 +181,14 @@ namespace MotionControl.MachineDevice.Checks
                     controller.AbortAsync().GetAwaiter().GetResult();
                     string reason;
                     var blocked = device.ReadResources().SingleOrDefault();
-                    if (blocked != null) Ensure(device.TryRecoverResources(blocked.RequestId, "测试已核对", out reason), reason);
+                    if (blocked != null)
+                    {
+                        Ensure(!device.TryRecoverResources(blocked.RequestId, "测试已核对", out reason) && reason.Contains("仍有效"),
+                            "输出仍有效时错误解除隔离。");
+                        // 仅测试替身模拟维护人员按现场规程处理后的输出；恢复接口本身不切换输出。
+                        io.WriteOutputAsync("Vacuum", false, CancellationToken.None).GetAwaiter().GetResult();
+                        Ensure(device.TryRecoverResources(blocked.RequestId, "测试已核对", out reason), reason);
+                    }
                     controller.CloseAsync().GetAwaiter().GetResult();
                 }
             }

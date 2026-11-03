@@ -11,8 +11,31 @@ using MotionControl.TaskEngine.Resources;
 namespace MotionControl.TaskEngine.Device.InMemory
 {
     /// <summary>任务引擎专用的独立内存设备；没有控制卡、网络或原生 DLL 入口。</summary>
-    public sealed partial class InMemoryTaskDevice : ITaskDevice, ITaskInterlockSupport
+    public sealed partial class InMemoryTaskDevice : ITaskDevice, ITaskInterlockSupport, ITaskRecordSink
     {
+        private readonly ITaskRecordSink _recordOverride;
+        private readonly Dictionary<string, Dictionary<string, string>> _records = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
+        /// <summary>按执行编号保存首次记录时间，重试不得更改。</summary>
+        private readonly Dictionary<string, DateTimeOffset> _recordTimes = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
+        /// <summary>读取隔离检查使用的记录快照。</summary>
+        public IReadOnlyList<IReadOnlyDictionary<string, string>> ReadRecords()
+        {
+            lock (_sync) return _records.Values.Select(item => (IReadOnlyDictionary<string, string>)new Dictionary<string, string>(item)).ToArray();
+        }
+        /// <summary>内存记录只允许幂等重试。</summary>
+        public void CommitRecord(string executionId, string taskId, string nodeId, string category, DateTimeOffset recordedAtUtc, IReadOnlyDictionary<string, string> fields)
+        {
+            if (_recordOverride != null) { _recordOverride.CommitRecord(executionId, taskId, nodeId, category, recordedAtUtc, fields); return; }
+            lock (_sync)
+            {
+                Dictionary<string, string> existing;
+                if (_records.TryGetValue(executionId, out existing))
+                {
+                    if (_recordTimes[executionId] != recordedAtUtc || existing.Count != fields.Count || fields.Any(item => !existing.ContainsKey(item.Key) || existing[item.Key] != item.Value)) throw new InvalidOperationException("记录重试时间或内容不一致。");
+                }
+                else { _records.Add(executionId, fields.ToDictionary(item => item.Key, item => item.Value)); _recordTimes.Add(executionId, recordedAtUtc); }
+            }
+        }
         /// <summary>保护内存设备状态；只在短小的读写期间持有。</summary>
         private readonly object _sync = new object();
         /// <summary>每根轴的独立运行状态。</summary>
@@ -29,9 +52,10 @@ namespace MotionControl.TaskEngine.Device.InMemory
         public TaskResourceCoordinator Resources { get; }
 
         /// <summary>从目录建立隔离状态；轴默认未使能、未回零，变量使用配置初值。</summary>
-        public InMemoryTaskDevice(TaskResourceCatalog catalog)
+        public InMemoryTaskDevice(TaskResourceCatalog catalog, ITaskRecordSink recordSink = null)
         {
             Catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+            _recordOverride = recordSink;
             Resources = new TaskResourceCoordinator(catalog.Resources);
             foreach (TaskAxisInfo axis in catalog.Axes.Values) _axes.Add(axis.Name, new InMemoryAxis());
             foreach (string input in catalog.Inputs) _inputs.Add(input, null);

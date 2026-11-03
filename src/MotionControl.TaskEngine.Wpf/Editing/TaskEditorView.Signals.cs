@@ -1,4 +1,7 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using MotionControl.Framework.Contracts.Variables;
@@ -32,6 +35,35 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                         code => T("报警库不存在") + code, T("当前设备报警库为空，请先维护报警代码"),
                         T("已关联 {0} 条报警"), T("停机报警"), T("非停机报警"), T("检查："), T("恢复：")));
                 Details.Children.Add(TaskEditingUi.Label(this, "输出读回不代表机构已到位")); AddReference("IO映射", "@Output", "DO");
+            }
+            else if (_selected is WaitAxisPositionNode axisWait)
+            {
+                AddField("Axis", "逻辑轴", TaskEditingUi.Names(_catalog.Axes.Keys, axisWait.AxisName));
+                AddField("Position", "期望位置", TaskEditingUi.Text(axisWait.Position.ToString(CultureInfo.InvariantCulture)));
+                AddField("Tolerance", "位置容差", TaskEditingUi.Text(axisWait.Tolerance.ToString(CultureInfo.InvariantCulture)));
+                AddField("TimeoutAlarms", "等待超时关联报警（可多选）", new TaskAlarmSelector(_catalog.AlarmDefinitions, axisWait.TimeoutAlarmCodes,
+                    code => T("报警库不存在") + code, T("当前设备报警库为空，请先维护报警代码"), T("已关联 {0} 条报警"), T("停机报警"), T("非停机报警"), T("检查："), T("恢复：")));
+                Details.Children.Add(TaskEditingUi.Label(this, "需轴已使能、回零、停止且无报警；不代替安全联锁"));
+            }
+            else if (_selected is WriteRecordNode record)
+            {
+                AddField("Category", "记录类别", TaskEditingUi.Text(record.Category));
+                var text = TaskEditingUi.Text(string.Join(Environment.NewLine, (record.Fields ?? new Dictionary<string, string>()).Select(item => item.Key + " = " + item.Value)));
+                text.AcceptsReturn = true; text.TextWrapping = TextWrapping.Wrap; text.MinHeight = 120;
+                AddField("Fields", "记录字段（每行：字段名 = 字符串变量名）", text);
+                Details.Children.Add(TaskEditingUi.Label(this, "所有字段取同一次变量快照；记录失败时停止后续步骤"));
+            }
+            else if (_selected is ReadInputWordNode word)
+            {
+                AddField("Valid", "数据有效输入", TaskEditingUi.Names(_catalog.Inputs, word.ValidInputName));
+                AddField("Success", "读取成功输入", TaskEditingUi.Names(_catalog.Inputs, word.SuccessInputName));
+                for (int bit = 0; bit < 16; bit++)
+                    AddField("Bit" + bit, "数据位 " + bit, TaskEditingUi.Names(_catalog.Inputs, word.InputNames != null && bit < word.InputNames.Count ? word.InputNames[bit] : ""));
+                AddField("Variable", "设备变量", TaskEditingUi.Names(_catalog.Variables.Where(item => item.Value == DeviceVariableType.String).Select(item => item.Key), word.TargetVariable));
+                AddField("Prefix", "编码前缀", TaskEditingUi.Text(word.Prefix));
+                AddField("TimeoutAlarms", "等待超时关联报警（可多选）", new TaskAlarmSelector(_catalog.AlarmDefinitions, word.TimeoutAlarmCodes,
+                    code => T("报警库不存在") + code, T("当前设备报警库为空，请先维护报警代码"), T("已关联 {0} 条报警"), T("停机报警"), T("非停机报警"), T("检查："), T("恢复：")));
+                Details.Children.Add(TaskEditingUi.Label(this, "输入须由设备锁存；两轮采样不一致或数据为零时拒绝"));
             }
             else if (_selected is ReadInputNode sample)
             {
@@ -99,6 +131,35 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 outputWait.OutputName = ((ComboBox)_fields["Output"]).SelectedItem as string ?? "";
                 outputWait.Expected = (bool)((ComboBox)_fields["Expected"]).SelectedValue;
                 outputWait.TimeoutAlarmCodes = ((TaskAlarmSelector)_fields["TimeoutAlarms"]).SelectedCodes.ToList();
+            }
+            else if (_selected is WaitAxisPositionNode axisWait)
+            {
+                axisWait.AxisName = ((ComboBox)_fields["Axis"]).SelectedItem as string ?? "";
+                axisWait.Position = TaskEditingUi.Number((TextBox)_fields["Position"], "期望位置");
+                axisWait.Tolerance = TaskEditingUi.Number((TextBox)_fields["Tolerance"], "位置容差");
+                axisWait.TimeoutAlarmCodes = ((TaskAlarmSelector)_fields["TimeoutAlarms"]).SelectedCodes.ToList();
+            }
+            else if (_selected is WriteRecordNode record)
+            {
+                var fields = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (string line in ((TextBox)_fields["Fields"]).Text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    int separator = line.IndexOf('=');
+                    if (separator <= 0 || separator == line.Length - 1) throw new InvalidOperationException("记录字段每行须填写：字段名 = 字符串变量名。");
+                    string name = line.Substring(0, separator).Trim(); string variableName = line.Substring(separator + 1).Trim();
+                    if (name.Length == 0 || variableName.Length == 0 || fields.ContainsKey(name)) throw new InvalidOperationException("记录字段名称不能为空或重复。");
+                    fields.Add(name, variableName);
+                }
+                record.Category = ((TextBox)_fields["Category"]).Text.Trim(); record.Fields = fields;
+            }
+            else if (_selected is ReadInputWordNode word)
+            {
+                word.ValidInputName = ((ComboBox)_fields["Valid"]).SelectedItem as string ?? "";
+                word.SuccessInputName = ((ComboBox)_fields["Success"]).SelectedItem as string ?? "";
+                word.InputNames = Enumerable.Range(0, 16).Select(bit => ((ComboBox)_fields["Bit" + bit]).SelectedItem as string ?? "").ToList();
+                word.TargetVariable = ((ComboBox)_fields["Variable"]).SelectedItem as string ?? "";
+                word.Prefix = ((TextBox)_fields["Prefix"]).Text;
+                word.TimeoutAlarmCodes = ((TaskAlarmSelector)_fields["TimeoutAlarms"]).SelectedCodes.ToList();
             }
             else if (_selected is ReadInputNode sample)
             {

@@ -39,7 +39,7 @@ namespace MotionControl.VirtualController
                 throw new ArgumentException("原点感应区必须位于正负限位之间，半宽必须大于零。");
             foreach (int input in new[] { origin, negative, positive })
             {
-                if (AxisSensorUsesInput(input) || CameraUsesInput(input) || ActuatorUsesInput(input)
+                if (AxisSensorUsesInput(input) || CameraUsesInput(input) || ActuatorUsesInput(input) || ScannerUsesInput(input)
                     || _feedback.ContainsKey(input) || (_feeder.Enabled && _feeder.Input == input))
                     throw new InvalidOperationException("原点或限位输入已被其他设备规则占用：DI" + input);
                 if (_inputs[input]) throw new InvalidOperationException("配置轴传感器前输入必须为低电平：DI" + input);

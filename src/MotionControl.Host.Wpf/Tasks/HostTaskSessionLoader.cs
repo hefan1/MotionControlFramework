@@ -1,3 +1,4 @@
+using MotionControl.TaskEngine.Device;
 using MotionControl.Framework.Contracts.IO;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Runtime.Machine;
@@ -21,7 +22,8 @@ namespace MotionControl.Host.Wpf.Tasks
             var namedResources = new TaskMachineConfigurationStore(store).LoadNamedResources(machineId);
             var catalog = new TaskResourceCatalogLoader(store).Load(machineId, namedResources);
             var journal = new TaskResourceJournal(store.GetMachineDirectory(machineId), machineId);
-            var device = new MachineTaskDevice(catalog, motionCards, logicalIo, variables, runtime, journal);
+            var device = new MachineTaskDevice(catalog, motionCards, logicalIo, variables, runtime, journal,
+                new TaskFileRecordSink(store.GetMachineDirectory(machineId), machineId));
             TaskMonitorSession session = TaskMonitorSession.LoadMachine(store, machineId, device, runtime.AlarmService);
             try
             {

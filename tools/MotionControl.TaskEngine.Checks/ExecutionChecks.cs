@@ -31,6 +31,8 @@ namespace MotionControl.TaskEngine.Checks
                 { "全部变量类型赋值和比较", AllValueTypes },
                 { "未知 DI 和无效变量等待", UnknownValues },
                 { "输入采样和未知数据拦截", InputSampling },
+                { "锁存编码读取与无效信号拦截", InputWordSampling },
+                { "轴等待位置及状态拦截", AxisPositionWait },
                 { "互斥输入等待、暂停和原子变量发布", ExclusiveInputs },
                 { "输出读回等待未知值及暂停", OutputReadbackWait },
                 { "无效分支值拒绝执行", InvalidBranch },

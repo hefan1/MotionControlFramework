@@ -108,6 +108,12 @@ try {
     Send-Ok @{command='setActuatorFault'; outputChannel=21; value=$false} | Out-Null
     Assert-Actuator $false $false $true
     Wait-Actuator $false $true
+    # 独立注入两个到位同时有效，解除后必须重新经过动作延时。
+    Send-Ok @{command='setActuatorConflict'; outputChannel=21; value=$true} | Out-Null
+    Assert-Actuator $true $true $true
+    Send-Ok @{command='setActuatorConflict'; outputChannel=21; value=$false} | Out-Null
+    Assert-Actuator $false $false $true
+    Wait-Actuator $false $true
     Send-Ok @{command='writeOutput'; channel=21; value=$true} | Out-Null
     if ((Send-Request @{command='removeActuator'; outputChannel=21}).ok) { throw '输出仍有效时不应移除规则。' }
     Send-Ok @{command='writeOutput'; channel=21; value=$false} | Out-Null

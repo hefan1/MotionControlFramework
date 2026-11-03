@@ -38,6 +38,8 @@ namespace MotionControl.VirtualController
         public int Version;
         /// <summary>上料轴物理轴号；-1 表示旧的无安全位门禁模式。</summary>
         public int SafeAxis = -1;
+        /// <summary>同一安全位置条件下还必须停稳的其他物理轴；旧配置默认为空。</summary>
+        public int[] AdditionalSafeAxes = new int[0];
         /// <summary>上料轴已回零后的逻辑安全位置。</summary>
         public double SafePosition;
         /// <summary>允许轴偏离逻辑安全位置的最大距离。</summary>

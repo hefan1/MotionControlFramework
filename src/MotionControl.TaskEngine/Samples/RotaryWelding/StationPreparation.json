@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "stations": [
+    {
+      "id": "RotaryTable",
+      "name": "十三轴设备准备",
+      "taskId": "RotaryPrepare",
+      "dependencies": [],
+      "axes": [
+        {
+          "name": "Feeder_Z",
+          "position": 0,
+          "tolerance": 0.01
+        },
+        {
+          "name": "Camera_Z",
+          "position": 0,
+          "tolerance": 0.01
+        },
+        {
+          "name": "Weld_Z",
+          "position": 0,
+          "tolerance": 0.01
+        },
+        {
+          "name": "Press_Z",
+          "position": 0,
+          "tolerance": 0.01
+        },
+        {
+          "name": "Reject_Z",
+          "position": 0,
+          "tolerance": 0.01
+        },
+        {
+          "name": "Feeder_X",
+          "position": 0,
+          "tolerance": 0.01
+        },
+        {
+          "name": "Load_X",
+          "position": 0,
+          "tolerance": 0.01
+        },
+        {
+          "name": "Transfer_Y",
+          "position": 0,
+          "tolerance": 0.01
+        },
+        {
+          "name": "Unload_X",
+          "position": 0,
+          "tolerance": 0.01
+        },
+        {
+          "name": "Buffer_X",
+          "position": 0,
+          "tolerance": 0.01
+        },
+        {
+          "name": "Buffer_Y",
+          "position": 0,
+          "tolerance": 0.01
+        },
+        {
+          "name": "Camera_X",
+          "position": 0,
+          "tolerance": 0.01
+        },
+        {
+          "name": "Conveyor_R",
+          "position": -90,
+          "tolerance": 0.01
+        }
+      ],
+      "inputs": [
+        {
+          "name": "焊接完成",
+          "expected": false
+        },
+        {
+          "name": "焊接合格",
+          "expected": false
+        },
+        {
+          "name": "压装完成",
+          "expected": false
+        },
+        {
+          "name": "压装合格",
+          "expected": false
+        },
+        {
+          "name": "扫码完成",
+          "expected": false
+        },
+        {
+          "name": "检测完成",
+          "expected": false
+        },
+        {
+          "name": "剔除完成",
+          "expected": false
+        },
+        {
+          "name": "缓存载具到位",
+          "expected": false
+        },
+        {
+          "name": "合格出料完成",
+          "expected": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "取料夹紧",
+          "expected": false
+        },
+        {
+          "name": "A夹紧",
+          "expected": false
+        },
+        {
+          "name": "B夹紧",
+          "expected": false
+        },
+        {
+          "name": "扫码触发",
+          "expected": false
+        },
+        {
+          "name": "焊接启动",
+          "expected": false
+        },
+        {
+          "name": "压装启动",
+          "expected": false
+        },
+        {
+          "name": "相机触发",
+          "expected": false
+        },
+        {
+          "name": "相机结果复位",
+          "expected": false
+        },
+        {
+          "name": "剔除启动",
+          "expected": false
+        },
+        {
+          "name": "缓存交接",
+          "expected": false
+        },
+        {
+          "name": "合格出料",
+          "expected": false
+        }
+      ],
+      "emptyVariables": [
+        "Rotary.InfeedOccupied",
+        "Rotary.WeldOccupied",
+        "Rotary.PressOccupied",
+        "Rotary.BufferOccupied"
+      ]
+    }
+  ]
+}

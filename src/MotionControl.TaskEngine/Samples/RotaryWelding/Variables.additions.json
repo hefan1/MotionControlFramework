@@ -1,0 +1,187 @@
+{
+  "schemaVersion": 1,
+  "variables": [
+    {
+      "name": "Rotary.WeldIsA",
+      "dataType": "Boolean",
+      "initialValue": "true",
+      "description": "双夹位样例 WeldIsA",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.InfeedOccupied",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 InfeedOccupied",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.WeldOccupied",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 WeldOccupied",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.PressOccupied",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 PressOccupied",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.BufferOccupied",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 BufferOccupied",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.WeldRequest",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 WeldRequest",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.WeldDone",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 WeldDone",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.PressRequest",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 PressRequest",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.PressDone",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 PressDone",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.GripClosed",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 GripClosed",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.GripOpen",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 GripOpen",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.AClosed",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 AClosed",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.AOpen",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 AOpen",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.BClosed",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 BClosed",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.BOpen",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 BOpen",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.VisionOK",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 VisionOK",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.VisionNG",
+      "dataType": "Boolean",
+      "initialValue": "false",
+      "description": "双夹位样例 VisionNG",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.ScanProduct",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "双夹位样例 ScanProduct",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.WeldProduct",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "双夹位样例 WeldProduct",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.PressProduct",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "双夹位样例 PressProduct",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.BufferProduct",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "双夹位样例 BufferProduct",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.BufferCarrier",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "双夹位样例 BufferCarrier",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.InspectResult",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "双夹位样例 InspectResult",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.InspectDestination",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "双夹位样例 InspectDestination",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.RecordStage",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "双夹位样例 RecordStage",
+      "allowOperatorWrite": false
+    },
+    {
+      "name": "Rotary.RecordStation",
+      "dataType": "String",
+      "initialValue": "",
+      "description": "双夹位样例 RecordStation",
+      "allowOperatorWrite": false
+    }
+  ]
+}

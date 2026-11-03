@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using MotionControl.Equipment.Demo;
 using MotionControl.Equipment.Demo.WeldingExample;
+using MotionControl.Equipment.Demo.RotaryWelding;
 using MotionControl.Framework.Contracts.Equipment;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Runtime.Configuration;
@@ -36,9 +37,14 @@ namespace MotionControl.Host.Wpf
                 return new WeldingExampleEquipmentDefinition();
             }
 
+            if (string.Equals(name, "RotaryWelding", StringComparison.OrdinalIgnoreCase))
+            {
+                return new RotaryWeldingEquipmentDefinition();
+            }
+
             throw new InvalidOperationException(
                 "设备定义配置 '" + EquipmentSelectionPath + "' 指定了未登记的设备定义：" + name
-                + "。当前版本支持：Demo、WeldingExample。");
+                + "。当前版本支持：Demo、WeldingExample、RotaryWelding。");
         }
 
         /// <summary>解析 C# 工位、任务列表或手动入口；留空交由 Runtime 按工位配置判断。</summary>

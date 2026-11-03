@@ -59,6 +59,52 @@ namespace MotionControl.TaskEngine.Validation
                 CheckRequiredTimeoutAlarm(outputWait.TimeoutAlarmCodes, node, path + ".timeoutAlarmCodes");
                 CheckAlarmReferences(outputWait.TimeoutAlarmCodes, node, path + ".timeoutAlarmCodes");
             }
+            else if (node is WaitAxisPositionNode axisWait)
+            {
+                TaskAxisInfo axis = FindAxis(axisWait.AxisName, node, path + ".axisName");
+                if (double.IsNaN(axisWait.Position) || double.IsInfinity(axisWait.Position)
+                    || (axis != null && axis.MinimumPosition.HasValue && axis.MaximumPosition.HasValue
+                        && (axisWait.Position < axis.MinimumPosition || axisWait.Position > axis.MaximumPosition)))
+                    Error(node, path + ".position", "期望位置必须是轴行程内的有限数。");
+                if (double.IsNaN(axisWait.Tolerance) || double.IsInfinity(axisWait.Tolerance) || axisWait.Tolerance < 0)
+                    Error(node, path + ".tolerance", "位置容差必须是非负有限数。");
+                CheckRequiredTimeoutAlarm(axisWait.TimeoutAlarmCodes, node, path + ".timeoutAlarmCodes");
+                CheckAlarmReferences(axisWait.TimeoutAlarmCodes, node, path + ".timeoutAlarmCodes");
+            }
+            else if (node is WriteRecordNode record)
+            {
+                if (!ValidName(record.Category) || record.Category.Length > 128)
+                    Error(node, path + ".category", "请填写不超过 128 字的记录类别。");
+                if (record.Fields == null || record.Fields.Count == 0 || record.Fields.Count > 64)
+                    Error(node, path + ".fields", "记录必须包含 1 到 64 个字段。");
+                else foreach (var field in record.Fields)
+                {
+                    DeviceVariableType type;
+                    if (!ValidName(field.Key) || field.Key.Length > 128 || !ValidName(field.Value)
+                        || !_catalog.Variables.TryGetValue(field.Value, out type) || type != DeviceVariableType.String)
+                        Error(node, path + ".fields", "记录字段名称无效，或来源不是已配置的字符串变量：" + field.Key);
+                }
+            }
+            else if (node is ReadInputWordNode word)
+            {
+                var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                if (word.InputNames == null || word.InputNames.Count != 16)
+                    Error(node, path + ".inputNames", "必须明确配置 16 路数据输入，按低位到高位排列。");
+                foreach (string name in (IEnumerable<string>)word.InputNames ?? Array.Empty<string>())
+                    if (!ValidName(name) || !names.Add(name) || !_catalog.Inputs.Contains(name, StringComparer.OrdinalIgnoreCase))
+                        Error(node, path + ".inputNames", "数据输入不存在或重复：" + name);
+                foreach (string name in new[] { word.ValidInputName, word.SuccessInputName })
+                    if (!ValidName(name) || !names.Add(name) || !_catalog.Inputs.Contains(name, StringComparer.OrdinalIgnoreCase))
+                        Error(node, path, "有效或成功输入不存在，或者与其他输入重复：" + name);
+                DeviceVariableType wordType;
+                if (!ValidName(word.TargetVariable) || !_catalog.Variables.TryGetValue(word.TargetVariable, out wordType)
+                    || wordType != DeviceVariableType.String)
+                    Error(node, path + ".targetVariable", "目标必须是已配置的字符串设备变量。 ");
+                if (word.Prefix == null || word.Prefix.Length > 64) Error(node, path + ".prefix", "前缀不能为空引用或超过 64 个字符。");
+                CheckRequiredTimeoutAlarm(word.TimeoutAlarmCodes, node, path + ".timeoutAlarmCodes");
+                CheckAlarmReferences(word.TimeoutAlarmCodes, node, path + ".timeoutAlarmCodes");
+                Warning(node, path, "设备须在读取期间锁存输入；两轮软件采样不能替代硬件原子采样。");
+            }
             else if (node is ReadInputNode sample)
             {
                 if (!ValidName(sample.InputName) || !_catalog.Inputs.Contains(sample.InputName, StringComparer.OrdinalIgnoreCase))

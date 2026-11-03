@@ -43,6 +43,7 @@ namespace MotionControl.MachineDevice.Checks
             Run("任务复位拦截未回零的定位轴", TaskResetRequiresPositioningAxesHomed, ref failures);
             Run("任务回零诊断按设备反馈区分等待和完成", TaskHomeDiagnosticsFollowDeviceCompletion, ref failures);
             Run("资源恢复复核现场状态且只放行一次", ResourceRecoveryRequiresRecheck, ref failures);
+            Run("资源恢复复核输出可读且两次一致", ResourceRecoveryRequiresOutputReadback, ref failures);
             Run("资源恢复要求运行时实际持有控制权", RecoveryRequiresActualClaim, ref failures);
             Run("设备互锁有条件时拒绝执行", InterlockRejectsConfiguredConditions, ref failures);
             Run("进入与退出互锁在任务接管前拒绝", InterlocksRejectedBeforeTaskControl, ref failures);
@@ -156,6 +157,31 @@ namespace MotionControl.MachineDevice.Checks
             Ensure(!device.TryRecoverResources(secondId, "现场已核实", out reason), "未知变量被放行。");
             variables.SetBoolean("Unknown", true);
             Ensure(device.TryRecoverResources(secondId, "现场已核实", out reason), reason);
+            device.ReleaseMachine(null);
+        }
+
+        /// <summary>资源输出读失败、有效或采样变化时保留隔离，不自动切换输出。</summary>
+        private static void ResourceRecoveryRequiresOutputReadback()
+        {
+            var io = new FakeLogicalIo();
+            var device = CreateDevice(new FakeAxis("X"), io, out _, out _);
+            device.ClaimMachine(null);
+            var request = device.Resources.Enqueue("output-run", "task", "工位", "node", "步骤", "call",
+                new[] { "Axis:X", "Output:Vacuum" }, null);
+            string reason;
+            Ensure(device.Resources.TryAcquire(request, out reason), reason);
+            device.Resources.Block(request, "输出待核对");
+            string id = device.ReadResources().Single().RequestId;
+            io.OutputReadError = new InvalidOperationException("输出反馈不可读");
+            Ensure(!device.TryRecoverResources(id, "现场已核实", out reason) && reason.Contains("输出反馈不可读"), "输出读失败仍放行。");
+            Ensure(device.ReadResources().Count == 1, "输出读失败丢失了资源隔离。");
+            io.OutputReadError = null;
+            io.FlipOutputAfterRead = true;
+            Ensure(!device.TryRecoverResources(id, "现场已核实", out reason) && reason.Contains("仍有效"), "输出变化或有效仍放行。");
+            Ensure(device.ReadResources().Count == 1, "输出变化丢失了资源隔离。");
+            io.FlipOutputAfterRead = false;
+            Ensure(device.TryRecoverResources(id, "现场已核实", out reason), reason);
+            Ensure(io.OutputWrites == 0, "资源恢复意外改变了输出。");
             device.ReleaseMachine(null);
         }
 
@@ -775,6 +801,8 @@ namespace MotionControl.MachineDevice.Checks
             internal bool InputValue { get; set; }
             /// <summary>首次读取后切换信号，用于检查复核期间变化。</summary>
             internal bool FlipAfterRead { get; set; }
+            /// <summary>首次读取输出后切换电平，模拟复核期间现场变化。</summary>
+            internal bool FlipOutputAfterRead { get; set; }
 
             /// <summary>读取 DI；注入错误时抛出原始异常。</summary>
             public Task<bool> ReadInputAsync(string inputName, CancellationToken cancellationToken)
@@ -793,7 +821,9 @@ namespace MotionControl.MachineDevice.Checks
             public Task<bool> ReadOutputAsync(string outputName, CancellationToken cancellationToken)
             {
                 if (OutputReadError != null) throw OutputReadError;
-                return Task.FromResult(OutputValue);
+                bool value = OutputValue;
+                if (FlipOutputAfterRead) OutputValue = !OutputValue;
+                return Task.FromResult(value);
             }
 
             /// <summary>写入 DO，检查中不保存状态。</summary>

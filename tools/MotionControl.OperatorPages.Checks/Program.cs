@@ -51,9 +51,12 @@ namespace MotionControl.OperatorPages.Checks
             Check("Host导航和返回原页面", HostNavigation, ref failures);
             Check("暂停和停止的现场恢复提示", MachineCommandGuidance, ref failures);
             Check("恢复拦截只读诊断和设备目录", RecoveryEvidenceGuidance, ref failures);
+            Check("设备准备页轴使能提示和只读导航", PreparationAxisGuidance, ref failures);
+            Check("资源确认先核查现场并拒绝 IO 异常和变化", ResourceRecoveryUiChecks.Run, ref failures);
+            Check("产品记录只读显示两种来源及错误", ProductRecordChecks.Run, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：19 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：22 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }
@@ -78,6 +81,27 @@ namespace MotionControl.OperatorPages.Checks
             Assert(diagnostic.Text.Contains("does not release") && diagnostic.Text.Contains(directory), "英文诊断或证据路径未更新。");
             view.SetRuntime(null);
             Assert(expander.Visibility == Visibility.Collapsed, "断开后仍展示旧设备拦截详情。");
+        }
+        /// <summary>准备页给出伺服前置提示；跳转轴手动不改变设备状态或发出控制命令。</summary>
+        private static void PreparationAxisGuidance()
+        {
+            var card = new GuardCard();
+            var runtime = CreateRuntime(card, new MachineAlarmService());
+            string requestedPage = null;
+            var view = new EquipmentPreparationView(null, page => requestedPage = page);
+            view.SetRuntime(runtime);
+            var guidance = (TextBlock)view.FindName("GuidanceText");
+            var axisButton = (Button)view.FindName("AxisManualButton");
+            Assert(guidance.Text.Contains("相关轴已使能") && guidance.Text.Contains("物料状态安全"), "未提示伺服和物料前置检查。");
+            axisButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert(requestedPage == "轴手动" && card.Calls == 0, "检查轴使能入口未导航到轴手动或触发了设备动作。");
+            runtime.AcquireTaskEngineControlAsync(CancellationToken.None).GetAwaiter().GetResult();
+            view.SetRuntime(runtime);
+            Assert(guidance.Text.Contains("停止并关闭任务") && guidance.Text.Contains("确认轴停稳"), "任务会话占用时未提示先安全关闭任务。");
+            view.SetLanguage("en-US");
+            Assert(guidance.Text.Contains("axes are enabled") && guidance.Text.Contains("stop and close the task")
+                && axisButton.Content.ToString() == "Check servo enable", "轴使能提示或入口未随语言切换。");
+            runtime.ReleaseTaskEngineControl();
         }
         /// <summary>检查任务页复用的顶部状态资源覆盖全部设备状态，且等待复位在两种语言下可读。</summary>
         private static void MachineStateLocalization()

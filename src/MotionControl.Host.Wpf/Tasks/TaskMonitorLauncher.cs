@@ -16,6 +16,7 @@ using MotionControl.Framework.Runtime.Machine;
 using MotionControl.Framework.Runtime.Variables;
 using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Machine;
+using MotionControl.TaskEngine.Resources;
 using MotionControl.TaskEngine.Wpf.Simulation;
 using MotionControl.TaskEngine.Wpf.Views;
 
@@ -74,6 +75,12 @@ namespace MotionControl.Host.Wpf.Tasks
         private readonly Button _pauseButton;
         /// <summary>停止并关闭当前任务会话按钮。</summary>
         private readonly Button _stopButton;
+        /// <summary>仅对已终止会话提供待确认资源的现场核查入口。</summary>
+        private readonly Button _recoverResourcesButton;
+        /// <summary>查看当前设备已写入的产品记录，不影响运行。</summary>
+        private readonly Button _productRecordsButton;
+        /// <summary>避免重复打开多个产品记录窗口。</summary>
+        private ProductRecordWindow _productRecordsWindow;
         /// <summary>显示当前任务步骤监控页。</summary>
         private readonly ContentControl _monitorContent;
         /// <summary>显示 Runtime 当前报警，保持任务页内可见。</summary>
@@ -187,6 +194,12 @@ namespace MotionControl.Host.Wpf.Tasks
             _startButton = AddCommandButton(toolbar, "任务执行启动", StartTask_Click);
             _pauseButton = AddCommandButton(toolbar, "任务执行暂停", PauseTask_Click);
             _stopButton = AddCommandButton(toolbar, "任务执行停止", StopTask_Click);
+            _recoverResourcesButton = new Button { Padding = new Thickness(12, 7, 12, 7), Margin = new Thickness(0, 0, 8, 0),
+                Background = Brush("#FFFFFF"), BorderBrush = Brush("#C9D5E3"), BorderThickness = new Thickness(1), Visibility = Visibility.Collapsed };
+            _recoverResourcesButton.Click += RecoverResources_Click; toolbar.Children.Add(_recoverResourcesButton);
+            _productRecordsButton = new Button { Padding = new Thickness(12, 7, 12, 7), Margin = new Thickness(0, 0, 8, 0),
+                Background = Brush("#FFFFFF"), BorderBrush = Brush("#C9D5E3"), BorderThickness = new Thickness(1) };
+            _productRecordsButton.Click += ProductRecords_Click; toolbar.Children.Add(_productRecordsButton);
             AddButton(toolbar, "设备总览", EquipmentOverview_Click);
             AddButton(toolbar, "设备准备", EquipmentPreparation_Click);
             AddButton(toolbar, "流程状态", FlowStatus_Click);
@@ -328,6 +341,49 @@ namespace MotionControl.Host.Wpf.Tasks
         private void EquipmentPreparation_Click(object sender, RoutedEventArgs e) { _host.ShowEquipmentPreparation(); }
         /// <summary>打开实际展示工位步骤的流程状态页。</summary>
         private void FlowStatus_Click(object sender, RoutedEventArgs e) { _host.ShowFlowStatus(); }
+
+        /// <summary>非模态查看当前设备产品记录；窗口不接管运行或阻止主窗口暂停。</summary>
+        private void ProductRecords_Click(object sender, RoutedEventArgs e)
+        {
+            if (_productRecordsWindow != null) { _productRecordsWindow.Activate(); return; }
+            try
+            {
+                var window = new ProductRecordWindow(_store.GetMachineDirectory(_machineId), _machineId,
+                    string.Equals(_host.CurrentLanguage, "en-US", StringComparison.OrdinalIgnoreCase));
+                window.Owner = Window.GetWindow(this);
+                window.Closed += (closedSender, closedArgs) => { if (ReferenceEquals(_productRecordsWindow, window)) _productRecordsWindow = null; };
+                _productRecordsWindow = window; window.Show();
+            }
+            catch (Exception error)
+            {
+                _productRecordsWindow = null;
+                MessageBox.Show(PageText("无法打开产品记录：", "Unable to open product records: ") + error.Message,
+                    PageText("产品记录", "Product records"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        /// <summary>只对已终止的当前会话核查单个资源；不会自动复位、启动或关闭会话。</summary>
+        private void RecoverResources_Click(object sender, RoutedEventArgs e)
+        {
+            if (_commandInProgress || _session == null || _runtime == null || !IsControllerConnected()) return;
+            var session = _session;
+            var runtime = _runtime;
+            if (session.Machine.GetSnapshot().State != TaskMachineState.Stopped || runtime.IsPreparing) return;
+            _commandInProgress = true; UpdateCommandAvailability();
+            try
+            {
+                var dialog = new ResourceRecoveryDialog(session.TaskDevice,
+                    () => ReferenceEquals(_session, session) && ReferenceEquals(_runtime, runtime)
+                        && IsControllerConnected() && !runtime.IsPreparing
+                        && runtime.State != MachineRunState.Running && runtime.State != MachineRunState.Pausing
+                        && session.Machine.GetSnapshot().State == TaskMachineState.Stopped,
+                    string.Equals(_host.CurrentLanguage, "en-US", StringComparison.OrdinalIgnoreCase));
+                dialog.Owner = Window.GetWindow(this);
+                dialog.ShowDialog();
+            }
+            catch (Exception error) { ShowError(error, "任务停止失败", "任务运行复位建议"); }
+            finally { _commandInProgress = false; UpdateRunStatus(); UpdateCommandAvailability(); }
+        }
 
         /// <summary>在后台创建真实任务设备并载入已应用的任务定义，未装载时不接管设备。</summary>
         private async void LoadTask_Click(object sender, RoutedEventArgs e)
@@ -637,7 +693,9 @@ namespace MotionControl.Host.Wpf.Tasks
         {
             bool connected = IsControllerConnected()
                 && _logicalIo != null && _variables != null;
-            TaskMachineState? taskState = _session == null ? (TaskMachineState?)null : _session.Machine.GetSnapshot().State;
+            var snapshot = _session?.Machine.GetSnapshot();
+            TaskMachineState? taskState = snapshot?.State;
+            bool hasBlockedResources = snapshot != null && snapshot.Resources.Any(item => item.State == TaskResourceState.Blocked);
             _loadButton.IsEnabled = connected && _session == null && !_commandInProgress && !_runtime.IsPreparing;
             _resetButton.IsEnabled = connected && taskState.HasValue && !_commandInProgress
                 && taskState != TaskMachineState.Running && taskState != TaskMachineState.Pausing
@@ -648,6 +706,9 @@ namespace MotionControl.Host.Wpf.Tasks
                 && string.IsNullOrWhiteSpace(_recoveryStartBlockReason?.Invoke());
             _pauseButton.IsEnabled = taskState == TaskMachineState.Running && !_commandInProgress;
             _stopButton.IsEnabled = _session != null && !_commandInProgress && !_runtime.IsPreparing;
+            _recoverResourcesButton.Visibility = hasBlockedResources ? Visibility.Visible : Visibility.Collapsed;
+            _recoverResourcesButton.IsEnabled = hasBlockedResources && connected && taskState == TaskMachineState.Stopped
+                && !_commandInProgress && !_runtime.IsPreparing;
             UpdateNextAction(connected, taskState);
             _host.RefreshMachineStateDisplay();
         }
@@ -829,6 +890,8 @@ namespace MotionControl.Host.Wpf.Tasks
         private void RefreshPageText()
         {
             _diagnostics.Header = PageText("工程诊断与配置目录", "Diagnostics and configuration");
+            _recoverResourcesButton.Content = PageText("核查待确认资源", "Inspect blocked resources");
+            _productRecordsButton.Content = PageText("产品记录", "Product records");
             _loadedSource.Text = string.IsNullOrWhiteSpace(_taskSource) ? string.Empty
                 : PageText("已读取任务来源：", "Loaded task source: ") + _taskSource;
             if (_lastError == null && _successTextKey != null) _status.Text = SuccessText(_successTextKey);

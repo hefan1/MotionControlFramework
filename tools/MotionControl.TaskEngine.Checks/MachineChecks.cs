@@ -37,6 +37,7 @@ namespace MotionControl.TaskEngine.Checks
                 { "上层超时可能先于等待步骤报警", ParentDeadlineCanPreemptWaitAlarm },
                 { "三工位三十周期连续交接", ProductionPipeline },
                 { "故障暂停整机并保留已完成步骤", FaultAndStepRecovery },
+                { "记录写入返回不确定后重试保留时间和内容", RecordCommitRecovery },
                 { "相对单轴及轴组故障终点", RelativeTargetRecovery },
                 { "节点超时与区域退出恢复", TimeoutAndExitRecovery },
                 { "父步骤超时不重放及规模超限终止", ParentTimeoutAndExpansionLimit },

@@ -9,7 +9,16 @@ namespace MotionControl.VirtualController
         private bool FeederSafetySatisfied()
         {
             if (!_feeder.Enabled || _feeder.SafeAxis < 0 || _feeder.Fault || _leaseId == null || _outputs[_feeder.Output]) return false;
-            JObject axis = _axes[_feeder.SafeAxis].Snapshot();
+            if (!FeederAxisAtSafePosition(_feeder.SafeAxis)) return false;
+            foreach (int axisNumber in _feeder.AdditionalSafeAxes)
+                if (!FeederAxisAtSafePosition(axisNumber)) return false;
+            return true;
+        }
+
+        /// <summary>要求指定轴有有效参考、无报警和限位、停稳并处于配置位置。</summary>
+        private bool FeederAxisAtSafePosition(int axisNumber)
+        {
+            JObject axis = _axes[axisNumber].Snapshot();
             return axis.Value<bool>("servoEnabled") && axis.Value<bool>("homed") && !axis.Value<bool>("moving")
                 && !axis.Value<bool>("alarmActive") && !axis.Value<bool>("positiveLimitActive") && !axis.Value<bool>("negativeLimitActive")
                 && !axis.Value<bool>("positiveSoftLimitActive") && !axis.Value<bool>("negativeSoftLimitActive")

@@ -134,7 +134,9 @@ namespace MotionControl.Host.Wpf.Operation
                 : string.Format(T("已准备 {0} / {1} 个工位"), completed, _rows.Count);
             GuidanceText.Text = preparing ? T("按设备定义的顺序执行，完成后等待启动；需要中断时按停止回零。")
                 : recoveryBlocked ? T("请联系维护人员核对现场及恢复记录，确认前不能回零或启动。")
-                : T("回零会使机构运动。确认工位与物料状态后操作；完成后仍需核对其他启动条件，再启动生产。");
+                : _runtime?.IsTaskEngineControlClaimed == true
+                    ? T("回零前请确认相关轴已使能、工位与物料状态安全。如需使能，请先暂停并确认轴停稳，在生产流程停止并关闭任务，再到轴手动操作。")
+                    : T("回零前请确认相关轴已使能、工位与物料状态安全；回零完成后再核对其他启动条件。");
             var failed = snapshots?.FirstOrDefault(item => item.State == StationPreparationState.Failed);
             ErrorText.Text = recoveryBlocked ? _runtime.RecoveryBlockReason
                 : string.IsNullOrWhiteSpace(_error) ? string.Empty
@@ -234,6 +236,8 @@ namespace MotionControl.Host.Wpf.Operation
         private void IoMonitor_Click(object sender, RoutedEventArgs e) { _navigate?.Invoke("IO监控"); }
         /// <summary>查看现有轴状态页面，不执行手动动作。</summary>
         private void AxisMonitor_Click(object sender, RoutedEventArgs e) { _navigate?.Invoke("轴监控"); }
+        /// <summary>打开现有轴手动页面；不自动切换伺服或关闭任务会话。</summary>
+        private void AxisManual_Click(object sender, RoutedEventArgs e) { _navigate?.Invoke("轴手动"); }
         /// <summary>读取操作页本地化文本。</summary>
         private string T(string value) { return OperationUi.T(this, value); }
     }

@@ -168,7 +168,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             AddField("Name", "动作说明", TaskEditingUi.Text(_selected.Name));
             AddField("Timeout", "步骤超时(ms)", TaskEditingUi.Text(_selected.TimeoutMs.ToString()));
             if (_selected is MoveAxisNode || _selected is MoveAxisGroupNode || _selected is AxisCommandNode) BuildMotion();
-            else if (_selected is WaitInputNode || _selected is WaitOutputNode || _selected is ReadInputNode || _selected is WaitExclusiveInputsNode || _selected is SetOutputNode || _selected is SetVariableNode || _selected is DelayNode) BuildSignals();
+            else if (_selected is WaitInputNode || _selected is WaitOutputNode || _selected is ReadInputNode || _selected is ReadInputWordNode || _selected is WriteRecordNode || _selected is WaitAxisPositionNode || _selected is WaitExclusiveInputsNode || _selected is SetOutputNode || _selected is SetVariableNode || _selected is DelayNode) BuildSignals();
             else BuildFlow();
                 if (_selected is CoordinatedMoveNode) { _fields["Name"].IsEnabled = false; _fields["Timeout"].IsEnabled = false; _readOnlyDetails = true; }
             }
@@ -193,7 +193,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             string name = ((TextBox)_fields["Name"]).Text;
             int timeout = TaskEditingUi.Integer((TextBox)_fields["Timeout"], "步骤超时(ms)");
             if (_selected is MoveAxisNode || _selected is MoveAxisGroupNode || _selected is AxisCommandNode) ReadMotion();
-            else if (_selected is WaitInputNode || _selected is WaitOutputNode || _selected is ReadInputNode || _selected is WaitExclusiveInputsNode || _selected is SetOutputNode || _selected is SetVariableNode || _selected is DelayNode) ReadSignals();
+            else if (_selected is WaitInputNode || _selected is WaitOutputNode || _selected is ReadInputNode || _selected is ReadInputWordNode || _selected is WriteRecordNode || _selected is WaitAxisPositionNode || _selected is WaitExclusiveInputsNode || _selected is SetOutputNode || _selected is SetVariableNode || _selected is DelayNode) ReadSignals();
             else ReadFlow();
             _selected.Name = name; _selected.TimeoutMs = timeout; Definition.Name = TaskNameBox.Text;
             if (_selectedItem != null && _rowPrefixes.ContainsKey(_selected.Id))

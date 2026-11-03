@@ -110,6 +110,7 @@ namespace MotionControl.VirtualController
                     case "setInput":
                         int inputChannel = IoIndex(request, "channel");
                         if (AxisSensorUsesInput(inputChannel)) throw new InvalidOperationException("该输入已由轴传感器模型控制，不能手动改写。");
+                        if (ScannerUsesInput(inputChannel)) throw new InvalidOperationException("该输入已由扫码器模型控制，不能手动改写。");
                         if (_feeder.Enabled && _feeder.SafeAxis >= 0 && _feeder.Input == inputChannel)
                             throw new InvalidOperationException("该输入已由带安全位门禁的供料规则控制，不能手动改写。");
                         _inputs[inputChannel] = RequireBool(request, "value");
@@ -144,7 +145,12 @@ namespace MotionControl.VirtualController
                     case "configureActuator": ConfigureActuator(request); return Ok();
                     case "readActuator": return ReadActuator(request);
                     case "setActuatorFault": SetActuatorFault(request); return Ok();
+                    case "setActuatorConflict": SetActuatorConflict(request); return Ok();
                     case "removeActuator": RemoveActuator(request); return Ok();
+                    case "configureScanner": ConfigureScanner(request); return Ok();
+                    case "readScanner": return ReadScanner();
+                    case "setScannerFault": SetScannerFault(request); return Ok();
+                    case "removeScanner": RemoveScanner(); return Ok();
                     case "setCommandFault": SetCommandFault(request); return Ok();
                     case "clearCommandFault": ClearCommandFault(request); return Ok();
                     case "readCommandFault": return ReadCommandFault(request);
@@ -342,6 +348,7 @@ namespace MotionControl.VirtualController
             if (previous == value) return;
             CameraOutputChanged(channel, value);
             ActuatorOutputChanged(channel);
+            ScannerOutputChanged(channel, value);
             foreach (FeedbackRule rule in _feedback.Values)
             {
                 if (rule.Output == channel) ScheduleFeedback(rule, value);
@@ -364,11 +371,12 @@ namespace MotionControl.VirtualController
             int input = IoIndex(request, "inputChannel");
             if (CameraUsesInput(input))
                 throw new InvalidOperationException("该输入已由相机规则使用，不能同时配置输出反馈。");
-            if (AxisSensorUsesInput(input) || ActuatorUsesInput(input))
+            if (AxisSensorUsesInput(input) || ActuatorUsesInput(input) || ScannerUsesInput(input))
                 throw new InvalidOperationException("该输入已由夹具规则使用，不能同时配置输出反馈。");
             if (_feeder.Enabled && _feeder.Input == input)
                 throw new InvalidOperationException("该输入已由上料规则使用，不能同时配置输出反馈。");
             int output = IoIndex(request, "outputChannel");
+            if (ScannerUsesOutput(output)) throw new InvalidOperationException("输出已由扫码器模型占用。");
             int delay = RequireInt(request, "delayMs");
             if (delay < 0 || delay > 600000) throw new ArgumentOutOfRangeException("delayMs", "延迟必须在 0 到 600000 毫秒之间。");
             FeedbackRule old;
@@ -454,12 +462,12 @@ namespace MotionControl.VirtualController
             int input = IoIndex(request, "inputChannel");
             if (CameraUsesInput(input))
                 throw new InvalidOperationException("该输入已由相机规则使用，不能同时配置上料规则。");
-            if (AxisSensorUsesInput(input) || ActuatorUsesInput(input))
+            if (AxisSensorUsesInput(input) || ActuatorUsesInput(input) || ScannerUsesInput(input))
                 throw new InvalidOperationException("该输入已由夹具规则使用，不能同时配置上料规则。");
             if (_feedback.ContainsKey(input))
                 throw new InvalidOperationException("该输入已由输出反馈规则使用，不能同时配置上料规则。");
             int output = IoIndex(request, "outputChannel");
-            if (CameraUsesOutput(output))
+            if (CameraUsesOutput(output) || ScannerUsesOutput(output))
                 throw new InvalidOperationException("该输出已由相机规则使用，不能同时配置上料规则。");
             int feedDelay = RequireInt(request, "feedDelayMs");
             int emptyDelay = RequireInt(request, "emptyDelayMs");
@@ -471,6 +479,20 @@ namespace MotionControl.VirtualController
             bool hasSafetyTolerance = request["safeTolerance"] != null;
             if (hasSafetyAxis != hasSafetyPosition || hasSafetyAxis != hasSafetyTolerance)
                 throw new ArgumentException("上料轴、安全位置和容差必须同时提供或全部省略。");
+            var additionalAxes = new List<int>();
+            JToken additionalToken = request["additionalSafeAxes"];
+            if (additionalToken != null)
+            {
+                JArray array = additionalToken as JArray;
+                if (array == null || !hasSafetyAxis) throw new ArgumentException("附加安全轴必须为数组，且须同时指定主安全轴及位置。");
+                foreach (JToken item in array)
+                {
+                    if (item.Type != JTokenType.Integer) throw new ArgumentException("附加安全轴号必须为整数。");
+                    int number = item.Value<int>();
+                    if (number < 0 || number >= _axes.Length || additionalAxes.Contains(number)) throw new ArgumentException("附加安全轴号无效或重复。");
+                    additionalAxes.Add(number);
+                }
+            }
             int safeAxis = -1;
             double safePosition = 0;
             double safeTolerance = 0;
@@ -478,6 +500,7 @@ namespace MotionControl.VirtualController
             {
                 safeAxis = RequireInt(request, "safeAxis");
                 if (safeAxis < 0 || safeAxis >= _axes.Length) throw new ArgumentOutOfRangeException("safeAxis", "上料安全轴号无效。");
+                if (additionalAxes.Contains(safeAxis)) throw new ArgumentException("附加安全轴不能重复主安全轴。");
                 safePosition = RequireNumber(request, "safePosition");
                 safeTolerance = RequireNumber(request, "safeTolerance");
                 if (safeTolerance <= 0) throw new ArgumentOutOfRangeException("safeTolerance", "安全位置容差必须大于零。");
@@ -491,6 +514,7 @@ namespace MotionControl.VirtualController
             _feeder.Gripped = false;
             _feeder.Fault = false;
             _feeder.SafeAxis = safeAxis;
+            _feeder.AdditionalSafeAxes = additionalAxes.ToArray();
             _feeder.SafePosition = safePosition;
             _feeder.SafeTolerance = safeTolerance;
             _feeder.FeedPending = false;
@@ -531,6 +555,7 @@ namespace MotionControl.VirtualController
                     ["fault"] = _feeder.Fault,
                     ["gripped"] = _feeder.Gripped,
                     ["safeAxis"] = _feeder.SafeAxis >= 0 ? (int?)_feeder.SafeAxis : null,
+                    ["additionalSafeAxes"] = new JArray(_feeder.AdditionalSafeAxes),
                     ["safePosition"] = _feeder.SafeAxis >= 0 ? (double?)_feeder.SafePosition : null,
                     ["safeTolerance"] = _feeder.SafeAxis >= 0 ? (double?)_feeder.SafeTolerance : null,
                     ["feedPending"] = _feeder.FeedPending,

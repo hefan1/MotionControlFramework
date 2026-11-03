@@ -70,7 +70,7 @@ namespace MotionControl.VirtualController
             if (ok >= 0 && (ok == ng || ok == acknowledge || ok == complete || ng == acknowledge || ng == complete))
                 throw new InvalidOperationException("相机的反馈、完成及结果输入必须互不相同。");
             if (reset < -1 || reset >= IoCount || reset == trigger) throw new ArgumentOutOfRangeException("resetOutputChannel", "复位输出须为不同于触发的有效通道或 -1。");
-            if (ActuatorUsesOutput(trigger) || (reset >= 0 && ActuatorUsesOutput(reset)))
+            if (ActuatorUsesOutput(trigger) || ScannerUsesOutput(trigger) || (reset >= 0 && (ActuatorUsesOutput(reset) || ScannerUsesOutput(reset))))
                 throw new InvalidOperationException("相机触发或复位输出已被夹具规则占用。");
             if (_feeder.Enabled && (_feeder.Output == trigger || _feeder.Output == reset))
                 throw new InvalidOperationException("相机触发或复位输出已被供料规则占用。");
@@ -80,7 +80,7 @@ namespace MotionControl.VirtualController
             foreach (int input in new[] { acknowledge, complete, ok, ng })
             {
                 if (input < 0) continue;
-                if (_feedback.ContainsKey(input) || ActuatorUsesInput(input) || AxisSensorUsesInput(input) || (_feeder.Enabled && _feeder.Input == input))
+                if (_feedback.ContainsKey(input) || ActuatorUsesInput(input) || AxisSensorUsesInput(input) || ScannerUsesInput(input) || (_feeder.Enabled && _feeder.Input == input))
                     throw new InvalidOperationException("相机输入已被其他设备规则占用。");
                 if (_inputs[input]) throw new InvalidOperationException("安装相机规则前，相机输入须均为低电平。");
             }

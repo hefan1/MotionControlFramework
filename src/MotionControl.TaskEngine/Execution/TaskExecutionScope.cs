@@ -18,6 +18,10 @@ namespace MotionControl.TaskEngine.Execution
         internal TaskNode Node { get; }
         /// <summary>本次调用唯一编号。</summary>
         internal string ExecutionId { get; } = Guid.NewGuid().ToString("N");
+        /// <summary>首次采集的记录字段；恢复重试时保持相同内容。</summary>
+        internal Dictionary<string, string> RecordFields { get; set; }
+        /// <summary>记录首次完整采样的 UTC 时间；节点重试时不变。</summary>
+        internal DateTimeOffset? RecordTimeUtc { get; set; }
         /// <summary>父调用编号。</summary>
         internal string ParentId { get; }
         /// <summary>运行取消或所在并行组取消令牌。</summary>

@@ -15,6 +15,10 @@ namespace MotionControl.Host.Wpf.Recovery
         /// <summary>保存时设备配置文件集合的校验值。</summary>
         public string ConfigurationSignature { get; set; }
 
+        /// <summary>加载时发现签名不匹配；仅用于本次会话保护原恢复记录，不写入文件。</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        internal bool ConfigurationSignatureMismatch { get; set; }
+
         /// <summary>最近一次保存恢复文件的本机时间。</summary>
         public DateTime SavedAt { get; set; }
 

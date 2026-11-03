@@ -313,4 +313,17 @@
  <sys:String x:Key="任务编辑.第一路目标变量">First target variable</sys:String>
  <sys:String x:Key="任务编辑.第二路目标变量">Second target variable</sys:String>
  <sys:String x:Key="任务编辑.两路须由设备锁存且恰好一路有效；未知、读错或状态变化不会放行">Inputs must be latched by the device with exactly one active. Unknown, failed or changing readings do not pass.</sys:String>
+ <sys:String x:Key="任务编辑.等待轴到位">Wait for axis position</sys:String>
+ <sys:String x:Key="任务编辑.读取锁存编码">Read latched code</sys:String>
+ <sys:String x:Key="任务编辑.期望位置">Expected position</sys:String>
+ <sys:String x:Key="任务编辑.位置容差">Position tolerance</sys:String>
+ <sys:String x:Key="任务编辑.数据有效输入">Data valid input</sys:String>
+ <sys:String x:Key="任务编辑.读取成功输入">Read successful input</sys:String>
+ <sys:String x:Key="任务编辑.编码前缀">Code prefix</sys:String>
+ <sys:String x:Key="任务编辑.需轴已使能、回零、停止且无报警；不代替安全联锁">The axis must be enabled, homed, stopped and free of alarms. This is not a safety interlock.</sys:String>
+ <sys:String x:Key="任务编辑.输入须由设备锁存；两轮采样不一致或数据为零时拒绝">The device must latch the inputs. A changing or zero value is rejected.</sys:String>
+ <sys:String x:Key="任务编辑.保存记录">Save record</sys:String>
+ <sys:String x:Key="任务编辑.记录类别">Record category</sys:String>
+ <sys:String x:Key="任务编辑.记录字段（每行：字段名 = 字符串变量名）">Fields (one per line: field = string variable)</sys:String>
+ <sys:String x:Key="任务编辑.所有字段取同一次变量快照；记录失败时停止后续步骤">All fields use one variable snapshot; a failed record stops subsequent steps.</sys:String>
 </ResourceDictionary>

@@ -10,10 +10,12 @@ namespace MotionControl.TaskEngine.Checks
         /// <summary>执行定义与内存运行检查，或只读查看指定设备配置能提供的目录数量。</summary>
         private static int Main(string[] args)
         {
+            if (args.Length == 1 && args[0] == "--record-checks") return ExecutionChecks.RunRecordCheck();
             if (args.Length == 1 && args[0] == "--production-demo") return MachineChecks.RunProductionDemo();
             if (args.Length == 1 && args[0] == "--machine-checks") return MachineChecks.RunAll() == 0 ? 0 : 1;
             if (args.Length == 3 && args[0] == "--four-station-demo") return MachineChecks.RunFourStationDemo(args[1], args[2]);
             if (args.Length == 3 && args[0] == "--clip-welding-demo") return MachineChecks.RunClipWeldingDemo(args[1], args[2]);
+            if (args.Length == 3 && args[0] == "--rotary-welding-demo") return MachineChecks.RunRotaryWeldingDemo(args[1], args[2]);
             if (args.Length == 3 && args[0] == "--validate-machine") return MachineChecks.ValidateTaskMachine(args[1], args[2]);
             if (args.Length > 0)
             {

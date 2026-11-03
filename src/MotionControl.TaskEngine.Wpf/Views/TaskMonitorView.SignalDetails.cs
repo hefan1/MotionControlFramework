@@ -27,6 +27,30 @@ namespace MotionControl.TaskEngine.Wpf.Views
                 fields.Add(Field("反馈说明", T("输出写入不等于机构到位")));
                 IoReferences(outputWait.OutputName, true, references);
             }
+            else if (node is WaitAxisPositionNode axisWait)
+            {
+                parameters.Add(Field("逻辑轴", axisWait.AxisName));
+                parameters.Add(Field("期望位置", axisWait.Position + " ± " + axisWait.Tolerance));
+            }
+            else if (node is WriteRecordNode record)
+            {
+                parameters.Add(Field("记录类别", record.Category));
+                foreach (var item in record.Fields ?? new Dictionary<string, string>())
+                {
+                    parameters.Add(Field(item.Key, item.Value));
+                    references.Add(new TaskReferenceEventArgs("设备变量", item.Value));
+                }
+                fields.Add(Field("记录说明", T("所有字段取同一次变量快照；记录失败时停止后续步骤")));
+            }
+            else if (node is ReadInputWordNode word)
+            {
+                parameters.Add(Field("数据有效输入", word.ValidInputName));
+                parameters.Add(Field("读取成功输入", word.SuccessInputName));
+                parameters.Add(Field("目标变量", word.TargetVariable));
+                IoReferences(word.ValidInputName, false, references);
+                IoReferences(word.SuccessInputName, false, references);
+                references.Add(new TaskReferenceEventArgs("设备变量", word.TargetVariable));
+            }
             else if (node is ReadInputNode sample)
             {
                 parameters.Add(Field("逻辑输入", sample.InputName));

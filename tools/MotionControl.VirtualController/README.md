@@ -1,5 +1,30 @@
 # 本机虚拟控制器
 
+## 13 轴双夹位测试准备
+
+`NewRotaryTestConfiguration.ps1` 只创建不存在的隔离根目录，从源 Machine01 复制硬件配置、参数和任务，不复制或修改源草稿、备份和恢复记录；写入 13 轴专用原点、限位、扫码及工位测试映射，并安装双夹位任务。可以分别创建两种入口：
+
+```powershell
+& '.\tools\MotionControl.VirtualController\NewRotaryTestConfiguration.ps1' -DestinationRoot '.\tmp\rotary-task-test' -ExecutionOwner TaskEngine -Port 19580
+& '.\tools\MotionControl.VirtualController\NewRotaryTestConfiguration.ps1' -DestinationRoot '.\tmp\rotary-code-test' -ExecutionOwner StationFlows -Port 19581
+& '.\tools\MotionControl.VirtualController\StartRotaryWelding.ps1' -ConfigurationRoot '.\tmp\rotary-task-test' -LaunchHost
+```
+
+启动脚本只接受隔离配置，会启动新的本机控制器并按设备配置创建十三轴原点/限位、三个双到位夹具、扫码、视觉与多路延时反馈；`-LaunchHost` 使用正式 Host 的隔离配置入口，不自动使能、回零、开启供料或生产。先按 Host 的设备准备步骤核对，再使用脚本打印的命令开启供料：只有 Feeder_X、Feeder_Z、Load_X 和 Transfer_Y 都已回零、停稳且位于 0 附近时才累计到料延时。该门禁不知道 Host 的生产暂停及交接，不能替代设备工艺互锁。缓存、合格及不良出口允许信号默认有效，可通过 `SetInput` 设为 false 注入下游阻塞。`FeedbackStuck` 可以分别冻结焊接完成、焊接合格、压合完成/合格、缓存接收、合格出料或剔除完成输入。夹具异常可使用 `ActuatorStuck` 或 `ActuatorConflict`；解除分别使用 `ActuatorRestore`、`ActuatorConflictRestore`。结束时在正式 Host 停止流程并核对轴、输出及输入，关闭本次上位机后仅关闭本次控制器进程。
+
+独立扫码模型使用 `扫码触发`、`扫码完成`、`扫码成功` 和 `扫码数据00`–`扫码数据15`；低位在前。触发高时经过延迟产生一次递增的 1–65535 测试编号，结果及完成状态保持至触发下降，下降会清除反馈并取消尚未完成的操作。失败时完成有效、成功无效且数据为零；耗尽后明确失败。号码仅在本控制器进程内不重复，重启后会从头编号，不能代替现场扫码或产品追溯。故障可在触发关闭后设置：
+
+```powershell
+$command = '.\tools\MotionControl.VirtualController\ControllerCommand.ps1'
+& $command -Port 19580 -Action ScannerStatus
+& $command -Port 19580 -Action ScannerFault -ScannerFaultMode fail
+& $command -Port 19580 -Action ScannerFault -ScannerFaultMode noCompletion
+& $command -Port 19580 -Action ScannerFault -ScannerFaultMode normal
+& '.\tools\MotionControl.VirtualController\ScannerChecks.ps1'
+```
+
+以上为软件控制器和测试机构模型，不验证实际机械、制动、布线或安全回路。
+
 这是一个独立进程，通过本机 TCP 接收框架的虚拟卡适配器请求，供正式上位机验证操作界面和设备流程。它不是正运动原厂 SDK，也不会访问实际控制卡。进程关闭后，轴、IO 和测试场景状态均丢失；设备的 Machine01 配置文件不会因此删除或恢复。
 
 ## 启动与关闭
