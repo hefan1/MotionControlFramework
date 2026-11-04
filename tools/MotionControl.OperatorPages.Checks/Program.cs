@@ -34,6 +34,7 @@ namespace MotionControl.OperatorPages.Checks
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/MotionControl.Host.Wpf;component/Localization/Strings.zh-CN.xaml", UriKind.Relative) });
             int failures = 0;
+            Check("任务入口关闭超时与迟到完成", LauncherCloseTimeoutChecks.Run, ref failures);
             Check("未知状态、真实Runtime来源和无硬件调用", RuntimeSource, ref failures);
             Check("暂停覆盖、任意数量工位和预览来源", OverviewStates, ref failures);
             Check("整机启动拦截原因跨页面一致", StartReadinessConsistency, ref failures);
@@ -62,7 +63,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("产品记录只读显示两种来源及错误", ProductRecordChecks.Run, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：28 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：29 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }

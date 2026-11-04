@@ -402,6 +402,8 @@ namespace MotionControl.TaskEngine.Machine
         {
             lock (_sync)
             {
+                // 任一关闭方式已成功即为终态，不能再清理已封存的资源证据。
+                if (_shutdownCloseTask != null && _shutdownCloseTask.Status == TaskStatus.RanToCompletion) return _shutdownCloseTask;
                 if (_shutdownCloseTask != null && !_shutdownCloseTask.IsCompleted)
                     throw new InvalidOperationException("任务退出交接正在执行，请等待完成。");
                 if (_closeTask == null || _closeTask.IsFaulted || _closeTask.IsCanceled) _closeTask = CloseCoreAsync();
@@ -414,6 +416,8 @@ namespace MotionControl.TaskEngine.Machine
         {
             lock (_sync)
             {
+                // 常规关闭已归还所有权后，不再重新发起退出交接。
+                if (_closeTask != null && _closeTask.Status == TaskStatus.RanToCompletion) return _closeTask;
                 if (_closeTask != null && !_closeTask.IsCompleted)
                     throw new InvalidOperationException("任务会话关闭正在执行，请等待完成。");
                 if (_shutdownCloseTask == null || _shutdownCloseTask.IsFaulted || _shutdownCloseTask.IsCanceled)

@@ -603,7 +603,7 @@ namespace MotionControl.Host.Wpf.Tasks
                 await _runtime.FinishTaskEngineRunAsync(false, null).ConfigureAwait(true);
             bool preserveBlocked = allowBlockedHandoff && session.TaskDevice.ReadResources()
                 .Any(resource => resource.State == TaskResourceState.Blocked);
-            await WaitForShutdownSettlementAsync(CloseTaskSessionAsync(preserveBlocked), "任务会话关闭").ConfigureAwait(true);
+            await CloseTaskSessionAsync(preserveBlocked).ConfigureAwait(true);
         }
 
         /// <summary>等待在途操作有界结束；超时只提示未确认，后台任务和资源保护继续保留。</summary>
@@ -632,8 +632,9 @@ namespace MotionControl.Host.Wpf.Tasks
             _stateTimer.Stop();
             try
             {
-                if (preserveBlockedForShutdown) await session.Machine.CloseForShutdownAsync().ConfigureAwait(true);
-                else await session.Machine.CloseAsync().ConfigureAwait(true);
+                Task close = preserveBlockedForShutdown ? session.Machine.CloseForShutdownAsync() : session.Machine.CloseAsync();
+                // 超时后只观察执行器结果，禁止迟到续体清除仍需现场核查的会话。
+                await WaitForShutdownSettlementAsync(close, "任务会话关闭").ConfigureAwait(true);
             }
             catch
             {

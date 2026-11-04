@@ -20,7 +20,7 @@
 - `dotnet run --project tools/MotionControl.Preparation.Checks/MotionControl.Preparation.Checks.csproj -c Release`：18 组通过。
 - `dotnet run --project tools/MotionControl.TaskPreparation.Checks/MotionControl.TaskPreparation.Checks.csproj -c Release`：通过，覆盖顺序、占用、取消和重新核对。
 - `dotnet run --project tools/MotionControl.TaskMonitor.Checks/MotionControl.TaskMonitor.Checks.csproj -c Release`：4 组通过。
-- `dotnet run --project tools/MotionControl.OperatorPages.Checks/MotionControl.OperatorPages.Checks.csproj -c Release`：28 组通过，包含中英文离屏布局。离屏图像属于内部检查，不是正式 Host 屏幕截图。
+- `dotnet run --project tools/MotionControl.OperatorPages.Checks/MotionControl.OperatorPages.Checks.csproj -c Release`：29 组通过，包含中英文离屏布局和 Launcher 超时回归。离屏图像属于内部检查，不是正式 Host 屏幕截图。
 - 正式 Host Release 隔离输出构建：0 警告、0 错误。
 
 上述检查包含内存替身和离屏组件，不能证明 Sandbox 操作稳定性，也不能证明真实轴、IO、机械结构或安全回路通过。
@@ -29,8 +29,10 @@
 
 之前在 Sandbox 运行的正式 Host 使用来宾软件控制器。原始测试记录和截图位于工作区外的 `F:\Work\运动控制框架\ui-pilot\winapp-sandbox\TEST-RECORD-2026-11-04.md`，其中 `focus-alarm-stop-click.png`、`focus-resource-read.png`、`focus-drain-outputs.png` 记录了缺料报警后停止失败、资源待确认以及 A 夹紧输出保持有效的当时现场。这些是旧版 Host 的证据，不是本轮新版界面截图。
 
-本轮只读核查时旧 Host 仍显示报警；没有清除报警、删除恢复记录、伪造反馈或强制关闭保持输出。正式 Host 单实例和当前仅有的 Sandbox 被旧会话占用，尚未在同一环境启动新版正式 Host。对原有关闭收尾的代码复核还发现：部分失败或超时路径可能在后续关停核对完成前丢失任务会话信息；尝试修复时发现资源隔离场景仍不完整，该尝试未保留。不能把直接关闭旧进程当作已验证的安全交接。
+本轮只读核查时旧 Host 仍显示报警；没有清除报警、删除恢复记录、伪造反馈或强制关闭保持输出。正式 Host 单实例和当前仅有的 Sandbox 被旧会话占用，尚未在同一环境启动新版正式 Host。对原有关闭收尾的代码复核还发现：关闭超时后，原后台续体可能迟到并清除仍需核查的任务会话；两种关闭入口缺少共同的成功终态。现已修改这两处，并补充内部检查；这些修复尚未进入正在运行的旧 Host，不能把直接关闭旧进程当作已验证的安全交接。
 
 因此，下列均**未通过验收**：新版正式 Host 的 Sandbox 截图和操作流程；C# 与任务列表在正式 Host 的分别屏幕回归；新的多报警、待复位、断连及读取失败屏幕对照；停止失败、保持输出和资源待确认的新版画面；完整清料和故障恢复；真实设备及安全回路。此前旧版软件控制器测试已覆盖准备、回零、等待步骤暂停继续及缺料报警，但不能替代新版回归，也不能外推到所有动作场景。
 
-继续时应先只读复核并保存现有隔离现场，再完善和验证正常关闭、超时和资源保持情况下的安全交接；只有确认不会丢失待核查状态或改变保持输出后，才启动新版正式 Host 并逐项补充截图和屏幕结果。真实设备验证单独报告。
+关闭修复的补充检查：`dotnet run --project tools/MotionControl.MachineDevice.Checks/MotionControl.MachineDevice.Checks.csproj -c Release` 39 组通过，覆盖设备侧退出交接、隔离保持、输出读取迟到及两种关闭入口的顺序和并发；Launcher 的超时和迟到完成检查通过注入可控关闭任务验证界面会话保留与重试，该检查不覆盖真实设备关闭。此处均为内部检查，不等于旧版 Host 或 Sandbox 的关闭验收。
+
+继续时应先只读复核并保存现有隔离现场，再验证正常关闭、超时和资源保持情况下的安全交接；只有确认不会丢失待核查状态或改变保持输出后，才启动新版正式 Host 并逐项补充截图和屏幕结果。真实设备验证单独报告。

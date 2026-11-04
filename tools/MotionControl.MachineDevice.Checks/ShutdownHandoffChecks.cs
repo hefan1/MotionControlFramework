@@ -73,7 +73,13 @@ namespace MotionControl.MachineDevice.Checks
                 {
                     string expected = scenario == "断连未知" ? "尚未验证" : scenario == "读取失败" ? "读取输出" : scenario == "读取迟到" ? "超时"
                         : scenario == "输出变化" ? "状态发生变化" : scenario == "记录损坏" ? "缺失或损坏" : "仍在收尾";
-                    ExpectMessage(() => machine.CloseForShutdownAsync().GetAwaiter().GetResult(), expected);
+                    Task closing = machine.CloseForShutdownAsync();
+                    if (scenario == "读取迟到")
+                    {
+                        Ensure(!closing.IsCompleted, "读取尚未返回却提前完成退出交接。");
+                        ExpectMessage(() => machine.CloseAsync().GetAwaiter().GetResult(), "退出交接正在执行");
+                    }
+                    ExpectMessage(() => closing.GetAwaiter().GetResult(), expected);
                     Ensure(!runtime.IsShutdownSealed && runtime.IsTaskEngineControlClaimed && device.ReadResources().Count == 1,
                         scenario + "时不应释放控制权或隔离。");
                     if (scenario == "调用在途") device.UnregisterRun("still-running");
@@ -96,6 +102,10 @@ namespace MotionControl.MachineDevice.Checks
                     return;
                 }
                 await machine.CloseForShutdownAsync().ConfigureAwait(false);
+                // 已封存后常规关闭只能复用成功结果，不能删除日志或提前归还控制权。
+                Task sealedClose = machine.CloseForShutdownAsync();
+                Ensure(ReferenceEquals(sealedClose, machine.CloseAsync()), "两种关闭入口未复用已成功的封存结果。");
+                await machine.CloseAsync().ConfigureAwait(false);
                 Ensure(runtime.IsShutdownSealed && runtime.IsTaskEngineControlClaimed && device.ReadResources().Count == 1,
                     "交接成功后必须仍由封存运行时持有控制权和隔离。");
                 Ensure(io.OutputValue && io.OutputWrites == 1, "退出交接不能改变夹紧或吸附输出。");

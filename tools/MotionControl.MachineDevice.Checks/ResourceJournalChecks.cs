@@ -120,7 +120,10 @@ namespace MotionControl.MachineDevice.Checks
                 ExpectMessage(() => controller.CloseAsync().GetAwaiter().GetResult(), "不是空");
                 Ensure(runtime.IsTaskEngineControlClaimed, "清理失败时错误归还控制权。");
                 Directory.Delete(obstacle);
-                controller.CloseAsync().GetAwaiter().GetResult();
+                Task closed = controller.CloseAsync();
+                closed.GetAwaiter().GetResult();
+                // 已归还所有权后只能复用成功结果，不能重新调用退出交接。
+                Ensure(ReferenceEquals(closed, controller.CloseForShutdownAsync()), "常规关闭后重新发起了退出交接。");
                 Ensure(!runtime.IsTaskEngineControlClaimed && TaskResourceJournal.Inspect(root, "M1") == null,
                     "排除清理故障后没有安全关闭并清理记录。");
             }
