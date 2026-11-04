@@ -14,11 +14,11 @@
     <TextBlock Text="{DynamicResource 操作页.搜索}" VerticalAlignment="Center" Margin="8,0,0,0"/><TextBox x:Name="SearchBox" Width="260" MinHeight="30" Margin="8,3" Padding="7,4" VerticalContentAlignment="Center" TextChanged="SearchChanged" ToolTip="{DynamicResource 操作页.搜索工位代码或报警内容}"/>
    </WrapPanel>
   </DockPanel></Border>
-  <TextBlock x:Name="SourceText" Grid.Row="1" Margin="2,7" Foreground="#596B7D" TextWrapping="Wrap"/>
+  <ScrollViewer Grid.Row="1" MaxHeight="110" VerticalScrollBarVisibility="Auto"><TextBlock x:Name="SourceText" Margin="2,7" Foreground="#596B7D" TextWrapping="Wrap"/></ScrollViewer>
   <Grid Grid.Row="2"><DataGrid x:Name="AlarmGrid" AutoGenerateColumns="False" IsReadOnly="True" SelectionChanged="AlarmSelected"><DataGrid.Columns>
    <DataGridTextColumn Binding="{Binding KindText}" Width="75" ElementStyle="{StaticResource 报警等级}"/><DataGridTextColumn Binding="{Binding OccurredAt}" Width="165"/>
    <DataGridTextColumn Binding="{Binding Alarm.SourceName}" Width="1*" MinWidth="110"/><DataGridTextColumn Binding="{Binding Alarm.Definition.Message}" Width="1.8*" MinWidth="180"/><DataGridTextColumn Binding="{Binding ConditionText}" Width="140"/>
-  </DataGrid.Columns></DataGrid><TextBlock x:Name="EmptyText" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#596B7D" IsHitTestVisible="False"/></Grid>
+  </DataGrid.Columns></DataGrid><TextBlock x:Name="EmptyText" TextWrapping="Wrap" Margin="16" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#596B7D" IsHitTestVisible="False"/></Grid>
   <Border x:Name="DetailsPanel" Grid.Row="3" Style="{StaticResource 内容边框}" Margin="0,10,0,0"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="6">
    <UniformGrid Columns="2">
     <Border Style="{StaticResource 指导块}"><StackPanel><TextBlock Text="{DynamicResource 操作页.1 发生在哪里}" Style="{StaticResource 指导标题}"/><TextBlock x:Name="WhereText" TextWrapping="Wrap"/></StackPanel></Border>

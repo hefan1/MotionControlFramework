@@ -75,7 +75,24 @@ namespace MotionControl.Host.Wpf.Operation
         /// <summary>按当前快照更新列表，未变化时保持已有行和滚动位置。</summary>
         public void RefreshDisplay(bool force = false)
         {
-            _snapshot = _preview ?? OperationSnapshot.Read(_runtime, _taskStationProvider);
+            try { _snapshot = _preview ?? OperationSnapshot.Read(_runtime, _taskStationProvider); }
+            catch (Exception error)
+            {
+                // 读取失败不能显示零报警，保留完整诊断并禁用旧记录导航。
+                CountText.Text = T("未读取报警状态");
+                SourceText.ToolTip = error.ToString();
+                SourceText.Text = (_guidanceEnglish ? "Alarm/state read failed: " : "报警/状态读取失败：") + error.Message;
+                if (!string.IsNullOrWhiteSpace(_runtime?.RecoveryBlockReason))
+                    SourceText.Text += "\n" + RecoveryGuidance() + _runtime.RecoveryBlockReason;
+                EmptyText.Text = _guidanceEnglish ? "Alarm status unknown; maintenance must investigate." : "报警状态未知，请设备维护人员排查。";
+                EmptyText.Visibility = Visibility.Visible;
+                AlarmGrid.ItemsSource = null;
+                _rows.Clear();
+                DetailsPanel.Visibility = Visibility.Collapsed;
+                FlowButton.IsEnabled = IoButton.IsEnabled = AxisButton.IsEnabled = false;
+                return;
+            }
+            SourceText.ToolTip = null;
             string query = SearchBox.Text.Trim();
             var alarms = _snapshot.Alarms.Where(alarm => Matches(alarm, query)).OrderBy(alarm => alarm.Definition.Kind == MachineAlarmKind.StopMachine ? 0 : 1).ThenByDescending(alarm => alarm.FirstRaisedAtUtc).ToList();
             SourceText.Text = T(_snapshot.IsPreview ? "离线页面示例" : "状态来源：设备运行数据") + " · " + T("软件状态采样") + " " + _snapshot.SampledAt.ToString("yyyy-MM-dd HH:mm:ss");
@@ -93,6 +110,13 @@ namespace MotionControl.Host.Wpf.Operation
                     T("报警数量摘要"), _snapshot.Alarms.Count, stopAlarmCount, noticeCount);
             }
             EmptyText.Text = !_snapshot.HasRuntime ? T("未读取报警状态") : _snapshot.Alarms.Count == 0 ? T("当前无报警") : T("没有匹配的报警");
+            string recoveryReason = _preview == null ? _runtime?.RecoveryBlockReason : null;
+            if (!string.IsNullOrWhiteSpace(recoveryReason))
+            {
+                SourceText.Text += "\n" + RecoveryGuidance() + recoveryReason;
+                if (_snapshot.HasRuntime && _snapshot.Alarms.Count == 0)
+                    EmptyText.Text = _guidanceEnglish ? "No alarms recorded in this session; equipment recovery remains unconfirmed." : "当前会话未记录报警，设备恢复信息仍未确认";
+            }
             EmptyText.Visibility = alarms.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             if (force || !_rows.Select(row => row.Alarm).SequenceEqual(alarms))
             {
@@ -103,6 +127,13 @@ namespace MotionControl.Host.Wpf.Operation
                 _refreshing = false;
             }
             ShowDetails();
+        }
+        /// <summary>读取失败和正常采样均保留恢复责任提示，不能用报警复位代替现场确认。</summary>
+        private string RecoveryGuidance()
+        {
+            return _guidanceEnglish
+                ? "Equipment recovery remains unconfirmed. Maintenance must verify the site, retained states and recovery records, and follow the equipment procedures. Alarm reset does not confirm recovery or start production. "
+                : "设备恢复信息仍未确认。由设备维护人员核查现场、保持状态与恢复记录，并按设备规程处理；报警复位不代表恢复确认，也不会启动生产。";
         }
         /// <summary>小范围不区分大小写查找，空搜索显示全部。</summary>
         private static bool Matches(MachineAlarmRecord alarm, string query)

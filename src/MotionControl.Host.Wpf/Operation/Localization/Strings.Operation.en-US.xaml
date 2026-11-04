@@ -171,4 +171,13 @@
  <sys:String x:Key="操作页.恢复诊断.资源记录说明">Cross-session resource isolation records are stored in ResourceGuards/&lt;session&gt;/*.guard. This view lists the location only; it does not inspect records. An existing directory does not establish a block; refer to the runtime diagnostic message for the reason. Preserve records for maintenance review; do not delete them to bypass restrictions.</sys:String>
  <sys:String x:Key="操作页.资源状态读取失败请核查">Resource status could not be read; safety is unconfirmed. Open Station operation to inspect.</sys:String>
  <sys:String x:Key="操作页.资源待核查先查看工位运行">Resource status needs inspection. Review resources and handling conditions in Station operation first.</sys:String>
+ <sys:String x:Key="操作页.恢复信息未确认">Recovery information unconfirmed</sys:String>
+ <sys:String x:Key="操作页.恢复阻断核查提示">Inspect the site, recovery diagnostics on Equipment preparation and resources on Station operation. Do not prepare or resume until confirmed. Material clearance requires the equipment configuration and successful checks; refer unknown conditions to maintenance.</sys:String>
+ <sys:String x:Key="操作页.当前会话无报警恢复仍未确认">No alarms recorded in this session; resource and recovery status remain unconfirmed.</sys:String>
+ <sys:String x:Key="操作页.查看恢复诊断">View recovery diagnostics</sys:String>
+ <sys:String x:Key="操作页.状态读取失败">State read failed</sys:String>
+ <sys:String x:Key="操作页.状态读取失败核查提示">Equipment state is unknown. Inspect the site and diagnostics before preparing or operating.</sys:String>
+ <sys:String x:Key="操作页.恢复未确认工位数据未知">Recovery is unconfirmed and current station data is unknown. Inspect recovery diagnostics and the site first; loading tasks does not confirm recovery.</sys:String>
+ <sys:String x:Key="操作页.设备清料中">Material clearance in progress</sys:String>
+ <sys:String x:Key="操作页.清料进行中操作提示">Material clearance is running. To interrupt it, open Equipment preparation and stop clearance. After it ends, inspect the site, resources and recovery records, then confirm the next operation according to equipment configuration.</sys:String>
 </ResourceDictionary>

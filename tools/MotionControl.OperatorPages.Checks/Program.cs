@@ -40,6 +40,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("整机启动拦截原因跨页面一致", StartReadinessConsistency, ref failures);
             Check("任务入口的会话状态和导航", TaskOwnerDisplay, ref failures);
             Check("报警恢复待复位、搜索和稳定选择", AlarmConditions, ref failures);
+            Check("重启恢复阻断与报警来源未知", AlarmRestartRecoveryChecks.Run, ref failures);
             Check("报警状态与报警库恢复指导同时可见", AlarmGuidanceChecks.Run, ref failures);
             Check("任务页报警表格快照与语言切换", TaskAlarmGridChecks.Run, ref failures);
             Check("任务运行空状态与诊断", TaskRunPageChecks.Run, ref failures);
@@ -63,7 +64,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("产品记录只读显示两种来源及错误", ProductRecordChecks.Run, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：29 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：30 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }

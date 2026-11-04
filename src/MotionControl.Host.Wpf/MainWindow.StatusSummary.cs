@@ -62,9 +62,9 @@ namespace MotionControl.Host.Wpf
             string block = string.IsNullOrWhiteSpace(recovery) ? _automaticStartBlockReason : recovery;
 
             ImportantExceptionSummary.Text = FooterExceptionText.Format(alarms, runtimeKnown, connected,
-                ioFailed, checking, block, taskBlock, english, false, resourcesUnknown, settlementPending, settlementError != null);
+                ioFailed, checking, block, taskBlock, english, false, resourcesUnknown, settlementPending, settlementError != null, !string.IsNullOrWhiteSpace(recovery));
             string detail = FooterExceptionText.Format(alarms, runtimeKnown, connected,
-                ioFailed, checking, block, taskBlock, english, true, resourcesUnknown, settlementPending, settlementError != null);
+                ioFailed, checking, block, taskBlock, english, true, resourcesUnknown, settlementPending, settlementError != null, !string.IsNullOrWhiteSpace(recovery));
             if (settlementError != null) detail += "\n" + settlementError;
             if (alarmReadError != null) detail += "\n" + alarmReadError;
             if (resourceReadError != null) detail += "\n" + resourceReadError;

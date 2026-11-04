@@ -120,16 +120,22 @@ namespace MotionControl.Host.Wpf.Operation
         public void RefreshDisplay()
         {
             OperationSnapshot snapshot = ReadCurrentSnapshot();
+            bool snapshotFailed = !snapshot.HasRuntime && !string.IsNullOrWhiteSpace(snapshot.LastError);
             bool connectionLost = _preview == null && _connectionStatusKnown && !_isCardConnected && snapshot.HasRuntime;
             bool taskOwner = snapshot.ControlOwner == MachineControlOwner.TaskEngine;
             bool showTask = taskOwner && !connectionLost;
             MachineRunState? displayState = connectionLost ? MachineRunState.Disconnected : snapshot.State;
+            string recoveryReason = _preview == null ? _runtime?.RecoveryBlockReason : null;
+            bool recoveryBlocked = !string.IsNullOrWhiteSpace(recoveryReason);
+            bool clearing = _preview == null && (_runtime?.IsClearing ?? false);
+            bool activeOperation = displayState == MachineRunState.Running || displayState == MachineRunState.Preparing || displayState == MachineRunState.Pausing || (_runtime?.IsPreparing ?? false) || (_runtime?.IsClearing ?? false);
+            bool recoveryHeadline = recoveryBlocked && !connectionLost && !activeOperation && displayState != MachineRunState.Alarmed && snapshot.HasRuntime;
             bool startBlocked = displayState == MachineRunState.Ready
                 && !string.IsNullOrWhiteSpace(_automaticStartBlockReason);
             bool startChecking = displayState == MachineRunState.Ready && _automaticStartReadinessChecking;
-            MachineStateText.Text = T(startBlocked ? "启动条件未满足"
+            MachineStateText.Text = T(snapshotFailed ? "状态读取失败" : clearing && !connectionLost && displayState != MachineRunState.Alarmed ? "设备清料中" : recoveryHeadline ? "恢复信息未确认" : startBlocked ? "启动条件未满足"
                 : startChecking ? "正在检查启动条件" : OperationUi.StateKey(displayState));
-            Brush stateBrush = startBlocked
+            Brush stateBrush = recoveryHeadline || startBlocked
                 ? StartBlockedBrush
                 : OperationUi.StateBrush(displayState);
             MachineStateText.Foreground = stateBrush;
@@ -143,6 +149,9 @@ namespace MotionControl.Host.Wpf.Operation
             {
                 safetySummary = T("资源状态读取失败请核查") + "：" + error.Message;
             }
+            if (recoveryBlocked) safetySummary = T("恢复信息未确认") + "：" + (recoveryReason.Length > 180 ? recoveryReason.Substring(0, 180) + "…" : recoveryReason) + (string.IsNullOrWhiteSpace(safetySummary) ? string.Empty : "\n" + safetySummary);
+            SafetySummaryText.ToolTip = recoveryReason;
+            SafetySummaryActionButton.Content = T(recoveryBlocked ? "查看恢复诊断" : "查看工位运行");
             SafetySummaryText.Text = safetySummary ?? string.Empty;
             SafetySummaryPanel.Visibility = string.IsNullOrWhiteSpace(safetySummary) ? Visibility.Collapsed : Visibility.Visible;
             bool noNamedAxes = _axisMappingStatusKnown && _configuredAxisCount == 0;
@@ -152,17 +161,25 @@ namespace MotionControl.Host.Wpf.Operation
                 : T(_isCardConnected && noNamedAxes
                     ? "先配置设备轴映射再进行手动调试"
                     : NextAction(snapshot));
+            if (clearing && !connectionLost && displayState != MachineRunState.Alarmed) NextActionText.Text = T("清料进行中操作提示");
             if (!string.IsNullOrWhiteSpace(safetySummary))
-                NextActionText.Text = T("资源待核查先查看工位运行");
-            bool preparationRequired = _runtime != null && !_runtime.IsPreparing && !_runtime.IsPrepared
+                NextActionText.Text = recoveryBlocked ? T("恢复阻断核查提示") + (connectionLost || displayState == MachineRunState.Alarmed || activeOperation ? "\n" + NextActionText.Text : string.Empty) : T("资源待核查先查看工位运行");
+            if (snapshotFailed)
+            {
+                NextActionText.Text = T("状态读取失败核查提示")
+                    + (string.IsNullOrWhiteSpace(snapshot.LastError) ? string.Empty : "\n" + snapshot.LastError.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)[0]);
+                NextActionText.ToolTip = snapshot.LastError;
+            }
+            else NextActionText.ToolTip = null;
+            bool preparationRequired = !snapshotFailed && _runtime != null && !_runtime.IsPreparing && !_runtime.IsPrepared
                 && displayState != MachineRunState.Running && displayState != MachineRunState.Pausing;
-            bool axisActionRequired = startBlocked
+            bool axisActionRequired = !snapshotFailed && startBlocked
                 && _automaticStartBlockReason.IndexOf("逻辑轴", StringComparison.OrdinalIgnoreCase) >= 0;
             AutomaticStartActionButton.Content = T(preparationRequired ? "设备准备" : "打开轴手动");
             AutomaticStartActionButton.Visibility = string.IsNullOrWhiteSpace(safetySummary)
                 && displayState != MachineRunState.Alarmed && (preparationRequired || axisActionRequired)
                 ? Visibility.Visible : Visibility.Collapsed;
-            ConnectionStatusPanel.Visibility = _preview != null || (_isCardConnected && !noNamedAxes)
+            ConnectionStatusPanel.Visibility = snapshotFailed || _preview != null || (_isCardConnected && !noNamedAxes)
                 ? Visibility.Collapsed : Visibility.Visible;
             ConnectionStateText.Text = T(_isCardConnected ? "设备轴映射未完成" : "控制卡未连接");
             ConnectionGuidanceText.Text = T(_isCardConnected ? "先配置设备轴映射再进行手动调试" : "请检查设备连接后查看工位状态");
@@ -174,7 +191,7 @@ namespace MotionControl.Host.Wpf.Operation
             AggregateMetrics.Visibility = Visibility.Collapsed;
             TaskRunPanel.Visibility = showTask && (snapshot.Stations.Count == 0 || snapshot.StationReadError != null)
                 ? Visibility.Visible : Visibility.Collapsed;
-            TaskRunStatusText.Text = snapshot.StationReadError != null
+            TaskRunStatusText.Text = recoveryBlocked ? T("恢复未确认工位数据未知") : snapshot.StationReadError != null
                 ? T("工位状态读取失败") + "：" + snapshot.StationReadError.Message
                 : T(_isTaskSessionLoaded == null ? "任务会话状态待查看"
                     : _isTaskSessionLoaded() ? "任务已读取，暂无工位状态" : "任务未读取请先读取");
@@ -205,9 +222,9 @@ namespace MotionControl.Host.Wpf.Operation
             }
             else if (snapshot.Alarms.Count == 0)
             {
-                AlertText.Text = T("当前无报警");
-                AlertBanner.Background = ClearAlertBackground;
-                AlertBanner.BorderBrush = ClearAlertBorder;
+                AlertText.Text = T(recoveryBlocked ? "当前会话无报警恢复仍未确认" : "当前无报警");
+                AlertBanner.Background = recoveryBlocked ? UnknownAlertBackground : ClearAlertBackground;
+                AlertBanner.BorderBrush = recoveryBlocked ? UnknownAlertBorder : ClearAlertBorder;
             }
             else
             {
@@ -232,8 +249,9 @@ namespace MotionControl.Host.Wpf.Operation
         /// <summary>连接丢失后不继续读取任务工位，旧缓存不作为当前动作展示。</summary>
         private OperationSnapshot ReadCurrentSnapshot()
         {
-            return _preview ?? OperationSnapshot.Read(_runtime,
-                _connectionStatusKnown && !_isCardConnected ? null : _taskStationProvider);
+            try { return _preview ?? OperationSnapshot.Read(_runtime,
+                _connectionStatusKnown && !_isCardConnected ? null : _taskStationProvider); }
+            catch (Exception error) { return new OperationSnapshot { SampledAt = DateTime.Now, LastError = error.ToString() }; }
         }
         /// <summary>按窗口宽度排列工位卡片；四个及以上工位可使用四列，窄窗仍在工位区滚动。</summary>
         private void CardsSizeChanged(object sender, SizeChangedEventArgs e)
@@ -344,6 +362,9 @@ namespace MotionControl.Host.Wpf.Operation
         /// <summary>进入当前报警，不执行复位。</summary>
         private void Alarms_Click(object sender, RoutedEventArgs e) { NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("当前报警")); }
         /// <summary>打开真实任务运行页，不自动读取任务或启动设备。</summary>
+        private void OpenSafetyDiagnostics_Click(object sender, RoutedEventArgs e)
+        { NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs(
+            !string.IsNullOrWhiteSpace(_runtime?.RecoveryBlockReason) ? "设备准备" : "工位运行")); }
         private void OpenTaskRun_Click(object sender, RoutedEventArgs e)
         { NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("工位运行")); }
         /// <summary>从启动拦截提示进入设备准备；其他轴问题仍使用原有轴手动页面。</summary>

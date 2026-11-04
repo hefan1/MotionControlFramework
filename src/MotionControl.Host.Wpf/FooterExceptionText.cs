@@ -17,7 +17,7 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>把锁存报警放在摘要开头，并保留阻断和未知状态，避免把未读取解释为正常。</summary>
         internal static string Format(IEnumerable<MachineAlarmRecord> records, bool runtimeKnown,
-            bool connected, bool ioFailed, bool checking, string block, string taskBlock, bool english, bool fullDetail = false, bool resourcesUnknown = false, bool settlementPending = false, bool settlementUnknown = false)
+            bool connected, bool ioFailed, bool checking, string block, string taskBlock, bool english, bool fullDetail = false, bool resourcesUnknown = false, bool settlementPending = false, bool settlementUnknown = false, bool recoveryPending = false)
         {
             var details = new List<string>();
             var alarms = (records ?? Enumerable.Empty<MachineAlarmRecord>())
@@ -38,8 +38,8 @@ namespace MotionControl.Host.Wpf
             if (!string.IsNullOrWhiteSpace(taskBlock))
                 details.Add(fullDetail ? taskBlock : (english ? "Inspect resources" : "资源待确认"));
             if (!string.IsNullOrWhiteSpace(block))
-                details.Add(fullDetail ? (english ? "Start blocked: " : "启动受阻：") + block
-                    : (english ? "Start blocked" : "启动受阻"));
+                details.Add(fullDetail ? (recoveryPending ? (english ? "Recovery unconfirmed: " : "恢复待确认：") : (english ? "Start blocked: " : "启动受阻：")) + block
+                    : (recoveryPending ? (english ? "Recovery unconfirmed" : "恢复待确认") : (english ? "Start blocked" : "启动受阻")));
             if (!runtimeKnown) details.Add(english ? "Runtime not read" : "运行状态未读取");
             if (!connected) details.Add(english ? "Controller disconnected" : "控制器未连接");
             if (ioFailed) details.Add(english ? "IO read failed" : "IO 读取失败");

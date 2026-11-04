@@ -341,7 +341,9 @@ namespace MotionControl.Host.Wpf.Tasks
             _emptyState.Visibility = !connected || _session == null ? Visibility.Visible : Visibility.Collapsed;
             _emptyState.Text = !connected
                 ? PageText("控制器未连接，任务和设备状态未确认。请重新连接后检查。", "Controller disconnected. Task and equipment states are unconfirmed; reconnect and check.")
-                : PageText("任务尚未读取。读取后可在此查看工位步骤与运行状态。", "Tasks are not loaded. Load tasks to view station steps and run status.");
+                : !string.IsNullOrWhiteSpace(_runtime?.RecoveryBlockReason)
+                    ? PageText("任务尚未读取；设备恢复信息待确认，请先核查现场和设备准备页的恢复诊断。", "Tasks are not loaded; recovery requires inspection. Check the equipment and recovery diagnostics on the preparation page first.")
+                    : PageText("任务尚未读取。读取后可在此查看工位步骤与运行状态。", "Tasks are not loaded. Load tasks to view station steps and run status.");
             UpdateRunStatus();
             UpdateCommandAvailability();
             RefreshAlarmState();
@@ -731,7 +733,9 @@ namespace MotionControl.Host.Wpf.Tasks
             {
                 _runStatus.Text = _runtime == null
                     ? GetText("任务执行等待连接")
-                    : string.Format(GetText("任务执行设备已连接"), GetControlOwnerText(_runtime.ControlOwner));
+                    : !string.IsNullOrWhiteSpace(_runtime.RecoveryBlockReason)
+                        ? PageText("设备已连接 · 恢复信息待确认，任务尚未读取。", "Equipment connected · recovery requires inspection; tasks are not loaded.")
+                        : string.Format(GetText("任务执行设备已连接"), GetControlOwnerText(_runtime.ControlOwner));
                 return;
             }
 

@@ -20,6 +20,31 @@ namespace MotionControl.OperatorPages.Checks
             var labelMethod = typeof(EquipmentOverviewView).Assembly.GetType("MotionControl.Host.Wpf.Operation.OperationUi").GetMethod("StepLabelKey", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static, null, new[] { typeof(MachineRunState?), typeof(StationOverviewData) }, null);
             if ((string)labelMethod.Invoke(null, new object[] { MachineRunState.Running, new StationOverviewData { StateText = "已完成" } }) != "当前步骤" || (string)labelMethod.Invoke(null, new object[] { MachineRunState.Running, new StationOverviewData() }) != "正在执行步骤")
                 throw new InvalidOperationException("独立工位状态的步骤标签错误继承整机运行状态。");
+            var failingService = new AlarmRestartRecoveryChecks.FailingAlarmService();
+            var failingRuntime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { new GuardCard() }), new IStationFlow[0], failingService, new GuardSafety());
+            var failingOverview = new EquipmentOverviewView();
+            failingOverview.SetRuntime(failingRuntime);
+            failingOverview.SetConnectionStatus(true, null);
+            failingRuntime.SetRecoveryBlockReason("DO41 pending");
+            failingOverview.RefreshDisplay();
+            typeof(MachineRuntime).GetField("_clearing", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(failingRuntime, true);
+            failingService.Fail = true;
+            failingOverview.RefreshDisplay();
+            var failedNext = (TextBlock)failingOverview.FindName("NextActionText");
+            if (!((TextBlock)failingOverview.FindName("MachineStateText")).Text.Contains("读取失败")
+                || !failedNext.Text.Contains("未知") || !failedNext.Text.Contains("alarm-enumeration-failed")
+                || !failedNext.ToolTip.ToString().Contains("alarm-enumeration-failed")
+                || !((TextBlock)failingOverview.FindName("SafetySummaryText")).Text.Contains("DO41")
+                || ((Button)failingOverview.FindName("AutomaticStartActionButton")).Visibility != Visibility.Collapsed)
+                throw new InvalidOperationException("总览读取失败保留旧状态或丢失错误和恢复摘要。");
+            failingRuntime.SetRecoveryBlockReason(null);
+            failingOverview.RefreshDisplay();
+            if (((Button)failingOverview.FindName("AutomaticStartActionButton")).Visibility != Visibility.Collapsed)
+                throw new InvalidOperationException("无恢复记录时读取故障仍提供设备准备动作。");
+            failingService.Fail = false;
+            failingOverview.RefreshDisplay();
+            if (failedNext.ToolTip != null || ((TextBlock)failingOverview.FindName("MachineStateText")).Text.Contains("读取失败"))
+                throw new InvalidOperationException("读取恢复后保留旧故障。");
             var card = new GuardCard();
             var alarms = new MachineAlarmService();
             var runtime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { card }),
@@ -50,6 +75,71 @@ namespace MotionControl.OperatorPages.Checks
             overview.SetTaskSafetySummaryProvider(() => null);
             if (safetyPanel.Visibility != Visibility.Collapsed)
                 throw new InvalidOperationException("没有待确认资源时仍显示旧资源提示。");
+            runtime.SetRecoveryBlockReason("DO41 保持输出未确认");
+            overview.SetTaskSessionStateProvider(() => false);
+            overview.SetTaskStationProvider(() => null);
+            overview.RefreshDisplay();
+            if (!safetyText.Text.Contains("DO41") || !((TextBlock)overview.FindName("MachineStateText")).Text.Contains("恢复信息未确认")
+                || ((FrameworkElement)overview.FindName("AutomaticStartActionButton")).Visibility != Visibility.Collapsed
+                || !((TextBlock)overview.FindName("NextActionText")).Text.Contains("核查现场"))
+                throw new InvalidOperationException("重启无任务会话时恢复阻断提示缺失。");
+            if (!((TextBlock)overview.FindName("TaskRunStatusText")).Text.Contains("工位数据未知")
+                || !((TextBlock)overview.FindName("NextActionText")).Text.Contains("清料须按设备配置并通过检查")
+                || ((System.Windows.Media.SolidColorBrush)((Border)overview.FindName("AlertBanner")).Background).Color == System.Windows.Media.Color.FromRgb(240, 247, 244))
+                throw new InvalidOperationException("恢复阻断仍展示绿色正常报警、读取任务指引或绝对禁止清料。");
+            OperatorNavigationEventArgs safetyNavigation = null;
+            overview.NavigationRequested += (sender, e) => safetyNavigation = e;
+            var safetyAction = (Button)overview.FindName("SafetySummaryActionButton");
+            safetyAction.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            if (safetyNavigation?.Page != "设备准备" || !safetyAction.Content.ToString().Contains("恢复诊断"))
+                throw new InvalidOperationException("恢复阻断未导航至只读恢复诊断。");
+            overview.SetLanguage("en-US");            if (!safetyAction.Content.ToString().Contains("recovery diagnostics")) throw new InvalidOperationException("恢复诊断按钮英文缺失。");
+            if (!((TextBlock)overview.FindName("MachineStateText")).Text.Contains("Recovery"))
+                throw new InvalidOperationException("恢复阻断英文提示缺失。");
+            if (!((TextBlock)overview.FindName("TaskRunStatusText")).Text.Contains("unknown") || !((TextBlock)overview.FindName("NextActionText")).Text.Contains("Material clearance requires")) throw new InvalidOperationException("英文恢复工位与清料提示不完整。");
+            overview.SetLanguage("zh-CN");            var runtimeStateField = typeof(MachineRuntime).GetField("_state", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            var originalRuntimeState = runtime.State;
+            foreach (var activeState in new[] { MachineRunState.Running, MachineRunState.Preparing, MachineRunState.Pausing, MachineRunState.Alarmed })
+            {
+                runtimeStateField.SetValue(runtime, activeState);
+                overview.RefreshDisplay();
+                if (((TextBlock)overview.FindName("MachineStateText")).Text.Contains("恢复信息未确认") || !safetyText.Text.Contains("DO41"))
+                    throw new InvalidOperationException("恢复摘要覆盖了进行中动作或报警状态。");
+            }
+            runtimeStateField.SetValue(runtime, originalRuntimeState);
+            var clearingField = typeof(MachineRuntime).GetField("_clearing", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            clearingField.SetValue(runtime, true);
+            overview.RefreshDisplay();
+            if (((TextBlock)overview.FindName("MachineStateText")).Text.Contains("恢复信息未确认"))
+                throw new InvalidOperationException("恢复摘要覆盖了清料动作。");
+            var clearingNext = ((TextBlock)overview.FindName("NextActionText")).Text;
+            if (!((TextBlock)overview.FindName("MachineStateText")).Text.Contains("清料中") || !clearingNext.Contains("停止清料")
+                || !clearingNext.Contains("结束后核查现场") || clearingNext.Contains("完成后等待启动"))
+                throw new InvalidOperationException("清料错误显示设备准备或结束后可启动。");
+            overview.SetLanguage("en-US");
+            if (!((TextBlock)overview.FindName("MachineStateText")).Text.Contains("clearance")
+                || !((TextBlock)overview.FindName("NextActionText")).Text.Contains("stop clearance"))
+                throw new InvalidOperationException("英文清料专属指导缺失。");
+            overview.SetLanguage("zh-CN");
+            clearingField.SetValue(runtime, false);
+            var longRecovery = "DO41 保持输出未确认：" + new string('资', 6000);
+            runtime.SetRecoveryBlockReason(longRecovery);
+            overview.RefreshDisplay();
+            overview.Measure(new Size(1024, 768));
+            overview.Arrange(new Rect(0, 0, 1024, 768));
+            overview.UpdateLayout();
+            if (safetyText.Text.Length > 240 || safetyText.ActualHeight > 120
+                || !Equals(safetyText.ToolTip, longRecovery))
+                throw new InvalidOperationException("长恢复原因撑满总览或丢失完整诊断。");
+            overview.SetConnectionStatus(false, "断连");
+            if (!safetyText.Text.Contains("DO41") || !((TextBlock)overview.FindName("NextActionText")).Text.Contains("控制器"))
+                throw new InvalidOperationException("恢复阻断覆盖了断连诊断。");
+            runtime.SetRecoveryBlockReason(null);            overview.SetTaskSafetySummaryProvider(() => "待确认资源");
+            safetyAction.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            if (safetyNavigation?.Page != "工位运行" || !safetyAction.Content.ToString().Contains("工位运行"))
+                throw new InvalidOperationException("普通资源核查导航未保留工位运行。");
+            overview.SetTaskSafetySummaryProvider(() => null);
+            overview.SetConnectionStatus(true, null);
             overview.SetTaskStationProvider(() => { throw new InvalidOperationException("任务来源读取失败"); });
             if (cards.Items.Count != 0)
                 throw new InvalidOperationException("任务来源失败后仍保留旧工位作为实时数据。");

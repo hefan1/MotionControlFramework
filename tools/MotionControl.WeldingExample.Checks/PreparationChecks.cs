@@ -21,6 +21,16 @@ namespace MotionControl.WeldingExample.Checks
         /// <summary>执行准备依赖、现场前置、结果验收和中止停止检查。</summary>
         internal static async Task RunAsync()
         {
+            var servoContext = new PreparationContext();
+            IStationFlow[] servoFlows;
+            var servoPreparations = CreatePreparations(servoContext, out servoFlows);
+            servoContext.Axes["Weld_Z"].Enabled = false;
+            await ExpectFailureAsync(() => servoPreparations[0].ExecuteAsync(null, CancellationToken.None), "使能");
+            Require(servoContext.Axes.Values.All(axis => axis.HomeCount == 0 && axis.MoveCount == 0 && axis.EnabledCalls == 0), "未使能时发生轴动作。");
+            servoContext.Axes["Weld_Z"].Enabled = true;
+            servoContext.Axes["Unload_X"].Enabled = false;
+            await servoPreparations[0].ExecuteAsync(null, CancellationToken.None);
+            Require(servoContext.Axes["Weld_Z"].HomeCount == 1 && servoContext.Axes["Unload_X"].HomeCount == 0 && servoContext.Axes.Values.All(axis => axis.EnabledCalls == 0), "部分工位准备受无关轴影响或自动使能。");
             await CheckDependencyAndReadyAsync();
             await CheckBlockedConditionsAsync();
             await CheckCancelAndFailedHomeAsync();
@@ -174,7 +184,7 @@ namespace MotionControl.WeldingExample.Checks
             internal readonly TestIo Io = new TestIo();
             /// <summary>仅用于验证后端限制的配置名称。</summary>
             internal string Backend = "Virtual";
-            /// <summary>建立未使能、未回零的五个测试轴。</summary>
+            /// <summary>建立已手动使能、未回零的五个测试轴。</summary>
             internal PreparationContext()
             {
                 foreach (string name in new[] { "Load_X", "Weld_Z", "Press_Z", "Camera_X", "Unload_X" }) Axes.Add(name, new TestAxis(name));
@@ -211,7 +221,7 @@ namespace MotionControl.WeldingExample.Checks
             /// <summary>当前运动状态。</summary>
             internal bool Moving;
             /// <summary>当前伺服状态。</summary>
-            internal bool Enabled;
+            internal bool Enabled = true; internal int EnabledCalls;
             /// <summary>当前坐标参考状态。</summary>
             internal bool Homed;
             /// <summary>是否让回零停留至取消。</summary>
@@ -238,7 +248,7 @@ namespace MotionControl.WeldingExample.Checks
                     false, false, false, false, false, null, false));
             }
             /// <summary>模拟伺服使能。</summary>
-            public Task EnableServoAsync(CancellationToken token) { token.ThrowIfCancellationRequested(); Enabled = true; return Task.CompletedTask; }
+            public Task EnableServoAsync(CancellationToken token) { token.ThrowIfCancellationRequested(); EnabledCalls++; Enabled = true; return Task.CompletedTask; }
             /// <summary>本检查不关闭伺服。</summary>
             public Task DisableServoAsync(CancellationToken token) { throw new NotSupportedException(); }
             /// <summary>模拟回零；取消时保留运动状态以检验上层停止确认。</summary>

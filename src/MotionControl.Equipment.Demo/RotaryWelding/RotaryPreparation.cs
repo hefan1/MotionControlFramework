@@ -54,13 +54,15 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
             foreach (string name in HomeOrder)
             {
                 AxisStatus state = await _context.GetAxis(name).ReadStatusAsync(token).ConfigureAwait(false);
+                if (state != null && !state.ServoEnabled)
+                    throw new InvalidOperationException("轴伺服未使能，请先手动使能后再准备：" + name);
                 if (!HasStoppedFeedback(state) || state.AlarmActive
                     || state.PositiveLimitActive != false || state.NegativeLimitActive != false)
                     throw new InvalidOperationException("轴位置或速度未知、未停稳、报警或限位状态未知：" + name);
             }
         }
 
-        /// <summary>逐轴使能与回零，最后将旋转台移至 -90 度；异常时停止当前轴并保留错误。</summary>
+        /// <summary>确认所有轴已手动使能后逐轴回零，最后将旋转台移至 -90 度；异常时停止当前轴并保留错误。</summary>
         public async Task ExecuteAsync(IProgress<StationPreparationProgress> progress, CancellationToken token)
         {
             await ValidateStartAsync(token).ConfigureAwait(false);
@@ -71,7 +73,7 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
                 {
                     active = _context.GetAxis(name);
                     if (progress != null) progress.Report(new StationPreparationProgress(name + " 回零", "等待轴停稳并确认原点。"));
-                    await active.EnableServoAsync(token).ConfigureAwait(false);
+                    await ValidateStartAsync(token).ConfigureAwait(false);
                     await active.HomeAsync(token).ConfigureAwait(false);
                     AxisStatus state = await active.ReadStatusAsync(token).ConfigureAwait(false);
                     if (!HasStoppedFeedback(state) || !state.ServoEnabled || !state.Homed || state.AlarmActive
@@ -80,6 +82,7 @@ namespace MotionControl.Equipment.Demo.RotaryWelding
                 }
                 active = _context.GetAxis("Conveyor_R");
                 if (progress != null) progress.Report(new StationPreparationProgress("旋转台到初始夹位", "等待到达 -90°。"));
+                await ValidateStartAsync(token).ConfigureAwait(false);
                 await active.MoveAbsoluteAsync(-90, TurnProfile, token).ConfigureAwait(false);
                 await ValidateReadyAsync(token).ConfigureAwait(false);
             }

@@ -175,10 +175,27 @@ namespace MotionControl.RotaryWelding.Checks
                     if (!rejected || context.Axes.Values.Any(axis => axis.EnabledCalls != 0 || axis.HomeCalls != 0))
                         throw new InvalidOperationException("夹具异常未在回零前拦截：" + clamp + " " + fault);
                 }
+            var disabled = new FakeContext(); disabled.Io.NoMaterial = true;
+            disabled.Axes["Conveyor_R"].Enabled = false;
+            var disabledEquipment = new RotaryWeldingEquipmentDefinition();
+            bool servoRejected = false;
+            try { await disabledEquipment.CreatePreparations(disabled, disabledEquipment.CreateStationFlows(disabled))[0].ExecuteAsync(null, CancellationToken.None); }
+            catch (InvalidOperationException error) { servoRejected = error.Message.Contains("使能"); }
+            if (!servoRejected || disabled.Axes.Values.Any(axis => axis.HomeCalls != 0 || axis.EnabledCalls != 0))
+                throw new InvalidOperationException("最后轴未使能时准备未在任何轴动作前拒绝。");
+            var lostServo = new FakeContext(); lostServo.Io.NoMaterial = true;
+            lostServo.Axes["Feeder_Z"].AfterHome = () => lostServo.Axes["Camera_Z"].Enabled = false;
+            var lostEquipment = new RotaryWeldingEquipmentDefinition();
+            bool lostRejected = false;
+            try { await lostEquipment.CreatePreparations(lostServo, lostEquipment.CreateStationFlows(lostServo))[0].ExecuteAsync(null, CancellationToken.None); }
+            catch (InvalidOperationException error) { lostRejected = error.Message.Contains("使能"); }
+            if (!lostRejected || lostServo.Axes["Camera_Z"].HomeCalls != 0 || lostServo.Axes.Values.Any(axis => axis.EnabledCalls != 0)
+                || lostServo.Axes.Values.Sum(axis => axis.StopCalls) == 0)
+                throw new InvalidOperationException("逐轴准备期间失能未阻止后续回零并停止收尾。");
             var good = new FakeContext(); good.Io.NoMaterial = true;
             var equipment = new RotaryWeldingEquipmentDefinition();
             await equipment.CreatePreparations(good, equipment.CreateStationFlows(good))[0].ExecuteAsync(null, CancellationToken.None);
-            if (good.Axes.Values.Any(axis => axis.EnabledCalls != 1 || axis.HomeCalls != 1)) throw new InvalidOperationException("正常夹具反馈未完成逐轴准备。");
+            if (good.Axes.Values.Any(axis => axis.EnabledCalls != 0 || axis.HomeCalls != 1)) throw new InvalidOperationException("正常夹具反馈未完成逐轴准备。");
         }
 
         /// <summary>位置或速度未知及回零后仍有速度时，准备不能继续或误报就绪。</summary>
@@ -468,7 +485,7 @@ namespace MotionControl.RotaryWelding.Checks
             /// <summary>曾经访问的目标位置。</summary>
             internal readonly HashSet<double> Targets = new HashSet<double>();
             /// <summary>记录准备过程中使能及回零请求次数。</summary>
-            internal int EnabledCalls, HomeCalls;
+            internal int EnabledCalls, HomeCalls, StopCalls; internal Action AfterHome; internal bool Enabled = true;
             /// <summary>可选位置、速度覆盖，用于模拟设备返回无效反馈。</summary>
             internal double? ReportedPosition, ReportedVelocity, VelocityAfterHome;
             /// <summary>创建指定名称的轴。</summary>
@@ -480,19 +497,19 @@ namespace MotionControl.RotaryWelding.Checks
             { await Task.Delay(5, token); lock (_sync) { _position = position; Targets.Add(position); } }
             /// <summary>报告测试轴状态。</summary>
             public Task<AxisStatus> ReadStatusAsync(CancellationToken token)
-            { lock (_sync) return Task.FromResult(new AxisStatus(ReportedPosition ?? _position, HomeCalls > 0 ? (VelocityAfterHome ?? ReportedVelocity ?? 0) : (ReportedVelocity ?? 0), true, false, true, false, false, false, false, false, null, false)); }
+            { lock (_sync) return Task.FromResult(new AxisStatus(ReportedPosition ?? _position, HomeCalls > 0 ? (VelocityAfterHome ?? ReportedVelocity ?? 0) : (ReportedVelocity ?? 0), Enabled, false, true, false, false, false, false, false, null, false)); }
             /// <summary>测试轴无需额外使能。</summary>
             public Task EnableServoAsync(CancellationToken token) { EnabledCalls++; return Task.CompletedTask; }
             /// <summary>测试不执行断使能。</summary>
             public Task DisableServoAsync(CancellationToken token) { throw new NotSupportedException(); }
             /// <summary>测试回零。</summary>
-            public Task HomeAsync(CancellationToken token) { HomeCalls++; lock (_sync) _position = 0; return Task.CompletedTask; }
+            public Task HomeAsync(CancellationToken token) { HomeCalls++; lock (_sync) _position = 0; AfterHome?.Invoke(); return Task.CompletedTask; }
             /// <summary>样例不使用相对运动。</summary>
             public Task MoveRelativeAsync(double distance, AxisMotionProfile profile, CancellationToken token) { throw new NotSupportedException(); }
             /// <summary>样例不使用点动。</summary>
             public Task StartJogAsync(MotionDirection direction, AxisMotionProfile profile, CancellationToken token) { throw new NotSupportedException(); }
             /// <summary>测试停止直接完成。</summary>
-            public Task StopAsync(AxisStopMode mode, CancellationToken token) { return Task.CompletedTask; }
+            public Task StopAsync(AxisStopMode mode, CancellationToken token) { StopCalls++; return Task.CompletedTask; }
             /// <summary>样例不执行轴报警复位。</summary>
             public Task ResetAlarmAsync(CancellationToken token) { throw new NotSupportedException(); }
         }

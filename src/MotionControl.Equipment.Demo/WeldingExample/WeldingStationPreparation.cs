@@ -57,7 +57,7 @@ namespace MotionControl.Equipment.Demo.WeldingExample
             get { return _precedingStation == null ? new string[0] : new[] { _precedingStation.StationId }; }
         }
 
-        /// <summary>只读检查无在制品、未进入生产、输出关闭、反馈复位和轴已停止；允许轴尚未使能或回零。</summary>
+        /// <summary>只读检查无在制品、未进入生产、输出关闭、反馈复位和轴已停止；要求轴已手动使能，允许尚未回零。</summary>
         public async Task ValidateStartAsync(CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
@@ -90,11 +90,6 @@ namespace MotionControl.Equipment.Demo.WeldingExample
                         await Task.Delay(100, operationToken).ConfigureAwait(false);
                     }
 
-                    Report(progress, "使能 " + _axis.Name, "检查伺服和轴报警。");
-                    await _axis.EnableServoAsync(operationToken).ConfigureAwait(false);
-                    AxisStatus enabled = await _axis.ReadStatusAsync(operationToken).ConfigureAwait(false);
-                    EnsureAxisStopped(enabled);
-                    if (!enabled.ServoEnabled) throw new InvalidOperationException(_axis.Name + " 伺服未使能。");
                     await ValidateStartAsync(operationToken).ConfigureAwait(false);
                     await EnsurePrecedingStationReadyAsync(operationToken).ConfigureAwait(false);
 
@@ -172,6 +167,8 @@ namespace MotionControl.Equipment.Demo.WeldingExample
         /// <summary>核对有限的位置速度、停稳、可读的硬限位以及当前报警。</summary>
         private void EnsureAxisStopped(AxisStatus status)
         {
+            if (status == null) throw new InvalidOperationException(_axis.Name + " 轴状态不可读。");
+            if (!status.ServoEnabled) throw new InvalidOperationException(_axis.Name + " 伺服未使能，请先手动使能后再准备。");
             if (double.IsNaN(status.Position) || double.IsInfinity(status.Position)
                 || double.IsNaN(status.Velocity) || double.IsInfinity(status.Velocity))
                 throw new InvalidOperationException(_axis.Name + " 位置或速度状态无效。");

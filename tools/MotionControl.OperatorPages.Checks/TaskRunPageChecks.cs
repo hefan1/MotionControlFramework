@@ -58,6 +58,13 @@ namespace MotionControl.OperatorPages.Checks
                 var monitor = Field<ContentControl>(type, page, "_monitorContent");
                 refresh.Invoke(page, null);
                 Require(empty.Text.Contains("尚未读取") && monitor.Visibility == Visibility.Collapsed, "连接后没有显示未读取状态。");
+                runtime.SetRecoveryBlockReason("上次资源状态待确认");
+                refresh.Invoke(page, null);
+                Require(empty.Text.Contains("恢复信息待确认") && empty.Text.Contains("先核查")
+                    && Field<TextBlock>(type, page, "_runStatus").Text.Contains("恢复信息待确认")
+                    && !Field<TextBlock>(type, page, "_runStatus").Text.Contains("本页控制"),
+                    "恢复信息未确认时任务空状态错误引导直接控制。");
+                runtime.SetRecoveryBlockReason(null);
                 lost.Invoke(page, null);
                 Require(empty.Text.Contains("未确认") && monitor.Visibility == Visibility.Collapsed, "无会话断线未立即更新状态。");
                 type.GetField("_controllerConnectionLost", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(page, false);
