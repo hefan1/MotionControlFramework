@@ -105,16 +105,13 @@ namespace MotionControl.Host.Wpf
         /// <summary>当前已映射逻辑轴对应的手动调试页面。</summary>
         private ManualMotionDebugView _manualMotionDebugPage;
 
-        /// <summary>当前设备已映射 DI/DO 对应的 IO 手动页面。</summary>
-        private ManualIoDebugView _manualIoDebugPage;
-
         /// <summary>当前控制卡 DI/DO 物理通道对应的 IO 监控页面。</summary>
         private IoMonitorView _ioMonitorPage;
 
         /// <summary>当前设备已映射逻辑轴对应的只读轴状态页面。</summary>
         private AxisMonitorView _axisMonitorPage;
 
-        /// <summary>与轴手动、IO 手动共用当前 Runtime 的工位状态页面。</summary>
+        /// <summary>与轴手动和 IO 监控共用当前 Runtime 的工位状态页面。</summary>
         private FlowStatusView _flowStatusPage;
 
         /// <summary>显示和维护当前单机变量定义及运行值的监控页面。</summary>
@@ -540,13 +537,11 @@ namespace MotionControl.Host.Wpf
                 CloseAlarmHistory();
                 _machineSafetyStatus = null;
                 _manualMotionDebugPage = null;
-                _manualIoDebugPage = null;
                 _flowStatusPage = null;
                 _mainWindow.SetMachineRuntime(null);
                 _deviceVariablePage.SetMachineRuntime(null);
                 _mainWindow.SetFlowStatusPage(null);
                 _mainWindow.SetManualMotionDebugPage(null);
-                _mainWindow.SetManualIoDebugPage(null);
                 RefreshAxisMonitorPage(null);
                 RefreshIoMonitorPage();
                 return;
@@ -574,7 +569,6 @@ namespace MotionControl.Host.Wpf
                 var alarmService = new MachineAlarmService();
                 CloseAlarmHistory();
                 _alarmHistoryJournal = new AlarmHistoryJournal(alarmService, _configurationStore, MachineId);
-                _mainWindow.SetAlarmHistory(_alarmHistoryJournal);
                 IStationFlow[] stationFlows;
                 IReadOnlyList<IStationPreparation> preparations;
                 IReadOnlyList<ControlledClearanceProfile> clearanceProfiles;
@@ -589,7 +583,7 @@ namespace MotionControl.Host.Wpf
                     preparations = new IStationPreparation[0];
                     clearanceProfiles = new ControlledClearanceProfile[0];
                     MessageBox.Show(
-                        "设备工位配置无法启用，自动流程已关闭；轴手动和 IO 手动仍可使用。\n"
+                        "设备工位配置无法启用，自动流程已关闭；轴手动和 IO 监控仍可使用。\n"
                         + error.Message,
                         "设备工位配置",
                         MessageBoxButton.OK,
@@ -650,13 +644,11 @@ namespace MotionControl.Host.Wpf
                 CloseAlarmHistory();
                 _machineSafetyStatus = null;
                 _manualMotionDebugPage = null;
-                _manualIoDebugPage = null;
                 _flowStatusPage = null;
                 _mainWindow.SetMachineRuntime(null);
                 _deviceVariablePage.SetMachineRuntime(null);
                 _mainWindow.SetFlowStatusPage(null);
                 _mainWindow.SetManualMotionDebugPage(null);
-                _mainWindow.SetManualIoDebugPage(null);
                 RefreshAxisMonitorPage(null);
                 RefreshIoMonitorPage();
                 MessageBox.Show(
@@ -985,7 +977,7 @@ namespace MotionControl.Host.Wpf
             return document;
         }
 
-        /// <summary>使用当前运行时和映射重建轴手动、IO 手动及 IO 监控页，不创建或连接新的 Runtime。</summary>
+        /// <summary>使用当前运行时和映射重建轴手动及 IO 监控页，不创建或连接新的 Runtime。</summary>
         private void RefreshManualDebugPages(
             MachineRuntime machineRuntime,
             MotionCardGroup motionCards,
@@ -1001,17 +993,9 @@ namespace MotionControl.Host.Wpf
                 _configurationStore,
                 MachineId);
             manualPage.AxisMappingRequested += (sender, args) => _mainWindow.ShowConfigurationPage("轴映射配置");
-            ManualIoDebugView ioManualPage = new ManualIoDebugView(
-                machineRuntime,
-                connectedLogicalIo,
-                _cardConnection.DigitalInputs.Select(point => point.Name),
-                _cardConnection.DigitalOutputs.Select(point => point.Name));
-            ioManualPage.IoMappingRequested += (sender, args) => _mainWindow.ShowConfigurationPage("IO映射");
 
             _manualMotionDebugPage = manualPage;
-            _manualIoDebugPage = ioManualPage;
             _mainWindow.SetManualMotionDebugPage(manualPage);
-            _mainWindow.SetManualIoDebugPage(ioManualPage);
             RefreshAxisMonitorPage(motionCards);
             RefreshIoMonitorPage();
         }
@@ -1263,10 +1247,9 @@ namespace MotionControl.Host.Wpf
             base.OnExit(e);
         }
 
-        /// <summary>解除页面引用，后台收尾并保留未写入对象；不让磁盘等待阻断设备停机。</summary>
+        /// <summary>结束当前报警日志会话，后台收尾并保留未写入对象，不让磁盘等待阻断设备停机。</summary>
         private void CloseAlarmHistory()
         {
-            _mainWindow?.SetAlarmHistory(null);
             var history = _alarmHistoryJournal;
             _alarmHistoryJournal = null;
             if (history != null) _unfinishedAlarmHistories.Add(history);

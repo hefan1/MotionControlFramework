@@ -22,8 +22,9 @@ namespace MotionControl.OperatorPages.Checks
         internal static void Run()
         {
             var card = new FakeIoCard();
+            var safety = new SafeInput();
             var runtime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { card }),
-                new IStationFlow[0], new MachineAlarmService(), new SafeInput());
+                new IStationFlow[0], new MachineAlarmService(), safety);
             runtime.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
             try
             {
@@ -60,6 +61,13 @@ namespace MotionControl.OperatorPages.Checks
                 Require(details.Items.Count == 0 && empty.Visibility == Visibility.Visible,
                     "点击无关联的输出灯后，仍显示上一个输出的反馈。");
                 Require(card.WriteCount == 3, "反馈选择不应在输出读取失败时触发写入。");
+
+                card.FailRead = false;
+                safety.EmergencyStopActive = true;
+                int writesBeforeEmergencyStop = card.WriteCount;
+                Click(view, CreateRow(true, card.PhysicalHigh));
+                Require(card.WriteCount == writesBeforeEmergencyStop,
+                    "急停输入有效时，IO 监控仍写入物理输出。");
             }
             finally { runtime.DisconnectAsync(CancellationToken.None).GetAwaiter().GetResult(); }
         }
@@ -129,8 +137,10 @@ namespace MotionControl.OperatorPages.Checks
         /// <summary>提供正常的测试急停状态，不读取实际硬件。</summary>
         private sealed class SafeInput : IMachineSafetyStatus
         {
-            /// <summary>测试急停始终未触发。</summary>
-            public Task<bool> ReadEmergencyStopActiveAsync(CancellationToken token) { return Task.FromResult(false); }
+            /// <summary>由检查控制的急停状态。</summary>
+            public bool EmergencyStopActive { get; set; }
+            /// <summary>返回当前测试急停状态。</summary>
+            public Task<bool> ReadEmergencyStopActiveAsync(CancellationToken token) { return Task.FromResult(EmergencyStopActive); }
         }
     }
 }

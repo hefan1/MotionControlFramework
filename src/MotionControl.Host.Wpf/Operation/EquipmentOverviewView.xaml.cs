@@ -239,7 +239,7 @@ namespace MotionControl.Host.Wpf.Operation
                     case MachineRunState.Paused: return "设备已暂停，确认现场状态后按整机复位";
                     case MachineRunState.Stopped: return "生产已停止；如需继续旧工步，请从顶部报警复位核查";
                     case MachineRunState.Alarmed: return "先查看报警并处理原因，条件恢复后按整机复位";
-                    case MachineRunState.Ready: return "未启用自动工位，可进入轴手动和 IO 手动页面调试";
+                    case MachineRunState.Ready: return "未启用自动工位，可进入轴手动和 IO 监控页面调试";
                     case MachineRunState.ResetRequired: return "检查急停与轴状态，整机复位后可进行手动调试";
                 }
             }

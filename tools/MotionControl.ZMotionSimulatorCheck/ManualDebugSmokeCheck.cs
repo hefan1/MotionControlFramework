@@ -123,12 +123,6 @@ namespace MotionControl.ZMotionSimulatorCheck
                     },
                     positionConfigurationStore,
                     "ManualDebugSmoke");
-                var ioPage = new ManualIoDebugView(
-                    runtime,
-                    card.LogicalIo,
-                    new[] { "EmergencyStop", "PartPresent" },
-                    new[] { "Vacuum", "Clamp" });
-
                 var axisCards = (WrapPanel)page.FindName("AxisCardsPanel");
                 Ensure(axisCards.Children.Count == 1, "已映射一个轴时没有生成对应的单轴调试卡片。");
                 var axisControl = (ManualAxisControl)axisCards.Children[0];
@@ -145,20 +139,16 @@ namespace MotionControl.ZMotionSimulatorCheck
                 VerifyManualPositionPrecision(runtime, card);
                 Ensure(page.FindName("DigitalInputsPanel") == null, "轴手动页仍混入 DI 操作面板。");
                 Ensure(page.FindName("DigitalOutputsPanel") == null, "轴手动页仍混入 DO 操作面板。");
-                Ensure(((StackPanel)ioPage.FindName("DigitalInputsPanel")).Children.Count == 2, "IO 手动页 DI 列表行数与配置数量不一致。");
-                Ensure(((StackPanel)ioPage.FindName("DigitalOutputsPanel")).Children.Count == 2, "IO 手动页 DO 列表行数与配置数量不一致。");
                 VerifyDisconnectedControlsDoNotSendCommands(
                     application,
                     chineseResources,
                     englishResources,
                     page,
-                    ioPage,
                     card);
 
                 runtime.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
                 runtime.ResetAsync(CancellationToken.None).GetAwaiter().GetResult();
                 page.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
-                ioPage.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
                 var smokeAxis = (SmokeAxis)card.Axes.Single();
                 smokeAxis.IsHomed = true;
                 axisControl.RefreshStatusAsync().GetAwaiter().GetResult();
@@ -188,14 +178,13 @@ namespace MotionControl.ZMotionSimulatorCheck
                 smokeAxis.Position = 0;
                 smokeAxis.IsMoving = false;
                 axisControl.RefreshStatusAsync().GetAwaiter().GetResult();
-                VerifyConnectedControlsUseCommonContracts(page, ioPage, card);
-                VerifyManualOperationButtonsFollowSafetyInterlock(page, ioPage, card, runtime, safetyStatus);
+                VerifyConnectedControlsUseCommonContracts(page, card);
+                VerifyManualOperationButtonsFollowSafetyInterlock(page, card, runtime, safetyStatus);
 
                 var hostWindow = new MainWindow();
                 var flowStatusPage = new FlowStatusView(runtime);
                 hostWindow.SetFlowStatusPage(flowStatusPage);
                 hostWindow.SetManualMotionDebugPage(page);
-                hostWindow.SetManualIoDebugPage(ioPage);
                 VerifyMotionCardConnectionStatus(hostWindow, englishResources, chineseResources);
                 hostWindow.SetMachineRuntime(runtime);
                 var readinessMethod = typeof(MainWindow).GetMethod("RefreshAutomaticStartReadinessAsync",
@@ -208,21 +197,21 @@ namespace MotionControl.ZMotionSimulatorCheck
                 VerifyAxisMappingStartupConnection(application, englishResources, chineseResources);
                 VerifyIoCapabilityDiagnosticDisplay(application, englishResources, chineseResources);
                 var primaryNavigation = (StackPanel)hostWindow.FindName("PrimaryNavigation");
-                var monitorNavigation = primaryNavigation.Children
+                var motionNavigation = primaryNavigation.Children
                     .OfType<ToggleButton>()
-                    .Single(button => string.Equals(button.Tag as string, "Monitor", StringComparison.Ordinal));
-                monitorNavigation.RaiseEvent(new RoutedEventArgs(ToggleButton.ClickEvent, monitorNavigation));
+                    .Single(button => string.Equals(button.Tag as string, "MotionControl", StringComparison.Ordinal));
+                motionNavigation.RaiseEvent(new RoutedEventArgs(ToggleButton.ClickEvent, motionNavigation));
                 var sidebar = (StackPanel)hostWindow.FindName("SidebarNavigation");
                 var flowNavigation = sidebar.Children
                     .OfType<ToggleButton>()
-                    .Single(button => string.Equals(button.Tag as string, "流程状态", StringComparison.Ordinal));
+                    .Single(button => string.Equals(button.Tag as string, "工位运行", StringComparison.Ordinal));
                 flowNavigation.RaiseEvent(new RoutedEventArgs(ToggleButton.ClickEvent, flowNavigation));
                 var manualContent = (ContentControl)hostWindow.FindName("ManualDebugContent");
                 Ensure(ReferenceEquals(manualContent.Content, flowStatusPage),
-                    "Host 的流程状态导航没有显示当前 Runtime 的工位与报警页面。");
-                var manualNavigation = primaryNavigation.Children
+                    "Host 的工位运行导航没有显示当前 Runtime 的工位与报警页面。");
+                var manualNavigation = sidebar.Children
                     .OfType<ToggleButton>()
-                    .Single(button => string.Equals(button.Tag as string, "Manual", StringComparison.Ordinal));
+                    .Single(button => string.Equals(button.Tag as string, "轴手动", StringComparison.Ordinal));
                 manualNavigation.RaiseEvent(new RoutedEventArgs(ToggleButton.ClickEvent, manualNavigation));
 
                 Ensure(ReferenceEquals(manualContent.Content, page), "Host 手动页面没有显示注入的通用调试页。");
@@ -237,12 +226,9 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Ensure(
                     homedStatusText.Text == chineseResources["未回零"] as string,
                     "Host 显示轴卡片时切回中文没有更新未回零状态文字。");
-                sidebar = (StackPanel)hostWindow.FindName("SidebarNavigation");
-                var ioManualNavigation = sidebar.Children
-                    .OfType<ToggleButton>()
-                    .Single(button => string.Equals(button.Tag as string, "IO手动", StringComparison.Ordinal));
-                ioManualNavigation.RaiseEvent(new RoutedEventArgs(ToggleButton.ClickEvent, ioManualNavigation));
-                Ensure(ReferenceEquals(manualContent.Content, ioPage), "Host 的 IO 手动导航没有显示独立 IO 页面。");
+                Ensure(!sidebar.Children.OfType<ToggleButton>().Any(button =>
+                    string.Equals(button.Tag as string, "IO手动", StringComparison.Ordinal)),
+                    "Host 仍显示已移除的 IO 手动入口。");
 
                 application.Shutdown();
                 Console.WriteLine("[通过] 手动调试页离屏检查完成：运动中编码器反馈刷新、位置坐标精度与编辑保存、轴参数读回、I/O 能力诊断、回零模式中英资源和 Host 底栏状态；使用内存测试卡。");
@@ -978,13 +964,12 @@ namespace MotionControl.ZMotionSimulatorCheck
             }
         }
 
-        /// <summary>确认断开状态下点击轴和 DO 控件不会向设备发送命令。</summary>
+        /// <summary>确认断开状态下点击轴控件不会向设备发送命令。</summary>
         private static void VerifyDisconnectedControlsDoNotSendCommands(
             Application application,
             ResourceDictionary chineseResources,
             ResourceDictionary englishResources,
             ManualMotionDebugView page,
-            ManualIoDebugView ioPage,
             SmokeMotionCard card)
         {
             var axisControl = GetFirstAxisControl(page);
@@ -993,30 +978,18 @@ namespace MotionControl.ZMotionSimulatorCheck
             var axisOperationMessage = (TextBlock)axisControl.FindName("OperationMessageText");
             Ensure(axisOperationMessage.Text.Contains("运动控制卡未连接"), "中文界面没有显示未连接保护信息。");
 
-            var outputRows = (StackPanel)ioPage.FindName("DigitalOutputsPanel");
-            var firstOutputRow = (StackPanel)outputRows.Children[0];
-            var outputOnButton = (Button)firstOutputRow.Children[2];
-            outputOnButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, outputOnButton));
-            var operationMessage = (TextBlock)ioPage.FindName("OperationMessageText");
-            Ensure(operationMessage.Text.Contains("运动控制卡未连接"), "中文界面没有拦截断开状态下的 DO 命令。");
-
             application.Resources.MergedDictionaries[0] = englishResources;
             servoButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, servoButton));
             Ensure(axisOperationMessage.Text.Contains("Motion card is disconnected"), "英文界面没有显示未连接保护信息。");
-
-            outputOnButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, outputOnButton));
-            Ensure(operationMessage.Text.Contains("Motion card is disconnected"), "英文界面没有拦截断开状态下的 DO 命令。");
             application.Resources.MergedDictionaries[0] = chineseResources;
 
             var axis = (SmokeAxis)card.Axes.Single();
             Ensure(axis.CommandCount == 0, "断开时轴按钮仍然发送了运动命令。");
-            Ensure(card.LogicalIo.WriteCount == 0, "断开时 DO 按钮仍然发送了输出命令。");
         }
 
-        /// <summary>用内存测试卡检查已连接时的轴操作、软限位拦截和 DO 读回。</summary>
+        /// <summary>用内存测试卡检查已连接时的轴操作、软限位拦截和关联 DO 读回。</summary>
         private static void VerifyConnectedControlsUseCommonContracts(
             ManualMotionDebugView page,
-            ManualIoDebugView ioPage,
             SmokeMotionCard card)
         {
             var axis = (SmokeAxis)card.Axes.Single();
@@ -1053,23 +1026,19 @@ namespace MotionControl.ZMotionSimulatorCheck
             jogMode.IsChecked = true;
             VerifyJogButtonsStartAndStop(axisControl, axis);
 
-            var outputRows = (StackPanel)ioPage.FindName("DigitalOutputsPanel");
-            var firstOutputRow = (StackPanel)outputRows.Children[0];
-            var outputStatusText = (TextBlock)firstOutputRow.Children[1];
-            var outputOnButton = (Button)firstOutputRow.Children[2];
-            var outputOffButton = (Button)firstOutputRow.Children[3];
-            outputOnButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, outputOnButton));
-            Ensure(outputStatusText.Text == "输出已开", "DO 开启后页面没有显示读回状态。");
-            outputOffButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, outputOffButton));
-            Ensure(outputStatusText.Text == "输出已关", "DO 关闭后页面没有显示读回状态。");
-            Ensure(card.LogicalIo.WriteCount == 2, "DO 开启和关闭按钮没有各写入一次逻辑 IO。");
+            var axisIoList = (ItemsControl)axisControl.FindName("AxisIoAssociationList");
+            ManualAxisIoAssociationViewItem associatedOutput = axisIoList.Items
+                .Cast<ManualAxisIoAssociationViewItem>().Single(item => item.IsOutput);
+            ClickAssociatedOutput(axisControl, associatedOutput, true);
+            Ensure(card.LogicalIo.ReadOutput("Vacuum"), "轴关联 DO 打开后未读回有效状态。");
+            ClickAssociatedOutput(axisControl, associatedOutput, false);
+            Ensure(card.LogicalIo.WriteCount == 2, "轴关联 DO 打开和关闭没有各写入一次逻辑 IO。");
             Ensure(!card.LogicalIo.ReadOutput("Vacuum"), "DO 关闭后读回状态仍然为开启。");
         }
 
-        /// <summary>检查急停联锁有效时轴动作和 DO 按钮禁用，联锁恢复并复位后重新启用。</summary>
+        /// <summary>检查急停联锁有效时轴动作和关联 DO 被拒绝，联锁恢复并复位后重新启用。</summary>
         private static void VerifyManualOperationButtonsFollowSafetyInterlock(
             ManualMotionDebugView page,
-            ManualIoDebugView ioPage,
             SmokeMotionCard card,
             MachineRuntime runtime,
             SmokeSafetyStatus safetyStatus)
@@ -1081,38 +1050,39 @@ namespace MotionControl.ZMotionSimulatorCheck
             ManualAxisIoAssociationViewItem associatedOutput = axisIoList.Items
                 .Cast<ManualAxisIoAssociationViewItem>()
                 .Single(item => item.IsOutput);
-            var outputRows = (StackPanel)ioPage.FindName("DigitalOutputsPanel");
-            var firstOutputRow = (StackPanel)outputRows.Children[0];
-            Button outputOnButton = (Button)firstOutputRow.Children[2];
-
             Ensure(servoButton.IsEnabled && jogButton.IsEnabled, "联锁正常且控制卡连接时轴操作按钮仍被禁用。");
             Ensure(associatedOutput.CanWriteOutput, "联锁正常时轴卡片的 DO 操作仍被禁用。");
-            Ensure(outputOnButton.IsEnabled, "联锁正常时 IO 手动页的 DO 操作仍被禁用。");
 
             int axisCommandCount = ((SmokeAxis)card.Axes.Single()).CommandCount;
             int outputWriteCount = card.LogicalIo.WriteCount;
             safetyStatus.EmergencyStopActive = true;
             page.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
-            ioPage.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
 
             Ensure(!servoButton.IsEnabled && !jogButton.IsEnabled, "急停有效时轴动作按钮没有禁用。");
             Ensure(!associatedOutput.CanWriteOutput, "急停有效时轴卡片的 DO 按钮没有禁用。");
-            Ensure(!outputOnButton.IsEnabled, "急停有效时 IO 手动页的 DO 按钮没有禁用。");
-
             servoButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, servoButton));
-            outputOnButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, outputOnButton));
+            ClickAssociatedOutput(axisControl, associatedOutput, true);
             Ensure(
                 ((SmokeAxis)card.Axes.Single()).CommandCount == axisCommandCount,
                 "急停有效时轴操作仍调用了运动卡契约。");
-            Ensure(card.LogicalIo.WriteCount == outputWriteCount, "急停有效时 IO 手动页仍写入了 DO。");
+            Ensure(card.LogicalIo.WriteCount == outputWriteCount, "急停有效时轴关联 DO 仍被写入。");
 
             safetyStatus.EmergencyStopActive = false;
             runtime.ResetAsync(CancellationToken.None).GetAwaiter().GetResult();
             page.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
-            ioPage.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
             Ensure(servoButton.IsEnabled && jogButton.IsEnabled, "急停释放并复位后轴操作按钮没有重新启用。");
             Ensure(associatedOutput.CanWriteOutput, "急停释放并复位后轴卡片 DO 没有重新启用。");
-            Ensure(outputOnButton.IsEnabled, "急停释放并复位后 IO 手动页 DO 没有重新启用。");
+        }
+
+        /// <summary>点击轴关联逻辑输出，复用已映射点位的运行时联锁和写入后读回路径。</summary>
+        private static void ClickAssociatedOutput(ManualAxisControl axisControl,
+            ManualAxisIoAssociationViewItem output, bool value)
+        {
+            var button = new Button { DataContext = output, Tag = value.ToString() };
+            var handler = typeof(ManualAxisControl).GetMethod("SetAssociatedOutputButton_Click",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Ensure(handler != null, "轴关联 DO 缺少点击处理入口。");
+            handler.Invoke(axisControl, new object[] { button, new RoutedEventArgs(Button.ClickEvent, button) });
         }
 
         /// <summary>通过页面名称点击指定按钮，便于检查页面到契约的命令连接。</summary>

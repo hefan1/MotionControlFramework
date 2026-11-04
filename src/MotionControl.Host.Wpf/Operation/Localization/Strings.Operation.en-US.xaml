@@ -79,7 +79,7 @@
  <sys:String x:Key="操作页.设备已就绪，使用顶部启动按钮">Machine ready. Use Start above.</sys:String>
  <sys:String x:Key="操作页.设备已暂停，确认现场状态后按整机复位">Machine paused. Check the equipment, then use Machine Reset.</sys:String>
  <sys:String x:Key="操作页.先查看报警并处理原因，条件恢复后按整机复位">Check the alarm and resolve its cause. Use Machine Reset when the condition clears.</sys:String>
- <sys:String x:Key="操作页.未启用自动工位，可进入轴手动和 IO 手动页面调试">No automatic station is enabled. Use the axis and I/O manual pages for debugging.</sys:String>
+ <sys:String x:Key="操作页.未启用自动工位，可进入轴手动和 IO 监控页面调试">No automatic station is enabled. Use the axis manual and I/O monitor pages for debugging.</sys:String>
  <sys:String x:Key="操作页.检查急停与轴状态，整机复位后可进行手动调试">Check the emergency stop and axis status. Manual debugging is available after Machine Reset.</sys:String>
  <sys:String x:Key="操作页.检查连接与就绪条件，按设备规则复位后启动">Check connection and readiness, then reset and start as required.</sys:String>
  <sys:String x:Key="操作页.设备运行中">Machine running</sys:String>
@@ -97,8 +97,6 @@
  <sys:String x:Key="操作页.设备未连接">Machine disconnected</sys:String>
  <sys:String x:Key="操作页.未读取设备状态">Machine state not read</sys:String>
  <sys:String x:Key="操作页.刷新">Refresh</sys:String>
- <sys:String x:Key="操作页.历史记录">History</sys:String>
- <sys:String x:Key="操作页.历史报警持久化尚未接入">Persistent alarm history is not connected.</sys:String>
  <sys:String x:Key="操作页.搜索工位代码或报警内容">Search station, code or alarm text</sys:String>
  <sys:String x:Key="操作页.1 发生在哪里">1  Where did it happen?</sys:String>
  <sys:String x:Key="操作页.2 当前为什么不能运行">2  What is the current condition?</sys:String>

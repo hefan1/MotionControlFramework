@@ -40,7 +40,6 @@
     <sys:String x:Key="IO监控">I/O Monitor</sys:String>
     <sys:String x:Key="流程状态">Sequence Status</sys:String>
     <sys:String x:Key="轴手动">Axis Control</sys:String>
-    <sys:String x:Key="IO手动">I/O Control</sys:String>
     <sys:String x:Key="气缸手动">Cylinder Control</sys:String>
     <sys:String x:Key="通讯调试">Communication Debug</sys:String>
     <sys:String x:Key="控制卡设置">Motion Card Settings</sys:String>
@@ -51,7 +50,6 @@
     <sys:String x:Key="通讯设置">Communication Settings</sys:String>
     <sys:String x:Key="数据采集">Data Collection</sys:String>
     <sys:String x:Key="当前报警">Current Alarms</sys:String>
-    <sys:String x:Key="历史报警">Alarm History</sys:String>
     <sys:String x:Key="报警统计">Alarm Statistics</sys:String>
     <sys:String x:Key="操作日志">Operation Log</sys:String>
     <sys:String x:Key="密码登录">Password Login</sys:String>
@@ -90,7 +88,7 @@
     <sys:String x:Key="流程页.任务未读取">Tasks control this equipment but are not loaded. Open task operation to load them.</sys:String>
     <sys:String x:Key="流程页.任务已读取">Tasks are loaded. Open task operation to review live stations, steps, and alarms.</sys:String>
     <sys:String x:Key="整机当前状态">Machine state: </sys:String>
-    <sys:String x:Key="未配置自动工位">No automatic station is enabled; axis and I/O manual pages remain available.</sys:String>
+    <sys:String x:Key="未配置自动工位">No automatic station is enabled; axis manual and I/O monitor pages remain available.</sys:String>
     <sys:String x:Key="无当前报警">No current alarms.</sys:String>
     <sys:String x:Key="报警数量摘要">Current alarms: {0} (stop {1}, non-stop {2})</sys:String>
     <sys:String x:Key="报警待复位"> (reset required)</sys:String>
@@ -129,13 +127,9 @@
     <sys:String x:Key="简体中文">中文</sys:String>
     <sys:String x:Key="English">English</sys:String>
 
-    <sys:String x:Key="手动调试说明">Axis and I/O manual controls are on separate pages. Manual commands are blocked while an automatic flow is running.</sys:String>
     <sys:String x:Key="轴手动页面说明">Each mapped axis has its own control card for jog, step move, positioning, and taught positions.</sys:String>
     <sys:String x:Key="轴手动离线提示">The motion controller is disconnected. Saved axis configuration is shown; axis status is unknown and controls require a connection.</sys:String>
     <sys:String x:Key="轴手动离线读取失败">The saved manual-axis configuration could not be read. Check axis and associated I/O mappings.</sys:String>
-    <sys:String x:Key="IO手动页面说明">View mapped DI states and write DO outputs by logical name. Manual writes are blocked during automatic operation.</sys:String>
-    <sys:String x:Key="IO手动未配置映射说明">Unmapped DI/DO channels are not available as logical points. Name the channels used by this machine on the I/O Mapping page.</sys:String>
-    <sys:String x:Key="IO手动标题">I/O Manual</sys:String>
     <sys:String x:Key="逻辑轴">Logical axis:</sys:String>
     <sys:String x:Key="伺服使能">Servo On</sys:String>
     <sys:String x:Key="伺服关闭">Servo Off</sys:String>
@@ -743,7 +737,6 @@
     <sys:String x:Key="任务配置先断开会话">The controller session is connected. Disconnect it on the axis mapping page before updating task files. It will not disconnect automatically; drafts can still be saved.</sys:String>
     <sys:String x:Key="设备总览页面说明">View equipment status, run information, and alarms.</sys:String>
     <sys:String x:Key="当前报警页面说明">View the location, condition and handling guidance. Refreshing does not reset alarms.</sys:String>
-    <sys:String x:Key="历史报警页面说明">Review alarm occurrences, recovered conditions, and reset records.</sys:String>
     <sys:String x:Key="关联页面尚未就绪">This page is not available from the current Runtime. Check the connection. No device action was performed.</sys:String>
     <sys:String x:Key="返回操作页">Back to operation</sys:String>
     <sys:String x:Key="IO反馈关联">Feedback links</sys:String>

@@ -122,14 +122,17 @@ namespace MotionControl.ZMotionSimulatorCheck
                     outputs.Select(CreateDigitalIoHardwareDefinition),
                     manualPositionConfigurationStore,
                     cardDefinition.ControllerId);
-                var ioManualPage = new ManualIoDebugView(
+                var ioMonitorPage = new IoMonitorView(
+                    true,
                     runtime,
                     card,
-                    inputs.Select(point => point.Name),
-                    outputs.Select(point => point.Name));
+                    card,
+                    inputs.Select(CreateDigitalIoHardwareDefinition),
+                    outputs.Select(CreateDigitalIoHardwareDefinition),
+                    card);
                 var hostWindow = new MainWindow();
                 hostWindow.SetManualMotionDebugPage(manualPage);
-                hostWindow.SetManualIoDebugPage(ioManualPage);
+                hostWindow.SetIoMonitorPage(ioMonitorPage);
                 hostWindow.SetMotionCardConnectionStatus(card.IsConnected);
                 hostWindow.Closed += (sender, eventArgs) =>
                     runtime.DisconnectAsync(CancellationToken.None).GetAwaiter().GetResult();
@@ -138,7 +141,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 Console.WriteLine(
                     "[通过] 已连接 " + card.ActualControllerType + "，身份 " + card.ActualControllerId
                     + "，DATUM 模式 " + axisConfigurations[0].HomeMode
-                    + "。Host 轴手动和 IO 手动页已分开加载，请在屏幕中分别检查；关闭窗口会断开仿真器连接。");
+                    + "。Host 轴手动和 IO 监控页已加载，请在屏幕中分别检查；关闭窗口会断开仿真器连接。");
                 return application.Run(hostWindow);
             }
             catch (Exception error)

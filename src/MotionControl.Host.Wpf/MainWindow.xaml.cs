@@ -34,7 +34,7 @@ namespace MotionControl.Host.Wpf
         private readonly Dictionary<string, string[]> _pagesBySection = new Dictionary<string, string[]>
         {
             { "Home", new[] { "运行日志" } },
-            { "MotionControl", new[] { "设备总览", "设备准备", "工位运行", "轴监控", "IO监控", "当前报警", "历史报警", "轴手动", "IO手动", "轴映射配置", "IO映射", "安全联锁", "任务配置", "设备变量", "报警库", "设备工程" } },
+            { "MotionControl", new[] { "设备总览", "设备准备", "工位运行", "轴监控", "IO监控", "当前报警", "轴手动", "轴映射配置", "IO映射", "安全联锁", "任务配置", "设备变量", "报警库", "设备工程" } },
             { "Statistics", new[] { "产量统计", "节拍统计", "运行统计" } },
             { "Monitor", new string[0] },
             { "Manual", new[] { "气缸手动", "通讯调试" } },
@@ -62,9 +62,6 @@ namespace MotionControl.Host.Wpf
         private Func<UserControl> _disconnectedManualMotionPageFactory;
         /// <summary>当前离线轴手动视图；连接后由真实运行时页面替换。</summary>
         private UserControl _disconnectedManualMotionPage;
-
-        /// <summary>由组合根注入的通用 IO 手动调试页面。</summary>
-        private UserControl _manualIoDebugPage;
 
         /// <summary>由组合根注入显示全部物理 DI/DO 状态的 IO 监控页面。</summary>
         private UserControl _ioMonitorPage;
@@ -361,13 +358,6 @@ namespace MotionControl.Host.Wpf
             _disconnectedManualMotionPageFactory = factory;
         }
 
-        /// <summary>由 Host 组合根注入设备映射对应的 IO 手动调试页面。</summary>
-        public void SetManualIoDebugPage(UserControl manualIoDebugPage)
-        {
-            _manualIoDebugPage = manualIoDebugPage;
-            UpdatePageContent();
-        }
-
         /// <summary>由 Host 组合根注入当前控制卡对应的物理 IO 监控页面。</summary>
         public void SetIoMonitorPage(UserControl ioMonitorPage)
         {
@@ -635,19 +625,6 @@ namespace MotionControl.Host.Wpf
                 ManualDebugContent.Visibility = Visibility.Visible;
                 PagePlaceholder.Visibility = Visibility.Collapsed;
                 PageDescription.SetResourceReference(TextBlock.TextProperty, "轴手动页面说明");
-                return;
-            }
-
-            var isIoManualPage = _manualIoDebugPage != null
-                && IsCurrentPageInSection("Manual")
-                && string.Equals(_currentPageResourceKey, "IO手动", StringComparison.Ordinal);
-
-            if (isIoManualPage)
-            {
-                ManualDebugContent.Content = _manualIoDebugPage;
-                ManualDebugContent.Visibility = Visibility.Visible;
-                PagePlaceholder.Visibility = Visibility.Collapsed;
-                PageDescription.SetResourceReference(TextBlock.TextProperty, "IO手动页面说明");
                 return;
             }
 

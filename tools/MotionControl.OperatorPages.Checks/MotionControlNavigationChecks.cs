@@ -33,10 +33,12 @@ internal static class MotionControlNavigationChecks
 
             nav.Children.OfType<ToggleButton>().Single(b => Equals(b.Tag, "MotionControl"))
                 .RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
-            var required = new[] { "设备总览", "设备准备", "工位运行", "轴监控", "IO监控", "轴手动", "IO手动", "轴映射配置", "IO映射", "安全联锁", "任务配置", "设备变量", "当前报警", "历史报警", "报警库", "设备工程" };
+            var required = new[] { "设备总览", "设备准备", "工位运行", "轴监控", "IO监控", "轴手动", "轴映射配置", "IO映射", "安全联锁", "任务配置", "设备变量", "当前报警", "报警库", "设备工程" };
             foreach (string page in required)
                 if (sidebar.Children.OfType<ToggleButton>().Count(b => Equals(b.Tag, page)) != 1)
                     throw new InvalidOperationException("集中入口缺少或重复：" + page);
+            if (sidebar.Children.OfType<ToggleButton>().Any(b => Equals(b.Tag, "IO手动") || Equals(b.Tag, "历史报警")))
+                throw new InvalidOperationException("运动控制仍显示已移除的重复页面。");
             if (sidebar.Children.OfType<ToggleButton>().Any(b => Equals(b.Tag, "流程状态") || Equals(b.Tag, "任务接入状态")))
                 throw new InvalidOperationException("仍向操作员暴露按执行器划分的重复入口。");
 
@@ -60,6 +62,10 @@ internal static class MotionControlNavigationChecks
             if (!ReferenceEquals(content.Content, manualAxis)) throw new InvalidOperationException("轴手动未复用原页面。");
             Select(sidebar, "IO监控");
             if (!ReferenceEquals(content.Content, ioMonitor)) throw new InvalidOperationException("IO 监控未复用原页面。");
+            Select(sidebar, "当前报警");
+            var currentAlarms = content.Content as CurrentAlarmsView;
+            if (currentAlarms == null || currentAlarms.FindName("HistoryButton") != null)
+                throw new InvalidOperationException("当前报警未显示，或仍有失效的历史查询入口。");
             Select(sidebar, "任务配置");
             if (!ReferenceEquals(content.Content, taskConfig)) throw new InvalidOperationException("任务配置未复用原页面。");
             window.ShowTaskRun();
