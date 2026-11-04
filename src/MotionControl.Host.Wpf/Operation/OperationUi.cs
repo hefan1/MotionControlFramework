@@ -37,6 +37,9 @@ namespace MotionControl.Host.Wpf.Operation
                 default: return "未读取设备状态";
             }
         }
+        /// <summary>独立工位状态使用中性步骤标签，避免整机运行被误认为该工位仍在执行。</summary>
+        internal static string StepLabelKey(MachineRunState? state, StationOverviewData station)
+        { return !string.IsNullOrWhiteSpace(station?.StateText) ? "当前步骤" : StepLabelKey(state); }
         /// <summary>按整机状态选择准确描述工位步骤的标签，避免把待启动动作误认为正在执行。</summary>
         internal static string StepLabelKey(MachineRunState? state)
         {

@@ -17,6 +17,9 @@ namespace MotionControl.OperatorPages.Checks
         /// <summary>核对真实来源缺失、读取失败和报警精确定位均不触发硬件动作。</summary>
         internal static void Run()
         {
+            var labelMethod = typeof(EquipmentOverviewView).Assembly.GetType("MotionControl.Host.Wpf.Operation.OperationUi").GetMethod("StepLabelKey", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static, null, new[] { typeof(MachineRunState?), typeof(StationOverviewData) }, null);
+            if ((string)labelMethod.Invoke(null, new object[] { MachineRunState.Running, new StationOverviewData { StateText = "已完成" } }) != "当前步骤" || (string)labelMethod.Invoke(null, new object[] { MachineRunState.Running, new StationOverviewData() }) != "正在执行步骤")
+                throw new InvalidOperationException("独立工位状态的步骤标签错误继承整机运行状态。");
             var card = new GuardCard();
             var alarms = new MachineAlarmService();
             var runtime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { card }),

@@ -274,7 +274,7 @@ namespace MotionControl.Host.Wpf.Operation
             string alarmSection = string.IsNullOrWhiteSpace(alarmDetails)
                 ? string.Empty
                 : "\n\n" + T("当前报警") + "：\n" + alarmDetails;
-            MessageBox.Show(station.Name + "\n" + T(OperationUi.StepLabelKey(snapshot.State)) + "：" + station.CurrentStep
+            MessageBox.Show(station.Name + "\n" + T(OperationUi.StepLabelKey(snapshot.State, station)) + "：" + station.CurrentStep
                 + "\n\n" + reason + alarmSection,
                 T("工位状态与处理建议"), MessageBoxButton.OK, MessageBoxImage.Information);
         }
@@ -395,7 +395,7 @@ namespace MotionControl.Host.Wpf.Operation
             _state.Text = independentState ? station.StateText : _owner.T("整机状态") + " · " + _owner.T(stateKey);
             _state.Foreground = independentState ? ReadStateBrush(station.StateColor)
                 : startBlocked || startChecking ? StartReadinessBrush : OperationUi.StateBrush(snapshot.State);
-            _stepLabel.Text = _owner.T(OperationUi.StepLabelKey(snapshot.State));
+            _stepLabel.Text = _owner.T(OperationUi.StepLabelKey(snapshot.State, station));
             _step.Text = string.IsNullOrEmpty(station.CurrentStep) ? _owner.T("未提供当前步骤") : station.CurrentStep;
             bool waitingInput = !string.IsNullOrWhiteSpace(station.WaitingInputName);
             string detail = station.Detail;
