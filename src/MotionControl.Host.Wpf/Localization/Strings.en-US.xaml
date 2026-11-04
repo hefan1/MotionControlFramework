@@ -131,6 +131,8 @@
 
     <sys:String x:Key="手动调试说明">Axis and I/O manual controls are on separate pages. Manual commands are blocked while an automatic flow is running.</sys:String>
     <sys:String x:Key="轴手动页面说明">Each mapped axis has its own control card for jog, step move, positioning, and taught positions.</sys:String>
+    <sys:String x:Key="轴手动离线提示">The motion controller is disconnected. Saved axis configuration is shown; axis status is unknown and controls require a connection.</sys:String>
+    <sys:String x:Key="轴手动离线读取失败">The saved manual-axis configuration could not be read. Check axis and associated I/O mappings.</sys:String>
     <sys:String x:Key="IO手动页面说明">View mapped DI states and write DO outputs by logical name. Manual writes are blocked during automatic operation.</sys:String>
     <sys:String x:Key="IO手动未配置映射说明">Unmapped DI/DO channels are not available as logical points. Name the channels used by this machine on the I/O Mapping page.</sys:String>
     <sys:String x:Key="IO手动标题">I/O Manual</sys:String>

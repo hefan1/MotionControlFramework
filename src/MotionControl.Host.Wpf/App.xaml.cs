@@ -240,6 +240,9 @@ namespace MotionControl.Host.Wpf
                 _configurationStore,
                 MachineId);
             _mainWindow = new MainWindow();
+            _mainWindow.SetDisconnectedManualMotionPageFactory(() =>
+                new DisconnectedManualMotionPage(_configurationStore, MachineId,
+                    () => _mainWindow.ShowConfigurationPage("轴映射配置")));
             _mainWindow.SetRecoveryStartBlockReason(() => _machineRecoveryCoordinator.GetAutomaticStartBlockReason(_machineRuntime));
             _mainWindow.SetRecoveryEvidenceDirectory(_configurationStore.GetMachineDirectory(MachineId));
             if (simulationRoot != null) _mainWindow.SetSimulationConfiguration(simulationRoot);

@@ -139,6 +139,8 @@
     <!-- 通用手动调试页 -->
     <sys:String x:Key="手动调试说明">轴手动与 IO 手动分开操作；自动流程运行时会拒绝手动命令。</sys:String>
     <sys:String x:Key="轴手动页面说明">每个已映射轴显示为独立调试卡片；支持连续点动、寸动、定位和示教位置。</sys:String>
+    <sys:String x:Key="轴手动离线提示">控制卡未连接，当前显示已保存的轴配置；轴状态未读取，连接控制卡后才能操作。</sys:String>
+    <sys:String x:Key="轴手动离线读取失败">无法读取已保存的轴手动配置，请检查轴映射及关联 IO 配置。</sys:String>
     <sys:String x:Key="IO手动页面说明">按已映射的逻辑名称查看 DI 状态，并手动写入 DO；自动流程运行期间禁止操作。</sys:String>
     <sys:String x:Key="IO手动未配置映射说明">未配置的 DI/DO 不会显示可操作的逻辑点。请为本机型实际使用的通道配置名称。</sys:String>
     <sys:String x:Key="IO手动标题">IO 手动</sys:String>

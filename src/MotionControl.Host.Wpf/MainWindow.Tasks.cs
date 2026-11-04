@@ -121,7 +121,7 @@ namespace MotionControl.Host.Wpf
         /// <summary>选择已有关联页并显示待查看的逻辑对象名，不能自动触发该页动作。</summary>
         public void OpenTaskReference(string page, string name, string direction = null)
         {
-            if (page == "轴手动" && _manualMotionDebugPage == null)
+            if (page == "轴手动" && _manualMotionDebugPage == null && _disconnectedManualMotionPageFactory == null)
             {
                 MessageBox.Show(GetLocalizedText("任务关联手动页不可用"), GetLocalizedText("任务接入状态")); return;
             }
@@ -146,7 +146,9 @@ namespace MotionControl.Host.Wpf
             if (page == "轴手动")
             {
                 var manualPage = _manualMotionDebugPage as MotionControl.Framework.Wpf.ManualDebug.ManualMotionDebugView;
-                return manualPage != null && manualPage.FocusAxisByLogicalName(name);
+                if (manualPage != null) return manualPage.FocusAxisByLogicalName(name);
+                var disconnectedPage = _disconnectedManualMotionPage as DisconnectedManualMotionPage;
+                return disconnectedPage != null && disconnectedPage.FocusAxisByLogicalName(name);
             }
             if (page == "IO映射")
             {

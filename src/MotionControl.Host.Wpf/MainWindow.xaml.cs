@@ -58,6 +58,10 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>由组合根注入的通用轴手动调试页面。</summary>
         private UserControl _manualMotionDebugPage;
+        /// <summary>离线时按已保存映射重建原轴手动页面的只读视图。</summary>
+        private Func<UserControl> _disconnectedManualMotionPageFactory;
+        /// <summary>当前离线轴手动视图；连接后由真实运行时页面替换。</summary>
+        private UserControl _disconnectedManualMotionPage;
 
         /// <summary>由组合根注入的通用 IO 手动调试页面。</summary>
         private UserControl _manualIoDebugPage;
@@ -327,6 +331,9 @@ namespace MotionControl.Host.Wpf
             }
 
             string nextPageResourceKey = selectedPageButton.Tag as string;
+            if (nextPageResourceKey == "轴手动" && _manualMotionDebugPage == null
+                && _disconnectedManualMotionPageFactory != null)
+                _disconnectedManualMotionPage = _disconnectedManualMotionPageFactory();
             _selectInputTabWhenOpeningIoMonitor = string.Equals(
                 _currentPageResourceKey,
                 "流程状态",
@@ -341,7 +348,17 @@ namespace MotionControl.Host.Wpf
         public void SetManualMotionDebugPage(UserControl manualMotionDebugPage)
         {
             _manualMotionDebugPage = manualMotionDebugPage;
+            _disconnectedManualMotionPage = null;
+            if (manualMotionDebugPage == null && _currentPageResourceKey == "轴手动"
+                && _disconnectedManualMotionPageFactory != null)
+                _disconnectedManualMotionPage = _disconnectedManualMotionPageFactory();
             UpdatePageContent();
+        }
+
+        /// <summary>注入离线只读轴页面工厂，进入页面时重读保存的映射。</summary>
+        internal void SetDisconnectedManualMotionPageFactory(Func<UserControl> factory)
+        {
+            _disconnectedManualMotionPageFactory = factory;
         }
 
         /// <summary>由 Host 组合根注入设备映射对应的 IO 手动调试页面。</summary>
@@ -607,13 +624,14 @@ namespace MotionControl.Host.Wpf
                 return;
             }
 
-            var isAxisManualPage = _manualMotionDebugPage != null
+            var visibleManualMotionPage = _manualMotionDebugPage ?? _disconnectedManualMotionPage;
+            var isAxisManualPage = visibleManualMotionPage != null
                 && IsCurrentPageInSection("Manual")
                 && string.Equals(_currentPageResourceKey, "轴手动", StringComparison.Ordinal);
 
             if (isAxisManualPage)
             {
-                ManualDebugContent.Content = _manualMotionDebugPage;
+                ManualDebugContent.Content = visibleManualMotionPage;
                 ManualDebugContent.Visibility = Visibility.Visible;
                 PagePlaceholder.Visibility = Visibility.Collapsed;
                 PageDescription.SetResourceReference(TextBlock.TextProperty, "轴手动页面说明");
