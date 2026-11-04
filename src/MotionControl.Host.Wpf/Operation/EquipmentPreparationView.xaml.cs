@@ -178,7 +178,9 @@ namespace MotionControl.Host.Wpf.Operation
                     + System.IO.Path.Combine(runtimeDirectory, "AutomaticRun.pending") + "\n"
                     + System.IO.Path.Combine(runtimeDirectory, "ControlledClearance.pending") + "\n"
                     + System.IO.Path.Combine(runtimeDirectory, "ControlledClearance.actions-observed") + "\n"
-                    + System.IO.Path.Combine(runtimeDirectory, "ControlledClearanceInspections");
+                    + System.IO.Path.Combine(runtimeDirectory, "ControlledClearanceInspections") + "\n"
+                    + System.IO.Path.Combine(runtimeDirectory, "ResourceGuards") + "\n"
+                    + T("恢复诊断.资源记录说明");
             }
             if (!string.IsNullOrWhiteSpace(_diagnostic)) result += "\n\n" + _diagnostic;
             return result;

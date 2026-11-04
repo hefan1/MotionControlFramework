@@ -14,7 +14,7 @@ namespace MotionControl.Framework.Contracts.Preparation
         string StationName { get; }
         /// <summary>本工位准备前必须准备完成并保持规定姿态的工位标识。</summary>
         IReadOnlyCollection<string> Dependencies { get; }
-        /// <summary>只读检查占料、保留工步、输出等准备前提；不满足时抛出具体原因，禁止清空生产数据。</summary>
+        /// <summary>只读检查本工位动作影响范围内的占料、保留工步、输出及互锁等准备前提；不满足时抛出具体原因，禁止清空生产数据。依赖工位的前提在其前序准备完成后检查，不得依赖它们提前检查来保护本工位动作。</summary>
         Task ValidateStartAsync(CancellationToken cancellationToken);
         /// <summary>从设备定义的起始检查执行准备；完成每步后报告进度，取消时受控停止，不自动启动生产。</summary>
         Task ExecuteAsync(IProgress<StationPreparationProgress> progress, CancellationToken cancellationToken);

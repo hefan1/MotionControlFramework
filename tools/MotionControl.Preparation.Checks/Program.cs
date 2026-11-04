@@ -63,6 +63,30 @@ namespace MotionControl.Preparation.Checks
             Ensure(markers == 1 && fixture.Log.Count == 1 && fixture.Runtime.IsPrepared, "修正前提后无法安全准备。");
             await fixture.Runtime.DisconnectAsync(CancellationToken.None);
 
+            var cancelledBeforeMarker = new Fixture();
+            var cancellation = new CancellationTokenSource();
+            int cancelledMarkers = 0;
+            cancelledBeforeMarker.Runtime.SetPreparationRecordCallbacks(() => cancelledMarkers++, () => { });
+            cancelledBeforeMarker.Runtime.ConfigurePreparations(new[] { new Preparation("CancelledPreflight", cancelledBeforeMarker) { OnValidate = () => cancellation.Cancel() } });
+            await cancelledBeforeMarker.ConnectAsync();
+            await RejectAsync(() => cancelledBeforeMarker.Runtime.PrepareAsync(null, cancellation.Token), "预检期间取消仍进入准备。");
+            Ensure(cancelledMarkers == 0 && cancelledBeforeMarker.Log.Count == 0, "预检取消后错误写入标记或执行动作。");
+            await cancelledBeforeMarker.Runtime.DisconnectAsync(CancellationToken.None);
+            cancellation.Dispose();
+
+            var alarmedPreflight = new Fixture();
+            int alarmedMarkers = 0;
+            alarmedPreflight.Runtime.SetPreparationRecordCallbacks(() => alarmedMarkers++, () => { });
+            alarmedPreflight.Runtime.ConfigurePreparations(new[] { new Preparation("AlarmPreflight", alarmedPreflight)
+            {
+                OnValidate = () => alarmedPreflight.Runtime.AlarmService.ReportCondition(
+                    new MachineAlarmDefinition("PREFLIGHT_STOP", "预检停机", MachineAlarmKind.StopMachine), "检查", true, "预检期间报警")
+            } });
+            await alarmedPreflight.ConnectAsync();
+            await RejectAsync(() => alarmedPreflight.Runtime.PrepareAsync(null, CancellationToken.None), "预检报警仍执行准备。");
+            Ensure(alarmedMarkers == 0 && alarmedPreflight.Log.Count == 0, "预检报警仍建立标记或执行动作。");
+            await alarmedPreflight.Runtime.DisconnectAsync(CancellationToken.None);
+
             var changed = new Fixture();
             int changedMarkers = 0;
             var changing = new Preparation("Changed", changed) { RejectValidationAt = 2 };
@@ -237,7 +261,9 @@ namespace MotionControl.Preparation.Checks
             before.Runtime.ConfigurePreparations(new[] { new Preparation("A", before) });
             var markerEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var releaseMarker = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            before.Runtime.SetPreparationRecordCallbacks(() => { markerEntered.TrySetResult(true); releaseMarker.Task.GetAwaiter().GetResult(); }, () => { });
+            int markerCount = 0;
+            int safeRecordCount = 0;
+            before.Runtime.SetPreparationRecordCallbacks(() => { markerCount++; markerEntered.TrySetResult(true); releaseMarker.Task.GetAwaiter().GetResult(); }, () => safeRecordCount++);
             await before.ConnectAsync();
             Task attempt = Task.Run(() => before.Runtime.PrepareAsync(null, CancellationToken.None));
             try
@@ -247,7 +273,7 @@ namespace MotionControl.Preparation.Checks
                 before.Runtime.AlarmService.ReportCondition(alarm, "测试", true, "准备提交前");
                 releaseMarker.TrySetResult(true);
                 await RejectAsync(() => attempt, "报警后设备准备未被拒绝");
-                Ensure(before.Runtime.State == MachineRunState.Alarmed && before.Log.Count == 0 && !before.Runtime.IsPreparing,
+                Ensure(before.Runtime.State == MachineRunState.Alarmed && before.Log.Count == 0 && !before.Runtime.IsPreparing && markerCount == 1 && safeRecordCount == 0 && !before.Runtime.IsPreparationRecordReusable,
                     "准备前报警被覆盖，或准备动作已执行。");
             }
             finally { releaseMarker.TrySetResult(true); }
@@ -577,16 +603,27 @@ namespace MotionControl.Preparation.Checks
         private static async Task UnknownStateAndDependencyAsync()
         {
             var fixture = new Fixture();
-            fixture.Runtime.ConfigurePreparations(new[] { new Preparation("A", fixture), new Preparation("B", fixture, "A") });
+            fixture.Runtime.ConfigurePreparations(new[] { new Preparation("A", fixture), new Preparation("B", fixture, "A") { RequireDependenciesExecuted = true }, new Preparation("C", fixture, "B") { RequireDependenciesExecuted = true }, new Preparation("D", fixture, "A", "C") { RequireDependenciesExecuted = true } });
             await fixture.ConnectAsync();
             fixture.Axis.ReadError = true;
             await RejectAsync(() => fixture.Runtime.PrepareAsync(null, CancellationToken.None), "轴状态未知却开始准备");
             Ensure(fixture.Log.Count == 0, "轴读取失败后已执行准备动作");
             fixture.Axis.ReadError = false;
-            await fixture.Runtime.PrepareAsync("B", CancellationToken.None);
-            Ensure(fixture.Log.SequenceEqual(new[] { "A", "B" }), "所选工位没有依次准备其前置工位");
+            await fixture.Runtime.PrepareAsync("D", CancellationToken.None);
+            Ensure(fixture.Log.SequenceEqual(new[] { "A", "B", "C", "D" }), "所选工位没有依次准备其前置工位");
+            var fork = new Fixture();
+            fork.Runtime.ConfigurePreparations(new[]
+            {
+                new Preparation("C", fork, "A", "B") { RequireDependenciesExecuted = true },
+                new Preparation("A", fork),
+                new Preparation("B", fork)
+            });
+            await fork.ConnectAsync();
+            await fork.Runtime.PrepareAsync("C", CancellationToken.None);
+            Ensure(fork.Log.SequenceEqual(new[] { "A", "B", "C" }), "独立前序工位没有全部执行后再准备汇合工位。");
+            await fork.Runtime.DisconnectAsync(CancellationToken.None);
             bool cycleRejected = false;
-            try { fixture.Runtime.ConfigurePreparations(new[] { new Preparation("A", fixture, "B"), new Preparation("B", fixture, "A") }); }
+            try { fixture.Runtime.ConfigurePreparations(new[] { new Preparation("A", fixture, "B"), new Preparation("B", fixture, "A") { RequireDependenciesExecuted = true }, new Preparation("C", fixture, "B") { RequireDependenciesExecuted = true }, new Preparation("D", fixture, "A", "C") { RequireDependenciesExecuted = true } }); }
             catch (ArgumentException) { cycleRejected = true; }
             Ensure(cycleRejected, "循环依赖未被拒绝");
             await fixture.Runtime.DisconnectAsync(CancellationToken.None);
@@ -723,12 +760,16 @@ namespace MotionControl.Preparation.Checks
             internal bool ReadyPose = true;
             /// <summary>指定第几次只读校验拒绝；零表示不拒绝。</summary>
             internal int RejectValidationAt;
+            /// <summary>模拟前序工位动作完成后才建立的物理互锁。</summary>
+            internal bool RequireDependenciesExecuted;
+            /// <summary>在只读预检中注入取消等并发现场变化。</summary>
+            internal Action OnValidate;
             /// <summary>统计校验次数以模拟预检后现场条件变化。</summary>
             private int _validationCount;
             /// <summary>保留本次进度接收器，检查迟到回调不会破坏结果。</summary>
             internal IProgress<StationPreparationProgress> CapturedProgress;
             /// <summary>按测试设置模拟只读准备前提检查。</summary>
-            public Task ValidateStartAsync(CancellationToken token) { token.ThrowIfCancellationRequested(); if (++_validationCount == RejectValidationAt) throw new InvalidOperationException("测试轴尚未使能"); return Task.CompletedTask; }
+            public Task ValidateStartAsync(CancellationToken token) { token.ThrowIfCancellationRequested(); OnValidate?.Invoke(); if (RequireDependenciesExecuted && Dependencies.Any(id => !_fixture.Log.Contains(id))) throw new InvalidOperationException("前序工位尚未完成动作"); if (++_validationCount == RejectValidationAt) throw new InvalidOperationException("测试轴尚未使能"); return Task.CompletedTask; }
             /// <summary>记录顺序并在需要时保持运动直到取消。</summary>
             public async Task ExecuteAsync(IProgress<StationPreparationProgress> progress, CancellationToken token)
             {

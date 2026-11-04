@@ -152,15 +152,24 @@ namespace MotionControl.Framework.Runtime.Machine
                     if (selected.Length == 0) throw new InvalidOperationException("当前入口未配置对应的工位准备流程。");
                 }
                 // 只读前置检查不改变设备；条件不满足时不建立尚未发生动作的运行标记。
-                // 进入执行阶段仍会再次检查全部工位，防止预检后现场条件变化。
-                foreach (IStationPreparation item in selected)
+                // 仅预检没有前序依赖的工位；后续工位的前提可能需要前序动作才能建立。
+                foreach (IStationPreparation item in selected.Where(item => item.Dependencies.Count == 0))
                     await item.ValidateStartAsync(cancellationToken).ConfigureAwait(false);
-                // 持久标记必须在设备步骤、使能或轴运动之前创建；写失败不进入准备状态。
-                if (_beforePreparation != null) { _beforePreparation(); _preparationRecordPending = true; }
-                lock (_preparationSync) _preparationRecordReusable = false;
                 var preparationGate = _alarmService as IMachineAlarmStartGate;
                 if (preparationGate == null)
                     throw new InvalidOperationException("报警服务不支持原子检查设备准备许可。");
+                // 预检可能等待外部条件；写标记前再次拒绝已发生的取消、状态变化和停机报警。
+                // 标记回调涉及磁盘和恢复锁，不能放入报警原子门禁；写入后仍保留原有最终门禁。
+                cancellationToken.ThrowIfCancellationRequested();
+                lock (_statusLock)
+                {
+                    if (_state != MachineRunState.Ready && _state != MachineRunState.ResetRequired && _state != MachineRunState.Paused)
+                        throw new InvalidOperationException("设备状态已改变，不能执行工位准备。当前状态：" + _state + "。");
+                    preparationGate.ExecuteWhenNoStopAlarm(() => { });
+                }
+                // 持久标记必须在设备步骤、使能或轴运动之前创建；写失败不进入准备状态。
+                if (_beforePreparation != null) { _beforePreparation(); _preparationRecordPending = true; }
+                lock (_preparationSync) _preparationRecordReusable = false;
                 lock (_statusLock)
                 {
                     if (_state != MachineRunState.Ready && _state != MachineRunState.ResetRequired && _state != MachineRunState.Paused)
@@ -335,7 +344,7 @@ namespace MotionControl.Framework.Runtime.Machine
             token.ThrowIfCancellationRequested();
         }
 
-        /// <summary>先核对全部所选工位前提，再按依赖执行；任何失败或取消都不得给出完成资格。</summary>
+        /// <summary>按依赖顺序逐工位核对前序姿态及自身前提后执行；任何失败或取消都不得给出完成资格。</summary>
         private async Task RunPreparationAsync(IStationPreparation[] selected, CancellationTokenSource cancellation)
         {
             CancellationToken token = cancellation.Token;
@@ -346,12 +355,6 @@ namespace MotionControl.Framework.Runtime.Machine
             CancellationTokenRegistration completedRegistration = default(CancellationTokenRegistration);
             try
             {
-                foreach (IStationPreparation item in selected)
-                {
-                    active = item;
-                    ThrowIfPreparationStopRequested(token);
-                    await item.ValidateStartAsync(token).ConfigureAwait(false);
-                }
                 foreach (IStationPreparation item in selected)
                 {
                     active = item;
@@ -376,6 +379,9 @@ namespace MotionControl.Framework.Runtime.Machine
                             throw;
                         }
                     }
+                    // 前序工位完成且姿态复核通过后，才检查本工位的动作前提。
+                    await item.ValidateStartAsync(token).ConfigureAwait(false);
+                    ThrowIfPreparationStopRequested(token);
                     SetPreparationSnapshot(item, StationPreparationState.Preparing, "正在准备", string.Empty);
                     bool acceptingProgress = true;
                     var progress = new PreparationProgressSink(value =>
