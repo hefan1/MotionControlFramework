@@ -27,7 +27,7 @@ namespace MotionControl.Host.Wpf.Tasks
         internal IReadOnlyList<string> ActiveOutputs { get { return _outputs.Where(item => item.Value).Select(item => item.Key).OrderBy(item => item, StringComparer.OrdinalIgnoreCase).ToList().AsReadOnly(); } }
 
         /// <summary>复查被选资源仍待确认，并读取全部已配置轴与逻辑 IO；输出有效时保留采样供核对，不代表允许解除隔离。</summary>
-        internal static ResourceRecoverySample Capture(ITaskDevice device, string requestId)
+        internal static ResourceRecoverySample Capture(ITaskDevice device, string requestId, bool english = false)
         {
             if (device == null || string.IsNullOrWhiteSpace(requestId)) throw new ArgumentException("资源或设备无效。");
             TaskResourceSnapshot resource = FindBlocked(device, requestId);
@@ -37,6 +37,7 @@ namespace MotionControl.Host.Wpf.Tasks
             var text = new StringBuilder();
             text.AppendLine(sample.ResourceDescription).AppendLine();
             text.AppendLine("以下是读取时的设备采样；命名区域、夹具、载具和物料是否安全必须由现场人员另行确认。");
+            text.AppendLine(english ? "Unknown / inspect on site: personnel, workpieces, fixture position and area safety. Output commands do not prove physical feedback." : "未知／待现场确认：人员、物料、夹持到位和区域安全；输出命令不能替代机构反馈。");
             text.AppendLine("轴状态：");
             foreach (string name in device.Catalog.Axes.Keys.OrderBy(item => item, StringComparer.OrdinalIgnoreCase))
             {
@@ -48,8 +49,9 @@ namespace MotionControl.Host.Wpf.Tasks
                 text.AppendLine(name + "：位置=" + axis.Position.ToString("G17", CultureInfo.InvariantCulture)
                     + "；已停止；伺服=" + (axis.Enabled ? "已使能" : "未使能") + "；回零=" + (axis.Homed ? "已回零" : "未回零"));
             }
-            if (sample._axes.Count == 0) text.AppendLine("未配置逻辑轴。");
-            text.AppendLine("输入状态：");
+            if (sample._axes.Count == 0) text.AppendLine(english ? "No logical axes configured; this does not establish equipment safety." : "未配置逻辑轴；不能据此证明设备安全。");
+            else text.AppendLine(english ? "Confirmed in this sample: configured axes stopped with no axis alarm. Verify position and homing flags under the equipment procedure." : "已确认：以上配置轴本次读取为停止且无轴报警；位置与回零标记仍须按设备规程核对。");
+            text.AppendLine(english ? "Input feedback (configured input levels only; verify mechanism and polarity):" : "输入反馈（仅表示配置输入的当前电平，须核对对应机构及极性）：");
             foreach (string name in device.Catalog.Inputs.OrderBy(item => item, StringComparer.OrdinalIgnoreCase))
             {
                 bool? value = device.ReadInput(name);
@@ -58,7 +60,7 @@ namespace MotionControl.Host.Wpf.Tasks
                 text.AppendLine(name + "：" + (value.Value ? "有效" : "无效"));
             }
             if (sample._inputs.Count == 0) text.AppendLine("未配置逻辑输入。");
-            text.AppendLine("输出状态：");
+            text.AppendLine(english ? "Output command state (does not prove fixture clamped or released):" : "输出命令状态（不能证明夹具已夹紧或松开）：");
             foreach (string name in device.Catalog.Outputs.OrderBy(item => item, StringComparer.OrdinalIgnoreCase))
             {
                 bool? value = device.ReadOutput(name);

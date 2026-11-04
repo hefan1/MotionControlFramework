@@ -36,6 +36,20 @@ namespace MotionControl.OperatorPages.Checks
             var cards = (ItemsControl)overview.FindName("StationCards");
             if (cards.Items.Count != 2 || ((FrameworkElement)overview.FindName("AggregateMetrics")).Visibility != Visibility.Collapsed)
                 throw new InvalidOperationException("任务工位未显示，或仍显示生产统计。");
+            var safetyPanel = (FrameworkElement)overview.FindName("SafetySummaryPanel");
+            var safetyText = (TextBlock)overview.FindName("SafetySummaryText");
+            overview.SetTaskSafetySummaryProvider(() => "待确认资源：1 组；保持输出状态待核查");
+            if (safetyPanel.Visibility != Visibility.Visible || !safetyText.Text.Contains("待确认资源"))
+                throw new InvalidOperationException("任务资源待确认时，总览没有显示只读核查提示。");
+            if (!((TextBlock)overview.FindName("NextActionText")).Text.Contains("资源状态待核查")
+                || ((FrameworkElement)overview.FindName("AutomaticStartActionButton")).Visibility != Visibility.Collapsed)
+                throw new InvalidOperationException("资源待确认时仍错误引导回零或直接恢复。");
+            overview.SetTaskSafetySummaryProvider(() => { throw new InvalidOperationException("资源读取故障"); });
+            if (safetyPanel.Visibility != Visibility.Visible || !safetyText.Text.Contains("资源状态读取失败"))
+                throw new InvalidOperationException("资源读取失败被隐藏或误显示为正常。");
+            overview.SetTaskSafetySummaryProvider(() => null);
+            if (safetyPanel.Visibility != Visibility.Collapsed)
+                throw new InvalidOperationException("没有待确认资源时仍显示旧资源提示。");
             overview.SetTaskStationProvider(() => { throw new InvalidOperationException("任务来源读取失败"); });
             if (cards.Items.Count != 0)
                 throw new InvalidOperationException("任务来源失败后仍保留旧工位作为实时数据。");

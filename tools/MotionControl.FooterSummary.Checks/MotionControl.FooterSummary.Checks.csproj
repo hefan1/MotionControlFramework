@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+ <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+ <ItemGroup>
+  <ProjectReference Include="../../src/MotionControl.Framework.Contracts/MotionControl.Framework.Contracts.csproj" />
+  <Compile Include="../../src/MotionControl.Host.Wpf/FooterExceptionText.cs" Link="FooterExceptionText.cs" />
+ </ItemGroup>
+</Project>

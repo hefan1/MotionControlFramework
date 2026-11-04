@@ -151,6 +151,7 @@ namespace MotionControl.Host.Wpf
                 Interval = TimeSpan.FromSeconds(1)
             };
             _clockTimer.Tick += ClockTimer_Tick;
+            RefreshImportantExceptionSummary();
             UpdateClock();
             _clockTimer.Start();
 
@@ -866,6 +867,7 @@ namespace MotionControl.Host.Wpf
         /// <summary>同步顶部和底部整机状态，并按运行状态启用或禁用整机复位。</summary>
         private void UpdateMachineStateDisplay()
         {
+            RefreshImportantExceptionSummary();
             RefreshStationRunSource();
             MachineRunState actualState = _machineRuntime == null
                 ? MachineRunState.Disconnected
@@ -933,6 +935,10 @@ namespace MotionControl.Host.Wpf
             {
                 _equipmentOverviewPage.SetAutomaticStartReadiness(blockReason, checking);
             }
+            if (_equipmentPreparationPage != null)
+            {
+                _equipmentPreparationPage.SetAutomaticStartReadiness(blockReason, checking);
+            }
 
             if (_flowStatusPage is FlowStatusView flowStatusView)
             {
@@ -989,6 +995,7 @@ namespace MotionControl.Host.Wpf
         /// </summary>
         private async void ClockTimer_Tick(object sender, EventArgs e)
         {
+            RefreshImportantExceptionSummary();
             UpdateClock();
             await RefreshAutomaticStartReadinessAsync();
         }

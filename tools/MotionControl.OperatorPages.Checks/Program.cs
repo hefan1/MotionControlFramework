@@ -102,8 +102,12 @@ namespace MotionControl.OperatorPages.Checks
             var card = new GuardCard();
             var runtime = CreateRuntime(card, new MachineAlarmService());
             string requestedPage = null;
-            var view = new EquipmentPreparationView(null, page => requestedPage = page);
+            int configurationCalls = 0;
+            var view = new EquipmentPreparationView(() => { configurationCalls++; return Task.CompletedTask; }, page => requestedPage = page);
             view.SetRuntime(runtime);
+            view.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
+            view.RaiseEvent(new RoutedEventArgs(FrameworkElement.UnloadedEvent));
+            Assert(configurationCalls == 0 && card.Calls == 0, "进入准备页面时错误读取或切换了任务会话。");
             var guidance = (TextBlock)view.FindName("GuidanceText");
             var axisButton = (Button)view.FindName("AxisManualButton");
             Assert(guidance.Text.Contains("相关轴已使能") && guidance.Text.Contains("物料状态安全"), "未提示伺服和物料前置检查。");
@@ -115,6 +119,7 @@ namespace MotionControl.OperatorPages.Checks
             view.SetLanguage("en-US");
             Assert(guidance.Text.Contains("axes are enabled") && guidance.Text.Contains("stop and close the task")
                 && axisButton.Content.ToString() == "Check servo enable", "轴使能提示或入口未随语言切换。");
+            Assert(((TextBlock)view.FindName("ReadOnlyChecksText")).Text.Contains("Unknown"), "准备前未知状态未随语言切换或错误显示已确认。");
             runtime.ReleaseTaskEngineControl();
         }
         /// <summary>检查任务页复用的顶部状态资源覆盖全部设备状态，且等待复位在两种语言下可读。</summary>
@@ -345,6 +350,15 @@ namespace MotionControl.OperatorPages.Checks
                 window.SetFlowStatusPage(flowStatus);
                 window.SetIoMonitorPage(ioMonitor);
                 window.SetMachineRuntime(runtime);
+                var footerSummary = (TextBlock)window.FindName("ImportantExceptionSummary");
+                Assert(footerSummary.Text.Contains("报警 2") && footerSummary.Text.Contains("控制器未连接"),
+                    "非报警页面的底栏没有同时显示报警数量和断连状态。");
+                alarmService.ReportCondition(alarm, flow.StationName, false, null);
+                window.SetMachineRuntime(runtime);
+                Assert(footerSummary.Text.Contains("报警 2/待复位 1") && alarmService.HasLatchedStopAlarm,
+                    "报警条件恢复后，底栏没有保留待复位提示。");
+                alarmService.ReportCondition(alarm, flow.StationName, true, "当前步骤等待输入：" + flow.WaitingInputName);
+                window.SetMachineRuntime(runtime);
                 var content = (ContentControl)window.FindName("ManualDebugContent");
                 var original = content.Content as EquipmentOverviewView;
                 Assert(original != null, "首页仍是占位。");
@@ -546,6 +560,7 @@ namespace MotionControl.OperatorPages.Checks
                 {
                     var overview = new EquipmentOverviewView(); overview.SetPreview(FourWorkspacesPreviewWindow.CreateExampleSnapshot()); overview.SetLanguage(language);
                     var alarms = new CurrentAlarmsView(); alarms.SetPreview(FourWorkspacesPreviewWindow.CreateExampleSnapshot()); alarms.SetLanguage(language);
+                    var preparation = new EquipmentPreparationView(null, null); preparation.SetLanguage(language);
                     var configuration = new TaskConfigurationView(test.Configuration, "TaskEditorPreview", () => null,
                         () => "等待复位", () => new[] { "正式上料定位工位", "正式压装工位" }, () => "逻辑轴 Load_X 尚未回零。"); configuration.SetLanguage(language);
                     string draftStations = ((TextBlock)configuration.FindName("TaskDraftStationsText")).Text;
@@ -560,6 +575,7 @@ namespace MotionControl.OperatorPages.Checks
                         int height = width == 1200 ? 780 : 550;
                         Render(overview, "overview-" + language + "-" + width, width, height);
                         Render(alarms, "alarms-" + language + "-" + width, width, height);
+                        Render(preparation, "preparation-" + language + "-" + width, width, height);
                         Render(configuration, "configuration-" + language + "-" + width, width, height);
                     }
                     Assert(configuration.OpenTaskById("Transfer"), "编辑预览入口失败。");

@@ -24,6 +24,12 @@
        </StackPanel>
       </DockPanel>
      </Border>
+     <Border x:Name="SafetySummaryPanel" Background="#FFF7E7" BorderBrush="#E9CD91" BorderThickness="1" CornerRadius="4" Padding="10,7" Margin="0,8,0,0" Visibility="Collapsed">
+      <DockPanel>
+       <Button DockPanel.Dock="Right" Content="{DynamicResource 操作页.查看工位运行}" Click="OpenTaskRun_Click" Margin="12,0,0,0" Padding="10,4" VerticalAlignment="Center"/>
+       <TextBlock x:Name="SafetySummaryText" TextWrapping="Wrap" Foreground="#845B0A"/>
+      </DockPanel>
+     </Border>
     </StackPanel>
    </DockPanel>
   </Border>

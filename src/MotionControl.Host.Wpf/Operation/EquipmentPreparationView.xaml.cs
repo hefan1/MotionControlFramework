@@ -19,6 +19,12 @@ namespace MotionControl.Host.Wpf.Operation
     {
         /// <summary>当前正式设备上下文；断线后清空。</summary>
         private MachineRuntime _runtime;
+        /// <summary>本页新增提示使用当前界面语言。</summary>
+        private bool _english;
+        /// <summary>Host 已读取的自动启动拦截原因，不代替回零前置条件。</summary>
+        private string _startBlockReason;
+        /// <summary>Host 是否仍在异步检查自动启动条件。</summary>
+        private bool _startReadinessChecking;
         /// <summary>按当前入口读取任务配置；不启动生产。</summary>
         private readonly Func<Task> _ensureConfiguration;
         /// <summary>进入已有监控或生产页面的导航回调。</summary>
@@ -29,8 +35,6 @@ namespace MotionControl.Host.Wpf.Operation
         private readonly DispatcherTimer _timer;
         /// <summary>当前页面是否正在装载或发起准备，阻止重复点击。</summary>
         private bool _commandInProgress;
-        /// <summary>当前连接是否已成功检查准备配置。</summary>
-        private bool _configurationLoaded;
         /// <summary>保留最近一次页面命令错误，直至下一次操作。</summary>
         private string _error;
         /// <summary>完整异常供维护人员展开查看，不占据操作员的主要状态区域。</summary>
@@ -55,12 +59,11 @@ namespace MotionControl.Host.Wpf.Operation
         public void SetRuntime(MachineRuntime runtime)
         {
             _runtime = runtime;
-            _configurationLoaded = false;
             _error = null;
             _diagnostic = null;
             _rows.Clear();
             Refresh();
-            if (IsLoaded) LoadConfiguration();
+            // 只读展示不能为进入页面装载或切换任务会话。
         }
 
         /// <summary>接收本次设备的真实配置路径，仅用于只读诊断，不修改恢复记录。</summary>
@@ -73,35 +76,23 @@ namespace MotionControl.Host.Wpf.Operation
         /// <summary>切换本页文字资源；设备名称及实际诊断仍来自设备定义。</summary>
         public void SetLanguage(string language)
         {
+            _english = language == "en-US";
             OperationUi.SetLanguage(this, language);
             Refresh();
         }
 
-        /// <summary>页面进入可见区域后读取配置并开始显示进度。</summary>
-        private void View_Loaded(object sender, RoutedEventArgs e) { _configurationLoaded = false; _timer.Start(); LoadConfiguration(); }
-        /// <summary>隐藏页面时停止界面轮询；设备准备仍由 Runtime 管理。</summary>
-        private void View_Unloaded(object sender, RoutedEventArgs e) { _timer.Stop(); }
-        /// <summary>读取任务入口的现有会话；失败保留具体原因且不发送动作。</summary>
-        private async void LoadConfiguration()
+        /// <summary>复用顶部与总览的启动检查结果，不额外读取设备。</summary>
+        public void SetAutomaticStartReadiness(string blockReason, bool checking)
         {
-            if (_configurationLoaded || _commandInProgress || _runtime == null) return;
-            var loadingRuntime = _runtime;
-            _commandInProgress = true;
+            _startBlockReason = blockReason;
+            _startReadinessChecking = checking;
             Refresh();
-            try
-            {
-                if (_ensureConfiguration != null) await _ensureConfiguration();
-                if (ReferenceEquals(loadingRuntime, _runtime))
-                { _configurationLoaded = true; _error = null; _diagnostic = null; }
-            }
-            catch (Exception error) { if (ReferenceEquals(loadingRuntime, _runtime)) SetError(error); }
-            finally
-            {
-                _commandInProgress = false; Refresh();
-                if (!ReferenceEquals(loadingRuntime, _runtime) && IsLoaded) LoadConfiguration();
-            }
         }
 
+        /// <summary>页面进入可见区域后只显示已有快照，不装载或切换任务会话。</summary>
+        private void View_Loaded(object sender, RoutedEventArgs e) { _timer.Start(); Refresh(); }
+        /// <summary>隐藏页面时停止界面轮询；设备准备仍由 Runtime 管理。</summary>
+        private void View_Unloaded(object sender, RoutedEventArgs e) { _timer.Stop(); }
         /// <summary>刷新当前工位状态；不读取另一份映射或推测设备就绪。</summary>
         private void RefreshTimer_Tick(object sender, EventArgs e) { Refresh(); }
 
@@ -151,9 +142,10 @@ namespace MotionControl.Host.Wpf.Operation
             string recoveryDiagnostic = recoveryBlocked ? BuildRecoveryDiagnostic() : null;
             DiagnosticText.Text = recoveryDiagnostic ?? _diagnostic ?? string.Empty;
             DiagnosticExpander.Visibility = string.IsNullOrWhiteSpace(DiagnosticText.Text) ? Visibility.Collapsed : Visibility.Visible;
-            bool canPrepare = connected && _configurationLoaded && !preparing && !recoveryBlocked && !_commandInProgress
+            ReadOnlyChecksText.Text = BuildReadOnlyChecks(connected);
+            bool canPrepare = connected && !preparing && !recoveryBlocked && !_commandInProgress
                 && (_runtime.State == MachineRunState.Ready || _runtime.State == MachineRunState.ResetRequired || _runtime.State == MachineRunState.Paused);
-            PrepareAllButton.IsEnabled = canPrepare && _rows.Count > 0;
+            PrepareAllButton.IsEnabled = canPrepare && (_rows.Count > 0 || _runtime.ControlOwner == MotionControl.Framework.Contracts.Flow.MachineControlOwner.TaskEngine);
             PrepareAllButton.Opacity = PrepareAllButton.IsEnabled ? 1.0 : 0.5;
             PrepareSelectedButton.IsEnabled = canPrepare && StationsGrid.SelectedItem != null;
             StopPreparationButton.IsEnabled = preparing;
@@ -163,6 +155,43 @@ namespace MotionControl.Host.Wpf.Operation
                 : selected.Name + " · " + selected.StateText + "\n" + selected.Action
                     + (string.IsNullOrWhiteSpace(selected.Detail) ? string.Empty : "\n" + SimplifyError(selected.Detail));
         }
+
+        /// <summary>汇总已有只读快照；未知条件留待设备执行入口复检，不读取硬件或调用启动校验。</summary>
+        private string BuildReadOnlyChecks(bool connected)
+        {
+            ChecksExpander.Header = PageText("当前缺项与后续检查", "Current gaps and later checks");
+            if (!connected) return PageText("未知：设备未连接，请连接后核对工位、轴及 IO 状态。", "Unknown: device disconnected. Connect before checking stations, axes and IO.");
+            string result = T(OperationUi.StateKey(_runtime.State));
+            if (!string.IsNullOrWhiteSpace(_runtime.RecoveryBlockReason)) result += "\n" + _runtime.RecoveryBlockReason;
+            if (_startReadinessChecking)
+                result += "\n" + PageText("启动条件正在检查。", "Start conditions are being checked.");
+            else if (!string.IsNullOrWhiteSpace(_startBlockReason))
+                result += "\n" + PageText("当前启动阻断：", "Current start blocker: ") + _startBlockReason;
+            if (_runtime.IsTaskEngineControlClaimed) result += "\n" + PageText("任务流程持有控制权，请到生产流程核对当前会话。", "Task control is active. Check the current session on the production page.");
+            var pending = _rows.Where(row => row.StateText != T("已准备")).Select(row => row.Name).ToArray();
+            if (_rows.Count == 0)
+            {
+                result += "\n" + PageText("尚无准备工位快照：会话或准备配置未就绪，请查看生产流程。",
+                    "No preparation snapshot: the session or preparation configuration is unavailable. Check the production page.");
+            }
+            else if (pending.Length == 0)
+            {
+                result += "\n" + PageText("已显示工位均已准备；其他启动条件仍需核查。",
+                    "Displayed stations are prepared; other start conditions still require checking.");
+            }
+            else
+            {
+                result += "\n" + PageText("待准备工位：", "Stations awaiting preparation: ") + string.Join("、", pending);
+            }
+            result += "\n" + PageText("未知 / 后续检查：请到轴状态、轴手动、IO 监控核对轴使能、IO 互锁及现场物料与机构状态。依赖前序动作的条件需在相应步骤再检查。",
+                "Unknown / later checks: review axis status, manual axes and IO monitoring for enable feedback, interlocks, materials and mechanisms. Conditions depending on earlier actions must be checked at the relevant step.");
+            result += "\n" + PageText("本栏不是全部缺项清单；准备或启动时仍需通过设备条件检查。",
+                "This is not a complete list of gaps. Device conditions must still pass when preparing or starting.");
+            return result;
+        }
+
+        /// <summary>按当前页面语言显示本页专用提示。</summary>
+        private string PageText(string chinese, string english) { return _english ? english : chinese; }
 
         /// <summary>展示实际证据路径和处理边界，不推断现场状态、不提供解除门禁操作。</summary>
         private string BuildRecoveryDiagnostic()
@@ -213,7 +242,15 @@ namespace MotionControl.Host.Wpf.Operation
         {
             if (_runtime == null || _commandInProgress) return;
             _commandInProgress = true; _error = null; _diagnostic = null; DiagnosticExpander.IsExpanded = false; Refresh();
-            try { await _runtime.PrepareAsync(stationId, CancellationToken.None); }
+            try
+            {
+                var commandRuntime = _runtime;
+                if (_ensureConfiguration != null) await _ensureConfiguration();
+                if (!ReferenceEquals(commandRuntime, _runtime))
+                    throw new InvalidOperationException(PageText("设备连接已变化，请重新核对后提交回零。",
+                        "The device connection changed. Review the current device before requesting homing again."));
+                await _runtime.PrepareAsync(stationId, CancellationToken.None);
+            }
             catch (OperationCanceledException) { _error = T("回零已停止，请检查当前机构状态后重新回零。"); }
             catch (Exception error) { SetError(error); }
             finally { _commandInProgress = false; Refresh(); }

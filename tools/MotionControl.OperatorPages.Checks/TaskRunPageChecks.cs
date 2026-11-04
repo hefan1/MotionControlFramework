@@ -126,6 +126,10 @@ namespace MotionControl.OperatorPages.Checks
             runtimeType.GetField("_clearing", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(runtime, true);
             var page = new MotionControl.Host.Wpf.Operation.EquipmentPreparationView(null, null);
             page.SetRuntime(runtime);
+            page.SetAutomaticStartReadiness("工位准备尚未完成", false);
+            Require(((TextBlock)page.FindName("ReadOnlyChecksText")).Text.Contains("工位准备尚未完成"), "准备页没有显示来自 Host 的实际启动阻断原因。");
+            page.SetAutomaticStartReadiness(null, false);
+            Require(!((TextBlock)page.FindName("ReadOnlyChecksText")).Text.Contains("工位准备尚未完成"), "启动阻断解除后准备页保留了旧原因。");
             var summary = (TextBlock)page.FindName("SummaryText");
             var guidance = (TextBlock)page.FindName("GuidanceText");
             var stop = (Button)page.FindName("StopPreparationButton");

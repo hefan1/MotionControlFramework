@@ -252,6 +252,7 @@
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="{DynamicResource 当前用户}" Foreground="#555C61" />
                     <TextBlock Text="{DynamicResource 未登录}" Foreground="#25282B" />
+                    <TextBlock x:Name="ImportantExceptionSummary" Margin="14,0,0,0" MaxWidth="250" TextTrimming="CharacterEllipsis" Foreground="#8B4B21" />
                 </StackPanel>
 
                 <StackPanel Grid.Column="1"

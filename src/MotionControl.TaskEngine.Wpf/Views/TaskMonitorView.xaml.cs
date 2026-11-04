@@ -17,6 +17,8 @@ namespace MotionControl.TaskEngine.Wpf.Views
     /// <summary>只读运行监控页；界面刷新只读取快照，不推进设备动作。</summary>
     public partial class TaskMonitorView : UserControl
     {
+        /// <summary>本页处理提示跟随主窗口语言。</summary>
+        private bool _guidanceEnglish;
         /// <summary>提供当前任务定义、设备端口和整机状态的监控会话。</summary>
         private readonly TaskMonitorSession _session;
         /// <summary>稳定的工位行集合。</summary>
@@ -149,6 +151,17 @@ namespace MotionControl.TaskEngine.Wpf.Views
                 if (StationsGrid.SelectedItem == null && _stations.Count > 0) StationsGrid.SelectedIndex = 0;
                 var source = _session.IsExample ? T("内置示例来源") : _session.Source;
                 SourceText.Text = string.Format(T("流程数据来源格式"), source);
+                if (_snapshot.State == TaskMachineState.Stopped)
+                    SourceText.Text += "\n" + (_guidanceEnglish ? "Task session terminated. Review the retained steps; this session cannot restart. Termination alone does not confirm stopped axes or safe fixtures." : "任务会话已终止：保留步骤供核查，本会话不能再次启动。任务终止不等于轴已停稳或夹具安全。");
+                if (_snapshot.State == TaskMachineState.Faulted)
+                    SourceText.Text += "\n" + (_guidanceEnglish ? "Fault latched: locate the cause and inspect the site. Maintenance must resolve stop failures or unknown feedback before recovery." : "故障已锁存：先定位当前原因并核查现场；停止失败或反馈未知时，由设备维护人员处理后再恢复。");
+                var blockedResources = _snapshot.Resources.Where(item => item.State == MotionControl.TaskEngine.Resources.TaskResourceState.Blocked).ToList();
+                if (blockedResources.Count > 0)
+                    SourceText.Text += "\n" + (_guidanceEnglish ? "Resources awaiting confirmation: " : "资源待确认：")
+                        + blockedResources.Count + (_guidanceEnglish ? " total · " : " 项 · ") + string.Join("；", blockedResources.Take(2).Select(item => item.TaskName + " · " + item.NodeName))
+                        + (blockedResources.Count > 2 ? (_guidanceEnglish ? "; additional items: " : "；其余待确认：") + (blockedResources.Count - 2) : string.Empty)
+                        + (_guidanceEnglish ? ". Next: inspect each resource using the session resource-inspection entry. Isolation remains until confirmed." : "。下一步：从任务会话的资源核查入口逐项核查；未确认前继续保留隔离。");
+                SourceText.ToolTip = SourceText.Text;
                 RefreshStatus.Text = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
                 _refreshFailed = false;
                 if (_followAfterFaultRecovery && _snapshot.State == TaskMachineState.Running)
@@ -393,6 +406,7 @@ namespace MotionControl.TaskEngine.Wpf.Views
         /// <summary>切换静态标签与动态状态文字；设备自定义名称保留原文。</summary>
         public void SetLanguage(string language)
         {
+            _guidanceEnglish = language == "en-US";
             var dictionaries = Resources.MergedDictionaries;
             dictionaries[1] = new ResourceDictionary { Source = new Uri("/MotionControl.TaskEngine.Wpf;component/Localization/Strings."
                 + (language == "en-US" ? "en-US" : "zh-CN") + ".xaml", UriKind.Relative) };

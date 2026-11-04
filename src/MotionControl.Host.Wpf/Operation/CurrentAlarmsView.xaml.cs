@@ -12,6 +12,8 @@ namespace MotionControl.Host.Wpf.Operation
     /// <summary>当前报警及四块处理指导；页面没有复位、确认清除或设备写入入口。</summary>
     public partial class CurrentAlarmsView : UserControl
     {
+        /// <summary>当前报警处理提示跟随页面语言。</summary>
+        private bool _guidanceEnglish;
         /// <summary>只读导航请求。</summary>
         public event EventHandler<OperatorNavigationEventArgs> NavigationRequested;
         /// <summary>与顶部按钮共用的当前 Runtime。</summary>
@@ -53,7 +55,7 @@ namespace MotionControl.Host.Wpf.Operation
         }
         /// <summary>切换界面文字并保留当前报警与查询条件。</summary>
         public void SetLanguage(string language)
-        { OperationUi.SetLanguage(this, language); UpdateHeaders(); RefreshDisplay(true); }
+        { _guidanceEnglish = language == "en-US"; OperationUi.SetLanguage(this, language); UpdateHeaders(); RefreshDisplay(true); }
         /// <summary>表头不继承局部资源，因此明确翻译。</summary>
         private void UpdateHeaders()
         {
@@ -149,6 +151,10 @@ namespace MotionControl.Host.Wpf.Operation
                 : "非停机提醒随条件恢复自动消失，不用人工清除");
             if (!string.IsNullOrWhiteSpace(alarm.Definition.RecoveryGuidance))
                 AfterText.Text += "\n" + alarm.Definition.RecoveryGuidance;
+            if (alarm.RequiresReset)
+                AfterText.Text += "\n" + (_guidanceEnglish
+                    ? "Next: resolve the cause and verify feedback, then reset using the machine controls. Reset does not start production. If stopping failed, feedback is unknown or resources await confirmation, maintenance must inspect them before recovery. Output commands do not confirm fixture position."
+                    : "下一步：处理原因并核对反馈后，再从设备控制入口复位；复位不会启动生产。若停止失败、反馈未知或资源待确认，由设备维护人员先核查处理。输出命令不能证明夹具已到位。");
             DiagnosticText.Text = T("报警代码") + "：" + alarm.Definition.Code + "\n" + T("首次发生") + "：" + row.OccurredAt
                 + "\n" + T("最近变化") + "：" + alarm.LastChangedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
                 + "\n\n" + T("最近整机异常，不一定属于此报警") + "\n" + (_snapshot.LastError ?? T("未提供"));

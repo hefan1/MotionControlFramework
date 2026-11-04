@@ -48,10 +48,10 @@ namespace MotionControl.Host.Wpf.Tasks
             Background = (Brush)new BrushConverter().ConvertFromString("#F3F6FA");
             var root = new DockPanel { Margin = new Thickness(16) }; Content = root;
             var heading = new StackPanel(); DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
-            heading.Children.Add(new TextBlock { Text = T("逐个核查待确认资源", "Inspect each blocked resource"), FontSize = 19, FontWeight = FontWeights.SemiBold });
+            heading.Children.Add(new TextBlock { Text = T("资源待确认 · 逐项核查", "Inspect each blocked resource"), FontSize = 19, FontWeight = FontWeights.SemiBold });
             heading.Children.Add(new TextBlock { Margin = new Thickness(0, 8, 0, 8), TextWrapping = TextWrapping.Wrap,
-                Text = T("读取只确认轴已停止和 IO 可读；有任何输出有效时不允许解除。区域、人员、夹具、载具和物料是否安全须由现场人员按设备规程确认。此处不会移动轴、切换输出或启动设备。",
-                    "Readback checks stopped axes and readable IO only. Recovery is blocked while any output is active. Personnel must verify the area, fixtures, carriers and workpieces using the equipment procedure. This page does not move axes, switch outputs or start equipment.") });
+                Text = T("下一步：选择资源 → 读取轴与 IO → 现场核查 → 填写说明。维护责任：状态未知、输出仍有效或停止失败时，由设备维护人员按设备规程处理后重新读取。读取只确认轴已停止和 IO 可读；有任何输出有效时不允许解除。区域、人员、夹具、载具和物料是否安全须由现场人员按设备规程确认。此处不会移动轴、切换输出或启动设备。",
+                    "Next: select a resource, read axes and IO, inspect the site, and record the inspection. Maintenance must resolve unknown states, active outputs or stop failures under the equipment procedure before reading again. Readback checks stopped axes and readable IO only. Recovery is blocked while any output is active. Personnel must verify the area, fixtures, carriers and workpieces using the equipment procedure. This page does not move axes, switch outputs or start equipment.") });
             _resources = new ComboBox { MinHeight = 30, Margin = new Thickness(0, 0, 0, 8) };
             _resources.SelectionChanged += Resource_SelectionChanged; heading.Children.Add(_resources);
             _readButton = new Button { Content = T("读取轴与 IO", "Read axes and IO"), Padding = new Thickness(12, 6, 12, 6), HorizontalAlignment = HorizontalAlignment.Left };
@@ -104,7 +104,7 @@ namespace MotionControl.Host.Wpf.Tasks
             try
             {
                 if (!_contextValid()) throw new InvalidOperationException("设备未连接、任务尚未终止或会话已变化；保留隔离。");
-                var sample = await Task.Run(() => ResourceRecoverySample.Capture(_device, selected.Id));
+                var sample = await Task.Run(() => ResourceRecoverySample.Capture(_device, selected.Id, _english));
                 if (!_contextValid()) throw new InvalidOperationException("读取期间设备或会话状态发生变化；保留隔离。");
                 _sample = sample; _sampleText.Text = sample.Description;
                 if (sample.ActiveOutputs.Count != 0)

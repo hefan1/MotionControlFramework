@@ -19,6 +19,7 @@
   <StackPanel Grid.Row="1" Margin="2,14,2,12">
    <TextBlock x:Name="SummaryText" FontSize="21" FontWeight="SemiBold" Foreground="#26384D" TextWrapping="Wrap"/>
    <TextBlock x:Name="GuidanceText" Foreground="#40536A" TextWrapping="Wrap" Margin="0,6,0,0"/>
+   <Expander x:Name="ChecksExpander" Header="当前缺项与后续检查" IsExpanded="True" Margin="0,8,0,0"><TextBlock x:Name="ReadOnlyChecksText" TextWrapping="Wrap" Foreground="#40536A" MaxHeight="150"/></Expander>
    <TextBlock x:Name="ErrorText" Foreground="#B23B3B" TextWrapping="Wrap" Margin="0,8,0,0"/>
    <Expander x:Name="DiagnosticExpander" Header="{DynamicResource 任务关联诊断详情}" Visibility="Collapsed" Margin="0,6,0,0">
     <TextBox x:Name="DiagnosticText" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="130" VerticalScrollBarVisibility="Auto"/>
@@ -29,7 +30,7 @@
     SelectionMode="Single" SelectionChanged="StationSelection_Changed" HeadersVisibility="Column" GridLinesVisibility="Horizontal" RowHeight="52" BorderThickness="0">
     <DataGrid.Columns>
      <DataGridTextColumn x:Name="StationColumn" Header="工位" Binding="{Binding Name}" Width="1.1*"/>
-     <DataGridTextColumn x:Name="StateColumn" Header="状态" Binding="{Binding StateText}" Width="120">
+     <DataGridTextColumn x:Name="StateColumn" Header="状态" Binding="{Binding StateText}" Width="155">
       <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{Binding StateBrush}"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="VerticalAlignment" Value="Center"/></Style></DataGridTextColumn.ElementStyle>
      </DataGridTextColumn>
      <DataGridTextColumn x:Name="ActionColumn" Header="当前动作" Binding="{Binding Action}" Width="2*">

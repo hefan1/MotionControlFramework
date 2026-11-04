@@ -169,4 +169,6 @@
  <sys:String x:Key="操作页.回零前请确认相关轴已使能、工位与物料状态安全；回零完成后再核对其他启动条件。">Before homing, check that the required axes are enabled and the stations and materials are safe. Verify remaining start conditions after homing.</sys:String>
  <sys:String x:Key="操作页.正在准备设备，完成后等待启动；需要中断时按停止">Preparing equipment. Production will remain stopped; press Stop to interrupt</sys:String>
  <sys:String x:Key="操作页.恢复诊断.资源记录说明">Cross-session resource isolation records are stored in ResourceGuards/&lt;session&gt;/*.guard. This view lists the location only; it does not inspect records. An existing directory does not establish a block; refer to the runtime diagnostic message for the reason. Preserve records for maintenance review; do not delete them to bypass restrictions.</sys:String>
+ <sys:String x:Key="操作页.资源状态读取失败请核查">Resource status could not be read; safety is unconfirmed. Open Station operation to inspect.</sys:String>
+ <sys:String x:Key="操作页.资源待核查先查看工位运行">Resource status needs inspection. Review resources and handling conditions in Station operation first.</sys:String>
 </ResourceDictionary>

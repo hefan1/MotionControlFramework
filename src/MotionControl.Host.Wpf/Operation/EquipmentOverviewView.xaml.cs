@@ -21,6 +21,8 @@ namespace MotionControl.Host.Wpf.Operation
         private Func<bool> _isTaskSessionLoaded;
         /// <summary>从实际任务会话读取工位，不读取文件或推进任务。</summary>
         private Func<IReadOnlyList<StationOverviewData>> _taskStationProvider;
+        /// <summary>当前任务会话中需要现场核查的资源摘要；不得推断为夹具实际状态。</summary>
+        private Func<string> _taskSafetySummaryProvider;
         /// <summary>当前控制卡连接状态。</summary>
         private bool _isCardConnected;
         /// <summary>Host 是否已提供连接结果；未提供时不臆断独立预览状态。</summary>
@@ -73,6 +75,9 @@ namespace MotionControl.Host.Wpf.Operation
         /// <summary>接入任务入口的只读工位来源；未读取任务时提供方返回空。</summary>
         public void SetTaskStationProvider(Func<IReadOnlyList<StationOverviewData>> provider)
         { _taskStationProvider = provider; RefreshDisplay(); }
+        /// <summary>接入任务资源的只读摘要；读取失败时页面明确提示未知。</summary>
+        public void SetTaskSafetySummaryProvider(Func<string> provider)
+        { _taskSafetySummaryProvider = provider; RefreshDisplay(); }
         /// <summary>同步控制卡连接诊断，供操作员在首页直接查看并跳转设置。</summary>
         public void SetConnectionStatus(bool isConnected, string statusMessage)
         {
@@ -132,6 +137,14 @@ namespace MotionControl.Host.Wpf.Operation
             var background = stateBrush.Clone(); background.Opacity = 0.06; StatusBanner.Background = background;
             SourceText.Text = T(connectionLost ? "控制器状态未确认" : snapshot.IsPreview ? "离线页面示例" : "状态来源：设备运行数据");
             SampleText.Text = T("软件状态采样") + " · " + snapshot.SampledAt.ToString("yyyy-MM-dd HH:mm:ss");
+            string safetySummary = null;
+            try { if (_preview == null && _taskSafetySummaryProvider != null) safetySummary = _taskSafetySummaryProvider(); }
+            catch (Exception error)
+            {
+                safetySummary = T("资源状态读取失败请核查") + "：" + error.Message;
+            }
+            SafetySummaryText.Text = safetySummary ?? string.Empty;
+            SafetySummaryPanel.Visibility = string.IsNullOrWhiteSpace(safetySummary) ? Visibility.Collapsed : Visibility.Visible;
             bool noNamedAxes = _axisMappingStatusKnown && _configuredAxisCount == 0;
             NextActionText.Text = connectionLost ? T("控制器断开后请核对状态") : startBlocked ? _automaticStartBlockReason
                 : startChecking ? T("正在检查启动条件")
@@ -139,12 +152,16 @@ namespace MotionControl.Host.Wpf.Operation
                 : T(_isCardConnected && noNamedAxes
                     ? "先配置设备轴映射再进行手动调试"
                     : NextAction(snapshot));
+            if (!string.IsNullOrWhiteSpace(safetySummary))
+                NextActionText.Text = T("资源待核查先查看工位运行");
             bool preparationRequired = _runtime != null && !_runtime.IsPreparing && !_runtime.IsPrepared
                 && displayState != MachineRunState.Running && displayState != MachineRunState.Pausing;
             bool axisActionRequired = startBlocked
                 && _automaticStartBlockReason.IndexOf("逻辑轴", StringComparison.OrdinalIgnoreCase) >= 0;
             AutomaticStartActionButton.Content = T(preparationRequired ? "设备准备" : "打开轴手动");
-            AutomaticStartActionButton.Visibility = preparationRequired || axisActionRequired ? Visibility.Visible : Visibility.Collapsed;
+            AutomaticStartActionButton.Visibility = string.IsNullOrWhiteSpace(safetySummary)
+                && displayState != MachineRunState.Alarmed && (preparationRequired || axisActionRequired)
+                ? Visibility.Visible : Visibility.Collapsed;
             ConnectionStatusPanel.Visibility = _preview != null || (_isCardConnected && !noNamedAxes)
                 ? Visibility.Collapsed : Visibility.Visible;
             ConnectionStateText.Text = T(_isCardConnected ? "设备轴映射未完成" : "控制卡未连接");
