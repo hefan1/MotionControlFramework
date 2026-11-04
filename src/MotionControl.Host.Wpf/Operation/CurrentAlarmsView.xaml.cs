@@ -23,6 +23,8 @@ namespace MotionControl.Host.Wpf.Operation
         private OperationSnapshot _preview;
         /// <summary>当前展示的完整软件状态。</summary>
         private OperationSnapshot _snapshot;
+        /// <summary>从当前任务会话只读取得工位来源，供报警定位。</summary>
+        private Func<IReadOnlyList<StationOverviewData>> _taskStationProvider;
         /// <summary>保持表格和滚动位置的已展示行。</summary>
         private List<AlarmDisplayRow> _rows = new List<AlarmDisplayRow>();
         /// <summary>稳定选择标识，条件更新后仍选择同一次报警。</summary>
@@ -46,6 +48,10 @@ namespace MotionControl.Host.Wpf.Operation
         /// <summary>绑定当前设备的后台历史记录器，界面不负责其生命周期。</summary>
         public void SetHistory(AlarmHistoryJournal history)
         { _history = history; HistoryButton.IsEnabled = history != null; }
+
+        /// <summary>注入任务工位读取，不创建会话或执行设备动作。</summary>
+        public void SetTaskStationProvider(Func<IReadOnlyList<StationOverviewData>> provider)
+        { _taskStationProvider = provider; RefreshDisplay(true); }
 
         /// <summary>进入历史报警工作区，不复位或清除当前报警。</summary>
         private void History_Click(object sender, RoutedEventArgs e)
@@ -78,10 +84,12 @@ namespace MotionControl.Host.Wpf.Operation
         /// <summary>按当前快照更新列表，未变化时保持已有行和滚动位置。</summary>
         public void RefreshDisplay(bool force = false)
         {
-            _snapshot = _preview ?? OperationSnapshot.Read(_runtime);
+            _snapshot = _preview ?? OperationSnapshot.Read(_runtime, _taskStationProvider);
             string query = SearchBox.Text.Trim();
             var alarms = _snapshot.Alarms.Where(alarm => Matches(alarm, query)).OrderBy(alarm => alarm.Definition.Kind == MachineAlarmKind.StopMachine ? 0 : 1).ThenByDescending(alarm => alarm.FirstRaisedAtUtc).ToList();
             SourceText.Text = T(_snapshot.IsPreview ? "离线页面示例" : "状态来源：设备运行数据") + " · " + T("软件状态采样") + " " + _snapshot.SampledAt.ToString("yyyy-MM-dd HH:mm:ss");
+            if (_snapshot.StationReadError != null)
+                SourceText.Text += " · " + T("工位状态读取失败") + "：" + _snapshot.StationReadError.Message;
             if (!_snapshot.HasRuntime)
             {
                 CountText.Text = T("未读取报警状态");
@@ -117,7 +125,7 @@ namespace MotionControl.Host.Wpf.Operation
         private void ShowDetails()
         {
             var row = AlarmGrid.SelectedItem as AlarmDisplayRow;
-            FlowButton.IsEnabled = row != null && _snapshot.Stations.Any(station => string.Equals(station.Name, row.Alarm.SourceName, StringComparison.OrdinalIgnoreCase));
+            FlowButton.IsEnabled = row != null && _snapshot.Stations.Count(station => MatchesStation(station, row.Alarm.SourceName)) == 1;
             IoButton.IsEnabled = AxisButton.IsEnabled = row != null;
             if (row == null)
             {
@@ -134,7 +142,8 @@ namespace MotionControl.Host.Wpf.Operation
             _selectedKey = row.Key;
             var alarm = row.Alarm;
             CauseTitle.Text = T(alarm.RequiresReset ? "2 当前为什么不能运行" : "2 当前提醒条件");
-            var flow = _snapshot.Stations.FirstOrDefault(station => string.Equals(station.Name, alarm.SourceName, StringComparison.OrdinalIgnoreCase));
+            var matchingStations = _snapshot.Stations.Where(station => MatchesStation(station, alarm.SourceName)).Take(2).ToArray();
+            var flow = matchingStations.Length == 1 ? matchingStations[0] : null;
             WhereText.Text = alarm.SourceName + (flow == null ? "" : "\n" + T("当前动作") + "：" + flow.CurrentStep);
             CauseText.Text = alarm.Definition.Message + "\n" + row.ConditionText;
             string catalogGuidance = alarm.Definition.CheckGuidance;
@@ -155,8 +164,12 @@ namespace MotionControl.Host.Wpf.Operation
                 + "\n" + T("最近变化") + "：" + alarm.LastChangedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
                 + "\n\n" + T("最近整机异常，不一定属于此报警") + "\n" + (_snapshot.LastError ?? T("未提供"));
         }
-        /// <summary>定位实际同名传统工位，不能冒充列表任务节点。</summary>
-        private void Flow_Click(object sender, RoutedEventArgs e) { Navigate("流程状态"); }
+        /// <summary>定位当前执行入口的实际工位，不能切换控制权或启动设备。</summary>
+        private void Flow_Click(object sender, RoutedEventArgs e) { Navigate("工位运行"); }
+        /// <summary>仅按来源明确提供的名称或稳定标识关联工位。</summary>
+        private static bool MatchesStation(StationOverviewData station, string source)
+        { return string.Equals(station.Name, source, StringComparison.OrdinalIgnoreCase)
+            || (!string.IsNullOrWhiteSpace(station.Id) && string.Equals(station.Id, source, StringComparison.OrdinalIgnoreCase)); }
         /// <summary>没有明确 IO 名称时仅打开现有监控页。</summary>
         private void Io_Click(object sender, RoutedEventArgs e) { Navigate("IO监控"); }
         /// <summary>仅打开轴手动，页面本身不点动、不使能。</summary>

@@ -71,7 +71,7 @@ namespace MotionControl.TaskEngine.Wpf.Monitoring
             else if (machineState == TaskMachineState.Faulted || machineState == TaskMachineState.NeedsReset)
             {
                 state = machineState.ToString();
-                Color = "#B42318";
+                Color = machineState == TaskMachineState.NeedsReset ? "#946200" : "#B42318";
             }
             else if (machineState != TaskMachineState.Running) state = machineState.ToString();
             else if (snapshot.State == StationTaskState.Executing)

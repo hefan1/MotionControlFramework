@@ -23,7 +23,7 @@ using MotionControl.TaskEngine.Wpf.Views;
 namespace MotionControl.Host.Wpf.Tasks
 {
     /// <summary>在正式 Host 中加载任务、运行整机任务并显示现场步骤与报警。</summary>
-    internal sealed class TaskMonitorLauncher : UserControl
+    internal sealed partial class TaskMonitorLauncher : UserControl
     {
         /// <summary>复用当前设备配置服务。</summary>
         private readonly MachineConfigurationStore _store;
@@ -65,7 +65,7 @@ namespace MotionControl.Host.Wpf.Tasks
         private TaskMachineState? _successTaskState;
         /// <summary>当前诊断对应的配置页快捷入口。</summary>
         private readonly WrapPanel _nextStepButtons;
-        /// <summary>装载当前已应用的任务、复位、启动、暂停和停止控制。</summary>
+        /// <summary>尚未读取会话时提供明确的设备流程装载入口；装载本身不启动设备。</summary>
         private readonly Button _loadButton;
         /// <summary>复位按钮。</summary>
         private readonly Button _resetButton;
@@ -203,20 +203,21 @@ namespace MotionControl.Host.Wpf.Tasks
 
             var toolbar = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
             StyleToolbar(toolbar);
+            var engineeringToolbar = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
             _loadButton = AddCommandButton(toolbar, "任务执行读取任务", LoadTask_Click);
-            _resetButton = AddCommandButton(toolbar, "任务执行复位", ResetTask_Click);
-            _startButton = AddCommandButton(toolbar, "任务执行启动", StartTask_Click);
-            _pauseButton = AddCommandButton(toolbar, "任务执行暂停", PauseTask_Click);
-            _stopButton = AddCommandButton(toolbar, "任务执行停止", StopTask_Click);
+            // 日常启停使用外壳顶部统一入口；任务会话的直接命令保留在工程区供维护。
+            _resetButton = AddCommandButton(engineeringToolbar, "任务执行复位", ResetTask_Click);
+            _startButton = AddCommandButton(engineeringToolbar, "任务执行启动", StartTask_Click);
+            _pauseButton = AddCommandButton(engineeringToolbar, "任务执行暂停", PauseTask_Click);
+            _stopButton = AddCommandButton(engineeringToolbar, "任务执行停止", StopTask_Click);
             _recoverResourcesButton = new Button { Padding = new Thickness(12, 7, 12, 7), Margin = new Thickness(0, 0, 8, 0),
                 Background = Brush("#FFFFFF"), BorderBrush = Brush("#C9D5E3"), BorderThickness = new Thickness(1), Visibility = Visibility.Collapsed };
             _recoverResourcesButton.Click += RecoverResources_Click; toolbar.Children.Add(_recoverResourcesButton);
             _productRecordsButton = new Button { Padding = new Thickness(12, 7, 12, 7), Margin = new Thickness(0, 0, 8, 0),
                 Background = Brush("#FFFFFF"), BorderBrush = Brush("#C9D5E3"), BorderThickness = new Thickness(1) };
-            _productRecordsButton.Click += ProductRecords_Click; toolbar.Children.Add(_productRecordsButton);
+            _productRecordsButton.Click += ProductRecords_Click; engineeringToolbar.Children.Add(_productRecordsButton);
             AddButton(toolbar, "设备总览", EquipmentOverview_Click);
             AddButton(toolbar, "设备准备", EquipmentPreparation_Click);
-            AddButton(toolbar, "流程状态", FlowStatus_Click);
             header.Children.Add(toolbar);
             root.Children.Add(header);
 
@@ -241,6 +242,7 @@ namespace MotionControl.Host.Wpf.Tasks
                 MaxHeight = 120, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, Visibility = Visibility.Collapsed };
             var details = new StackPanel();
+            details.Children.Add(engineeringToolbar);
             var refresh = new WrapPanel();
             AddButton(refresh, "刷新关联配置目录", RefreshCatalog_Click);
             details.Children.Add(refresh);
@@ -353,9 +355,6 @@ namespace MotionControl.Host.Wpf.Tasks
         private void EquipmentOverview_Click(object sender, RoutedEventArgs e) { _host.ShowEquipmentOverview(); }
         /// <summary>进入同一 Runtime 的设备准备页面，不重建任务会话。</summary>
         private void EquipmentPreparation_Click(object sender, RoutedEventArgs e) { _host.ShowEquipmentPreparation(); }
-        /// <summary>打开实际展示工位步骤的流程状态页。</summary>
-        private void FlowStatus_Click(object sender, RoutedEventArgs e) { _host.ShowFlowStatus(); }
-
         /// <summary>非模态查看当前设备产品记录；窗口不接管运行或阻止主窗口暂停。</summary>
         private void ProductRecords_Click(object sender, RoutedEventArgs e)
         {
@@ -767,6 +766,7 @@ namespace MotionControl.Host.Wpf.Tasks
             TaskMachineState? taskState = snapshot?.State;
             bool hasBlockedResources = snapshot != null && snapshot.Resources.Any(item => item.State == TaskResourceState.Blocked);
             _loadButton.IsEnabled = connected && _session == null && !_commandInProgress && !_runtime.IsPreparing;
+            _loadButton.Visibility = _session == null ? Visibility.Visible : Visibility.Collapsed;
             _resetButton.IsEnabled = connected && taskState.HasValue && !_commandInProgress && !_runtime.ProductionStopReviewRequired
                 && taskState != TaskMachineState.Running && taskState != TaskMachineState.Pausing
                 && _runtime.State != MachineRunState.Running && _runtime.State != MachineRunState.Pausing && !_runtime.IsPreparing;
@@ -973,6 +973,8 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>区分未读取、通讯中断和已读取但没有报警。</summary>
         private void RefreshAlarmState()
         {
+            _alarmGrid.Visibility = IsControllerConnected() && _runtime.AlarmService.Alarms.Count > 0
+                ? Visibility.Visible : Visibility.Collapsed;
             if (_runtime == null)
                 _alarmState.Text = PageText("未连接设备，报警状态未确认。", "Equipment disconnected; alarm status is unknown.");
             else if (!IsControllerConnected())
@@ -987,7 +989,10 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>切换语言或会话时刷新页面专用说明。</summary>
         private void RefreshPageText()
         {
-            _diagnostics.Header = PageText("工程诊断与配置目录", "Diagnostics and configuration");
+            _diagnostics.Header = PageText("工程操作与诊断", "Engineering operations and diagnostics");
+            _loadButton.Content = PageText("读取设备流程", "Load equipment flow");
+            _loadButton.ToolTip = PageText("读取已应用的工位与步骤，不执行复位、回零或启动。",
+                "Load applied stations and steps without resetting, homing, or starting the equipment.");
             _recoverResourcesButton.Content = PageText("核查待确认资源", "Inspect blocked resources");
             _productRecordsButton.Content = PageText("产品记录", "Product records");
             _loadedSource.Text = string.IsNullOrWhiteSpace(_taskSource) ? string.Empty

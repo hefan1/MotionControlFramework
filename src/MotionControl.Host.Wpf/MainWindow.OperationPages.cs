@@ -7,7 +7,7 @@ using MotionControl.Host.Wpf.Operation;
 
 namespace MotionControl.Host.Wpf
 {
-    /// <summary>PDF 操作工作区的明确组合，页面只观察当前传统 Runtime。</summary>
+    /// <summary>组合操作员工作区与关联导航，页面只观察当前执行入口。</summary>
     public partial class MainWindow
     {
         /// <summary>默认首页，未连接时也保留明确空状态。</summary>
@@ -18,6 +18,8 @@ namespace MotionControl.Host.Wpf
         private AlarmHistoryView _alarmHistoryPage;
         /// <summary>设备定义与任务列表共用的工位回零页面。</summary>
         private EquipmentPreparationView _equipmentPreparationPage;
+        /// <summary>尚未建立运行环境时明确显示缺失条件。</summary>
+        private UserControl _stationRunEmptyPage;
         /// <summary>将当前设备的报警历史交给报警页面，写入器由应用管理。</summary>
         internal void SetAlarmHistory(MotionControl.Framework.Runtime.Alarms.AlarmHistoryJournal history)
         { _currentAlarmsPage.SetHistory(history); _alarmHistoryPage.SetHistory(history); }
@@ -46,13 +48,16 @@ namespace MotionControl.Host.Wpf
             _operationReturnPage = null;
             OperationReturnButton.Visibility = Visibility.Collapsed;
         }
-        /// <summary>创建两个只读工作区，不连接任何控制卡。</summary>
+        /// <summary>创建总览、报警、设备准备和空状态页面；页面构造本身不连接控制卡。</summary>
         private void CreateOperationPages()
         {
             _equipmentOverviewPage = new EquipmentOverviewView();
             _currentAlarmsPage = new CurrentAlarmsView();
             _alarmHistoryPage = new AlarmHistoryView();
             _equipmentPreparationPage = new EquipmentPreparationView(EnsurePreparationConfigurationAsync, NavigatePreparationPage);
+            var runMessage = new TextBlock { Margin = new Thickness(18), TextWrapping = TextWrapping.Wrap };
+            runMessage.SetResourceReference(TextBlock.TextProperty, "工位运行未连接提示");
+            _stationRunEmptyPage = new UserControl { Content = runMessage };
             _equipmentOverviewPage.NavigationRequested += OperationNavigationRequested;
             _currentAlarmsPage.NavigationRequested += OperationNavigationRequested;
         }
@@ -61,6 +66,11 @@ namespace MotionControl.Host.Wpf
         {
             UserControl page = null;
             string description = null;
+            if (_currentPageResourceKey == "工位运行")
+            {
+                page = CurrentStationRunPage() ?? _stationRunEmptyPage;
+                description = "工位运行页面说明";
+            }
             if (IsCurrentPageInSection("Home") && _currentPageResourceKey == "设备总览")
             {
                 if (_axisMappingConfigurationPage is AxisMappingConfigurationView axisMappingPage)
@@ -82,8 +92,7 @@ namespace MotionControl.Host.Wpf
         /// <summary>关联页面只能查看；缺少 Runtime 对应页面时显示具体未就绪提示。</summary>
         private void OperationNavigationRequested(object sender, OperatorNavigationEventArgs e)
         {
-            bool unavailable = e.Page == "流程状态" && _flowStatusPage == null
-                || e.Page == "轴监控" && _axisMonitorPage == null
+            bool unavailable = e.Page == "轴监控" && _axisMonitorPage == null
                 || e.Page == "轴手动" && _manualMotionDebugPage == null
                 || e.Page == "IO监控" && _ioMonitorPage == null;
             if (unavailable)
@@ -104,7 +113,31 @@ namespace MotionControl.Host.Wpf
                 if (string.IsNullOrWhiteSpace(e.IoPointName)) ioMonitorPage.SelectDigitalInputs();
                 else ioMonitorPage.FocusDigitalInputByName(e.IoPointName);
             }
-            if (e.Page == "流程状态" && _flowStatusPage is FlowStatusView flow) flow.FocusStationByName(e.StationName);
+            if (_currentPageResourceKey == "工位运行" && !string.IsNullOrWhiteSpace(e.StationName))
+            {
+                bool located = _machineRuntime?.ControlOwner == MotionControl.Framework.Contracts.Flow.MachineControlOwner.TaskEngine
+                    ? (_taskMonitorPage as Tasks.TaskMonitorLauncher)?.FocusStationByName(e.StationName) == true
+                    : (_flowStatusPage as FlowStatusView)?.FocusStationByName(e.StationName) == true;
+                if (!located) PageDescription.Text += " · " + GetLocalizedText("工位运行未定位提示") + e.StationName;
+            }
+        }
+
+        /// <summary>按设备当前控制入口选择内部视图，不读取任务、不更改控制权。</summary>
+        private UserControl CurrentStationRunPage()
+        {
+            if (_machineRuntime?.ControlOwner == MotionControl.Framework.Contracts.Flow.MachineControlOwner.StationFlows)
+                return _flowStatusPage;
+            if (_machineRuntime?.ControlOwner == MotionControl.Framework.Contracts.Flow.MachineControlOwner.None)
+                return _flowStatusPage;
+            return _taskMonitorPage;
+        }
+
+        /// <summary>执行入口发生变化时替换内部视图，同一来源不重复挂载页面。</summary>
+        private void RefreshStationRunSource()
+        {
+            if (_currentPageResourceKey != "工位运行") return;
+            var page = CurrentStationRunPage() ?? _stationRunEmptyPage;
+            if (!ReferenceEquals(ManualDebugContent.Content, page)) UpdatePageContent();
         }
 
         /// <summary>任务入口首次进入准备页时读取当前会话；不发送回零或生产命令。</summary>

@@ -6,6 +6,10 @@
     <sys:String x:Key="隔离配置标识">隔离测试配置</sys:String>
     <sys:String x:Key="首页">首页</sys:String>
     <sys:String x:Key="运动控制">运动控制</sys:String>
+    <sys:String x:Key="工位运行">工位运行</sys:String>
+    <sys:String x:Key="工位运行页面说明">查看当前工位的动作、等待条件和异常；启停使用顶部按钮。</sys:String>
+    <sys:String x:Key="工位运行未连接提示">连接设备后查看工位运行状态；当前尚未建立运行环境。</sys:String>
+    <sys:String x:Key="工位运行未定位提示">未找到对应工位，请核对来源：</sys:String>
     <sys:String x:Key="运动控制导航简称">运控</sys:String>
     <sys:String x:Key="运动控制导航.运行监控">运行与监控</sys:String>
     <sys:String x:Key="运动控制导航.手动调试">手动调试</sys:String>

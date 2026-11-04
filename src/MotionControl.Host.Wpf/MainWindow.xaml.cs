@@ -34,7 +34,7 @@ namespace MotionControl.Host.Wpf
         private readonly Dictionary<string, string[]> _pagesBySection = new Dictionary<string, string[]>
         {
             { "Home", new[] { "运行日志" } },
-            { "MotionControl", new[] { "设备总览", "设备准备", "流程状态", "任务接入状态", "轴监控", "IO监控", "当前报警", "历史报警", "轴手动", "IO手动", "轴映射配置", "IO映射", "安全联锁", "任务配置", "设备变量", "报警库", "设备工程" } },
+            { "MotionControl", new[] { "设备总览", "设备准备", "工位运行", "轴监控", "IO监控", "当前报警", "历史报警", "轴手动", "IO手动", "轴映射配置", "IO映射", "安全联锁", "任务配置", "设备变量", "报警库", "设备工程" } },
             { "Statistics", new[] { "产量统计", "节拍统计", "运行统计" } },
             { "Monitor", new string[0] },
             { "Manual", new[] { "气缸手动", "通讯调试" } },
@@ -208,6 +208,7 @@ namespace MotionControl.Host.Wpf
         /// <summary>已迁移的页面始终进入运动控制分区，其他页面沿用原分类。</summary>
         private void NavigateToRelatedPage(string page, string defaultSection)
         {
+            if (page == "流程状态" || page == "任务接入状态") page = "工位运行";
             bool isMotionControlPage = Array.IndexOf(_pagesBySection["MotionControl"], page) >= 0;
             _currentPageResourceKey = page;
             NavigateToSection(isMotionControlPage ? "MotionControl" : defaultSection);
@@ -459,6 +460,7 @@ namespace MotionControl.Host.Wpf
             }
 
             UpdateMachineStateDisplay();
+            if (_currentPageResourceKey == "工位运行") UpdatePageContent();
         }
 
         /// <summary>由 Host 组合根按运行时连接结果更新底栏的控制卡状态。</summary>
@@ -506,14 +508,6 @@ namespace MotionControl.Host.Wpf
                 ManualDebugContent.Content = _taskConfigurationPage; ManualDebugContent.Visibility = Visibility.Visible;
                 PagePlaceholder.Visibility = Visibility.Collapsed;
                 PageDescription.SetResourceReference(TextBlock.TextProperty, "任务配置页面说明"); return;
-            }
-            if (_taskMonitorPage != null && IsCurrentPageInSection("Monitor") && _currentPageResourceKey == "任务接入状态")
-            {
-                ManualDebugContent.Content = _taskMonitorPage;
-                ManualDebugContent.Visibility = Visibility.Visible;
-                PagePlaceholder.Visibility = Visibility.Collapsed;
-                PageDescription.SetResourceReference(TextBlock.TextProperty, "任务接入状态页面说明");
-                return;
             }
             var isAxisMappingPage = _axisMappingConfigurationPage != null
                 && IsCurrentPageInSection("Settings")
@@ -573,18 +567,6 @@ namespace MotionControl.Host.Wpf
                 return;
             }
 
-            var isFlowStatusPage = _flowStatusPage != null
-                && IsCurrentPageInSection("Monitor")
-                && string.Equals(_currentPageResourceKey, "流程状态", StringComparison.Ordinal);
-
-            if (isFlowStatusPage)
-            {
-                ManualDebugContent.Content = _flowStatusPage;
-                ManualDebugContent.Visibility = Visibility.Visible;
-                PagePlaceholder.Visibility = Visibility.Collapsed;
-                PageDescription.SetResourceReference(TextBlock.TextProperty, "工位流程状态说明");
-                return;
-            }
 
             var isDeviceVariablePage = _deviceVariablePage != null
                 && IsCurrentPageInSection("Monitor")
@@ -889,6 +871,7 @@ namespace MotionControl.Host.Wpf
         /// <summary>同步顶部和底部整机状态，并按运行状态启用或禁用整机复位。</summary>
         private void UpdateMachineStateDisplay()
         {
+            RefreshStationRunSource();
             MachineRunState actualState = _machineRuntime == null
                 ? MachineRunState.Disconnected
                 : _machineRuntime.State;

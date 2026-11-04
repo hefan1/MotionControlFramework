@@ -1,11 +1,16 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:sys="clr-namespace:System;assembly=mscorlib">
- <sys:String x:Key="操作页.任务运行">任务运行</sys:String>
+ <sys:String x:Key="操作页.任务运行">工位运行</sys:String>
  <sys:String x:Key="操作页.当前未启用自动运行">当前未启用自动运行，可进行手动调试。</sys:String>
- <sys:String x:Key="操作页.查看任务运行">查看任务运行</sys:String>
- <sys:String x:Key="操作页.任务入口操作提示">使用顶部按钮复位、启动和暂停设备；工位步骤可在任务运行页面查看。</sys:String>
- <sys:String x:Key="操作页.任务会话状态待查看">请进入任务运行页面查看任务是否已读取及当前步骤。</sys:String>
- <sys:String x:Key="操作页.任务已读取请查看运行状态">已读取任务，请进入任务运行页面查看当前工位、步骤和报警。</sys:String>
- <sys:String x:Key="操作页.任务未读取请先读取">尚未读取任务，请进入任务运行页面读取当前任务。</sys:String>
+ <sys:String x:Key="操作页.查看任务运行">查看工位运行</sys:String>
+ <sys:String x:Key="操作页.任务入口操作提示">使用顶部按钮控制设备；进入工位运行查看步骤，任务未读取时按提示读取。</sys:String>
+ <sys:String x:Key="操作页.任务会话状态待查看">工位数据尚未确认，请进入工位运行查看。</sys:String>
+ <sys:String x:Key="操作页.任务已读取请查看运行状态">已读取任务，请进入工位运行查看当前工位、步骤和报警。</sys:String>
+ <sys:String x:Key="操作页.任务未读取请先读取">尚未读取当前设备任务，请进入工位运行按提示读取。</sys:String>
+ <sys:String x:Key="操作页.任务已读取，暂无工位状态">任务已读取，暂无工位状态。请进入工位运行查看。</sys:String>
+ <sys:String x:Key="操作页.工位状态读取失败">工位状态读取失败</sys:String>
+ <sys:String x:Key="操作页.查看工位运行了解当前步骤">查看工位运行了解当前步骤。</sys:String>
+ <sys:String x:Key="操作页.请检查设备连接后查看工位状态">请检查设备连接，连接后可查看工位状态。</sys:String>
+ <sys:String x:Key="操作页.连接详情">连接详情</sys:String>
  <sys:String x:Key="操作页.本次完成">完成循环</sys:String>
  <sys:String x:Key="操作页.当前周期">最近周期</sys:String>
  <sys:String x:Key="操作页.查看当前报警">查看当前报警</sys:String>

@@ -50,6 +50,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("控制器后端选择与设备映射保护", HostBackendSelectionChecks.Run, ref failures);
             Check("Host导航和返回原页面", HostNavigation, ref failures);
             Check("运动控制集中导航及关联返回", MotionControlNavigationChecks.Run, ref failures);
+            Check("操作员总览任务来源与报警直接定位", OperatorStationOverviewChecks.Run, ref failures);
             Check("设备工程页面和应用后重启保护", EquipmentProjectPageChecks.Run, ref failures);
             Check("工程导入等待映射回滚续体", ProjectGateContinuationChecks.Run, ref failures);
             Check("工程应用后退出保留原恢复记录", ShutdownEvidenceChecks.Run, ref failures);
@@ -60,7 +61,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("产品记录只读显示两种来源及错误", ProductRecordChecks.Run, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：25 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：27 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }
@@ -144,7 +145,8 @@ namespace MotionControl.OperatorPages.Checks
         {
             var overview = new EquipmentOverviewView(); var alarms = new CurrentAlarmsView();
             Assert(((TextBlock)overview.FindName("MachineStateText")).Text.Contains("未读取"), "没有来源却显示已就绪。");
-            Assert(((TextBlock)overview.FindName("CompletedText")).Text == "未接入循环统计", "没有来源却显示产量零或含糊的连接状态。");
+            Assert(((FrameworkElement)overview.FindName("AggregateMetrics")).Visibility == Visibility.Collapsed,
+                "操作员总览仍显示生产统计区。");
             Assert(((TextBlock)alarms.FindName("EmptyText")).Text == "未读取报警状态", "无来源被当作零报警。");
             var card = new GuardCard(); var service = new MachineAlarmService();
             var runtime = CreateRuntime(card, service);
@@ -246,8 +248,8 @@ namespace MotionControl.OperatorPages.Checks
                 "总览未正确显示任务未读取，或显示了其他入口工位及统计。");
             OperatorNavigationEventArgs navigation = null;
             overview.NavigationRequested += (sender, e) => navigation = e;
-            FindButton(overview, "查看任务运行").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Assert(navigation != null && navigation.Page == "任务接入状态", "总览没有导航到任务运行页。");
+            FindButton(overview, "查看工位运行").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert(navigation != null && navigation.Page == "工位运行", "总览没有导航到统一工位运行页。");
             var flow = new FlowStatusView(runtime, () => loaded);
             Assert(((Panel)flow.FindName("StationRowsPanel")).Visibility == Visibility.Collapsed
                 && ((Panel)flow.FindName("TaskRunPanel")).Visibility == Visibility.Visible
@@ -410,9 +412,9 @@ namespace MotionControl.OperatorPages.Checks
                 var taskRun = new UserControl();
                 window.SetTaskMonitorPage(taskRun);
                 window.ShowTaskRun();
-                Assert(ReferenceEquals(content.Content, taskRun)
+                Assert(ReferenceEquals(content.Content, flowStatus)
                     && ((Button)window.FindName("OperationReturnButton")).Visibility == Visibility.Visible,
-                    "从任务配置查看任务运行没有打开任务页及返回入口。");
+                    "C# 模式没有复用工位运行页，或缺少返回入口。");
                 ((Button)window.FindName("OperationReturnButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Assert(ReferenceEquals(content.Content, taskConfiguration), "任务运行没有返回原任务配置页。");
                 motionControlButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));

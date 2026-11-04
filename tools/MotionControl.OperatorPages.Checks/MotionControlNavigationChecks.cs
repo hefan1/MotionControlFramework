@@ -33,10 +33,12 @@ internal static class MotionControlNavigationChecks
 
             nav.Children.OfType<ToggleButton>().Single(b => Equals(b.Tag, "MotionControl"))
                 .RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
-            var required = new[] { "设备总览", "设备准备", "流程状态", "任务接入状态", "轴监控", "IO监控", "轴手动", "IO手动", "轴映射配置", "IO映射", "安全联锁", "任务配置", "设备变量", "当前报警", "历史报警", "报警库", "设备工程" };
+            var required = new[] { "设备总览", "设备准备", "工位运行", "轴监控", "IO监控", "轴手动", "IO手动", "轴映射配置", "IO映射", "安全联锁", "任务配置", "设备变量", "当前报警", "历史报警", "报警库", "设备工程" };
             foreach (string page in required)
                 if (sidebar.Children.OfType<ToggleButton>().Count(b => Equals(b.Tag, page)) != 1)
                     throw new InvalidOperationException("集中入口缺少或重复：" + page);
+            if (sidebar.Children.OfType<ToggleButton>().Any(b => Equals(b.Tag, "流程状态") || Equals(b.Tag, "任务接入状态")))
+                throw new InvalidOperationException("仍向操作员暴露按执行器划分的重复入口。");
 
             foreach (var section in nav.Children.OfType<ToggleButton>().Where(b => !Equals(b.Tag, "MotionControl")).ToArray())
             {
@@ -65,6 +67,34 @@ internal static class MotionControlNavigationChecks
                 throw new InvalidOperationException("任务跳转未留在集中入口。");
             ((Button)window.FindName("OperationReturnButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             if (!ReferenceEquals(content.Content, taskConfig)) throw new InvalidOperationException("关联返回未回到任务配置。");
+
+            var card = new MotionControl.OperatorPages.Checks.GuardCard();
+            var cards = new MotionControl.Framework.Runtime.Machine.MotionCardGroup(
+                new MotionControl.Framework.Contracts.Motion.IMotionCard[] { card });
+            var taskRuntime = new MotionControl.Framework.Runtime.Machine.MachineRuntime(cards,
+                new MotionControl.Framework.Contracts.Flow.IStationFlow[0],
+                new MotionControl.Framework.Runtime.Alarms.MachineAlarmService(),
+                new MotionControl.OperatorPages.Checks.GuardSafety(),
+                controlOwner: MotionControl.Framework.Contracts.Flow.MachineControlOwner.TaskEngine);
+            window.SetMachineRuntime(taskRuntime);
+            window.ShowFlowStatus();
+            if (!ReferenceEquals(content.Content, taskMonitor)) throw new InvalidOperationException("任务模式的统一工位页选择错误。");
+            var flowPage = new UserControl();
+            window.SetFlowStatusPage(flowPage);
+            var codeRuntime = new MotionControl.Framework.Runtime.Machine.MachineRuntime(cards,
+                new MotionControl.Framework.Contracts.Flow.IStationFlow[0],
+                new MotionControl.Framework.Runtime.Alarms.MachineAlarmService(),
+                new MotionControl.OperatorPages.Checks.GuardSafety());
+            window.SetMachineRuntime(codeRuntime);
+            if (!ReferenceEquals(content.Content, flowPage) || card.Calls != 0)
+                throw new InvalidOperationException("切换运行来源未刷新统一工位页，或查看页面触发硬件操作。");
+            codeRuntime.AcquireTaskEngineControlAsync(System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+            window.SetMachineRuntime(codeRuntime);
+            if (!ReferenceEquals(content.Content, taskMonitor)) throw new InvalidOperationException("同一运行时接管任务后仍显示旧视图。");
+            codeRuntime.ReleaseTaskEngineControl();
+            window.SetMachineRuntime(codeRuntime);
+            if (!ReferenceEquals(content.Content, flowPage) || card.Calls != 0)
+                throw new InvalidOperationException("同一运行时归还入口后没有恢复工位视图。");
         }
         finally { window.Close(); }
     }

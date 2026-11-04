@@ -63,6 +63,67 @@ namespace MotionControl.TaskEngine.Wpf.Views
             SourceText.Visibility = Visibility.Collapsed;
         }
 
+        /// <summary>按唯一工位标识或名称定位实际工位，并显示该工位的故障或当前活动步骤。</summary>
+        public bool FocusStationByName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return false;
+            // 先验证来源，未知或重名时不让 Refresh 的默认选择改变操作员正在查看的对象。
+            var source = _session.Machine.GetSnapshot();
+            var candidates = source.Stations.ToList();
+            if (source.Initialization != null) candidates.Add(source.Initialization);
+            if (candidates.Count(station => string.Equals(station.StationId, name, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(station.Name, name, StringComparison.OrdinalIgnoreCase)) != 1) return false;
+            Refresh();
+            if (_refreshFailed || _snapshot == null) return false;
+            var matches = _stations.Where(row => string.Equals(row.Id, name, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(row.Name, name, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (matches.Count != 1) return false;
+
+            TaskStationRow selectedStation = matches[0];
+            _unlocatedFault = null;
+            StationsGrid.SelectedItem = selectedStation;
+            StationsGrid.ScrollIntoView(selectedStation);
+            SetFollowExecution(true);
+            RefreshSteps();
+            var faults = _snapshot.Faults.Where(fault => string.Equals(fault.Source, selectedStation.Id, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fault.Source, selectedStation.Name, StringComparison.OrdinalIgnoreCase)).ToList();
+            TaskMachineFault faultForStation = faults.FirstOrDefault();
+            var failed = faultForStation?.Error == null ? null : TaskStepTree.Flatten(_steps)
+                .FirstOrDefault(step => step.Snapshot?.ExecutionId == faultForStation.Error.ExecutionId);
+            if (failed == null)
+                failed = TaskStepTree.Flatten(_steps).FirstOrDefault(step => step.Snapshot?.State == TaskNodeState.Failed);
+            if (failed != null)
+            {
+                SetFollowExecution(false);
+                SelectFollowing(failed);
+                _followAfterFaultRecovery = true;
+            }
+            if (faultForStation != null) DetailNotice.Text = faultForStation.Message + "\n" + T("故障恢复提示");
+            BringFocusedStepIntoView(_selected);
+            return true;
+        }
+
+        /// <summary>等待已展开步骤生成容器后滚动到定位行，不抢回操作员随后选择的其他步骤。</summary>
+        private void BringFocusedStepIntoView(TaskStepRow row)
+        {
+            if (row == null) return;
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+            {
+                if (!ReferenceEquals(_selected, row)) return;
+                var path = new Stack<TaskStepRow>();
+                for (TaskStepRow item = row; item != null; item = item.Parent) path.Push(item);
+                ItemsControl parent = StepsTree;
+                TreeViewItem container = null;
+                while (path.Count > 0)
+                {
+                    container = parent.ItemContainerGenerator.ContainerFromItem(path.Pop()) as TreeViewItem;
+                    if (container == null) return;
+                    parent = container;
+                }
+                container?.BringIntoView();
+            }));
+        }
+
         /// <summary>页面进入可见区域后开始采样。</summary>
         private void View_Loaded(object sender, RoutedEventArgs e) { Refresh(); _timer.Start(); }
         /// <summary>移出界面后停止采样，后台任务仍由所属窗口管理。</summary>
@@ -324,7 +385,7 @@ namespace MotionControl.TaskEngine.Wpf.Views
         /// <summary>显式写入本地化工位表头，确保 DataGridColumn 脱离可视树时仍显示资源文字。</summary>
         private void RefreshStationColumnHeaders()
         {
-            string[] keys = { "工位名称", "方式", "状态", "当前动作", "等待或异常说明", "完成次数" };
+            string[] keys = { "工位名称", "方式", "状态", "当前动作", "等待或异常说明" };
             for (int index = 0; index < keys.Length && index < StationsGrid.Columns.Count; index++)
                 StationsGrid.Columns[index].Header = T(keys[index]);
         }

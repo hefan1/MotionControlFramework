@@ -195,6 +195,13 @@ namespace MotionControl.TaskMonitor.Checks
                 view.SetLanguage("zh-CN");
                 Assert(((DataGrid)view.FindName("StationsGrid")).Columns[0].Header.ToString() == "工位名称",
                     "工位列表表头没有说明该列显示工位名称。");
+                Assert(view.FocusStationByName("inspect")
+                    && ((TaskStationRow)((DataGrid)view.FindName("StationsGrid")).SelectedItem).Id == "inspect",
+                    "来自报警的稳定工位标识没有直接定位工位。");
+                Assert(!view.FocusStationByName("不存在的工位")
+                    && ((TaskStationRow)((DataGrid)view.FindName("StationsGrid")).SelectedItem).Id == "inspect"
+                    && session.Machine.GetSnapshot().State == TaskMachineState.NeedsReset,
+                    "未知工位改变了选择，或定位启动了设备。");
 
                 const string sharedSignalName = "ClampSignal";
                 var ambiguousCatalog = new TaskResourceCatalog(

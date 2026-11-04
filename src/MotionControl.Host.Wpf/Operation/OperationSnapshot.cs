@@ -26,12 +26,14 @@ namespace MotionControl.Host.Wpf.Operation
         public List<MachineAlarmRecord> Alarms { get; set; } = new List<MachineAlarmRecord>();
         /// <summary>最近整机异常的完整诊断，不能当作每条报警的根因。</summary>
         public string LastError { get; set; }
+        /// <summary>读取工位状态来源失败时保留原异常；不能将失败显示为空机或正常。</summary>
+        public Exception StationReadError { get; set; }
         /// <summary>单工位时的完整循环数；多工位不将不同工位计数相加。</summary>
         public long? CompletedCount { get; set; }
         /// <summary>单工位时最近一个完整循环的周期秒数。</summary>
         public double? CycleSeconds { get; set; }
         /// <summary>只读采样当前 Runtime，保留当前步骤原文，不从文字推断等待条件或独立工位状态。</summary>
-        public static OperationSnapshot Read(MachineRuntime runtime)
+        public static OperationSnapshot Read(MachineRuntime runtime, Func<IReadOnlyList<StationOverviewData>> taskStationProvider = null)
         {
             var result = new OperationSnapshot { SampledAt = DateTime.Now, HasRuntime = runtime != null };
             if (runtime == null) return result;
@@ -39,7 +41,17 @@ namespace MotionControl.Host.Wpf.Operation
             result.ControlOwner = runtime.ControlOwner;
             result.Alarms = runtime.AlarmService.Alarms.ToList();
             result.LastError = runtime.LastError?.ToString();
-            // 任务列表控制设备时，传统 C# 工位对象仍然存在，但不是实际运行步骤。
+            // 两种执行入口各自提供真实工位；任务模式不能借用未运行的 C# 工位。
+            if (result.ControlOwner == MachineControlOwner.TaskEngine)
+            {
+                try
+                {
+                    IReadOnlyList<StationOverviewData> stations = taskStationProvider?.Invoke();
+                    if (stations != null) result.Stations.AddRange(stations);
+                }
+                catch (Exception error) { result.StationReadError = error; }
+                return result;
+            }
             if (result.ControlOwner != MachineControlOwner.StationFlows) return result;
             foreach (var flow in runtime.StationFlows)
             {
@@ -47,6 +59,7 @@ namespace MotionControl.Host.Wpf.Operation
                 var inputWait = flow as IStationInputWaitState;
                 result.Stations.Add(new StationOverviewData
                 {
+                    Id = flow.StationName,
                     Name = flow.StationName,
                     CurrentStep = flow.CurrentStepName,
                     WaitingInputName = inputWait?.WaitingInputName,
@@ -68,8 +81,16 @@ namespace MotionControl.Host.Wpf.Operation
     /// <summary>一个工位卡片的数据；不把整机状态冒充独立工位状态。</summary>
     public sealed class StationOverviewData
     {
+        /// <summary>执行入口提供的稳定工位标识；未提供时按明确的工位名称定位。</summary>
+        public string Id { get; set; }
         /// <summary>设备定义的工位名称。</summary>
         public string Name { get; set; }
+        /// <summary>执行入口明确报告并本地化的独立工位状态；为空时不能猜测。</summary>
+        public string StateText { get; set; }
+        /// <summary>独立工位状态使用的颜色，格式为六位 RGB 十六进制值。</summary>
+        public string StateColor { get; set; }
+        /// <summary>执行入口明确报告的等待条件或异常说明，不从步骤名称推断。</summary>
+        public string Detail { get; set; }
         /// <summary>工位提供的当前动作或保留步骤原文。</summary>
         public string CurrentStep { get; set; }
         /// <summary>流程明确报告的当前等待逻辑 DI；未等待输入时为空。</summary>
@@ -87,7 +108,7 @@ namespace MotionControl.Host.Wpf.Operation
     {
         /// <summary>已有页面的中文资源键。</summary>
         public string Page { get; private set; }
-        /// <summary>可以按名称定位的工位，其他页面只打开页面本身。</summary>
+        /// <summary>执行入口明确提供的稳定工位标识或名称；没有来源时只打开页面。</summary>
         public string StationName { get; private set; }
         /// <summary>可以在 IO 监控中定位的逻辑 IO 名称；为空时不切换具体通道。</summary>
         public string IoPointName { get; private set; }

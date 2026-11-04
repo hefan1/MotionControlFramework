@@ -42,7 +42,6 @@
     <DataGridTextColumn Header="{DynamicResource 任务监控.等待或异常说明}" Binding="{Binding Detail}" Width="2*">
      <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextTrimming" Value="CharacterEllipsis"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="ToolTip" Value="{Binding EngineeringDetail}"/></Style></DataGridTextColumn.ElementStyle>
     </DataGridTextColumn>
-    <DataGridTextColumn Header="{DynamicResource 任务监控.完成次数}" Binding="{Binding Cycles}" Width="85"/>
    </DataGrid.Columns>
   </DataGrid>
   <GridSplitter Grid.Row="2" HorizontalAlignment="Stretch" VerticalAlignment="Center" Height="4" Background="#D8E2EE"/>

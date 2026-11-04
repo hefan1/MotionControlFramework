@@ -60,6 +60,10 @@ namespace MotionControl.Host.Wpf
             _taskMonitorPage = page;
             var launcher = page as Tasks.TaskMonitorLauncher;
             _equipmentOverviewPage.SetTaskSessionStateProvider(launcher == null ? (Func<bool>)null : () => launcher.HasTaskSession);
+            _equipmentOverviewPage.SetTaskStationProvider(launcher == null ? null
+                : (Func<System.Collections.Generic.IReadOnlyList<Operation.StationOverviewData>>)launcher.ReadStationOverview);
+            _currentAlarmsPage.SetTaskStationProvider(launcher == null ? null
+                : (Func<System.Collections.Generic.IReadOnlyList<Operation.StationOverviewData>>)launcher.ReadStationOverview);
             UpdatePageContent();
         }
 
@@ -85,19 +89,19 @@ namespace MotionControl.Host.Wpf
             Activate();
         }
 
-        /// <summary>从任务接入状态页查看当前工位步骤。</summary>
+        /// <summary>打开当前执行方式对应的统一工位运行页。</summary>
         public void ShowFlowStatus()
         {
             SetOperationReturnTarget(_currentSectionKey, _currentPageResourceKey);
-            NavigateToRelatedPage("流程状态", "Monitor");
+            NavigateToRelatedPage("工位运行", "MotionControl");
             Activate();
         }
 
-        /// <summary>查看任务会话，不读取任务或启动设备。</summary>
+        /// <summary>保留旧调用入口，统一导航只查看工位，不读取或启动设备。</summary>
         public void ShowTaskRun()
         {
             SetOperationReturnTarget(_currentSectionKey, _currentPageResourceKey);
-            NavigateToRelatedPage("任务接入状态", "Monitor");
+            NavigateToRelatedPage("工位运行", "MotionControl");
             Activate();
         }
 

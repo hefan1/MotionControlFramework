@@ -11,6 +11,10 @@
     <sys:String x:Key="隔离配置标识">Isolated test configuration</sys:String>
     <sys:String x:Key="首页">Home</sys:String>
     <sys:String x:Key="运动控制">Motion control</sys:String>
+    <sys:String x:Key="工位运行">Station Operation</sys:String>
+    <sys:String x:Key="工位运行页面说明">View station actions, waiting conditions and faults. Use the top controls to operate the machine.</sys:String>
+    <sys:String x:Key="工位运行未连接提示">Connect the equipment to view station operation. No runtime is available yet.</sys:String>
+    <sys:String x:Key="工位运行未定位提示">Station not found. Check the source: </sys:String>
     <sys:String x:Key="运动控制导航简称">Motion</sys:String>
     <sys:String x:Key="运动控制导航.运行监控">Operation</sys:String>
     <sys:String x:Key="运动控制导航.手动调试">Manual controls</sys:String>

@@ -1,11 +1,16 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:sys="clr-namespace:System;assembly=mscorlib">
- <sys:String x:Key="操作页.任务运行">Task operation</sys:String>
+ <sys:String x:Key="操作页.任务运行">Station operation</sys:String>
  <sys:String x:Key="操作页.当前未启用自动运行">Automatic operation is not enabled. Manual setup is available.</sys:String>
- <sys:String x:Key="操作页.查看任务运行">View task operation</sys:String>
- <sys:String x:Key="操作页.任务入口操作提示">Use the buttons above to reset, start, or pause the equipment. View station steps on the task operation page.</sys:String>
- <sys:String x:Key="操作页.任务会话状态待查看">Open task operation to check whether tasks are loaded and view the current step.</sys:String>
- <sys:String x:Key="操作页.任务已读取请查看运行状态">Tasks are loaded. Open task operation to review stations, steps, and alarms.</sys:String>
- <sys:String x:Key="操作页.任务未读取请先读取">Tasks are not loaded. Open task operation and load the current tasks.</sys:String>
+ <sys:String x:Key="操作页.查看任务运行">View station operation</sys:String>
+ <sys:String x:Key="操作页.任务入口操作提示">Use the buttons above to control the equipment. Open station operation to view steps and load tasks when prompted.</sys:String>
+ <sys:String x:Key="操作页.任务会话状态待查看">Station data is not confirmed. Open station operation to inspect it.</sys:String>
+ <sys:String x:Key="操作页.任务已读取请查看运行状态">Tasks are loaded. Open station operation to review stations, steps, and alarms.</sys:String>
+ <sys:String x:Key="操作页.任务未读取请先读取">Equipment tasks are not loaded. Open station operation and follow the loading prompt.</sys:String>
+ <sys:String x:Key="操作页.任务已读取，暂无工位状态">Tasks are loaded, but station status is unavailable. Open station operation to inspect it.</sys:String>
+ <sys:String x:Key="操作页.工位状态读取失败">Station status could not be read</sys:String>
+ <sys:String x:Key="操作页.查看工位运行了解当前步骤">Open station operation to inspect the current step.</sys:String>
+ <sys:String x:Key="操作页.请检查设备连接后查看工位状态">Check the equipment connection to view station status.</sys:String>
+ <sys:String x:Key="操作页.连接详情">Connection details</sys:String>
  <sys:String x:Key="操作页.本次完成">Completed cycles</sys:String>
  <sys:String x:Key="操作页.当前周期">Last cycle</sys:String>
  <sys:String x:Key="操作页.查看当前报警">View current alarms</sys:String>
