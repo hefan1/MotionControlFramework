@@ -151,6 +151,10 @@ namespace MotionControl.Framework.Runtime.Machine
                     selected = SelectPreparations(stationId);
                     if (selected.Length == 0) throw new InvalidOperationException("当前入口未配置对应的工位准备流程。");
                 }
+                // 只读前置检查不改变设备；条件不满足时不建立尚未发生动作的运行标记。
+                // 进入执行阶段仍会再次检查全部工位，防止预检后现场条件变化。
+                foreach (IStationPreparation item in selected)
+                    await item.ValidateStartAsync(cancellationToken).ConfigureAwait(false);
                 // 持久标记必须在设备步骤、使能或轴运动之前创建；写失败不进入准备状态。
                 if (_beforePreparation != null) { _beforePreparation(); _preparationRecordPending = true; }
                 lock (_preparationSync) _preparationRecordReusable = false;

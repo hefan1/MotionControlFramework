@@ -19,7 +19,7 @@ namespace MotionControl.Preparation.Checks
         /// <summary>执行全部检查并返回失败退出码。</summary>
         private static int Main()
         {
-            try { RunAsync().GetAwaiter().GetResult(); Console.WriteLine("设备准备：17 组检查通过（仅内部逻辑检查）。"); return 0; }
+            try { RunAsync().GetAwaiter().GetResult(); Console.WriteLine("设备准备：18 组检查通过（仅内部逻辑检查）。"); return 0; }
             catch (Exception error) { Console.Error.WriteLine(error); return 1; }
         }
 
@@ -43,6 +43,46 @@ namespace MotionControl.Preparation.Checks
             await StationFlowSettlementAndConnectionAsync();
             await OldAlarmTimeoutDoesNotAffectNewRunAsync();
             await OldPreparationStopDoesNotAffectNewRunAsync();
+            await PreparationPreflightMarkerAsync();
+        }
+
+        /// <summary>只读前提拒绝不能创建运行标记；标记后的条件变化仍保留保护。</summary>
+        private static async Task PreparationPreflightMarkerAsync()
+        {
+            var fixture = new Fixture();
+            int markers = 0;
+            var preparation = new Preparation("Preflight", fixture) { RejectValidationAt = 1 };
+            fixture.Runtime.SetPreparationRecordCallbacks(() => markers++, () => { });
+            fixture.Runtime.ConfigurePreparations(new[] { preparation });
+            await fixture.ConnectAsync();
+            await RejectAsync(() => fixture.Runtime.PrepareAsync(null, CancellationToken.None), "未满足前提仍进入准备。");
+            Ensure(markers == 0 && fixture.Log.Count == 0 && !fixture.Runtime.IsPreparing,
+                "只读前提失败建立了运行标记或执行了动作。");
+            preparation.RejectValidationAt = 0;
+            await fixture.Runtime.PrepareAsync(null, CancellationToken.None);
+            Ensure(markers == 1 && fixture.Log.Count == 1 && fixture.Runtime.IsPrepared, "修正前提后无法安全准备。");
+            await fixture.Runtime.DisconnectAsync(CancellationToken.None);
+
+            var changed = new Fixture();
+            int changedMarkers = 0;
+            var changing = new Preparation("Changed", changed) { RejectValidationAt = 2 };
+            changed.Runtime.SetPreparationRecordCallbacks(() => changedMarkers++, () => { });
+            changed.Runtime.ConfigurePreparations(new[] { changing });
+            await changed.ConnectAsync();
+            await RejectAsync(() => changed.Runtime.PrepareAsync(null, CancellationToken.None), "预检后条件改变未被拒绝。");
+            Ensure(changedMarkers == 1 && changed.Log.Count == 0 && !changed.Runtime.IsPreparationRecordReusable,
+                "标记后的条件变化错误释放了运行保护。");
+            await changed.Runtime.DisconnectAsync(CancellationToken.None);
+
+            var failed = new Fixture();
+            int failedMarkers = 0;
+            failed.Runtime.SetPreparationRecordCallbacks(() => failedMarkers++, () => { });
+            failed.Runtime.ConfigurePreparations(new[] { new Preparation("ExecutionFailure", failed) { ReadyPose = false } });
+            await failed.ConnectAsync();
+            await RejectAsync(() => failed.Runtime.PrepareAsync(null, CancellationToken.None), "执行后的姿态失败未被拒绝。");
+            Ensure(failedMarkers == 1 && failed.Log.Count == 1 && !failed.Runtime.IsPreparationRecordReusable,
+                "实际执行失败错误释放了运行保护。");
+            await failed.Runtime.DisconnectAsync(CancellationToken.None);
         }
 
         /// <summary>旧准备的报警停止请求迟到时，不得停止新的准备周期。</summary>
@@ -681,10 +721,14 @@ namespace MotionControl.Preparation.Checks
             internal bool WaitUntilStopped;
             /// <summary>控制最终姿态检查。</summary>
             internal bool ReadyPose = true;
+            /// <summary>指定第几次只读校验拒绝；零表示不拒绝。</summary>
+            internal int RejectValidationAt;
+            /// <summary>统计校验次数以模拟预检后现场条件变化。</summary>
+            private int _validationCount;
             /// <summary>保留本次进度接收器，检查迟到回调不会破坏结果。</summary>
             internal IProgress<StationPreparationProgress> CapturedProgress;
-            /// <summary>本替身没有产品占用。</summary>
-            public Task ValidateStartAsync(CancellationToken token) { token.ThrowIfCancellationRequested(); return Task.CompletedTask; }
+            /// <summary>按测试设置模拟只读准备前提检查。</summary>
+            public Task ValidateStartAsync(CancellationToken token) { token.ThrowIfCancellationRequested(); if (++_validationCount == RejectValidationAt) throw new InvalidOperationException("测试轴尚未使能"); return Task.CompletedTask; }
             /// <summary>记录顺序并在需要时保持运动直到取消。</summary>
             public async Task ExecuteAsync(IProgress<StationPreparationProgress> progress, CancellationToken token)
             {
