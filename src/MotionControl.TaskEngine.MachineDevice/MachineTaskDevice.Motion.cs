@@ -28,6 +28,8 @@ namespace MotionControl.TaskEngine.MachineDevice
             if (string.IsNullOrWhiteSpace(name)) throw new TaskMoveRejectedBeforeCommandException("轴名称不能为空。", null);
             lock (_sync)
             {
+                if (_expectedSession.HasValue && (_changingOwner || _closing || _machineOwner == null))
+                    throw new TaskMoveRejectedBeforeCommandException("正式任务设备未持有稳定控制权。", null);
                 RemoveSettledMoves();
                 if (_beginningAxes.Contains(name) || _unsettledMoves.Any(item => string.Equals(item.AxisName, name, StringComparison.OrdinalIgnoreCase)))
                     throw new TaskMoveRejectedBeforeCommandException("该轴上一动作尚未完成收尾：" + name, null);
@@ -40,6 +42,7 @@ namespace MotionControl.TaskEngine.MachineDevice
                 double end;
                 try
                 {
+                    _runtime.EnsureTaskDeviceBinding(_expectedSession, this);
                     axis = _motionCards.GetAxis(name);
                     status = Wait(axis.ReadStatusAsync(CancellationToken.None));
                     if (status == null || status.Moving || double.IsNaN(status.Velocity)
@@ -69,7 +72,11 @@ namespace MotionControl.TaskEngine.MachineDevice
                         lock (_sync) _unsettledMoves.Add(move);
                         move.StartMotion(profile);
                         return true;
-                    });
+                    }, _expectedSession, this);
+                }
+                catch (TaskDeviceBindingException error)
+                {
+                    throw new TaskMoveRejectedBeforeCommandException(error.Message, error);
                 }
                 catch (ShutdownCommandRejectedException error)
                 {

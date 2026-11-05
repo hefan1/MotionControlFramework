@@ -51,8 +51,10 @@ namespace MotionControl.OperatorPages.Checks
             Check("工位运行会话失效和报警未知", FlowStatusSessionChecks.Run, ref failures);
             Check("轴监控异步迟到和读取失败", RunAxisMonitorAsyncChecks, ref failures);
             Check("启动条件异步读取的连接与控制权归属", () => RunUiAsync(AutomaticStartReadinessSessionChecks.RunAsync), ref failures);
+            Check("正式任务异步装载的连接归属和失败收尾", () => RunUiAsync(BoundTaskLoadChecks.RunAsync), ref failures);
             Check("变量定义与内存摘要", V14VariableSummaryChecks.Run, ref failures);
             Check("编辑器草稿路径与摘要", V14EditorSelectionSummaryChecks.Run, ref failures);
+            Check("步骤插入上下文与原门禁", V14InsertionContextChecks.Run, ref failures);
             Check("IO 监控区分通道范围和当前读取失败", IoMonitorReadFailureChecks.Run, ref failures);
             Check("DO 切换前重读实际电平", IoMonitorToggleChecks.Run, ref failures);
             Check("IO 反馈关联持久化与无效配置", IoFeedbackAssociationChecks.Run, ref failures);
@@ -77,7 +79,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("产品记录只读显示两种来源及错误", ProductRecordChecks.Run, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：43 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：45 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }

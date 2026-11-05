@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using MotionControl.Framework.Contracts.Preparation;
 using MotionControl.TaskEngine.Device;
 using MotionControl.Framework.Contracts.IO;
 using MotionControl.Framework.Runtime.Configuration;
@@ -17,26 +20,23 @@ namespace MotionControl.Host.Wpf.Tasks
     {
         /// <summary>使用当前运行时的卡组、逻辑 IO、变量和报警服务建立任务设备；调用方应在后台线程执行。</summary>
         internal static TaskMonitorSession Load(MachineConfigurationStore store, string machineId,
-            MotionCardGroup motionCards, ILogicalIo logicalIo, DeviceVariableStore variables, MachineRuntime runtime)
+            MotionCardGroup motionCards, ILogicalIo logicalIo, DeviceVariableStore variables, MachineRuntime runtime,
+            Guid sessionId)
         {
             var namedResources = new TaskMachineConfigurationStore(store).LoadNamedResources(machineId);
             var catalog = new TaskResourceCatalogLoader(store).Load(machineId, namedResources);
             var journal = new TaskResourceJournal(store.GetMachineDirectory(machineId), machineId);
-            var device = new MachineTaskDevice(catalog, motionCards, logicalIo, variables, runtime, journal,
+            var device = new MachineTaskDevice(catalog, motionCards, logicalIo, variables, runtime, sessionId, journal,
                 new TaskFileRecordSink(store.GetMachineDirectory(machineId), machineId));
-            TaskMonitorSession session = TaskMonitorSession.LoadMachine(store, machineId, device, runtime.AlarmService);
-            try
-            {
-                var preparations = TaskStationPreparationLoader.Load(store, machineId, session.Machine, device, session.Library);
-                runtime.ConfigurePreparations(preparations);
-                return session;
-            }
-            catch
-            {
-                // 配置失败必须归还会话控制权；不留下无法操作的半加载会话。
-                session.Machine.CloseAsync().GetAwaiter().GetResult();
-                throw;
-            }
+            // 任务控制器一旦接管就交给调用方；后续准备解析失败也能持有并重试清理同一会话。
+            return TaskMonitorSession.LoadMachine(store, machineId, device, runtime.AlarmService);
+        }
+
+        /// <summary>只在调用方已持有会话引用后装配其工位准备定义，不修改 Runtime。</summary>
+        internal static IReadOnlyList<IStationPreparation> LoadPreparations(MachineConfigurationStore store, string machineId,
+            TaskMonitorSession session)
+        {
+            return TaskStationPreparationLoader.Load(store, machineId, session.Machine, session.TaskDevice, session.Library);
         }
     }
 }

@@ -90,6 +90,8 @@ namespace MotionControl.Framework.Runtime.Machine
         private bool _onlineSafetyInputsChanging;
         /// <summary>当前任务会话的唯一所有者。</summary>
         private object _taskEngineOwner;
+        /// <summary>正式绑定的 owner 只允许通过已校验收尾的设备释放路径归还。</summary>
+        private bool _boundTaskOwner;
         /// <summary>兼容未传所有者的旧调用。</summary>
         private readonly object _legacyTaskEngineOwner = new object();
         /// <summary>任务会话接管之前的入口。</summary>
@@ -679,7 +681,13 @@ namespace MotionControl.Framework.Runtime.Machine
         }
 
         /// <summary>以明确会话身份申请任务控制权，防止多个任务设备同时接管。</summary>
-        public async Task AcquireTaskEngineControlAsync(object owner, CancellationToken cancellationToken)
+        public Task AcquireTaskEngineControlAsync(object owner, CancellationToken cancellationToken)
+        {
+            return AcquireTaskEngineControlAsync(owner, cancellationToken, null);
+        }
+
+        /// <summary>正式任务设备在命令锁内核对装载前的连接标识，旧连接不能接管或重用控制权。</summary>
+        internal async Task AcquireTaskEngineControlAsync(object owner, CancellationToken cancellationToken, Guid? expectedSession)
         {
             if (owner == null) throw new ArgumentNullException(nameof(owner));
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -689,12 +697,17 @@ namespace MotionControl.Framework.Runtime.Machine
                 EnsureStopFeedbackReadSettled();
                 EnsureNoPreparationInProgress("切换任务执行入口");
                 EnsureNoManualOperationsInProgress("切换任务执行入口");
+                if (expectedSession.HasValue) EnsureConnectionSessionCurrent(expectedSession, "接管任务设备");
                 lock (_readSessionLock)
                 lock (_controlOwnerLock)
                 {
                     if (_taskEngineOwner != null)
                     {
-                        if (ReferenceEquals(_taskEngineOwner, owner)) return;
+                        if (ReferenceEquals(_taskEngineOwner, owner))
+                        {
+                            if (expectedSession.HasValue) _boundTaskOwner = true;
+                            return;
+                        }
                         throw new InvalidOperationException("任务执行入口已被其他会话占用。");
                     }
 
@@ -716,6 +729,7 @@ namespace MotionControl.Framework.Runtime.Machine
 
                     _ownerBeforeTaskEngine = _controlOwner;
                     _taskEngineOwner = owner;
+                    _boundTaskOwner = expectedSession.HasValue;
                     _controlOwner = MachineControlOwner.TaskEngine;
                     _safetyObservationVersion++;
                 }
@@ -737,6 +751,12 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>只允许持有控制权的任务会话归还入口。</summary>
         public void ReleaseTaskEngineControl(object owner)
         {
+            ReleaseTaskEngineControl(owner, throughBoundDevice: false);
+        }
+
+        /// <summary>正式绑定设备已冻结新登记并检查真实收尾之后，才允许释放其 Runtime 控制权。</summary>
+        internal void ReleaseTaskEngineControl(object owner, bool throughBoundDevice)
+        {
             if (owner == null) throw new ArgumentNullException(nameof(owner));
             if (!_commandLock.Wait(0)) throw new InvalidOperationException("设备命令仍在执行，不能关闭任务会话。");
             try
@@ -754,6 +774,8 @@ namespace MotionControl.Framework.Runtime.Machine
 
                     if (!ReferenceEquals(_taskEngineOwner, owner))
                         throw new InvalidOperationException("任务执行入口的所有者不匹配，不能归还。");
+                    if (_boundTaskOwner && !throughBoundDevice)
+                        throw new InvalidOperationException("正式任务设备须先完成动作收尾，再由持有设备归还控制权。");
 
                     var currentState = State;
                     if (currentState == MachineRunState.Running || currentState == MachineRunState.Pausing)
@@ -766,6 +788,7 @@ namespace MotionControl.Framework.Runtime.Machine
                     _controlOwner = _ownerBeforeTaskEngine;
                     _safetyObservationVersion++;
                     _taskEngineOwner = null;
+                    _boundTaskOwner = false;
                 }
             }
             finally { _commandLock.Release(); }

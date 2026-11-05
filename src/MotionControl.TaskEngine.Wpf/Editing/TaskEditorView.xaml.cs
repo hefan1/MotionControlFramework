@@ -228,7 +228,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             if (_selected is ParallelGroupNode parallel) { added = TaskEditorNodes.New("Sequence"); parallel.Branches.Add(added); }
             else
             {
-                var picker = new TaskStepTypeDialog(_language) { Owner = Window.GetWindow(this) };
+                var picker = new TaskStepTypeDialog(_language, TaskEditorSelectionSummary.InsertionContext(Definition, _selected, _language == "en-US")) { Owner = Window.GetWindow(this) };
                 if (picker.ShowDialog() != true) return;
                 added = TaskEditorNodes.New(picker.SelectedKind);
                 if (list != null) list.Add(added);

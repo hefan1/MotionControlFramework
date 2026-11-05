@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 
 namespace MotionControl.TaskEngine.Wpf.Editing
@@ -13,7 +13,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         /// <summary>只有选中可用步骤类型后才允许插入。</summary>
         private readonly Button _insertButton;
         /// <summary>构造与工厂登记一致的类型清单。</summary>
-        internal TaskStepTypeDialog(string language)
+        internal TaskStepTypeDialog(string language, string insertionContext = null)
         {
             TaskEditingUi.SetLanguage(this, language); Title = TaskEditingUi.T(this, "选择步骤类型"); Width = 430; Height = 580;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -33,6 +33,14 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             };
             DockPanel.SetDock(hint, Dock.Top);
             panel.Children.Add(hint);
+            if (!string.IsNullOrWhiteSpace(insertionContext))
+            {
+                var contextText = new TextBlock { Text = insertionContext, TextWrapping = TextWrapping.Wrap, ToolTip = insertionContext, Margin = new Thickness(0, 0, 0, 8) };
+                var contextScroll = new ScrollViewer { Name = "InsertionContextScroll", MaxHeight = 140, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = contextText };
+                DockPanel.SetDock(contextScroll, Dock.Top);
+                panel.Children.Add(contextScroll);
+            }
             _list = new ListBox();
             foreach (string kind in new[] { "MoveAxis", "MoveAxisGroup", "Home", "Stop", "WaitAxisPosition", "WaitInput", "WaitOutput", "ReadInput", "ReadInputWord", "WaitExclusiveInputs", "SetOutput", "SetVariable", "WriteRecord", "Delay", "Sequence", "ParallelGroup", "ConditionBranch", "WaitCondition", "CallTask", "ResourceScope" })
                 _list.Items.Add(new ListBoxItem { Content = TaskEditingUi.T(this, TaskEditorNodes.KindName(kind)), Tag = kind, Padding = new Thickness(8, 6, 8, 6) });

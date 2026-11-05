@@ -96,9 +96,19 @@ namespace MotionControl.Framework.Runtime.Machine
             get { lock (_preparationSync) return !_preparing && _preparationStates.Values.All(s => s.IsPrepared); }
         }
 
+        /// <summary>标识最近一次正式安装的准备定义，供 Host 有条件撤回失败的装载。</summary>
+        private long _preparationConfigurationVersion;
+
         /// <summary>空闲时安装当前执行入口的准备项；更换后全部资格失效，不执行任何设备动作。</summary>
         public void ConfigurePreparations(IEnumerable<IStationPreparation> preparations)
         {
+            TryConfigurePreparations(preparations, null, out _);
+        }
+
+        /// <summary>可要求当前定义仍属于指定安装版本。安装版本在通知前写回，即使订阅者抛错也能定位已提交的定义。</summary>
+        public bool TryConfigurePreparations(IEnumerable<IStationPreparation> preparations, long? expectedVersion, out long installedVersion)
+        {
+            installedVersion = 0;
             IStationPreparation[] ordered = SortPreparations(preparations ?? Enumerable.Empty<IStationPreparation>());
             if (!_commandLock.Wait(0)) throw new InvalidOperationException("设备命令正在执行，不能更新准备配置。");
             try
@@ -110,16 +120,19 @@ namespace MotionControl.Framework.Runtime.Machine
                 EnsureNoManualOperationsInProgress("更新准备配置");
                 lock (_preparationSync)
                 {
+                    if (expectedVersion.HasValue && _preparationConfigurationVersion != expectedVersion.Value) return false;
                     _preparations = ordered;
                     _preparationStates.Clear();
                     foreach (IStationPreparation item in ordered)
                         _preparationStates.Add(item.StationId, new StationPreparationSnapshot(item.StationId,
                             item.StationName, StationPreparationState.NotPrepared, "尚未准备", "请执行工位回零。"));
                     _preparationProductionStarted = false;
+                    installedVersion = ++_preparationConfigurationVersion;
                 }
             }
             finally { _commandLock.Release(); }
             RaisePreparationChanged();
+            return true;
         }
 
         /// <summary>独占执行全部或指定工位准备；成功后仅进入就绪，不启动生产。</summary>

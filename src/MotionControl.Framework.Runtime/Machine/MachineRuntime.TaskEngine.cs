@@ -10,15 +10,28 @@ namespace MotionControl.Framework.Runtime.Machine
     public sealed partial class MachineRuntime
     {
         /// <summary>确认任务执行入口持有设备并启动运行期间的急停监控。</summary>
-        public async Task BeginTaskEngineRunAsync(CancellationToken cancellationToken)
+        public Task BeginTaskEngineRunAsync(CancellationToken cancellationToken)
+        {
+            return BeginTaskEngineRunCoreAsync(ConnectionSessionId, null, cancellationToken);
+        }
+
+        /// <summary>正式任务页面只可为自己已装载的连接与设备建立生产许可。</summary>
+        public Task BeginTaskEngineRunAsync(Guid session, object deviceOwner, CancellationToken cancellationToken)
+        {
+            if (deviceOwner == null) throw new ArgumentNullException(nameof(deviceOwner));
+            return BeginTaskEngineRunCoreAsync(session, deviceOwner, cancellationToken);
+        }
+
+        /// <summary>在命令锁内核对连接、实际控制权和设备联锁，建立任务运行状态。</summary>
+        private async Task BeginTaskEngineRunCoreAsync(Guid? session, object deviceOwner, CancellationToken cancellationToken)
         {
             bool enteredRunning = false;
             bool startedSafetyMonitor = false;
             bool runningConnectionInvalid = false;
-            Guid? session = ConnectionSessionId;
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                if (deviceOwner != null) EnsureTaskDeviceBinding(session, deviceOwner);
                 if (ControlOwner != MachineControlOwner.TaskEngine)
                     throw new InvalidOperationException("当前设备控制权不属于图形化任务执行入口。");
                 lock (_controlOwnerLock)

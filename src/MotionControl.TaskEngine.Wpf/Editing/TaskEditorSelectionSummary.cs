@@ -24,6 +24,25 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 + task.Name + " [" + task.TaskId + "] > " + location + "\n"
                 + (english ? "Direct structural children: " : "直接结构子项数：") + TaskEditorNodes.Children(selected).Count() + "\n" + parameters;
         }
+        /// <summary>按已有新增规则说明实际插入范围，只读且不提前创建节点。</summary>
+        internal static string InsertionContext(TaskDefinition task, TaskNode selected, bool english)
+        {
+            var path = new List<TaskNode>();
+            bool found = Find(task.Root, selected, path, new HashSet<TaskNode>(), 0);
+            string location = task.Name + " [" + task.TaskId + "] > " + (found
+                ? string.Join(" > ", path.Select(node => node.Name + " [" + node.Id + "]"))
+                : (english ? "Object not in current draft" : "对象不在当前草稿中"));
+            string rule;
+            if (!found) rule = english ? "Insertion target unavailable." : "插入目标不可用。";
+            else if (selected is SequenceNode) rule = english ? "Append to the end of the selected sequence." : "追加到所选顺序结构末尾。";
+            else if (selected is ResourceScopeNode scope && scope.Body is SequenceNode) rule = english ? "Append to the end of the selected resource body's sequence." : "追加到所选资源范围内部顺序结构末尾。";
+            else if (selected is ParallelGroupNode) rule = english ? "Add a sequence branch under the selected parallel group; the existing direct-add rule is unchanged." : "在所选并行组内新增顺序分支；仍按原规则直接添加。";
+            else if (selected is ConditionBranchNode || TaskEditorNodes.ParentList(task.Root, selected) == null) rule = english ? "Select a sequence or an internal branch step first; this target cannot accept insertion." : "请先选择顺序段或分支内部步骤；此目标不能接受插入。";
+            else rule = english ? "Insert immediately after the selected step in its existing parent list." : "在原父列表内插入到所选步骤之后。";
+            return (english ? "Insertion context (draft only):\n" : "插入位置（仅草稿）：\n") + location + "\n" + rule
+                + (english ? "\nSelection edits configuration only; no device action is executed." : "\n选择仅编辑配置，不执行设备动作。");
+        }
+
         /// <summary>显示真实目标来源，不解析变量当前值或替代示教位置。</summary>
         private static string Binding(TaskValueBinding value, bool english)
         {

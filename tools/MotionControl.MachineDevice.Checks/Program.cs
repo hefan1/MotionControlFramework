@@ -27,6 +27,8 @@ namespace MotionControl.MachineDevice.Checks
     /// <summary>检查真机任务设备的行为边界；不连接控制器，用假轴和假 IO 验证语义。</summary>
     internal static partial class Program
     {
+        /// <summary>以实际执行的检查数汇报，防止新增覆盖后总数过时。</summary>
+        private static int _executedChecks;
         /// <summary>逐项运行检查并统计失败组数。</summary>
         private static int Main()
         {
@@ -44,6 +46,7 @@ namespace MotionControl.MachineDevice.Checks
             Run("真实设备握手保持完成直到请求复归", HandshakeWaitsForRequestClear, ref failures);
             Run("握手条件更新在并发下只成功一次", HandshakeTransitionIsAtomic, ref failures);
             Run("工位流程空闲时接管并在归还后恢复入口", ClaimTakesOverWhenStationFlowsAreIdle, ref failures);
+            Run("正式任务设备绑定连接与实际控制权", () => CheckBoundTaskDeviceAsync().GetAwaiter().GetResult(), ref failures);
             Run("任务复位拦截未回零的定位轴", TaskResetRequiresPositioningAxesHomed, ref failures);
             Run("任务回零诊断按设备反馈区分等待和完成", TaskHomeDiagnosticsFollowDeviceCompletion, ref failures);
             Run("资源恢复复核现场状态且只放行一次", ResourceRecoveryRequiresRecheck, ref failures);
@@ -72,7 +75,7 @@ namespace MotionControl.MachineDevice.Checks
             Run("设备凭证跨设备及迟到调用保护", DeviceMoveTokenOwnership, ref failures);
             Run("命令前拒绝与命令后异常严格区分", PreflightDoesNotMaskStartedMotion, ref failures);
 
-            Console.WriteLine("真机任务设备检查：共 40 组，失败 " + failures + "。未连接控制器。");
+            Console.WriteLine("真机任务设备检查：共 " + _executedChecks + " 组，失败 " + failures + "。未连接控制器。");
             return failures == 0 ? 0 : 1;
         }
 
@@ -310,6 +313,7 @@ namespace MotionControl.MachineDevice.Checks
         /// <summary>运行一项检查，捕获异常并计入失败。</summary>
         private static void Run(string name, Action check, ref int failures)
         {
+            _executedChecks++;
             try
             {
                 check();
@@ -887,13 +891,17 @@ namespace MotionControl.MachineDevice.Checks
             internal int OutputReads;
             /// <summary>可选的延迟写入任务，用于检查退出等待驱动真实收尾。</summary>
             internal TaskCompletionSource<bool> PendingOutputWrite;
+            /// <summary>在驱动写入返回原始 Task 之前模拟同步延迟，检查资源与关闭边界。</summary>
+            internal Action BeforeReturnOutputTask;
             /// <summary>可选的延迟读取任务，用于模拟驱动查询超时后迟到返回。</summary>
             internal TaskCompletionSource<bool> PendingOutputRead;
             /// <summary>读取 DI 时抛出的异常；为空表示正常返回假值。</summary>
             internal Exception ReadError { get; set; }
 
             /// <summary>当前测试输入状态。</summary>
-            internal bool InputValue { get; set; }
+            internal volatile bool InputValue;
+            /// <summary>累计逻辑 Sensor 释放/按下样本，用于精确核对正式按钮线程读取的电平。</summary>
+            internal int SensorLowReads, SensorHighReads;
             /// <summary>可独立指定清料完成输入，避免将它与许可输入混用。</summary>
             internal bool? ClearanceFeedback { get; set; }
             /// <summary>首次读取后切换信号，用于检查复核期间变化。</summary>
@@ -913,6 +921,11 @@ namespace MotionControl.MachineDevice.Checks
                     return Task.FromResult(ClearanceFeedback.Value);
 
                 bool value = InputValue;
+                if (inputName == "Sensor")
+                {
+                    if (value) Interlocked.Increment(ref SensorHighReads);
+                    else Interlocked.Increment(ref SensorLowReads);
+                }
                 if (FlipAfterRead) InputValue = !InputValue;
                 return Task.FromResult(value);
             }
@@ -932,6 +945,7 @@ namespace MotionControl.MachineDevice.Checks
             public Task WriteOutputAsync(string outputName, bool value, CancellationToken cancellationToken)
             {
                 Interlocked.Increment(ref OutputWrites);
+                BeforeReturnOutputTask?.Invoke();
                 OutputValue = value;
                 if (WriteError != null) throw WriteError;
                 return PendingOutputWrite == null ? Task.CompletedTask : PendingOutputWrite.Task;

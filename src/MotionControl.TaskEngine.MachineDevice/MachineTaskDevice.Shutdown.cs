@@ -14,10 +14,10 @@ namespace MotionControl.TaskEngine.MachineDevice
             lock (_sync)
             {
                 if (!ReferenceEquals(_machineOwner, owner)) throw new InvalidOperationException("任务会话控制权已变化，不能交接退出。");
-                if (_closing) throw new InvalidOperationException("任务设备正在关闭或交接，不能重复操作。");
+                if (_closing || _changingOwner) throw new InvalidOperationException("任务设备正在关闭、切换控制权或交接，不能重复操作。");
                 RemoveSettledMoves();
                 if (_activeRuns.Count != 0 || _unsettledMoves.Count != 0 || _pendingStops.Count != 0 || _beginningAxes.Count != 0
-                    || _pendingOutputWrites.Count != 0)
+                    || _pendingOutputWrites.Count != 0 || _issuingBoundOutputs != 0)
                     throw new InvalidOperationException("任务、轴动作或停止调用仍在收尾，不能交接退出。");
                 var blockedOutputs = _resources.Read().SelectMany(item => item.Resources)
                     .Where(name => name.StartsWith("Output:", StringComparison.OrdinalIgnoreCase))

@@ -42,16 +42,32 @@ namespace MotionControl.Framework.Runtime.Machine
         }
 
         /// <summary>任务设备仅在关闭意图出现前登记并发出原始命令；等待完成仍由执行器负责。</summary>
-        internal T BeginTaskDeviceCommand<T>(Func<T> issue)
+        internal T BeginTaskDeviceCommand<T>(Func<T> issue, Guid? expectedSession = null, object deviceOwner = null)
         {
             if (issue == null) throw new ArgumentNullException(nameof(issue));
             _taskCommandGate.Wait();
             try
             {
                 if (IsShutdownInProgress) throw new ShutdownCommandRejectedException();
+                EnsureTaskDeviceBinding(expectedSession, deviceOwner);
                 return issue();
             }
             finally { _taskCommandGate.Release(); }
+        }
+
+        /// <summary>正式绑定设备须属于当前连接且仍是实际持权实例；旧公开设备保持原调用契约。</summary>
+        internal void EnsureTaskDeviceBinding(Guid? expectedSession, object deviceOwner)
+        {
+            if (!expectedSession.HasValue) return;
+            bool connected;
+            try { connected = IsConnectionSessionCurrent(expectedSession); }
+            catch (Exception error) { throw new TaskDeviceBindingException("任务设备连接状态不可确认，命令尚未下发。", error); }
+            if (!connected) throw new TaskDeviceBindingException("任务设备连接会话已变化，命令尚未下发。");
+            lock (_controlOwnerLock)
+            {
+                if (_controlOwner != MachineControlOwner.TaskEngine || !ReferenceEquals(_taskEngineOwner, deviceOwner))
+                    throw new TaskDeviceBindingException("当前任务设备未持有本机控制权，命令尚未下发。");
+            }
         }
 
         /// <summary>关闭失败时，仅在设备已完整收尾且控制权空闲时解除退出门禁。</summary>
@@ -179,5 +195,12 @@ namespace MotionControl.Framework.Runtime.Machine
     {
         /// <summary>标明命令尚未下发，便于任务执行器区分未知结果。</summary>
         internal ShutdownCommandRejectedException() : base("设备正在安全退出，任务命令尚未下发。") { }
+    }
+
+    /// <summary>正式任务设备的连接或控制权不匹配，命令尚未交给驱动。</summary>
+    internal sealed class TaskDeviceBindingException : InvalidOperationException
+    {
+        /// <summary>保留连接探测异常，帮助区分前置拒绝和实际驱动动作失败。</summary>
+        internal TaskDeviceBindingException(string message, Exception error = null) : base(message, error) { }
     }
 }

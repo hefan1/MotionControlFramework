@@ -48,6 +48,16 @@ namespace MotionControl.TaskEngine.MachineDevice
 
         /// <summary>整机运行时，用于占用和归还设备命令权。</summary>
         private readonly MachineRuntime _runtime;
+        /// <summary>正式 Host 在后台装载任务前捕获的连接；兼容构造的设备没有绑定。</summary>
+        private readonly Guid? _expectedSession;
+        /// <summary>正式设备实际绑定的控制器连接标识。兼容构造未指定时为空。</summary>
+        public Guid? BoundConnectionSessionId => _expectedSession;
+        /// <summary>正式设备首次成功接管的控制器身份，归还命令权后也不允许把该设备实例转交另一控制器。</summary>
+        private object _boundController;
+        /// <summary>正式设备正在锁外申请或归还 Runtime 控制权，期间不发放新动作。</summary>
+        private bool _changingOwner;
+        /// <summary>正式设备提交 DO 至驱动登记完成之间的占用，避免控制权提前归还。</summary>
+        private int _issuingBoundOutputs;
 
         /// <summary>保护所有权、运行登记和命令计数。</summary>
         private readonly object _sync = new object();
@@ -115,6 +125,24 @@ namespace MotionControl.TaskEngine.MachineDevice
             _resources = new TaskResourceCoordinator(catalog.Resources, journal);
         }
 
+        /// <summary>正式 Host 设备必须沿用调用方在异步装载前捕获的连接。</summary>
+        public MachineTaskDevice(TaskResourceCatalog catalog, MotionCardGroup motionCards, ILogicalIo logicalIo,
+            IDeviceVariableStore variables, MachineRuntime runtime, Guid expectedSession,
+            TaskResourceJournal journal = null, ITaskRecordSink recordSink = null)
+            : this(catalog, motionCards, logicalIo, variables, runtime, journal, recordSink)
+        {
+            if (!runtime.IsConnectionSessionCurrent(expectedSession))
+                throw new InvalidOperationException("装载任务期间控制器连接会话已变化。");
+            _expectedSession = expectedSession;
+        }
+
+        /// <summary>调用方持设备锁，以本地占用保护正式命令登记直至 Runtime 实际派发。</summary>
+        private void EnsureBoundDeviceAvailable()
+        {
+            if (_expectedSession.HasValue && (_changingOwner || _machineOwner == null || _closing))
+                throw new InvalidOperationException("正式任务设备未持有稳定控制权，不能发放新命令。");
+        }
+
         /// <summary>提交完整记录，未配置存储时拒绝继续。</summary>
         public void CommitRecord(string executionId, string taskId, string nodeId, string category, DateTimeOffset recordedAtUtc, IReadOnlyDictionary<string, string> fields)
         {
@@ -146,6 +174,19 @@ namespace MotionControl.TaskEngine.MachineDevice
         /// <summary>写入逻辑 DO；写入失败时抛出错误，不静默忽略。</summary>
         public void WriteOutput(string name, bool value)
         {
+            if (!_expectedSession.HasValue) { IssueOutput(name, value); return; }
+            lock (_sync)
+            {
+                EnsureBoundDeviceAvailable();
+                _issuingBoundOutputs++;
+            }
+            try { IssueOutput(name, value); }
+            finally { lock (_sync) _issuingBoundOutputs--; }
+        }
+
+        /// <summary>在任务命令门内核对绑定、发出驱动写入并登记；锁外等待真实驱动完成。</summary>
+        private void IssueOutput(string name, bool value)
+        {
             Task write = _runtime.BeginTaskDeviceCommand(() =>
             {
                 try
@@ -160,7 +201,7 @@ namespace MotionControl.TaskEngine.MachineDevice
                     lock (_sync) _unconfirmedOutputs.Add(name);
                     throw;
                 }
-            });
+            }, _expectedSession, this);
             try { Wait(write); }
             catch
             {
@@ -265,7 +306,7 @@ namespace MotionControl.TaskEngine.MachineDevice
             {
                 RemoveSettledMoves();
                 if (_unsettledMoves.Count != 0 || _pendingStops.Count != 0 || _beginningAxes.Count != 0
-                    || _pendingOutputWrites.Count != 0 || _unconfirmedOutputs.Count != 0) return TaskResourceRecoveryState.Held;
+                    || _issuingBoundOutputs != 0 || _pendingOutputWrites.Count != 0 || _unconfirmedOutputs.Count != 0) return TaskResourceRecoveryState.Held;
             }
             return TaskResourceRecoveryState.Clear;
         }
@@ -278,14 +319,14 @@ namespace MotionControl.TaskEngine.MachineDevice
                 TaskResourceRequest request = _resources.FindBlocked(requestId);
                 if (request == null) { reason = "找不到待确认的资源区域：" + requestId + "。"; return false; }
                 if (string.IsNullOrWhiteSpace(confirmation)) { reason = "恢复资源区域必须提供现场确认说明。"; return false; }
-                if (_machineOwner == null || !_runtime.IsTaskEngineControlClaimed || _runtime.ControlOwner != MachineControlOwner.TaskEngine)
+                if (_changingOwner || _machineOwner == null || !_runtime.IsTaskEngineControlClaimed || _runtime.ControlOwner != MachineControlOwner.TaskEngine)
                 { reason = "任务会话未持有设备控制权，不能复核或解除资源隔离。"; return false; }
                 if (!_motionCards.IsConnected)
                 { reason = "控制器未连接，不能确认资源退出条件。"; return false; }
                 RemoveSettledMoves();
                 if (_unsettledMoves.Any(move => !move.IsQuiescent) || _pendingStops.Count != 0 || _beginningAxes.Count != 0)
                 { reason = "轴动作或取消收尾仍未结束，不能解除资源隔离。"; return false; }
-                if (_pendingOutputWrites.Count != 0)
+                if (_issuingBoundOutputs != 0 || _pendingOutputWrites.Count != 0)
                 { reason = "输出写入仍在执行，不能解除资源隔离。"; return false; }
                 if (_activeRuns.Count != 0 || _runtime.IsPreparing || _runtime.State == MachineRunState.Running || _runtime.State == MachineRunState.Pausing)
                 { reason = "任务或设备仍在运行或收尾，不能解除资源隔离。"; return false; }
@@ -403,6 +444,30 @@ namespace MotionControl.TaskEngine.MachineDevice
         public void ClaimMachine(object owner)
         {
             object token = owner ?? AnonymousOwner;
+            if (_expectedSession.HasValue)
+            {
+                if (owner == null) throw new ArgumentNullException(nameof(owner), "正式任务设备必须提供控制器身份。");
+                lock (_sync)
+                {
+                    if (_changingOwner || _closing || (_machineOwner != null && !ReferenceEquals(_machineOwner, token))
+                        || (_machineOwner == null && _activeRuns.Count != 0))
+                        throw new InvalidOperationException("任务设备正在切换控制权、已占用或仍有任务未收尾。");
+                    if (_boundController != null && !ReferenceEquals(_boundController, token))
+                        throw new InvalidOperationException("该正式任务设备已绑定其他控制器；新的控制器须创建自己的设备实例。");
+                    _changingOwner = true;
+                }
+                try
+                {
+                    Wait(_runtime.AcquireTaskEngineControlAsync(this, CancellationToken.None, _expectedSession));
+                    lock (_sync)
+                    {
+                        _boundController = token;
+                        _machineOwner = token;
+                    }
+                }
+                finally { lock (_sync) _changingOwner = false; }
+                return;
+            }
             lock (_sync)
             {
                 if (_machineOwner != null)
@@ -423,6 +488,7 @@ namespace MotionControl.TaskEngine.MachineDevice
             object token = owner ?? AnonymousOwner;
             lock (_sync)
             {
+                if (_changingOwner) throw new InvalidOperationException("任务设备正在切换控制权。");
                 if (!ReferenceEquals(_machineOwner, token))
                     throw new InvalidOperationException("任务设备所有权不匹配，不能由当前对象归还。");
                 if (_activeRuns.Count != 0)
@@ -432,21 +498,44 @@ namespace MotionControl.TaskEngine.MachineDevice
                     throw new InvalidOperationException("轴动作或取消收尾仍未结束，不能归还设备命令权。");
                 if (_resources.Read().Any(resource => resource.State == TaskResourceState.Held || resource.State == TaskResourceState.Blocked))
                     throw new InvalidOperationException("存在仍被占用或待确认的资源区域，不能关闭任务会话或归还设备控制权；请先核实并解除隔离。");
-                if (_pendingOutputWrites.Count != 0 || _unconfirmedOutputs.Count != 0)
+                if (_issuingBoundOutputs != 0 || _pendingOutputWrites.Count != 0 || _unconfirmedOutputs.Count != 0)
                     throw new InvalidOperationException("输出写入仍在执行或结果未确认，不能归还设备命令权。");
                 if (_journal != null && !_journalCleared)
                     throw new InvalidOperationException("资源记录尚未安全清理，不能归还设备控制权。");
-                _runtime.ReleaseTaskEngineControl(this);
-                _machineOwner = null;
+                if (!_expectedSession.HasValue)
+                {
+                    _runtime.ReleaseTaskEngineControl(this);
+                    _machineOwner = null;
+                    return;
+                }
+                _changingOwner = true;
             }
+            try
+            {
+                _runtime.ReleaseTaskEngineControl(this, throughBoundDevice: true);
+                lock (_sync) _machineOwner = null;
+            }
+            finally { lock (_sync) _changingOwner = false; }
         }
 
         /// <summary>登记即将启动的任务运行；受整机控制时拒绝独立入口混用。</summary>
         public void RegisterRun(string runId, object owner)
         {
+            if (_expectedSession.HasValue)
+            {
+                _runtime.BeginTaskDeviceCommand(() => { RegisterRunCore(runId, owner); return true; }, _expectedSession, this);
+                return;
+            }
+            RegisterRunCore(runId, owner);
+        }
+
+        /// <summary>在设备锁内确认本地所有者并登记运行；登记后禁止提前归还设备。</summary>
+        private void RegisterRunCore(string runId, object owner)
+        {
             object token = owner ?? AnonymousOwner;
             lock (_sync)
             {
+                EnsureBoundDeviceAvailable();
                 if (_closing) throw new InvalidOperationException("任务会话正在关闭，不能登记新运行。");
                 if (_runtime.IsShutdownInProgress) throw new InvalidOperationException("设备正在安全退出，不能登记新任务运行。");
                 if (_machineOwner == null || !ReferenceEquals(_machineOwner, token))
@@ -465,7 +554,7 @@ namespace MotionControl.TaskEngine.MachineDevice
             lock (_sync)
             {
                 RemoveSettledMoves();
-                if (_activeRuns.Count != 0 || _unsettledMoves.Count != 0 || _pendingStops.Count != 0 || _beginningAxes.Count != 0
+                if (_changingOwner || _issuingBoundOutputs != 0 || _activeRuns.Count != 0 || _unsettledMoves.Count != 0 || _pendingStops.Count != 0 || _beginningAxes.Count != 0
                     || _pendingOutputWrites.Count != 0 || _unconfirmedOutputs.Count != 0)
                     throw new InvalidOperationException("任务、轴动作或资源尚未全部收尾，不能清理资源记录。");
                 _closing = true;

@@ -30,7 +30,8 @@ namespace MotionControl.MachineDevice.Checks
                     StationId = "S1", Name = "工位", TaskId = task.TaskId, Enabled = true, Mode = StationTaskMode.Once } } };
             runtime.UpdateControlInputNames(null, "Sensor", null);
             await runtime.ConnectAsync(CancellationToken.None);
-            await Task.Delay(50);
+            // 轮询串行处理每个样本；第二次读取开始时，第一个 false 已经进入 Runtime 的边沿基线。
+            await WaitForAsync(() => Volatile.Read(ref io.SensorLowReads) >= 2, "按钮监控未完成释放电平基线，无法验证上升沿。");
             await runtime.ResetAsync(CancellationToken.None);
             var machine = new TaskMachineController(configuration, new[] { task }, device, runtime.AlarmService);
             await machine.ResetAsync();
@@ -54,7 +55,13 @@ namespace MotionControl.MachineDevice.Checks
             runtime.ConfirmTaskEngineProductionStarted();
             await WaitForAsync(() => axis.Moving, "明确核查后旧工步未继续。");
             io.InputValue = true;
-            await WaitForAsync(() => runtime.State == MachineRunState.Paused, "现场暂停输入没有暂停任务执行器。");
+            await WaitForAsync(() => Volatile.Read(ref io.SensorHighReads) != 0, "按钮监控没有采到暂停输入的按下电平。");
+            try { await WaitForAsync(() => runtime.State == MachineRunState.Paused, "现场暂停输入没有暂停任务执行器。"); }
+            catch (TimeoutException error)
+            {
+                throw new TimeoutException("按下电平已送达，Runtime=" + runtime.State + "，任务=" + machine.GetSnapshot().State
+                    + "，轴 Moving=" + axis.Moving + "，StopCalls=" + axis.StopCalls + "，Runtime 故障=" + runtime.LastError, error);
+            }
             Ensure(machine.GetSnapshot().State == TaskMachineState.Paused && !axis.Moving
                 && !runtime.ProductionStopReviewRequired, "现场暂停输入没有停轴，或错误触发停止核查。");
             io.InputValue = false;

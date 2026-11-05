@@ -18,12 +18,12 @@ namespace MotionControl.TaskEngine.MachineDevice
             lock (_sync)
             {
                 if (_journal == null || _journalCleared) throw new InvalidOperationException("清料必须有有效的设备资源持久记录。");
-                if (_machineOwner == null || !_runtime.IsTaskEngineControlClaimed || _runtime.ControlOwner != MachineControlOwner.TaskEngine)
+                if (_changingOwner || _machineOwner == null || !_runtime.IsTaskEngineControlClaimed || _runtime.ControlOwner != MachineControlOwner.TaskEngine)
                     throw new InvalidOperationException("任务会话未持有设备控制权，不能继承隔离资源。");
                 if (!_motionCards.IsConnected) throw new InvalidOperationException("控制卡未连接，不能清料。");
                 RemoveSettledMoves();
                 if (_activeRuns.Count != 0 || _pendingStops.Count != 0 || _beginningAxes.Count != 0
-                    || _unsettledMoves.Any(item => !item.IsQuiescent))
+                    || _issuingBoundOutputs != 0 || _pendingOutputWrites.Count != 0 || _unsettledMoves.Any(item => !item.IsQuiescent))
                     throw new InvalidOperationException("任务或轴动作仍在执行或收尾，不能清料。");
                 TaskResourceSnapshot[] snapshot = _resources.Read().ToArray();
                 if (snapshot.Length == 0 || snapshot.Any(item => item.State != TaskResourceState.Blocked))
