@@ -8,6 +8,16 @@
  <sys:String x:Key="任务监控.定位当前原因">定位当前原因</sys:String>
  <sys:String x:Key="任务监控.定位当前原因说明">有停机故障时跳转到故障步骤；没有故障时跳到当前等待步骤并显示等待条件。</sys:String>
  <sys:String x:Key="任务监控.跟随执行">跟随执行</sys:String>
+ <sys:String x:Key="任务监控.当前执行节点">当前执行节点</sys:String>
+ <sys:String x:Key="任务监控.当前查看节点">当前查看节点</sys:String>
+ <sys:String x:Key="任务监控.节点摘要读取失败">无法读取节点快照</sys:String>
+ <sys:String x:Key="任务监控.没有节点运行快照">所选工位尚无运行快照</sys:String>
+ <sys:String x:Key="任务监控.留存运行快照">工位未处于执行状态，保留的节点记录仅供核查</sys:String>
+ <sys:String x:Key="任务监控.无活动节点记录">本轮快照未报告活动节点</sys:String>
+ <sys:String x:Key="任务监控.未选择查看节点">尚未选择步骤</sys:String>
+ <sys:String x:Key="任务监控.定义无执行记录">步骤定义，未关联执行记录</sys:String>
+ <sys:String x:Key="任务监控.当前执行来源">来自所选工位的运行快照；并行分支可有多个活动节点。</sys:String>
+ <sys:String x:Key="任务监控.当前查看来源">来自步骤树的当前选择；查看不会执行节点。</sys:String>
  <sys:String x:Key="任务监控.运行步骤">运行步骤</sys:String>
  <sys:String x:Key="任务监控.步序">步序</sys:String>
  <sys:String x:Key="任务监控.动作说明">动作说明</sys:String>

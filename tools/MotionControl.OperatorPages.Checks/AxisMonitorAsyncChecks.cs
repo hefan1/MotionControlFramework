@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
@@ -38,7 +38,23 @@ namespace MotionControl.OperatorPages.Checks
                 Assert(Get(rows[0], "LastStatus") != null, "单轴失败清除了其他轴结果。");
                 Assert((bool)Get(rows[1], "HasReadError"), "单轴失败没有标为未知。");
                 Assert(((TextBlock)view.FindName("MonitorStatusText")).Text.Contains("设备采样时间"), "时间说明缺少设备采样能力边界。");
+                var grid = (DataGrid)view.FindName("AxisStatusGrid");
+                var search = (TextBox)view.FindName("AxisSearchBox");
+                var attention = (CheckBox)view.FindName("AttentionOnlyBox");
+                grid.SelectedItem = rows[0];
+                search.Text = "SECOND"; attention.IsChecked = true;
+                Assert(grid.ItemsSource is System.ComponentModel.ICollectionView && grid.Items.Count == 1 && ReferenceEquals(grid.Items[0], rows[1]),
+                    "失败轴筛选不一致：可见=" + grid.Items.Count + "，查询=" + search.Text + "，失败轴=" + Get(rows[1], "LogicalAxisName")
+                    + "，读取失败=" + Get(rows[1], "HasReadError") + "，匹配提示=" + ((TextBlock)view.FindName("AxisMatchText")).Text);
+                int hiddenReads = first.ReadCount;
+                await Refresh(view);
+                Assert(first.ReadCount > hiddenReads && rows.Count == 2, "只读筛选改变全量采集集合。");
+                search.Text = "no-matching-axis";
+                Assert(grid.Items.Count == 0 && ((TextBlock)view.FindName("AxisMatchText")).Text.Contains("匹配 0 / 已映射 2"), "无匹配被误报为无映射。");
+                ((Button)view.FindName("ClearAxisFilterButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert(grid.Items.Count == 2 && ReferenceEquals(grid.SelectedItem, rows[0]) && (bool)Get(rows[1], "HasReadError"), "清除筛选丢选择或清除了轴错误。");
                 await CheckStopFeedbackAsync(view, first, rows[0]);
+                await CheckLimitFilterAsync(view, first, rows[0]);
 
                 first.Pending = new TaskCompletionSource<AxisStatus>();
                 Task refresh = Refresh(view);
@@ -118,6 +134,32 @@ namespace MotionControl.OperatorPages.Checks
             string position = (string)Get(row, "PositionText");
             Assert(position.Split(new[] { "未知" }, StringSplitOptions.None).Length == 3
                 && (string)Get(row, "ReadStateText") == "部分反馈待确认", "无效反馈位置或指令位置仍显示为有效。");
+        }
+
+        /// <summary>四种限位触发或无法确认都保留；单纯原点未配置不冒充轴故障。</summary>
+        private static async Task CheckLimitFilterAsync(AxisMonitorView view, SampleAxis axis, object row)
+        {
+            var attention = (CheckBox)view.FindName("AttentionOnlyBox");
+            var grid = (DataGrid)view.FindName("AxisStatusGrid");
+            attention.IsChecked = true;
+            foreach (int index in new[] { 0, 1, 2, 3 })
+                foreach (bool? state in new bool?[] { true, null })
+                {
+                    bool?[] limits = { false, false, false, false }; limits[index] = state;
+                    axis.Pending = new TaskCompletionSource<AxisStatus>();
+                    axis.Pending.SetResult(new AxisStatus(0, 0, true, false, true, limits[0], limits[1], limits[2], limits[3], false, null, false, 0, null));
+                    await Refresh(view);
+                    Assert(grid.Items.Contains(row), "异常/未知筛选隐藏触发或未确认限位：" + index);
+                }
+            axis.Pending = new TaskCompletionSource<AxisStatus>();
+            axis.Pending.SetResult(new AxisStatus(0, 0, true, false, true, false, false, false, false, false, null, false, 0, null));
+            await Refresh(view);
+            Assert(!grid.Items.Contains(row) && ((string)Get(row, "OriginInputStateText")).Contains("未配置"), "仅原点未配置被误当成轴故障。");
+            axis.Pending = new TaskCompletionSource<AxisStatus>();
+            axis.Pending.SetResult(new AxisStatus(0, 0, true, false, true, false, false, false, false, true, "真实轴报警", false, 0, null));
+            await Refresh(view);
+            Assert(grid.Items.Contains(row), "真实轴报警被异常筛选隐藏。");
+            ((Button)view.FindName("ClearAxisFilterButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         }
 
         /// <summary>等待当前测试读取轮次结束，避免依赖固定延时。</summary>

@@ -165,13 +165,8 @@
                 BorderBrush="#D8E2EE"
                 BorderThickness="1"
                 CornerRadius="6">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+            <WrapPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <Button x:Name="AddVariableButton"
                             Content="{DynamicResource 变量新增}"
                             Style="{StaticResource VariablePagePrimaryButton}"
@@ -186,7 +181,7 @@
                             Click="DeleteVariableButton_Click" />
                 </StackPanel>
 
-                <Border Grid.Column="2"
+                <Border Margin="0,4,0,0"
                         Padding="10,6"
                         Background="#FFF9EF"
                         BorderBrush="#F0DEB7"
@@ -208,7 +203,7 @@
                                 Click="WriteValueButton_Click" />
                     </StackPanel>
                 </Border>
-            </Grid>
+            </WrapPanel>
         </Border>
 
         <Border Grid.Row="1"
@@ -243,7 +238,8 @@
                            Foreground="#40536A"
                            TextTrimming="CharacterEllipsis"
                            ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
-                <StackPanel Grid.Row="1" Grid.ColumnSpan="2">
+                <StackPanel Grid.Row="1" Grid.ColumnSpan="2">                    <DockPanel Margin="0,5,0,0"><Button x:Name="ClearVariableSearchButton" DockPanel.Dock="Right" Content="{DynamicResource 变量清除筛选}" Click="ClearVariableSearch_Click" /><TextBlock x:Name="VariableSearchCountText" DockPanel.Dock="Right" Margin="8,0" /><TextBox x:Name="VariableSearchBox" ToolTip="{DynamicResource 变量搜索提示}" TextChanged="VariableSearch_TextChanged" /></DockPanel>
+                    <TextBlock Text="{DynamicResource 变量筛选保留选择}" Foreground="#596B7D" />
                     <TextBlock x:Name="SelectedDefinitionSummaryText" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
                                MaxHeight="58" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
                                Margin="0,6,0,0" Foreground="#40536A" />
@@ -265,8 +261,8 @@
                       CanUserReorderColumns="True"
                       CanUserResizeRows="False"
                       IsReadOnly="True"
-                      ItemsSource="{Binding Variables}"
-                      SelectedItem="{Binding SelectedVariable, Mode=TwoWay}"
+
+
                       SelectionMode="Single"
                       SelectionUnit="FullRow"
                       FontSize="13"
@@ -281,26 +277,27 @@
                       HeadersVisibility="Column"
                       SelectionChanged="VariablesGrid_SelectionChanged">
                 <DataGrid.Columns>
-                    <DataGridTextColumn Width="2*"
+                    <DataGridTextColumn Width="2*" MinWidth="120"
                                         Header="{DynamicResource 变量名称}"
                                         Binding="{Binding Name}"
                                         ElementStyle="{StaticResource VariableCellText}" />
-                    <DataGridTextColumn Width="*"
+                    <DataGridTextColumn Width="*" MinWidth="80"
                                         Header="{DynamicResource 变量类型}"
                                         Binding="{Binding DataTypeDisplay}"
                                         ElementStyle="{StaticResource VariableCellText}" />
-                    <DataGridTextColumn Width="2*"
+                    <DataGridTextColumn Width="2*" MinWidth="120"
                                         Header="{DynamicResource 当前值}"
                                         Binding="{Binding CurrentValueDisplay}"
                                         ElementStyle="{StaticResource VariableCellText}" />
-                    <DataGridTextColumn Width="1.4*"
+                    <DataGridTextColumn Width="1.4*" MinWidth="140"
                                         Header="{DynamicResource 最后更新时间}"
                                         Binding="{Binding LastUpdatedDisplay}"
                                         ElementStyle="{StaticResource VariableCellText}" />
-                    <DataGridTextColumn Width="2*"
+                    <DataGridTextColumn Width="2*" MinWidth="120"
                                         Header="{DynamicResource 变量说明}"
                                         Binding="{Binding Description}"
                                         ElementStyle="{StaticResource VariableDescriptionCellText}" />
+                    <DataGridCheckBoxColumn Header="{DynamicResource 变量人工可写}" Binding="{Binding AllowOperatorWrite, Mode=OneWay}" IsReadOnly="True" Width="145" />
                 </DataGrid.Columns>
             </DataGrid>
         </Border>

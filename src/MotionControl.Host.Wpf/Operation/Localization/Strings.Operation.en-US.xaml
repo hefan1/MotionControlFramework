@@ -187,6 +187,7 @@
  <sys:String x:Key="操作页.导出支持包未接入">Export support package (not connected)</sys:String>
  <sys:String x:Key="操作页.事件保留原诊断">Current alarms and existing engineering diagnostics remain on the Current alarms tab. Switching tabs only changes the view; it does not clear alarms, reset, reconnect or release resource isolation.</sys:String>
     <sys:String x:Key="操作页.总览数据未知">State unknown</sys:String>
+    <sys:String x:Key="操作页.总览工位步骤与输入未知">Current station steps and waiting inputs are unknown. Check the controller connection.</sys:String>
     <sys:String x:Key="操作页.总览未提供">Not provided</sys:String>
     <sys:String x:Key="操作页.总览采样缺省">Sample source, hardware timestamp and per-station quality: not provided</sys:String>
     <sys:String x:Key="操作页.总览列工位">Station / module</sys:String>

@@ -25,6 +25,7 @@ namespace MotionControl.TaskEngine.Wpf.Views
         /// <summary>刷新采样表和类型专属内容；非运行状态下不把暂停轴显示成仍在运动。</summary>
         private void ShowDetails(TaskStepRow row)
         {
+            UpdateNodeSummary(row);
             if (row == null)
             {
                 DetailTitle.Text = T("请选择步骤");
@@ -91,6 +92,36 @@ namespace MotionControl.TaskEngine.Wpf.Views
                     ReferencesPanel.Children.Add(button);
                 }
             }
+        }
+
+        /// <summary>运行状态取所选工位的快照，查看位置仅取当前步骤树选择。</summary>
+        private void UpdateNodeSummary(TaskStepRow viewed)
+        {
+            if (_refreshFailed)
+            {
+                ExecutingNodesText.Text = ViewedNodeText.Text = T("节点摘要读取失败");
+                return;
+            }
+            var station = (StationsGrid.SelectedItem as TaskStationRow)?.Snapshot;
+            var run = station?.Run;
+            if (run == null)
+                ExecutingNodesText.Text = T("没有节点运行快照");
+            else if (_snapshot?.State != TaskMachineState.Running || station.State != StationTaskState.Executing
+                || run.State != TaskRunState.Running)
+                ExecutingNodesText.Text = T("留存运行快照");
+            else
+            {
+                var active = run.Nodes.Where(n => n.State == TaskNodeState.Running || n.State == TaskNodeState.Moving
+                    || n.State == TaskNodeState.Waiting).ToList();
+                var parents = new HashSet<string>(active.Select(n => n.ParentExecutionId), StringComparer.Ordinal);
+                var leaves = active.Where(n => !parents.Contains(n.ExecutionId))
+                    .Select(n => n.Name + " · " + n.TaskId + " / " + n.NodeId + " · " + n.ExecutionId);
+                string text = string.Join(Environment.NewLine, leaves);
+                ExecutingNodesText.Text = text.Length == 0 ? T("无活动节点记录") : text;
+            }
+            ViewedNodeText.Text = viewed == null ? T("未选择查看节点")
+                : viewed.Node.Name + " · " + viewed.TaskId + " / " + viewed.Node.Id + " · "
+                    + (viewed.Snapshot?.ExecutionId ?? T("定义无执行记录"));
         }
 
         /// <summary>关联点击仅通知窗口查看配置，不发送运动命令。</summary>

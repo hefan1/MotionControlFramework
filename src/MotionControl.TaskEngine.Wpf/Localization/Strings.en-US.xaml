@@ -8,6 +8,16 @@
  <sys:String x:Key="任务监控.定位当前原因">Locate current cause</sys:String>
  <sys:String x:Key="任务监控.定位当前原因说明">With a stop fault, open its step. Otherwise, open a waiting step and show its wait condition.</sys:String>
  <sys:String x:Key="任务监控.跟随执行">Follow execution</sys:String>
+ <sys:String x:Key="任务监控.当前执行节点">Executing nodes</sys:String>
+ <sys:String x:Key="任务监控.当前查看节点">Viewing node</sys:String>
+ <sys:String x:Key="任务监控.节点摘要读取失败">Node snapshot unavailable</sys:String>
+ <sys:String x:Key="任务监控.没有节点运行快照">No run snapshot for this station</sys:String>
+ <sys:String x:Key="任务监控.留存运行快照">The station is not executing. Retained nodes are available for review.</sys:String>
+ <sys:String x:Key="任务监控.无活动节点记录">No active nodes reported in this snapshot</sys:String>
+ <sys:String x:Key="任务监控.未选择查看节点">No step selected</sys:String>
+ <sys:String x:Key="任务监控.定义无执行记录">Step definition; no execution record</sys:String>
+ <sys:String x:Key="任务监控.当前执行来源">From the selected station’s run snapshot. Parallel branches can have multiple active nodes.</sys:String>
+ <sys:String x:Key="任务监控.当前查看来源">From the current step tree selection. Viewing a node does not execute it.</sys:String>
  <sys:String x:Key="任务监控.运行步骤">Steps</sys:String>
  <sys:String x:Key="任务监控.步序">Step</sys:String>
  <sys:String x:Key="任务监控.动作说明">Action</sys:String>

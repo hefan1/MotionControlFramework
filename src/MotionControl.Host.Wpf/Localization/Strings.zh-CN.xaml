@@ -801,4 +801,15 @@
     <sys:String x:Key="报警库指导未配置">未配置</sys:String>
     <sys:String x:Key="报警库检查指导标签">检查：</sys:String>
     <sys:String x:Key="报警库恢复指导标签">恢复：</sys:String>
+ <sys:String x:Key="轴筛选搜索">逻辑轴名称</sys:String>
+ <sys:String x:Key="轴筛选仅异常未知">仅异常 / 未知</sys:String>
+ <sys:String x:Key="轴筛选清除">清除筛选</sys:String>
+ <sys:String x:Key="轴筛选数量">匹配 {0} / 已映射 {1}</sys:String>
+ <sys:String x:Key="轴筛选无匹配">没有匹配轴</sys:String>
+    <sys:String x:Key="变量清除筛选">清除筛选</sys:String>
+    <sys:String x:Key="变量搜索提示">搜索名称或说明</sys:String>
+    <sys:String x:Key="变量筛选保留选择">筛选只改变显示；隐藏的目标不能操作，清除筛选后恢复选择。</sys:String>
+    <sys:String x:Key="变量人工可写">允许人工写入</sys:String>
+    <sys:String x:Key="变量筛选数量">匹配 {0} / 共 {1}</sys:String>
+    <sys:String x:Key="变量筛选目标隐藏">当前变量被筛选隐藏；请先清除筛选或选择可见变量。</sys:String>
 </ResourceDictionary>

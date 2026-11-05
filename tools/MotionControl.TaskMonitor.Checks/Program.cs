@@ -739,8 +739,15 @@ namespace MotionControl.TaskMonitor.Checks
                     "任务监控默认高度下末工位被裁切，需要滚动才能看到。 ");
                 var tree = (TreeView)view.FindName("StepsTree");
                 var cause = (Button)view.FindName("LocateCurrentCauseButton");
+                var executing = (TextBlock)view.FindName("ExecutingNodesText");
+                var viewing = (TextBlock)view.FindName("ViewedNodeText");
+                double summariesBottom = viewing.TranslatePoint(new Point(0, viewing.ActualHeight), view).Y;
                 Assert(tree.ActualHeight >= 40 && cause.IsVisible,
-                    "工位区调整后步骤列表或原因定位入口不可见。 ");
+                    $"步骤树实际高度 {tree.ActualHeight:0.#}，原因定位可见 {cause.IsVisible}。");
+                Assert(executing.ActualHeight > 0 && viewing.ActualHeight > 0 && summariesBottom <= view.ActualHeight,
+                    "默认窗口未同时显示执行和查看节点摘要。");
+                Console.WriteLine($"五工位布局（DIP）：工位表 {grid.ActualHeight:0.#}，步骤树 {tree.ActualHeight:0.#}，"
+                    + $"原因定位 {cause.ActualHeight:0.#}，执行/查看摘要 {executing.ActualHeight:0.#}/{viewing.ActualHeight:0.#}。");
             }
             finally
             {

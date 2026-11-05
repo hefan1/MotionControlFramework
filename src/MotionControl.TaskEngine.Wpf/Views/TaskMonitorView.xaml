@@ -67,6 +67,16 @@
    <Border Grid.Column="2" Style="{StaticResource 内容边框}">
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
      <StackPanel Margin="14">
+     <Grid Margin="0,0,0,8">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+      <TextBlock Text="{DynamicResource 任务监控.当前执行节点}" FontWeight="SemiBold" Margin="0,1,10,3"/>
+      <ScrollViewer Grid.Column="1" MaxHeight="64" VerticalScrollBarVisibility="Auto">
+       <TextBlock x:Name="ExecutingNodesText" TextWrapping="Wrap" ToolTip="{DynamicResource 任务监控.当前执行来源}"/>
+      </ScrollViewer>
+      <TextBlock Grid.Row="1" Text="{DynamicResource 任务监控.当前查看节点}" FontWeight="SemiBold" Margin="0,2,10,0"/>
+      <TextBlock x:Name="ViewedNodeText" Grid.Row="1" Grid.Column="1" TextWrapping="Wrap" ToolTip="{DynamicResource 任务监控.当前查看来源}"/>
+     </Grid>
       <TextBlock Text="{DynamicResource 任务监控.步骤详情}" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,12"/>
       <TextBlock x:Name="DetailTitle" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8"/>
       <TextBlock x:Name="DetailKind" Foreground="#596B7D" Margin="0,0,0,8"/>

@@ -45,11 +45,18 @@ namespace MotionControl.OperatorPages.Checks
             failingOverview.RefreshDisplay();
             if (failedNext.ToolTip != null || ((TextBlock)failingOverview.FindName("MachineStateText")).Text.Contains("读取失败"))
                 throw new InvalidOperationException("读取恢复后保留旧故障。");
-            var card = new GuardCard();
+            var card = new GuardCard { IsConnected = true };
             var alarms = new MachineAlarmService();
-            var runtime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { card }),
-                new IStationFlow[] { new ReadOnlyFlow("未启用的旧代码工位") }, alarms, new GuardSafety(),
-                controlOwner: MachineControlOwner.TaskEngine);
+            MachineRuntime ConnectedTaskRuntime(string recovery = null)
+            {
+                var machine = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { card }),
+                    new IStationFlow[] { new ReadOnlyFlow("未启用的旧代码工位") }, alarms, new GuardSafety(),
+                    controlOwner: MachineControlOwner.TaskEngine);
+                machine.SetRecoveryBlockReason(recovery);
+                machine.ConnectAsync(System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+                return machine;
+            }
+            var runtime = ConnectedTaskRuntime();
             var data = new List<StationOverviewData> {
                 new StationOverviewData { Id = "Press", Name = "压合工位", CurrentStep = "等待夹具到位", Detail = "夹紧到位信号未满足" },
                 new StationOverviewData { Id = "Inspect", Name = "检测工位", CurrentStep = "等待来料" }
@@ -75,7 +82,8 @@ namespace MotionControl.OperatorPages.Checks
             overview.SetTaskSafetySummaryProvider(() => null);
             if (safetyPanel.Visibility != Visibility.Collapsed)
                 throw new InvalidOperationException("没有待确认资源时仍显示旧资源提示。");
-            runtime.SetRecoveryBlockReason("DO41 保持输出未确认");
+            runtime = ConnectedTaskRuntime("DO41 保持输出未确认");
+            overview.SetRuntime(runtime);
             overview.SetTaskSessionStateProvider(() => false);
             overview.SetTaskStationProvider(() => null);
             overview.RefreshDisplay();
@@ -123,7 +131,8 @@ namespace MotionControl.OperatorPages.Checks
             overview.SetLanguage("zh-CN");
             clearingField.SetValue(runtime, false);
             var longRecovery = "DO41 保持输出未确认：" + new string('资', 6000);
-            runtime.SetRecoveryBlockReason(longRecovery);
+            runtime = ConnectedTaskRuntime(longRecovery);
+            overview.SetRuntime(runtime);
             overview.RefreshDisplay();
             overview.Measure(new Size(1024, 768));
             overview.Arrange(new Rect(0, 0, 1024, 768));
@@ -134,7 +143,9 @@ namespace MotionControl.OperatorPages.Checks
             overview.SetConnectionStatus(false, "断连");
             if (!safetyText.Text.Contains("DO41") || !((TextBlock)overview.FindName("NextActionText")).Text.Contains("控制器"))
                 throw new InvalidOperationException("恢复阻断覆盖了断连诊断。");
-            runtime.SetRecoveryBlockReason(null);            overview.SetTaskSafetySummaryProvider(() => "待确认资源");
+            runtime = ConnectedTaskRuntime();
+            overview.SetRuntime(runtime);
+            overview.SetTaskSafetySummaryProvider(() => "待确认资源");
             safetyAction.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             if (safetyNavigation?.Page != "工位运行" || !safetyAction.Content.ToString().Contains("工位运行"))
                 throw new InvalidOperationException("普通资源核查导航未保留工位运行。");

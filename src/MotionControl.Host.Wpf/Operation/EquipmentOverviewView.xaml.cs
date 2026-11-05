@@ -63,6 +63,23 @@ namespace MotionControl.Host.Wpf.Operation
         private bool _updatingStationTable;
         /// <summary>详情只消费本轮已采集快照，不在选择事件中再次采样。</summary>
         private OperationSnapshot _stationTableSnapshot;
+        /// <summary>记录本轮数据所属的 Runtime 和连接，以便点击时再次核对。</summary>
+        private MachineRuntime _stationTableRuntime;
+        private Guid? _stationTableSession;
+
+        /// <summary>Host 的失联提示和 Runtime 的真实会话均可使当前观察失效。</summary>
+        private bool IsObservationCurrent(MachineRuntime runtime, Guid? session)
+        {
+            if (_connectionStatusKnown && !_isCardConnected) return false;
+            if (_preview != null) return true;
+            if (runtime == null || !ReferenceEquals(runtime, _runtime)) return false;
+            try { return runtime.IsConnectionSessionCurrent(session); }
+            catch (Exception error)
+            {
+                System.Diagnostics.Trace.TraceWarning("设备总览无法确认控制器会话：" + error);
+                return false;
+            }
+        }
         /// <summary>选择只改变本站详情，不改变控制权。</summary>
         private void StationTable_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -73,10 +90,11 @@ namespace MotionControl.Host.Wpf.Operation
             var station = item?.DataContext as StationOverviewData;
             var snapshot = _stationTableSnapshot;
             string key = station == null ? null : string.IsNullOrEmpty(station.Id) ? station.Name : station.Id;
-            bool unique = key != null && snapshot != null && FindStation(snapshot, key) != null && (!_connectionStatusKnown || _isCardConnected);
+            bool unique = key != null && snapshot != null && FindStation(snapshot, key) != null && IsObservationCurrent(_stationTableRuntime, _stationTableSession);
             SelectedFlowButton.Tag = SelectedReasonButton.Tag = SelectedInputButton.Tag = key;
             SelectedFlowButton.IsEnabled = SelectedReasonButton.IsEnabled = unique;
-            SelectedInputButton.Visibility = unique && !string.IsNullOrWhiteSpace(station.WaitingInputName) ? Visibility.Visible : Visibility.Collapsed;
+            SelectedInputButton.IsEnabled = unique && !string.IsNullOrWhiteSpace(station.WaitingInputName);
+            SelectedInputButton.Visibility = SelectedInputButton.IsEnabled ? Visibility.Visible : Visibility.Collapsed;
         }
         /// <summary>按当前真实来源生成可滚动工位表；没有稳定身份不跨刷新猜测选择。</summary>
         private void UpdateStationTable(OperationSnapshot snapshot, bool connectionLost)
@@ -177,9 +195,33 @@ namespace MotionControl.Host.Wpf.Operation
         /// <summary>展示当前工位动作、等待和报警；两种流程使用各自真实来源。</summary>
         public void RefreshDisplay()
         {
-            OperationSnapshot snapshot = ReadCurrentSnapshot();
+            MachineRuntime runtime = _runtime;
+            Guid? session = runtime?.ConnectionSessionId;
+            bool connectionLost = _preview == null && runtime != null && !IsObservationCurrent(runtime, session);
+            OperationSnapshot snapshot = connectionLost ? null : ReadCurrentSnapshot(runtime);
+            string safetySummary = null;
+            bool? taskLoaded = null;
+            if (!connectionLost)
+            {
+                try { if (_preview == null && _taskSafetySummaryProvider != null) safetySummary = _taskSafetySummaryProvider(); }
+                catch (Exception error) { safetySummary = T("资源状态读取失败请核查") + "：" + error.Message; }
+                if (snapshot.ControlOwner == MachineControlOwner.TaskEngine && _isTaskSessionLoaded != null)
+                {
+                    try { taskLoaded = _isTaskSessionLoaded(); }
+                    catch (Exception error) { snapshot.StationReadError = error; }
+                }
+            }
+            if (!ReferenceEquals(runtime, _runtime)) return;
+            if (_preview == null && runtime != null && (connectionLost || !IsObservationCurrent(runtime, session)))
+            {
+                connectionLost = true;
+                snapshot = ReadUnavailableSnapshot(runtime);
+                if (!ReferenceEquals(runtime, _runtime)) return;
+                safetySummary = null;
+            }
+            _stationTableRuntime = runtime;
+            _stationTableSession = connectionLost ? null : session;
             bool snapshotFailed = !snapshot.HasRuntime && !string.IsNullOrWhiteSpace(snapshot.LastError);
-            bool connectionLost = _preview == null && _connectionStatusKnown && !_isCardConnected && snapshot.HasRuntime;
             bool taskOwner = snapshot.ControlOwner == MachineControlOwner.TaskEngine;
             bool showTask = taskOwner && !connectionLost;
             MachineRunState? displayState = connectionLost ? MachineRunState.Disconnected : snapshot.State;
@@ -201,12 +243,6 @@ namespace MotionControl.Host.Wpf.Operation
             var background = stateBrush.Clone(); background.Opacity = 0.06; StatusBanner.Background = background;
             SourceText.Text = T(connectionLost ? "控制器状态未确认" : snapshot.IsPreview ? "离线页面示例" : "状态来源：设备运行数据");
             SampleText.Text = T("软件状态采样") + " · " + snapshot.SampledAt.ToString("yyyy-MM-dd HH:mm:ss");
-            string safetySummary = null;
-            try { if (_preview == null && _taskSafetySummaryProvider != null) safetySummary = _taskSafetySummaryProvider(); }
-            catch (Exception error)
-            {
-                safetySummary = T("资源状态读取失败请核查") + "：" + error.Message;
-            }
             if (recoveryBlocked) safetySummary = T("恢复信息未确认") + "：" + (recoveryReason.Length > 180 ? recoveryReason.Substring(0, 180) + "…" : recoveryReason) + (string.IsNullOrWhiteSpace(safetySummary) ? string.Empty : "\n" + safetySummary);
             SafetySummaryText.ToolTip = recoveryReason;
             SafetySummaryActionButton.Content = T(recoveryBlocked ? "查看恢复诊断" : "查看工位运行");
@@ -229,7 +265,7 @@ namespace MotionControl.Host.Wpf.Operation
                 NextActionText.ToolTip = snapshot.LastError;
             }
             else NextActionText.ToolTip = null;
-            bool preparationRequired = !snapshotFailed && _runtime != null && !_runtime.IsPreparing && !_runtime.IsPrepared
+            bool preparationRequired = !connectionLost && !snapshotFailed && _runtime != null && !_runtime.IsPreparing && !_runtime.IsPrepared
                 && displayState != MachineRunState.Running && displayState != MachineRunState.Pausing;
             bool axisActionRequired = !snapshotFailed && startBlocked
                 && _automaticStartBlockReason.IndexOf("逻辑轴", StringComparison.OrdinalIgnoreCase) >= 0;
@@ -249,18 +285,19 @@ namespace MotionControl.Host.Wpf.Operation
             AggregateMetrics.Visibility = Visibility.Collapsed;
             TaskRunPanel.Visibility = showTask && (snapshot.Stations.Count == 0 || snapshot.StationReadError != null)
                 ? Visibility.Visible : Visibility.Collapsed;
-            TaskRunStatusText.Text = recoveryBlocked ? T("恢复未确认工位数据未知") : snapshot.StationReadError != null
+            TaskRunStatusText.Text = connectionLost ? T("总览数据未知") : recoveryBlocked ? T("恢复未确认工位数据未知") : snapshot.StationReadError != null
                 ? T("工位状态读取失败") + "：" + snapshot.StationReadError.Message
-                : T(_isTaskSessionLoaded == null ? "任务会话状态待查看"
-                    : _isTaskSessionLoaded() ? "任务已读取，暂无工位状态" : "任务未读取请先读取");
+                : T(!taskLoaded.HasValue ? "任务会话状态待查看"
+                    : taskLoaded.Value ? "任务已读取，暂无工位状态" : "任务未读取请先读取");
             TaskRunStatusText.ToolTip = snapshot.StationReadError?.ToString();
 
-            EmptyText.Text = snapshot.Stations.Count == 0 && !taskOwner
+            EmptyText.Text = connectionLost ? T("控制器状态未确认") : snapshot.Stations.Count == 0 && !taskOwner
                 ? T(!snapshot.HasRuntime ? "尚无运行时，请先检查控制卡连接"
                     : snapshot.ControlOwner == MachineControlOwner.None ? "当前未启用自动运行" : "未配置自动工位") : "";
             EmptyText.Visibility = snapshot.Stations.Count == 0 && !taskOwner ? Visibility.Visible : Visibility.Collapsed;
             StationTable.Visibility = connectionLost ? Visibility.Collapsed : Visibility.Visible;
             UpdateStationTable(snapshot, connectionLost);
+            if (connectionLost) SelectedStationText.Text = T("总览工位步骤与输入未知");
             if (!snapshot.HasRuntime || (connectionLost && snapshot.Alarms.Count == 0))
             {
                 AlertText.Text = T("未读取报警状态");
@@ -278,7 +315,7 @@ namespace MotionControl.Host.Wpf.Operation
                 int stopAlarmCount = snapshot.Alarms.Count(alarm => alarm.RequiresReset);
                 int noticeCount = snapshot.Alarms.Count - stopAlarmCount;
                 string summary = string.Format(
-                    T("报警数量摘要"), snapshot.Alarms.Count, stopAlarmCount, noticeCount);
+                    T(connectionLost ? "断连会话报警计数" : "报警数量摘要"), snapshot.Alarms.Count, stopAlarmCount, noticeCount);
                 var visibleAlarms = snapshot.Alarms.Take(3).ToList();
                 string details = string.Join(" · ", visibleAlarms.Select(alarm => alarm.SourceName + "：" + alarm.Definition.Message));
                 int hiddenCount = snapshot.Alarms.Count - visibleAlarms.Count;
@@ -288,31 +325,40 @@ namespace MotionControl.Host.Wpf.Operation
                 }
 
                 AlertText.Text = summary + (string.IsNullOrWhiteSpace(details) ? string.Empty : "\n" + details);
-                if (connectionLost) AlertText.Text += "\n" + T("控制器断开报警可能不完整");
-                AlertBanner.Background = ActiveAlertBackground;
-                AlertBanner.BorderBrush = ActiveAlertBorder;
+                if (connectionLost) AlertText.Text += "\n" + T("断连报警状态未知");
+                AlertBanner.Background = connectionLost ? UnknownAlertBackground : ActiveAlertBackground;
+                AlertBanner.BorderBrush = connectionLost ? UnknownAlertBorder : ActiveAlertBorder;
             }
         }
-        /// <summary>连接丢失后不继续读取任务工位，旧缓存不作为当前动作展示。</summary>
-        private OperationSnapshot ReadCurrentSnapshot()
+        /// <summary>会话失效时只读取本 Runtime 保存的报警记录，不采集工位或等待输入。</summary>
+        private static OperationSnapshot ReadUnavailableSnapshot(MachineRuntime runtime)
         {
-            try { return _preview ?? OperationSnapshot.Read(_runtime,
+            var snapshot = new OperationSnapshot { HasRuntime = true, State = MachineRunState.Disconnected,
+                SampledAt = DateTime.Now, ControlOwner = runtime.ControlOwner };
+            try { snapshot.Alarms = runtime.AlarmService.Alarms.ToList(); }
+            catch (Exception error) { snapshot.HasRuntime = false; snapshot.LastError = error.ToString(); }
+            return snapshot;
+        }
+        /// <summary>连接丢失后不继续读取任务工位，旧缓存不作为当前动作展示。</summary>
+        private OperationSnapshot ReadCurrentSnapshot(MachineRuntime runtime)
+        {
+            try { return _preview ?? OperationSnapshot.Read(runtime,
                 _connectionStatusKnown && !_isCardConnected ? null : _taskStationProvider); }
             catch (Exception error)
             {
                 var result = new OperationSnapshot { SampledAt = DateTime.Now, LastError = error.ToString() };
-                if (_runtime == null || _runtime.ControlOwner != MachineControlOwner.StationFlows) return result;
+                if (runtime == null || runtime.ControlOwner != MachineControlOwner.StationFlows) return result;
                 result.HasRuntime = true;
-                result.State = _runtime.State;
-                result.ControlOwner = _runtime.ControlOwner;
-                try { result.Alarms = _runtime.AlarmService.Alarms.ToList(); }
+                result.State = runtime.State;
+                result.ControlOwner = runtime.ControlOwner;
+                try { result.Alarms = runtime.AlarmService.Alarms.ToList(); }
                 catch (Exception alarmError)
                 {
                     // 保留原始采集错误与报警读取错误；HasRuntime=false 使现有报警条显示未知。
                     result.HasRuntime = false;
                     result.LastError = error.ToString() + "\n" + alarmError.ToString();
                 }
-                foreach (var flow in _runtime.StationFlows)
+                foreach (var flow in runtime.StationFlows)
                 {
                     var row = new StationOverviewData { Name = flow.StationName, Id = flow.StationName };
                     try
@@ -357,15 +403,34 @@ namespace MotionControl.Host.Wpf.Operation
                 default: return "检查连接与就绪条件，按设备规则复位后启动";
             }
         }
+        /// <summary>仅按展示行所属会话重新观察，并验证按钮仍指向同一工位。</summary>
+        private StationOverviewData ReadNavigationStation(string key, out OperationSnapshot snapshot)
+        {
+            var runtime = _stationTableRuntime;
+            Guid? session = _stationTableSession;
+            snapshot = null;
+            var displayed = _stationTableSnapshot;
+            if (displayed != null && FindStation(displayed, key) != null && IsObservationCurrent(runtime, session))
+            {
+                snapshot = ReadCurrentSnapshot(runtime);
+                if (snapshot.ControlOwner == displayed.ControlOwner && IsObservationCurrent(runtime, session))
+                    return FindStation(snapshot, key);
+            }
+            RefreshDisplay();
+            return null;
+        }
+
         /// <summary>导航只查看工位当前流程。</summary>
         private void OpenFlow(object sender, RoutedEventArgs e)
-        { NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("工位运行", (string)((Button)sender).Tag)); }
+        {
+            string key = (string)((Button)sender).Tag;
+            if (ReadNavigationStation(key, out _) != null)
+                NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("工位运行", key));
+        }
         /// <summary>没有结构化等待证据时明确说明，不从名称推断资源持有人。</summary>
         private void OpenReason(object sender, RoutedEventArgs e)
         {
-            string key = (string)((Button)sender).Tag;
-            var snapshot = ReadCurrentSnapshot();
-            var station = FindStation(snapshot, key);
+            var station = ReadNavigationStation((string)((Button)sender).Tag, out var snapshot);
             if (station == null) return;
             string reason = snapshot.IsPreview && !string.IsNullOrEmpty(station.PreviewReason)
                 ? station.PreviewReason
@@ -409,9 +474,14 @@ namespace MotionControl.Host.Wpf.Operation
         private void OpenStationInput(object sender, RoutedEventArgs e)
         {
             string key = (string)((Button)sender).Tag;
-            var snapshot = ReadCurrentSnapshot();
-            var station = FindStation(snapshot, key);
+            var displayed = _stationTableSnapshot == null ? null : FindStation(_stationTableSnapshot, key);
+            var station = ReadNavigationStation(key, out _);
             if (station == null || string.IsNullOrWhiteSpace(station.WaitingInputName)) return;
+            if (!string.Equals(station.WaitingInputName, displayed?.WaitingInputName, StringComparison.OrdinalIgnoreCase))
+            {
+                RefreshDisplay();
+                return;
+            }
             NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs(
                 "IO监控", station.Name, station.WaitingInputName));
         }

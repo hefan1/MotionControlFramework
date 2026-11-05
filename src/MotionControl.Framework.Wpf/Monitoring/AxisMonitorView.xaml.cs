@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Windows.Data;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -76,7 +77,10 @@ namespace MotionControl.Framework.Wpf.Monitoring
             }
 
             BuildAxisRows(axisConfigurations);
-            AxisStatusGrid.ItemsSource = _axisRows;
+            // 将同一个受控视图直接交给表格，避免过滤默认视图却刷新另一层ItemCollection。
+            var axisView = CollectionViewSource.GetDefaultView(_axisRows);
+            axisView.Filter = value => MatchesAxisFilter((AxisMonitorRow)value);
+            AxisStatusGrid.ItemsSource = axisView;
             RefreshLocalizedText();
 
             _refreshTimer = new DispatcherTimer
@@ -98,7 +102,7 @@ namespace MotionControl.Framework.Wpf.Monitoring
             }
 
             UpdateMonitorStatusText(_axisRows.Count(row => row.HasReadError));
-            AxisStatusGrid.Items.Refresh();
+            RefreshFilteredRows();
         }
 
         /// <summary>页面显示时立即读取轴状态，并启动页面可见期间的定时刷新。</summary>
@@ -114,7 +118,7 @@ namespace MotionControl.Framework.Wpf.Monitoring
             _refreshTimer.Stop();
             _visibilityGeneration++;
             foreach (AxisMonitorRow row in _axisRows) SetReadError(row, GetText("轴监控状态未知"));
-            AxisStatusGrid.Items.Refresh();
+            RefreshFilteredRows();
         }
 
         /// <summary>按固定周期刷新当前设备已配置轴的状态。</summary>
@@ -345,7 +349,7 @@ namespace MotionControl.Framework.Wpf.Monitoring
                 }
 
                 _lastRefreshTime = DateTime.Now;
-                AxisStatusGrid.Items.Refresh();
+                RefreshFilteredRows();
                 UpdateMonitorStatusText(failedAxisCount);
             }
             finally
@@ -365,7 +369,7 @@ namespace MotionControl.Framework.Wpf.Monitoring
                 if (connected) SetReadError(row, GetText("轴监控状态未知"));
                 else SetDisconnectedState(row);
             }
-            AxisStatusGrid.Items.Refresh();
+            RefreshFilteredRows();
             UpdateMonitorStatusText(connected ? _axisRows.Count : 0);
             return false;
         }
@@ -520,6 +524,40 @@ namespace MotionControl.Framework.Wpf.Monitoring
                 : controllerId.Trim();
             return controllerName + " / " + axisNumber.ToString(CultureInfo.InvariantCulture);
         }
+
+        /// <summary>筛选隐藏时仍保留真实行对象，不把第一条匹配轴变成选择目标。</summary>
+        private AxisMonitorRow _filterSelection;
+        /// <summary>仅按逻辑名与真实未知/异常字段筛选，采集仍遍历全量轴。</summary>
+        private bool MatchesAxisFilter(AxisMonitorRow row)
+        {
+            string query = AxisSearchBox.Text.Trim();
+            var status = row.LastStatus;
+            // 限位null明确表示无法确认；原点null同时可能未配置，不能据此推断故障。
+            bool uncertainOrActiveLimit = status != null && (status.PositiveLimitActive != false || status.NegativeLimitActive != false
+                || status.PositiveSoftLimitActive != false || status.NegativeSoftLimitActive != false);
+            bool attention = !row.IsConnected || status == null || row.HasReadError || row.HasUncertainFeedback || row.HasAlarm || uncertainOrActiveLimit;
+            return ((row.LogicalAxisName ?? string.Empty).IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
+                && (AttentionOnlyBox.IsChecked != true || attention);
+        }
+        /// <summary>刷新显示视图与匹配数，不读硬件或修改全量行集合。</summary>
+        private void RefreshFilteredRows()
+        {
+            if (AxisStatusGrid == null || AxisStatusGrid.ItemsSource == null) return;
+            _filterSelection = AxisStatusGrid.SelectedItem as AxisMonitorRow ?? _filterSelection;
+            ((System.ComponentModel.ICollectionView)AxisStatusGrid.ItemsSource).Refresh();
+            if (_filterSelection != null && _axisRows.Contains(_filterSelection) && MatchesAxisFilter(_filterSelection))
+                AxisStatusGrid.SelectedItem = _filterSelection;
+            int count = _axisRows.Count(MatchesAxisFilter);
+            AxisMatchText.Text = string.Format(GetText("轴筛选数量"), count, _axisRows.Count)
+                + (_axisRows.Count == 0 ? " · " + GetText("轴监控没有映射轴") : count == 0 ? " · " + GetText("轴筛选无匹配") : string.Empty);
+            ClearAxisFilterButton.IsEnabled = AxisSearchBox.Text.Length > 0 || AttentionOnlyBox.IsChecked == true;
+        }
+        /// <summary>编辑查询只刷新视图，不改变采样集合。</summary>
+        private void AxisFilterChanged(object sender, TextChangedEventArgs e) { RefreshFilteredRows(); }
+        /// <summary>切换异常条件只刷新视图，不发送命令。</summary>
+        private void AxisFilterToggled(object sender, RoutedEventArgs e) { RefreshFilteredRows(); }
+        /// <summary>清除名称及异常条件，不清除设备报警或未知标志。</summary>
+        private void ClearAxisFilter_Click(object sender, RoutedEventArgs e) { AxisSearchBox.Clear(); AttentionOnlyBox.IsChecked = false; }
 
         /// <summary>根据连接、轴数量、刷新时间和失败数更新页面顶部状态提示。</summary>
         private void UpdateMonitorStatusText(int failedAxisCount)

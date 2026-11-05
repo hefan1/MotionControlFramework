@@ -53,6 +53,10 @@ namespace MotionControl.OperatorPages.Checks
             Check("启动条件异步读取的连接与控制权归属", () => RunUiAsync(AutomaticStartReadinessSessionChecks.RunAsync), ref failures);
             Check("正式任务异步装载的连接归属和失败收尾", () => RunUiAsync(BoundTaskLoadChecks.RunAsync), ref failures);
             Check("变量定义与内存摘要", V14VariableSummaryChecks.Run, ref failures);
+            Check("变量筛选及隐藏目标保护", V14VariableSearchChecks.Run, ref failures);
+            Check("设备总览连接会话与旧定位", EquipmentOverviewSessionChecks.Run, ref failures);
+            Check("轴与变量筛选的离屏布局", V14FilterLayoutChecks.Run, ref failures);
+            Check("任务执行节点与查看节点", TaskNodeSummaryChecks.Run, ref failures);
             Check("编辑器草稿路径与摘要", V14EditorSelectionSummaryChecks.Run, ref failures);
             Check("步骤插入上下文与原门禁", V14InsertionContextChecks.Run, ref failures);
             Check("IO 监控区分通道范围和当前读取失败", IoMonitorReadFailureChecks.Run, ref failures);
@@ -79,7 +83,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("产品记录只读显示两种来源及错误", ProductRecordChecks.Run, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：45 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：49 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }
@@ -199,8 +203,9 @@ namespace MotionControl.OperatorPages.Checks
             Assert(((FrameworkElement)overview.FindName("AggregateMetrics")).Visibility == Visibility.Collapsed,
                 "操作员总览仍显示生产统计区。");
             Assert(((TextBlock)alarms.FindName("EmptyText")).Text == "未读取报警状态", "无来源被当作零报警。");
-            var card = new GuardCard(); var service = new MachineAlarmService();
+            var card = new GuardCard { IsConnected = true }; var service = new MachineAlarmService();
             var runtime = CreateRuntime(card, service);
+            runtime.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
             var notice = new MachineAlarmDefinition("NOTICE", "测试提醒", MachineAlarmKind.NonStop);
             service.ReportCondition(notice, "测试工位", true, "测试条件");
             overview.SetRuntime(runtime); alarms.SetRuntime(runtime);

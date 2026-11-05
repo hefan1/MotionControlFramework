@@ -1,4 +1,6 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
+using System.Windows.Data;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
@@ -66,6 +68,11 @@ namespace MotionControl.Framework.Wpf.Variables
             UpdateActionAvailability();
         }
 
+        /// <summary>视图筛选期间保留隐藏选择身份，避免绑定自动清空目标。</summary>
+        private bool _refreshingSearch;
+        /// <summary>各真实变量名对应的未提交文本，不写入变量服务。</summary>
+        private readonly Dictionary<string, string> _pendingInputByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>当前变量表格行集合。</summary>
         public ObservableCollection<DeviceVariableRow> Variables { get; private set; }
 
@@ -75,12 +82,19 @@ namespace MotionControl.Framework.Wpf.Variables
             get { return _selectedVariable; }
             set
             {
+                if (_refreshingSearch && value == null) return;
                 if (ReferenceEquals(_selectedVariable, value))
                 {
                     return;
                 }
 
+                if (ManualValueTextBox != null && _selectedVariable != null) _pendingInputByName[_selectedVariable.Name] = ManualValueTextBox.Text;
                 _selectedVariable = value;
+                if (ManualValueTextBox != null)
+                {
+                    string pending;
+                    ManualValueTextBox.Text = value != null && _pendingInputByName.TryGetValue(value.Name, out pending) ? pending : string.Empty;
+                }
                 PropertyChangedEventHandler handler = PropertyChanged;
                 if (handler != null)
                 {
@@ -97,6 +111,12 @@ namespace MotionControl.Framework.Wpf.Variables
             DeviceVariableRow variable = Variables.FirstOrDefault(item =>
                 string.Equals(item.Name, variableName, StringComparison.OrdinalIgnoreCase));
             if (variable == null) return false;
+            // 外页明确定位的对象须实际可见；只清显示查询，不改定义、值或权限。
+            if (!variable.IsSearchMatch)
+            {
+                VariableSearchBox.Clear();
+                RefreshVariableSearch();
+            }
             VariablesGrid.SelectedItem = variable;
             VariablesGrid.ScrollIntoView(variable);
             SelectedVariable = variable;
@@ -138,15 +158,17 @@ namespace MotionControl.Framework.Wpf.Variables
                 "变量类型",
                 "当前值",
                 "最后更新时间",
-                "变量说明"
+                "变量说明",
+                "变量人工可写"
             };
 
-            for (int columnIndex = 0; columnIndex < VariablesGrid.Columns.Count; columnIndex++)
+            for (int columnIndex = 0; columnIndex < columnHeaderResourceKeys.Length; columnIndex++)
             {
                 VariablesGrid.Columns[columnIndex].Header = GetLocalizedText(
                     columnHeaderResourceKeys[columnIndex]);
             }
 
+            RefreshVariableSearch();
             string noValueText = GetLocalizedText("变量无有效数据");
             foreach (DeviceVariableRow row in Variables)
             {
@@ -221,21 +243,56 @@ namespace MotionControl.Framework.Wpf.Variables
                 : Variables.FirstOrDefault(
                     row => string.Equals(row.Name, selectedName, StringComparison.OrdinalIgnoreCase));
             _isRefreshingRows = false;
+            RefreshVariableSearch();
             UpdateActionAvailability();
+        }
+
+        /// <summary>搜索只折叠不匹配行，保留绑定集合、选中变量及未提交写入文字。</summary>
+        private void VariableSearch_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            RefreshVariableSearch();
+        }
+
+        /// <summary>清除显示条件，不改变任何变量值或操作门禁。</summary>
+        private void ClearVariableSearch_Click(object sender, RoutedEventArgs e)
+        {
+            VariableSearchBox.Text = string.Empty;
+        }
+
+        /// <summary>按名称与说明更新行显示和匹配计数，变量刷新后沿用当前条件。</summary>
+        private void RefreshVariableSearch()
+        {
+            if (Variables == null || VariableSearchBox == null || VariableSearchCountText == null) return;
+            string query = (VariableSearchBox.Text ?? string.Empty).Trim();
+            foreach (var row in Variables) row.UpdateSearchMatch(query);
+            _refreshingSearch = true;
+            try
+            {
+                var view = CollectionViewSource.GetDefaultView(Variables);
+                view.Filter = value => ((DeviceVariableRow)value).IsSearchMatch;
+                // 明确绑定同一个已筛选视图，避免网格另取集合视图导致筛选只更新计数。
+                if (!ReferenceEquals(VariablesGrid.ItemsSource, view)) VariablesGrid.ItemsSource = view;
+                view.Refresh();
+                VariablesGrid.SelectedItem = SelectedVariable != null && SelectedVariable.IsSearchMatch ? SelectedVariable : null;
+            }
+            finally { _refreshingSearch = false; }
+            UpdateActionAvailability();
+            VariableSearchCountText.Text = string.Format(GetLocalizedText("变量筛选数量"), Variables.Count(row => row.IsSearchMatch), Variables.Count);
         }
 
         /// <summary>根据设备运行状态和变量权限锁定工具栏操作。</summary>
         private void UpdateActionAvailability()
         {
             bool canEdit = CanEditDefinitions();
-            bool canWrite = canEdit && SelectedVariable != null && SelectedVariable.AllowOperatorWrite;
+            bool visibleTarget = SelectedVariable != null && SelectedVariable.IsSearchMatch;
+            bool canWrite = canEdit && visibleTarget && SelectedVariable.AllowOperatorWrite;
             AddVariableButton.IsEnabled = canEdit;
-            EditVariableButton.IsEnabled = canEdit && SelectedVariable != null;
-            DeleteVariableButton.IsEnabled = canEdit && SelectedVariable != null;
+            EditVariableButton.IsEnabled = canEdit && visibleTarget;
+            DeleteVariableButton.IsEnabled = canEdit && visibleTarget;
             ManualValueTextBox.IsEnabled = canWrite;
             WriteValueButton.IsEnabled = canWrite;
             UpdateSelectedVariableContext();
-            SetStatusResource(canEdit ? "变量状态可编辑" : "变量状态运行时锁定");
+            SetStatusResource(SelectedVariable != null && !SelectedVariable.IsSearchMatch ? "变量筛选目标隐藏" : canEdit ? "变量状态可编辑" : "变量状态运行时锁定");
         }
 
         /// <summary>显示当前选中变量的名称、类型、值和人工写入权限。</summary>
@@ -317,7 +374,7 @@ namespace MotionControl.Framework.Wpf.Variables
         /// <summary>编辑所选变量的名称、类型、初值、说明和现场写入权限。</summary>
         private void EditVariableButton_Click(object sender, RoutedEventArgs e)
         {
-            if (!EnsureEditingAllowed() || SelectedVariable == null)
+            if (!EnsureVisibleVariableTarget() || !EnsureEditingAllowed() || SelectedVariable == null)
             {
                 return;
             }
@@ -348,7 +405,7 @@ namespace MotionControl.Framework.Wpf.Variables
         /// <summary>经现场确认后删除所选变量并保存更新后的变量定义。</summary>
         private void DeleteVariableButton_Click(object sender, RoutedEventArgs e)
         {
-            if (!EnsureEditingAllowed() || SelectedVariable == null)
+            if (!EnsureVisibleVariableTarget() || !EnsureEditingAllowed() || SelectedVariable == null)
             {
                 return;
             }
@@ -379,6 +436,7 @@ namespace MotionControl.Framework.Wpf.Variables
         /// <summary>校验待写入值，向现场人员展示新旧值并在确认后更新运行时变量。</summary>
         private void WriteValueButton_Click(object sender, RoutedEventArgs e)
         {
+            if (!EnsureVisibleVariableTarget()) return;
             if (!CanEditDefinitions())
             {
                 SetStatusResource("变量状态运行时锁定");
@@ -464,10 +522,17 @@ namespace MotionControl.Framework.Wpf.Variables
             return valueText ?? string.Empty;
         }
 
+        /// <summary>事件提交时再次拒绝隐藏变量，防止绕过按钮禁用误改不可见对象。</summary>
+        private bool EnsureVisibleVariableTarget()
+        {
+            if (SelectedVariable == null || SelectedVariable.IsSearchMatch) return true;
+            SetStatusResource("变量筛选目标隐藏");
+            return false;
+        }
         /// <summary>切换选择后刷新当前变量对应的编辑和写值按钮状态。</summary>
         private void VariablesGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (!_isRefreshingRows)
+            if (!_isRefreshingRows && !_refreshingSearch)
             {
                 SelectedVariable = VariablesGrid.SelectedItem as DeviceVariableRow;
             }

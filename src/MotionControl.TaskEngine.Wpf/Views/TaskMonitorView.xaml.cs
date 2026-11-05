@@ -175,6 +175,7 @@ namespace MotionControl.TaskEngine.Wpf.Views
             catch (Exception error)
             {
                 _refreshFailed = true;
+                UpdateNodeSummary(null);
                 LocateCurrentCauseButton.IsEnabled = false;
                 RefreshStatus.Text = T("刷新失败，以下为旧数据");
                 DetailSummary.Text = error.Message;
@@ -199,7 +200,11 @@ namespace MotionControl.TaskEngine.Wpf.Views
         /// <summary>应用整机状态、循环待执行提示并选择当前活动末端；多个并行步骤仍同时显示状态。</summary>
         private void RefreshSteps()
         {
-            if (!(StationsGrid.SelectedItem is TaskStationRow station)) return;
+            if (!(StationsGrid.SelectedItem is TaskStationRow station))
+            {
+                UpdateNodeSummary(null);
+                return;
+            }
             TaskStepTree.Update(_steps, station.Snapshot.Run, _snapshot.State, T);
             if (FollowBox.IsChecked == true)
             {

@@ -791,4 +791,15 @@ Current memory value: {4}. Saving definitions and writing runtime values are sep
     <sys:String x:Key="报警库指导未配置">Not configured</sys:String>
     <sys:String x:Key="报警库检查指导标签">Check: </sys:String>
     <sys:String x:Key="报警库恢复指导标签">Recovery: </sys:String>
+ <sys:String x:Key="轴筛选搜索">Logical axis name</sys:String>
+ <sys:String x:Key="轴筛选仅异常未知">Abnormal / unknown only</sys:String>
+ <sys:String x:Key="轴筛选清除">Clear filter</sys:String>
+ <sys:String x:Key="轴筛选数量">Matches {0} / mapped {1}</sys:String>
+ <sys:String x:Key="轴筛选无匹配">No matching axes</sys:String>
+    <sys:String x:Key="变量清除筛选">Clear filter</sys:String>
+    <sys:String x:Key="变量搜索提示">Search name or description</sys:String>
+    <sys:String x:Key="变量筛选保留选择">Filtering changes visibility only; hidden targets cannot be operated. Clear the filter to restore selection.</sys:String>
+    <sys:String x:Key="变量人工可写">Operator writable</sys:String>
+    <sys:String x:Key="变量筛选数量">Matches {0} / Total {1}</sys:String>
+    <sys:String x:Key="变量筛选目标隐藏">The selected variable is hidden by the filter. Clear the filter or select a visible variable.</sys:String>
 </ResourceDictionary>

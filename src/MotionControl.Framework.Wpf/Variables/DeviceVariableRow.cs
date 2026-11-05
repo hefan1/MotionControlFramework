@@ -35,6 +35,18 @@ namespace MotionControl.Framework.Wpf.Variables
         /// <summary>现场人员是否可以手动修改当前值。</summary>
         public bool AllowOperatorWrite { get; private set; }
 
+        /// <summary>仅控制本页筛选显示，不影响变量身份、值或写入权限。</summary>
+        public bool IsSearchMatch { get; private set; } = true;
+
+        /// <summary>更新显示匹配状态，不改变设备变量快照。</summary>
+        public void UpdateSearchMatch(string query)
+        {
+            IsSearchMatch = string.IsNullOrEmpty(query)
+                || (Name ?? string.Empty).IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0
+                || (Description ?? string.Empty).IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
+            NotifyPropertyChanged(nameof(IsSearchMatch));
+        }
+
         /// <summary>监控值更新时通知 WPF 刷新当前行。</summary>
         public event PropertyChangedEventHandler PropertyChanged;
 
