@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -154,6 +154,15 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             }
             return new Border { BorderBrush = System.Windows.Media.Brushes.LightGray, BorderThickness = new Thickness(0, 0, 0, 0.5), Child = grid };
         }
+        /// <summary>当前草稿选中对象的只读路径与摘要，不参与表单解析。</summary>
+        private TextBlock _selectionSummaryText;
+        /// <summary>接受表单修改后刷新只读摘要，不改变已接受的草稿。</summary>
+        private void RefreshSelectionSummary()
+        {
+            if (_selectionSummaryText == null || _selected == null) return;
+            _selectionSummaryText.Text = TaskEditorSelectionSummary.Build(Definition, _selected, _language == "en-US");
+            _selectionSummaryText.ToolTip = _selectionSummaryText.Text;
+        }
         /// <summary>公用字段后按明确节点类型创建专属表单。</summary>
         private void BuildDetails()
         {
@@ -164,6 +173,10 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             UpButton.IsEnabled = selectedIndex > 0; DownButton.IsEnabled = siblings != null && selectedIndex >= 0 && selectedIndex + 1 < siblings.Count;
             try
             {
+            _selectionSummaryText = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10), Foreground = System.Windows.Media.Brushes.SlateGray };
+            Details.Children.Add(new ScrollViewer { Name = "SelectionSummaryScroll", MaxHeight = 120,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = _selectionSummaryText }); RefreshSelectionSummary();
             Details.Children.Add(new TextBlock { Text = T(TaskEditorNodes.KindName(_selected.Kind)), FontSize = 17, FontWeight = FontWeights.SemiBold });
             AddField("Name", "动作说明", TaskEditingUi.Text(_selected.Name));
             AddField("Timeout", "步骤超时(ms)", TaskEditingUi.Text(_selected.TimeoutMs.ToString()));
@@ -196,6 +209,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             else if (_selected is WaitInputNode || _selected is WaitOutputNode || _selected is ReadInputNode || _selected is ReadInputWordNode || _selected is WriteRecordNode || _selected is WaitAxisPositionNode || _selected is WaitExclusiveInputsNode || _selected is SetOutputNode || _selected is SetVariableNode || _selected is DelayNode) ReadSignals();
             else ReadFlow();
             _selected.Name = name; _selected.TimeoutMs = timeout; Definition.Name = TaskNameBox.Text;
+            RefreshSelectionSummary();
             if (_selectedItem != null && _rowPrefixes.ContainsKey(_selected.Id))
                 _selectedItem.Header = CreateStepHeader(_selected, _rowPrefixes[_selected.Id]);
         }

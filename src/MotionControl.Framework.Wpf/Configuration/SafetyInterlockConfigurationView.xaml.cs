@@ -1,10 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using MotionControl.Framework.Runtime.Configuration;
@@ -57,7 +58,10 @@ namespace MotionControl.Framework.Wpf.Configuration
         /// <summary>页面文字或配置状态变化时通知 WPF 更新绑定。</summary>
         public event PropertyChangedEventHandler PropertyChanged;
 
-        /// <summary>配置文件保存后通知 Host 更新当前运行时的急停和整机按钮输入。</summary>
+        /// <summary>正式 Host 在工程与设备命令互斥范围内保存并应用同一快照。</summary>
+        public Func<SafetyInterlockConfigurationDocument, Task<string>> SaveConfigurationAsync { get; set; }
+
+        /// <summary>配置保存并完成应用后通知其他页面。</summary>
         public event EventHandler ConfigurationSaved;
 
         /// <summary>从 IO 映射文件读取出的 DI 逻辑名称候选项。</summary>
@@ -100,6 +104,34 @@ namespace MotionControl.Framework.Wpf.Configuration
         {
             get { return _resetInputName; }
             set { SetInputName(ref _resetInputName, value, nameof(ResetInputName)); }
+        }
+
+        /// <summary>现场启动绑定对应的已保存逻辑映射，不表示实时输入反馈。</summary>
+        public string StartMappingSummary => DescribeMapping(StartInputName);
+        /// <summary>现场暂停绑定对应的已保存逻辑映射。</summary>
+        public string PauseMappingSummary => DescribeMapping(PauseInputName);
+        /// <summary>现场复位绑定对应的已保存逻辑映射。</summary>
+        public string ResetMappingSummary => DescribeMapping(ResetInputName);
+        /// <summary>软件安全联锁对应的已保存逻辑映射。</summary>
+        public string EmergencyStopMappingSummary => DescribeMapping(EmergencyStopInputName);
+        /// <summary>仅解释已保存的地址；未绑定、失效引用和读取失败分别说明。</summary>
+        private string DescribeMapping(string name)
+        {
+            string logicalName = (name ?? string.Empty).Trim();
+            if (!_configurationCanBeSaved) return (string)FindResource("安全联锁映射未知");
+            if (logicalName.Length == 0) return (string)FindResource("安全联锁绑定为空");
+            string address;
+            return _mappedInputAddresses.TryGetValue(logicalName, out address)
+                ? string.Format((string)FindResource("安全联锁绑定地址"), address)
+                : string.Format((string)FindResource("安全联锁绑定失效"), logicalName);
+        }
+        /// <summary>刷新四行只读映射说明，不改变绑定或保存资格。</summary>
+        private void RefreshMappingSummaries()
+        {
+            OnPropertyChanged(nameof(StartMappingSummary));
+            OnPropertyChanged(nameof(PauseMappingSummary));
+            OnPropertyChanged(nameof(ResetMappingSummary));
+            OnPropertyChanged(nameof(EmergencyStopMappingSummary));
         }
 
         /// <summary>读取现有按钮和安全设置、DI 候选项，并显示配置文件位置。</summary>
@@ -306,8 +338,9 @@ namespace MotionControl.Framework.Wpf.Configuration
         }
 
         /// <summary>验证后保存设备按钮和安全联锁配置，不重连控制卡或改写 IO 映射。</summary>
-        private void SaveConfigurationButton_Click(object sender, RoutedEventArgs e)
+        private async void SaveConfigurationButton_Click(object sender, RoutedEventArgs e)
         {
+            if (!IsEnabled) return;
             string errorMessage;
             if (!TryValidateConfiguration(out errorMessage))
             {
@@ -323,21 +356,29 @@ namespace MotionControl.Framework.Wpf.Configuration
                 ResetInputName = (ResetInputName ?? string.Empty).Trim()
             };
 
+            SetCurrentValue(IsEnabledProperty, false);
             try
             {
-                _configurationStore.SaveJson(_machineId, SafetyInterlockFilePath, configuration);
-                SetStatus(string.IsNullOrWhiteSpace(configuration.EmergencyStopInputName)
+                string monitorError = null;
+                if (SaveConfigurationAsync == null)
+                    _configurationStore.SaveJson(_machineId, SafetyInterlockFilePath, configuration);
+                else monitorError = await SaveConfigurationAsync(configuration);
+                if (monitorError != null) SetStatus("安全联锁已保存但监控失败", monitorError);
+                else SetStatus(string.IsNullOrWhiteSpace(configuration.EmergencyStopInputName)
                     ? "安全联锁未配置"
                     : "安全联锁保存成功");
-                EventHandler handler = ConfigurationSaved;
-                if (handler != null)
-                {
-                    handler(this, EventArgs.Empty);
-                }
             }
             catch (Exception error)
             {
                 SetStatus("安全联锁保存失败", error.Message);
+                return;
+            }
+            finally { SetCurrentValue(IsEnabledProperty, true); }
+
+            try { ConfigurationSaved?.Invoke(this, EventArgs.Empty); }
+            catch (Exception error)
+            {
+                SetStatus("安全联锁已保存但通知失败", error.Message);
             }
         }
 
@@ -351,6 +392,7 @@ namespace MotionControl.Framework.Wpf.Configuration
         public void RefreshLocalizedText()
         {
             UpdateStatusText();
+            RefreshMappingSummaries();
         }
 
         /// <summary>设置一个本地化状态，并保留格式化参数供语言切换时重绘。</summary>
@@ -359,6 +401,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             _statusResourceKey = resourceKey;
             _statusArguments = arguments;
             UpdateStatusText();
+            RefreshMappingSummaries();
         }
 
         /// <summary>显示已格式化的校验错误，避免错误文字丢失本地化信息。</summary>
@@ -367,6 +410,7 @@ namespace MotionControl.Framework.Wpf.Configuration
             _statusResourceKey = null;
             _statusArguments = null;
             ConfigurationStatusText.Text = message;
+            RefreshMappingSummaries();
         }
 
         /// <summary>按当前语言将最近一次状态资源格式化后显示。</summary>

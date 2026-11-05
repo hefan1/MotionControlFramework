@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -25,15 +25,25 @@ namespace MotionControl.Framework.Wpf.Monitoring
         private readonly Dictionary<string, IAxis> _axesByName = new Dictionary<string, IAxis>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>标记创建页面时是否已有控制卡连接。</summary>
-        private readonly bool _isCardConnected;
+        private readonly bool _initialConnectionAvailable;
+        /// <summary>观察宿主已有卡组的当前连接，不创建连接。</summary>
+        private readonly MotionCardGroup _motionCards;
+        /// <summary>正式 Host 的 Runtime 连接会话，由已有连接的拥有者提供。</summary>
+        private readonly Func<Guid?> _getConnectionSession;
+        /// <summary>同时检查初始资格与当前连接状态。</summary>
+        private bool _isCardConnected { get { return _initialConnectionAvailable && _motionCards != null && _motionCards.IsConnected && (_getConnectionSession == null || _getConnectionSession().HasValue); } }
 
         /// <summary>页面可见时每 500 毫秒读取一次轴状态。</summary>
         private readonly DispatcherTimer _refreshTimer;
 
         /// <summary>防止上一次状态读取未结束时启动下一轮刷新。</summary>
         private bool _refreshInProgress;
+        /// <summary>当前显示行所属的连接；用于在下一轮驱动读数开始前清除旧反馈。</summary>
+        private Guid? _displaySession;
+        /// <summary>离页后拒绝上一可见周期的迟到结果。</summary>
+        private int _visibilityGeneration;
 
-        /// <summary>保存最近一次完整轮询的本地时间，语言切换时继续显示原刷新时间。</summary>
+        /// <summary>保存界面读取轮次完成时间；不是设备采样或最后成功采样时间。</summary>
         private DateTime? _lastRefreshTime;
 
         /// <summary>使用当前连接卡与轴映射创建只读状态页；不连接控制卡或发送运动命令。</summary>
@@ -41,10 +51,19 @@ namespace MotionControl.Framework.Wpf.Monitoring
             bool isCardConnected,
             MotionCardGroup motionCards,
             IEnumerable<AxisHardwareDefinition> axisConfigurations)
+            : this(isCardConnected, motionCards, axisConfigurations, null)
+        {
+        }
+
+        /// <summary>按宿主提供的连接会话拒绝重连前的旧轴读数。</summary>
+        public AxisMonitorView(bool isCardConnected, MotionCardGroup motionCards,
+            IEnumerable<AxisHardwareDefinition> axisConfigurations, Func<Guid?> getConnectionSession)
         {
             InitializeComponent();
+            _getConnectionSession = getConnectionSession;
 
-            _isCardConnected = isCardConnected && motionCards != null && motionCards.IsConnected;
+            _motionCards = motionCards;
+            _initialConnectionAvailable = isCardConnected && motionCards != null && motionCards.IsConnected;
             if (motionCards != null)
             {
                 foreach (IAxis axis in motionCards.Axes)
@@ -93,6 +112,9 @@ namespace MotionControl.Framework.Wpf.Monitoring
         private void AxisMonitorView_Unloaded(object sender, RoutedEventArgs e)
         {
             _refreshTimer.Stop();
+            _visibilityGeneration++;
+            foreach (AxisMonitorRow row in _axisRows) SetReadError(row, GetText("轴监控状态未知"));
+            AxisStatusGrid.Items.Refresh();
         }
 
         /// <summary>按固定周期刷新当前设备已配置轴的状态。</summary>
@@ -267,17 +289,22 @@ namespace MotionControl.Framework.Wpf.Monitoring
         /// <summary>串行读取各轴当前状态，并在单轴读取失败时保留其他轴的监控结果。</summary>
         private async Task RefreshAxisStatusesAsync()
         {
-            if (!_isCardConnected || !IsLoaded || _refreshInProgress)
+            if (!IsLoaded) return;
+            Guid? session = _getConnectionSession?.Invoke();
+            if (_displaySession != session)
             {
-                return;
+                IsReadSessionCurrent(_displaySession);
+                _displaySession = session;
             }
-
+            if (!IsReadSessionCurrent(session) || _refreshInProgress) return;
             _refreshInProgress = true;
             int failedAxisCount = 0;
+            int generation = _visibilityGeneration;
             try
             {
                 foreach (AxisMonitorRow row in _axisRows)
                 {
+                    if (!IsReadSessionCurrent(session)) return;
                     if (row.Axis == null)
                     {
                         failedAxisCount++;
@@ -292,6 +319,8 @@ namespace MotionControl.Framework.Wpf.Monitoring
                             throw new InvalidOperationException("控制卡没有返回轴状态数据。");
                         }
 
+                        if (!IsLoaded || generation != _visibilityGeneration) return;
+                        if (!IsReadSessionCurrent(session)) return;
                         row.LastStatus = status;
                         row.ReadErrorMessage = string.Empty;
                         row.HasReadError = false;
@@ -300,6 +329,8 @@ namespace MotionControl.Framework.Wpf.Monitoring
                     }
                     catch (Exception error)
                     {
+                        if (!IsLoaded || generation != _visibilityGeneration) return;
+                        if (!IsReadSessionCurrent(session)) return;
                         Trace.TraceWarning("读取逻辑轴 '" + row.LogicalAxisName + "' 状态失败：" + error);
                         SetReadError(row, error.Message);
                         failedAxisCount++;
@@ -314,6 +345,22 @@ namespace MotionControl.Framework.Wpf.Monitoring
             {
                 _refreshInProgress = false;
             }
+        }
+
+        /// <summary>丢弃读取期间断连或更换会话的整轮状态；已重连时显示未知，等待新轮次。</summary>
+        private bool IsReadSessionCurrent(Guid? session)
+        {
+            bool connected = _isCardConnected;
+            if (connected && session == _getConnectionSession?.Invoke()) return true;
+            _lastRefreshTime = null;
+            foreach (AxisMonitorRow row in _axisRows)
+            {
+                if (connected) SetReadError(row, GetText("轴监控状态未知"));
+                else SetDisconnectedState(row);
+            }
+            AxisStatusGrid.Items.Refresh();
+            UpdateMonitorStatusText(connected ? _axisRows.Count : 0);
+            return false;
         }
 
         /// <summary>将通用轴状态转换成带工程单位的现场显示文字。</summary>
@@ -479,7 +526,7 @@ namespace MotionControl.Framework.Wpf.Monitoring
                 GetText("轴监控连接状态格式"),
                 _axisRows.Count,
                 failedAxisCount,
-                refreshTime);
+                refreshTime) + (GetText("轴监控读取失败") == "读取失败" ? " · 界面轮次完成时间；设备采样时间/逐字段质量未提供" : " · UI round completion; device sample time / field quality not provided");
         }
 
         /// <summary>按中文资源键读取当前语言对应的文字。</summary>

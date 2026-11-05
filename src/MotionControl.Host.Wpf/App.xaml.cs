@@ -230,7 +230,7 @@ namespace MotionControl.Host.Wpf
             _ioMappingPage.IoMappingApplied += IoMappingPage_IoMappingApplied;
             _ioMappingPage.FeedbackAssociationsChanged += IoMappingPage_FeedbackAssociationsChanged;
             _safetyInterlockPage = new SafetyInterlockConfigurationView(_configurationStore, MachineId);
-            _safetyInterlockPage.ConfigurationSaved += SafetyInterlockPage_ConfigurationSaved;
+            _safetyInterlockPage.SaveConfigurationAsync = SaveSafetyInterlockAsync;
             _alarmCatalogPage = new Configuration.AlarmCatalogConfigurationView(_alarmCatalogStore, MachineId);
             _deviceVariablePage = new DeviceVariableView(
                 _deviceVariableStore,
@@ -1014,7 +1014,8 @@ namespace MotionControl.Host.Wpf
             _axisMonitorPage = new AxisMonitorView(
                 isCardConnected,
                 isCardConnected ? motionCards : null,
-                _cardConnection.AxisHardwareDefinitions);
+                _cardConnection.AxisHardwareDefinitions,
+                () => _machineRuntime?.ConnectionSessionId);
             _mainWindow.SetAxisMonitorPage(_axisMonitorPage);
         }
 
@@ -1079,14 +1080,7 @@ namespace MotionControl.Host.Wpf
                     throw new InvalidOperationException("当前控制卡连接缺少手动调试所需的轴或逻辑 IO 对象。");
                 }
 
-                string emergencyStopInputName = _safetyInterlockPage == null
-                    ? string.Empty
-                    : _safetyInterlockPage.EmergencyStopInputName;
-                if (_machineSafetyStatus != null)
-                {
-                    _machineSafetyStatus.UpdateEmergencyStopInputName(emergencyStopInputName);
-                }
-
+                // IO 映射更新不应用安全页尚未保存的输入草稿。
                 var motionCards = new MotionCardGroup(new[] { connectedCard });
                 RefreshManualDebugPages(_machineRuntime, motionCards, connectedLogicalIo);
             }
@@ -1174,27 +1168,62 @@ namespace MotionControl.Host.Wpf
             return new LogicalIoEmergencyStopStatus(logicalIo, emergencyStopInputName);
         }
 
-        /// <summary>安全配置保存后立即更新运行时正在使用的急停和整机按钮 DI。</summary>
-        private void SafetyInterlockPage_ConfigurationSaved(object sender, EventArgs e)
+        /// <summary>核对提交时的连接、运行时及卡身份，避免排队后保存到另一次连接。</summary>
+        private Task<string> SaveSafetyInterlockAsync(SafetyInterlockConfigurationDocument configuration)
         {
-            if (_machineSafetyStatus != null)
-            {
-                _machineSafetyStatus.UpdateEmergencyStopInputName(
-                    _safetyInterlockPage.EmergencyStopInputName);
-                if (_machineRuntime != null)
-                {
-                    _machineRuntime.UpdateControlInputNames(
-                        _safetyInterlockPage.StartInputName,
-                        _safetyInterlockPage.PauseInputName,
-                        _safetyInterlockPage.ResetInputName);
-                }
+            var runtime = _machineRuntime;
+            var source = _machineSafetyStatus;
+            var card = _cardConnection?.ConnectedMotionCard;
+            bool connected = _cardConnection?.IsConnected == true;
+            Guid? session = runtime?.ConnectionSessionId;
+            bool offline = !connected && card == null && runtime == null && source == null;
+            if (!offline && (!connected || card == null || source == null || !session.HasValue))
+                throw new InvalidOperationException("控制器连接正在变化，安全输入配置未保存。");
 
-                return;
+            // 在工程门和设备命令门内重复核对最初提交的连接身份。
+            bool Current()
+            {
+                return ReferenceEquals(runtime, _machineRuntime) && ReferenceEquals(source, _machineSafetyStatus)
+                    && ReferenceEquals(card, _cardConnection?.ConnectedMotionCard)
+                    && connected == (_cardConnection?.IsConnected == true) && session == runtime?.ConnectionSessionId;
             }
+            return SaveSafetyInterlockConfigurationAsync(_configurationStore, MachineId, runtime, source,
+                configuration, Current, CancellationToken.None);
+        }
 
-            if (_cardConnection != null && _cardConnection.IsConnected)
+        /// <summary>在工程门和在线命令门内核对、保存、应用同一快照；断开状态仅保存文件。</summary>
+        internal static async Task<string> SaveSafetyInterlockConfigurationAsync(MachineConfigurationStore store, string machineId,
+            MachineRuntime runtime, LogicalIoEmergencyStopStatus source, SafetyInterlockConfigurationDocument configuration,
+            Func<bool> current, CancellationToken token)
+        {
+            using (await HostProjectOperationGate.EnterConfigurationAsync(store, machineId, token))
             {
-                AxisMappingPage_CardConnectionChanged(sender, e);
+                if (!current()) throw new InvalidOperationException("连接会话已变化，安全输入配置未保存。");
+                bool committed = false;
+                // 文件替换与内存更新连续执行，不在两者之间运行外部代码。
+                void SaveAndApply()
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (!current()) throw new InvalidOperationException("连接会话已变化，安全输入配置未保存。");
+                    store.SaveJson(machineId, "HardwareConfig/SafetyInterlock.json", configuration);
+                    if (runtime != null)
+                    {
+                        // 原子替换成功后只设置内存字段；不再检查取消，也不调用外部通知。
+                        source.UpdateEmergencyStopInputName(configuration.EmergencyStopInputName);
+                        runtime.UpdateControlInputNames(configuration.StartInputName, configuration.PauseInputName, configuration.ResetInputName);
+                    }
+                    committed = true;
+                }
+                try
+                {
+                    if (runtime == null) SaveAndApply();
+                    else await runtime.SaveSafetyInputConfigurationAsync(SaveAndApply, token);
+                }
+                catch (Exception error) when (committed)
+                {
+                    return error.Message;
+                }
+                return null;
             }
         }
 

@@ -1,4 +1,4 @@
-<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:sys="clr-namespace:System;assembly=mscorlib">
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:sys="clr-namespace:System;assembly=mscorlib">
  <sys:String x:Key="操作页.任务运行">工位运行</sys:String>
  <sys:String x:Key="操作页.当前未启用自动运行">当前未启用自动运行，可进行手动调试。</sys:String>
  <sys:String x:Key="操作页.查看任务运行">查看工位运行</sys:String>
@@ -180,4 +180,23 @@
  <sys:String x:Key="操作页.恢复未确认工位数据未知">恢复信息未确认，当前工位数据未知；请先查看恢复诊断并核查现场，不要将任务读取视为恢复确认。</sys:String>
  <sys:String x:Key="操作页.设备清料中">设备清料中</sys:String>
  <sys:String x:Key="操作页.清料进行中操作提示">清料正在执行；需要中断时请到设备准备页停止清料。结束后核查现场、资源及恢复记录，再按设备配置确认后续操作。</sys:String>
+ <sys:String x:Key="操作页.当前报警标签">当前报警</sys:String>
+ <sys:String x:Key="操作页.诊断与事件标签">诊断与事件</sys:String>
+ <sys:String x:Key="操作页.事件服务未接入">当前未接入诊断事件服务</sys:String>
+ <sys:String x:Key="操作页.事件服务边界">已有报警历史仅记录报警变化，不提供本子页所需的采集异常、工艺等待、命令反馈及关联上下文查询；当前不展示事件记录。</sys:String>
+ <sys:String x:Key="操作页.导出支持包未接入">导出支持包（未接入）</sys:String>
+ <sys:String x:Key="操作页.事件保留原诊断">当前报警及原工程诊断仍保留在“当前报警”页签。切换页签只改变显示，不清除报警、不复位、不重连，也不解除资源隔离。</sys:String>
+    <sys:String x:Key="操作页.总览数据未知">状态未知</sys:String>
+    <sys:String x:Key="操作页.总览未提供">未提供</sys:String>
+    <sys:String x:Key="操作页.总览采样缺省">采样来源、硬件采样时间与逐工位质量：未提供</sys:String>
+    <sys:String x:Key="操作页.总览列工位">工位 / 模组</sys:String>
+    <sys:String x:Key="操作页.总览列状态">独立状态 / 整机代显</sys:String>
+    <sys:String x:Key="操作页.总览列步骤">当前步骤</sys:String>
+    <sys:String x:Key="操作页.总览列等待">正在等待</sys:String>
+    <sys:String x:Key="操作页.总览列质量">读取质量</sys:String>
+    <sys:String x:Key="操作页.清除报警筛选">清除筛选</sys:String>
+    <sys:String x:Key="操作页.报警筛选数量格式">筛选匹配：{0} / 总记录：{1}</sys:String>
+    <sys:String x:Key="操作页.报警筛选数量未知">筛选匹配：未知</sys:String>
+    <sys:String x:Key="操作页.断连报警状态未知">连接已断开：现场报警状态未知；会话无记录不表示现场无报警。</sys:String>
+    <sys:String x:Key="操作页.断连会话报警计数">当前会话报警 {0} 条（停机 {1}，非停机 {2}）</sys:String>
 </ResourceDictionary>

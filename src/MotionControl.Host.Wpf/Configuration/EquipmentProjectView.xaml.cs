@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using Microsoft.Win32;
 using MotionControl.TaskEngine.Configuration;
+using MotionControl.Framework.Runtime.Configuration;
 
 namespace MotionControl.Host.Wpf.Configuration
 {
@@ -15,6 +16,8 @@ namespace MotionControl.Host.Wpf.Configuration
     {
         /// <summary>负责导入导出及文件一致性校验的单机工程服务。</summary>
         private readonly MachineProjectPackageService _service;
+        /// <summary>可选的当前设备持久历史，不提供时保留未接入状态。</summary>
+        private readonly ConfigurationChangeJournal _journal;
         /// <summary>实时返回禁止应用工程的状态原因；只能在 UI 线程调用。</summary>
         private readonly Func<bool, string> _getApplyBlockedReason;
         /// <summary>应用结束后锁定旧内存配置，等待正常关闭并重启。</summary>
@@ -35,12 +38,20 @@ namespace MotionControl.Host.Wpf.Configuration
         /// <summary>创建页面；文件操作不连接控制器、不发送运动命令。</summary>
         public EquipmentProjectView(MachineProjectPackageService service, Func<bool, string> getApplyBlockedReason,
             Func<Task<IDisposable>> acquireApplyGate, Action requireRestart)
+            : this(service, getApplyBlockedReason, acquireApplyGate, requireRestart, null) { }
+
+        /// <summary>接入当前设备的持久记录读取及工程导入结果记录。</summary>
+        public EquipmentProjectView(MachineProjectPackageService service, Func<bool, string> getApplyBlockedReason,
+            Func<Task<IDisposable>> acquireApplyGate, Action requireRestart, ConfigurationChangeJournal journal)
         {
             InitializeComponent();
+            _journal = journal;
             _service = service ?? throw new ArgumentNullException(nameof(service));
             _getApplyBlockedReason = getApplyBlockedReason ?? throw new ArgumentNullException(nameof(getApplyBlockedReason));
             _acquireApplyGate = acquireApplyGate ?? throw new ArgumentNullException(nameof(acquireApplyGate));
             _requireRestart = requireRestart ?? throw new ArgumentNullException(nameof(requireRestart));
+            Loaded += HistoryPage_Loaded;
+            Unloaded += HistoryPage_Unloaded;
             SetLanguage("zh-CN");
             ShowStatus(T("请选择工程文件查看内容，导入不会自动启动设备。", "Select a project to review. Import does not start the equipment."), false);
         }
@@ -56,6 +67,17 @@ namespace MotionControl.Host.Wpf.Configuration
             CloseButton.Content = T("关闭软件", "Close application");
             PreviewTab.Header = T("工程预览", "Project review");
             BackupsTab.Header = T("工程备份", "Backups");
+            ChangeHistoryTab.Header = T("配置变更记录", "Configuration history");
+            ChangeHistoryTitle.Text = T("配置变更记录 / 只读", "Configuration history / read only");
+            ChangeHistoryMessage.Text = _journal == null
+                ? T("当前未接入配置变更记录服务。", "The configuration history service is not connected.")
+                : HistoryScope();
+            RefreshHistoryButton.Content = T("刷新记录", "Refresh records");
+            ExportHistoryButton.Content = T("导出记录", "Export records");
+            RefreshHistoryButton.IsEnabled = _journal != null;
+            RefreshHistoryButton.ToolTip = _journal == null ? ChangeHistoryMessage.Text : T("读取最近 50 条记录", "Read the latest 50 records");
+            ExportHistoryButton.ToolTip = T("尚未提供历史导出服务。", "History export is unavailable.");
+            if (DetailsTabs.SelectedItem == ChangeHistoryTab && _journal != null) _ = RefreshHistoryAsync();
             StatusDetails.Header = T("查看完整原因", "Show full details");
             CurrentFileLabel.Text = T("当前配置（只读）", "Current configuration (read only)");
             IncomingFileLabel.Text = T("工程包配置（只读）", "Incoming configuration (read only)");
@@ -188,29 +210,27 @@ namespace MotionControl.Host.Wpf.Configuration
             if (answer != MessageBoxResult.Yes) return;
             blocked = _getApplyBlockedReason(false);
             if (!string.IsNullOrWhiteSpace(blocked)) { ShowStatus(blocked, true); return; }
+            await ApplyConfirmedAsync();
+        }
+
+        /// <summary>确认后获取同一工程排他门，再次核查许可，仅对真正执行的 Apply 记录结果。</summary>
+        private async Task ApplyConfirmedAsync()
+        {
+            if (_busy || _restartRequired || _preview == null) return;
             Window owner = Window.GetWindow(this);
             _busy = true; UpdateButtons();
             IDisposable gate = null;
-            bool applyAttempted = false;
             try
             {
                 if (owner != null) owner.IsEnabled = false;
                 gate = await _acquireApplyGate();
-                blocked = _getApplyBlockedReason(false);
+                string blocked = _getApplyBlockedReason(false);
                 if (!string.IsNullOrWhiteSpace(blocked)) throw new InvalidOperationException(blocked);
-                MachineProjectPreview preview = _preview;
-                applyAttempted = true;
-                string backup = await Task.Run(() => _service.Apply(preview, () => Dispatcher.Invoke(() => string.IsNullOrWhiteSpace(_getApplyBlockedReason(true)))));
-                EnterRestartRequired();
-                ShowStatus(T("工程已应用。备份：", "Project applied. Backup: ") + backup
-                    + T("。请关闭软件后重新打开并准备设备。", ". Close and reopen the application, then prepare the equipment."), false);
+                await ApplyAndReportAsync(_preview);
             }
             catch (Exception error)
             {
-                // 应用过程可能已经改写配置或留下中断记录；禁止沿用本进程缓存。
-                if (applyAttempted) EnterRestartRequired();
-                ShowStatus(T("工程未能完成应用：", "Project application failed: ") + error.Message
-                    + (!applyAttempted ? string.Empty : T("。请关闭软件后重新打开并核查配置。", ". Close and reopen, then inspect the configuration.")), true);
+                ShowStatus(T("工程操作失败：", "Project operation failed: ") + error.Message, true);
             }
             finally
             {

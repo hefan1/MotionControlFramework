@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -83,8 +83,8 @@ namespace MotionControl.Host.Wpf.Tasks
         private ProductRecordWindow _productRecordsWindow;
         /// <summary>显示当前任务步骤监控页。</summary>
         private readonly ContentControl _monitorContent;
-        /// <summary>显示 Runtime 当前报警，保持任务页内可见。</summary>
-        private readonly TaskAlarmGrid _alarmGrid;
+        /// <summary>仅导航至统一当前报警页，不改变设备状态。</summary>
+        private readonly Button _currentAlarmsButton;
         /// <summary>连接后提供任务设备组合所需的当前 Runtime。</summary>
         private MachineRuntime _runtime;
         /// <summary>连接后的运动卡组。</summary>
@@ -256,12 +256,11 @@ namespace MotionControl.Host.Wpf.Tasks
             Grid.SetRow(monitorArea, 3); root.Children.Add(monitorArea);
 
             var alarmPanel = new DockPanel { Margin = new Thickness(0, 8, 0, 0) };
-            var alarmTitle = new TextBlock { FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 8, 4) };
-            alarmTitle.SetResourceReference(TextBlock.TextProperty, "任务执行当前报警");
-            DockPanel.SetDock(alarmTitle, Dock.Top); alarmPanel.Children.Add(alarmTitle);
             _alarmState = new TextBlock { Margin = new Thickness(0, 0, 0, 4), Foreground = Brush("#596B7D"), TextWrapping = TextWrapping.Wrap };
             DockPanel.SetDock(_alarmState, Dock.Top); alarmPanel.Children.Add(_alarmState);
-            _alarmGrid = new TaskAlarmGrid(GetText); alarmPanel.Children.Add(_alarmGrid);
+            _currentAlarmsButton = new Button { Padding = new Thickness(8, 3, 8, 3), HorizontalAlignment = HorizontalAlignment.Left };
+            _currentAlarmsButton.Click += CurrentAlarms_Click;
+            alarmPanel.Children.Add(_currentAlarmsButton);
             Grid.SetRow(alarmPanel, 4); root.Children.Add(alarmPanel);
             Content = root;
 
@@ -309,7 +308,6 @@ namespace MotionControl.Host.Wpf.Tasks
             if (runtime == null)
             {
                 _stateTimer.Stop();
-                _alarmGrid.ClearAlarms();
             }
             _successTextKey = null;
             _status.Text = string.Empty;
@@ -337,7 +335,6 @@ namespace MotionControl.Host.Wpf.Tasks
         {
             bool connected = IsControllerConnected();
             _monitorContent.Visibility = connected && _session != null ? Visibility.Visible : Visibility.Collapsed;
-            _alarmGrid.Visibility = connected ? Visibility.Visible : Visibility.Collapsed;
             _emptyState.Visibility = !connected || _session == null ? Visibility.Visible : Visibility.Collapsed;
             _emptyState.Text = !connected
                 ? PageText("控制器未连接，任务和设备状态未确认。请重新连接后检查。", "Controller disconnected. Task and equipment states are unconfirmed; reconnect and check.")
@@ -650,7 +647,6 @@ namespace MotionControl.Host.Wpf.Tasks
             _monitorContent.Content = null;
             _taskSource = null;
             _emptyState.Visibility = Visibility.Visible;
-            _alarmGrid.ClearAlarms();
             UpdateRunStatus();
             UpdateCommandAvailability();
             RefreshPageText();
@@ -711,11 +707,10 @@ namespace MotionControl.Host.Wpf.Tasks
             UpdateCommandAvailability();
         }
 
-        /// <summary>按 Runtime 当前报警快照刷新本页列表，不对报警做复位或清除。</summary>
+        /// <summary>刷新设备级报警摘要，不对报警做复位或清除。</summary>
         private void RefreshAlarms()
         {
-            var alarms = _runtime?.AlarmService.Alarms ?? new MachineAlarmRecord[0];
-            _alarmGrid.ShowAlarms(alarms);
+            // 仅展示设备级摘要，避免按不可靠名称把报警挂到工位。
             RefreshAlarmState();
         }
 
@@ -863,7 +858,6 @@ namespace MotionControl.Host.Wpf.Tasks
         private void Host_LanguageChanged(object sender, EventArgs e)
         {
             _monitor?.SetLanguage(_host.CurrentLanguage);
-            _alarmGrid.UpdateHeaders();
             if (_lastError != null) RefreshErrorText();
             UpdateRunStatus();
             UpdateCommandAvailability();
@@ -978,29 +972,42 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>区分未读取、通讯中断和已读取但没有报警。</summary>
         private void RefreshAlarmState()
         {
-            _alarmGrid.Visibility = IsControllerConnected() && _runtime.AlarmService.Alarms.Count > 0
-                ? Visibility.Visible : Visibility.Collapsed;
-            if (_runtime == null)
-                _alarmState.Text = PageText("未连接设备，报警状态未确认。", "Equipment disconnected; alarm status is unknown.");
-            else if (!IsControllerConnected())
-                _alarmState.Text = PageText("控制器未连接，报警状态未确认。", "Controller disconnected; alarm status is unknown.");
-            else if (_session == null)
-                _alarmState.Text = PageText("任务尚未读取，请在“当前报警”页面查看设备报警。", "Tasks are not loaded; check the Current Alarms page.");
+            if (_runtime == null || !IsControllerConnected())
+                _alarmState.Text = PageText("控制器未连接，报警状态未知。", "Controller disconnected; alarm status is unknown.");
             else
-                _alarmState.Text = _runtime.AlarmService.Alarms.Count == 0
-                    ? PageText("当前无报警。", "No active alarms.") : string.Empty;
+            {
+                try
+                {
+                    var alarms = _runtime.AlarmService.Alarms.Where(item => item.ConditionActive || item.RequiresReset).ToArray();
+                    int pending = alarms.Count(item => item.RequiresReset && !item.ConditionActive);
+                    _alarmState.Text = PageText("设备级报警：", "Equipment alarms: ") + alarms.Length
+                        + (pending > 0 ? PageText("；待复位：", "; awaiting reset: ") + pending : "")
+                        + PageText("。工位关联与处理详情请查看当前报警页；零报警不代表可以启动。", ". See Current alarms for associations and guidance; zero alarms does not establish readiness.");
+                }
+                catch (Exception error)
+                {
+                    _alarmState.Text = PageText("报警读取失败，状态未知：", "Alarm read failed; status unknown: ") + error.GetBaseException().Message;
+                }
+            }
         }
+
+        /// <summary>打开只读报警页面，不复位、清除或执行设备操作。</summary>
+        private void CurrentAlarms_Click(object sender, RoutedEventArgs e)
+        { _host.OpenTaskReference("当前报警", null); }
 
         /// <summary>切换语言或会话时刷新页面专用说明。</summary>
         private void RefreshPageText()
         {
+            _currentAlarmsButton.Content = PageText("查看当前报警", "View current alarms");
+            _stopButton.Content = PageText("终止任务并关闭会话", "Terminate task and close session");
+            _stopButton.ToolTip = PageText("等待动作退出后尝试关闭会话；失败或超时仍保留会话与保护。", "Wait for actions to exit, then attempt to close the session; failure or timeout retains the session and protections.");
             _diagnostics.Header = PageText("工程操作与诊断", "Engineering operations and diagnostics");
             _loadButton.Content = PageText("读取设备流程", "Load equipment flow");
             _loadButton.ToolTip = PageText("读取已应用的工位与步骤，不执行复位、回零或启动。",
                 "Load applied stations and steps without resetting, homing, or starting the equipment.");
             _recoverResourcesButton.Content = PageText("核查待确认资源", "Inspect blocked resources");
             _productRecordsButton.Content = PageText("产品记录", "Product records");
-            _loadedSource.Text = string.IsNullOrWhiteSpace(_taskSource) ? string.Empty
+            _loadedSource.Text = string.IsNullOrWhiteSpace(_taskSource) ? PageText("会话来源未提供；当前运行版本未提供。", "Session source not provided; running version not provided.")
                 : PageText("已读取任务来源：", "Loaded task source: ") + _taskSource;
             if (_lastError == null && _successTextKey != null) _status.Text = SuccessText(_successTextKey);
             RefreshCatalogDetails();

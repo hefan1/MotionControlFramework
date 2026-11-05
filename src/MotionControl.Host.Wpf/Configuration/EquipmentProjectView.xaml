@@ -24,7 +24,7 @@
    </Expander>
   </StackPanel>
   <Border Grid.Row="2" Style="{StaticResource 内容边框}" Padding="12">
-   <TabControl x:Name="DetailsTabs">
+   <TabControl x:Name="DetailsTabs" SelectionChanged="HistoryTab_SelectionChanged">
     <TabItem x:Name="PreviewTab">
      <Grid Margin="8"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="1*"/><RowDefinition Height="Auto"/><RowDefinition Height="2*"/></Grid.RowDefinitions>
       <TextBlock x:Name="PreviewSummary" TextWrapping="Wrap" Margin="0,0,0,8"/>
@@ -47,6 +47,24 @@
      <Grid Margin="8"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
       <TextBlock x:Name="BackupsHint" TextWrapping="Wrap" Margin="0,0,0,8"/>
       <ListBox x:Name="BackupsList" Grid.Row="1" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto"/>
+     </Grid>
+    </TabItem>
+    <TabItem x:Name="ChangeHistoryTab">
+     <Grid Margin="10">
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+      <TextBlock x:Name="ChangeHistoryTitle" FontSize="16" FontWeight="SemiBold" Foreground="#26384D"/>
+      <TextBlock x:Name="ChangeHistoryMessage" Grid.Row="1" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="#40536A"/>
+      <WrapPanel Grid.Row="2" Margin="0,8,0,8">
+       <Button x:Name="RefreshHistoryButton" Click="RefreshHistory_Click" IsEnabled="False" Padding="12,7" Margin="0,0,8,0"/>
+       <Button x:Name="ExportHistoryButton" IsEnabled="False" Padding="12,7"/>
+      </WrapPanel>
+      <Grid Grid.Row="3">
+       <Grid.ColumnDefinitions><ColumnDefinition Width="5*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="6*"/></Grid.ColumnDefinitions>
+       <ListBox x:Name="HistoryList" DisplayMemberPath="Key" SelectionChanged="HistoryList_SelectionChanged"
+                ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+       <TextBox x:Name="HistoryDetail" Grid.Column="2" IsReadOnly="True" TextWrapping="Wrap" Padding="8"
+                VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top"/>
+      </Grid>
      </Grid>
     </TabItem>
    </TabControl>

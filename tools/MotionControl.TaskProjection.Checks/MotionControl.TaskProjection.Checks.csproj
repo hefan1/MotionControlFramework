@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/MotionControl.TaskEngine/MotionControl.TaskEngine.csproj" />
+  </ItemGroup>
+</Project>

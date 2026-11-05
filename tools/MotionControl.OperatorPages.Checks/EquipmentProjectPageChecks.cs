@@ -27,6 +27,14 @@ namespace MotionControl.OperatorPages.Checks
             Assert(((Button)page.FindName("ImportButton")).Content.ToString() == "选择工程并预览", "导入预览入口未显示。");
             Assert(((Button)page.FindName("BackupsButton")).Content.ToString() == "查看备份", "备份入口未显示。");
             Assert(!((Button)page.FindName("ApplyButton")).IsEnabled, "没有预览时不应允许应用。");
+            var tabs = (TabControl)page.FindName("DetailsTabs");
+            var history = (TabItem)page.FindName("ChangeHistoryTab");
+            tabs.SelectedItem = history;
+            Assert(((TextBlock)page.FindName("ChangeHistoryMessage")).Text.Contains("未接入配置变更记录服务")
+                && !((Button)page.FindName("RefreshHistoryButton")).IsEnabled
+                && !((Button)page.FindName("ExportHistoryButton")).IsEnabled,
+                "没有持久记录服务时应说明未接入并禁用查询和导出。");
+            tabs.SelectedItem = page.FindName("PreviewTab");
             Assert(((TextBlock)page.FindName("FooterText")).Text.Contains("恢复信息")
                 && ((TextBlock)page.FindName("FooterText")).Text.Contains("重新打开"), "未说明证据保留和重启要求。");
             var preview = (MachineProjectPreview)Activator.CreateInstance(typeof(MachineProjectPreview), true);
@@ -50,6 +58,9 @@ namespace MotionControl.OperatorPages.Checks
             var language = typeof(EquipmentProjectView).GetMethod("SetLanguage", BindingFlags.Instance | BindingFlags.NonPublic);
             language.Invoke(page, new object[] { "en-US" });
             Assert(((Button)page.FindName("ImportButton")).Content.ToString() == "Select and review project", "英文入口未更新。");
+            Assert(((TextBlock)page.FindName("ChangeHistoryMessage")).Text.Contains("not connected")
+                && ((TabItem)page.FindName("ChangeHistoryTab")).Header.ToString() == "Configuration history",
+                "配置历史的未接入说明未随语言切换。");
             page.Measure(new Size(850, 600)); page.Arrange(new Rect(0, 0, 850, 600)); page.UpdateLayout();
             Assert(((Button)page.FindName("ApplyButton")).ActualWidth > 0, "工程页面窄窗口布局不可见。");
             Assert(gateCalls == 0 && restartCalls == 0 && !Directory.Exists(root), "只读显示页面意外修改配置或取得控制权。");

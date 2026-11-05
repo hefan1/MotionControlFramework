@@ -1,4 +1,6 @@
 ﻿using System;
+using Newtonsoft.Json;
+using MotionControl.TaskEngine.Projection;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -20,6 +22,10 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
     {
         /// <summary>本会话冻结的任务定义副本，页面不修改它们。</summary>
         public IReadOnlyDictionary<string, TaskDefinition> Library { get; }
+        /// <summary>会话构造前从实际执行目录与冻结定义派生的只读引用，不包含运行实例或完整工程版本。</summary>
+        public TaskProjectProjection Projection { get; }
+        /// <summary>只读投影构建错误，不改变原控制器校验与加载结果。</summary>
+        public Exception ProjectionError { get; }
         /// <summary>仅供独立内存工作台修改输入和变量；设备会话中为空。</summary>
         public InMemoryTaskDevice Device { get; }
         /// <summary>本会话监控和执行使用的设备端口。</summary>
@@ -45,11 +51,25 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
         public TaskMonitorSession(TaskMachineConfiguration configuration, IEnumerable<TaskDefinition> definitions,
             ITaskDevice device, string source, bool isExample, IMachineAlarmService alarmService,
             SafetyInterlockConfigurationDocument controlInputConfiguration = null)
+            : this(configuration, definitions, device, source, isExample, alarmService, controlInputConfiguration, null)
+        {
+        }
+
+        /// <summary>内部构造支持只读投影故障注入；生产调用保持原公开签名。</summary>
+        internal TaskMonitorSession(TaskMachineConfiguration configuration, IEnumerable<TaskDefinition> definitions,
+            ITaskDevice device, string source, bool isExample, IMachineAlarmService alarmService,
+            SafetyInterlockConfigurationDocument controlInputConfiguration, Action projectionProbe)
         {
             var frozen = definitions.Select(item => TaskDefinitionJson.Deserialize(TaskDefinitionJson.Serialize(item)))
                 .ToDictionary(item => item.TaskId, StringComparer.OrdinalIgnoreCase);
             TaskDevice = device ?? throw new ArgumentNullException(nameof(device));
-            Machine = new TaskMachineController(configuration, frozen.Values, device, alarmService);
+            var frozenConfiguration = JsonConvert.DeserializeObject<TaskMachineConfiguration>(JsonConvert.SerializeObject(configuration));
+            // 投影先完成，任何投影异常均发生在控制器取得控制权之前。
+            try { projectionProbe?.Invoke();
+                Projection = TaskProjectProjection.FromSession(frozenConfiguration, frozen.Values, device.Catalog);
+                if (Projection == null) throw new InvalidOperationException("会话引用投影未返回结果。"); }
+            catch (Exception projectionError) { ProjectionError = projectionError; }
+            Machine = new TaskMachineController(frozenConfiguration, frozen.Values, device, alarmService);
             Library = new ReadOnlyDictionary<string, TaskDefinition>(frozen);
             Device = device as InMemoryTaskDevice; Source = source; IsExample = isExample;
             ControlInputConfiguration = controlInputConfiguration ?? new SafetyInterlockConfigurationDocument();

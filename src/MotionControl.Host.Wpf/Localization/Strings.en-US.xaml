@@ -1,4 +1,4 @@
-<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
     <ResourceDictionary.MergedDictionaries>
@@ -464,6 +464,8 @@
     <sys:String x:Key="安全联锁读取失败">Could not read safety interlock configuration: {0}</sys:String>
     <sys:String x:Key="安全联锁保存成功">Safety interlock configuration saved.</sys:String>
     <sys:String x:Key="安全联锁保存失败">Could not save safety interlock configuration: {0}</sys:String>
+    <sys:String x:Key="安全联锁已保存但通知失败">Safety input configuration saved. Completion notification failed: {0}</sys:String>
+    <sys:String x:Key="安全联锁已保存但监控失败">Safety inputs saved and applied. Field button monitoring could not restart: {0}</sys:String>
     <sys:String x:Key="安全联锁配置不可保存">The configuration file or DI mappings could not be read. Saving is unavailable.</sys:String>
     <sys:String x:Key="安全联锁输入必须来自DI映射">Select a DI name from I/O Mapping or clear the field.</sys:String>
     <sys:String x:Key="IO映射恢复失败格式">Saving or applying I/O mappings failed, and restoring the previous configuration also failed: {0}</sys:String>
@@ -621,7 +623,7 @@
     <sys:String x:Key="变量写入值提示">Enter a value for the selected type. Use a dot for decimals and yyyy-MM-dd HH:mm:ss for date and time.</sys:String>
     <sys:String x:Key="变量写入当前值">Write Current Value</sys:String>
     <sys:String x:Key="变量页面就绪">Variable monitor is ready.</sys:String>
-    <sys:String x:Key="变量运行值说明">Current values are kept in memory; new initial values take effect on next startup.</sys:String>
+    <sys:String x:Key="变量运行值说明">Definition changes are saved immediately to Parameters/DeviceVariables.json after confirmation. Check task references after renaming or changing types. Current values come from the variable store; writes affect runtime memory only, not initial values. Existing device-state and AllowOperatorWrite rules apply.</sys:String>
     <sys:String x:Key="变量写入上下文未选择">Select a variable first. Only variables marked for operator writes can be changed.</sys:String>
     <sys:String x:Key="变量写入上下文可写">Write target: {0} ({1}); current value: {2}</sys:String>
     <sys:String x:Key="变量写入上下文只读">Selected: {0} ({1}); current value: {2}. Operator writes are disabled.</sys:String>
@@ -714,7 +716,7 @@
     <sys:String x:Key="报警库新增非停机">Add non-stop alarm</sys:String>
     <sys:String x:Key="报警库删除">Delete selected</sys:String>
     <sys:String x:Key="报警库保存">Save catalog</sys:String>
-    <sys:String x:Key="报警库运行语义">A stop alarm during task execution stops active axes and requires reset. Non-stop alarms only notify and clear automatically when the condition recovers. The connected Runtime uses the alarm catalog it loaded.</sys:String>
+    <sys:String x:Key="报警库运行语义">Current project alarm definitions: additions, deletions and edits remain in the draft until the entire catalog is saved. Saving does not raise or clear alarms or start the machine. Check task references after changing codes.</sys:String>
     <sys:String x:Key="报警库代码">Alarm code</sys:String>
     <sys:String x:Key="报警库说明">Alarm message</sys:String>
     <sys:String x:Key="报警库类型">Type</sys:String>
@@ -757,4 +759,25 @@
  <sys:String x:Key="设备准备">Equipment preparation</sys:String>
  <sys:String x:Key="设备准备页面说明">Prepare stations in the configured order. Production starts separately.</sys:String>
  <sys:String x:Key="状态准备中">Preparing</sys:String>
+    <sys:String x:Key="流程页.报警状态未知">Alarm status unknown. View current alarms and check the connection.</sys:String>
+    <sys:String x:Key="流程页.CSharp来源">Source: C# station objects in the current Runtime. Selection is read-only.</sys:String>
+    <sys:String x:Key="流程页.选中工位">Selected station / inspection</sys:String>
+    <sys:String x:Key="流程页.独立状态未提供">Independent station state: not provided. Machine state is shown above.</sys:String>
+    <sys:String x:Key="流程页.步骤未提供">Current step not provided</sys:String>
+    <sys:String x:Key="流程页.读取失败">Read failed; state unknown</sys:String>
+    <sys:String x:Key="流程页.数据未知">Data quality: unknown</sys:String>
+    <sys:String x:Key="流程页.断连未知">Connection lost. Current step unknown; previous step is not current.</sys:String>
+    <sys:String x:Key="流程页.输入未提供">No valid waiting input name is available for targeted navigation.</sys:String>
+    <sys:String x:Key="流程页.数据有效">The project-provided step was read. Data quality, sample time and version are not provided.</sys:String>
+    <sys:String x:Key="流程页.等待输入">Current waiting input: {0}</sys:String>
+    <sys:String x:Key="安全联锁暂停语义说明">The field Stop input requests pause and retains the step. The top Stop ends automatic production. Software configuration does not replace hardware safety circuits.</sys:String>
+    <sys:String x:Key="安全联锁映射未知">Mapping read failed: physical address not provided. This is not an inactive input.</sys:String>
+    <sys:String x:Key="安全联锁绑定为空">Not configured; no input selected by default.</sys:String>
+    <sys:String x:Key="安全联锁绑定地址">Saved mapping: {0}. Live input and sample time are not provided.</sys:String>
+    <sys:String x:Key="安全联锁绑定失效">Unresolved input: {0}. Original text retained; check IO mapping.</sys:String>
+    <sys:String x:Key="报警库加载待核对">File saving is separate from active runtime alarms. The catalog loaded by the current connection still needs verification.</sys:String>
+    <sys:String x:Key="变量摘要未选择">Select a variable to inspect its definition and runtime value.</sys:String>
+    <sys:String x:Key="变量摘要未提供">Not configured / not provided</sys:String>
+    <sys:String x:Key="变量定义运行摘要格式">Definition: {0} · {1}; initial value: {2}; description: {3}
+Current memory value: {4}. Saving definitions and writing runtime values are separate operations.</sys:String>
 </ResourceDictionary>

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
@@ -50,7 +50,8 @@ namespace MotionControl.Host.Wpf.Configuration
                 Alarms = new ObservableCollection<MachineAlarmCatalogEntry>(document.Alarms.Select(alarm => alarm.Copy()));
                 DataContext = null;
                 DataContext = this;
-                StatusText.Text = T("报警库读取完成");
+                StatusText.SetResourceReference(TextBlock.TextProperty, "报警库读取完成");
+                SourceText.Text = _machineId + " / " + MachineAlarmCatalogStore.RelativeFilePath;
                 StatusText.Foreground = Brush("#176BD0");
             }
             catch (Exception error)

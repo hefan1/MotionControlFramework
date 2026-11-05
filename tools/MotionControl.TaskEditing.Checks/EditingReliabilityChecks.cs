@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -197,7 +197,7 @@ namespace MotionControl.TaskEditing.Checks
                 ((TextBox)editor.FindName("TaskNameBox")).Text = "尚未保存的编辑器副本";
                 string draftPath = Path.Combine(test.Root, Workspace.Id, "Drafts/TaskWorkspace.json");
                 string before = File.ReadAllText(draftPath);
-                Assert(FindButton(editor, "导出当前任务备份...") != null, "编辑器缺少导出当前任务备份入口。");
+                Assert(FindButton(editor, "导出设备任务备份...") != null, "编辑器缺少完整设备任务工作区备份入口。");
                 Assert(editor.IsDirty && before == File.ReadAllText(draftPath), "仅显示备份入口就清除了未保存状态或覆盖共享草稿。");
                 File.WriteAllText(draftPath, "损坏的外部草稿");
                 page.LoadWorkspace();
@@ -223,6 +223,13 @@ namespace MotionControl.TaskEditing.Checks
 
                 test.Store.ExportBackup(draft, backupPath, edited);
                 Assert(File.Exists(backupPath), "没有生成可拷走的 JSON 备份文件。");
+                var backup = JObject.Parse(File.ReadAllText(backupPath));
+                Assert(((JArray)backup["tasks"]).Count == draft.Tasks.Count
+                    && ((JArray)backup["machine"]["stations"]).Count == draft.Machine.Stations.Count,
+                    "设备任务备份没有包含完整任务库及工位安排。");
+                foreach (var unchanged in draft.Tasks.Skip(1))
+                    Assert(((JArray)backup["tasks"]).Any(item => (string)item["definition"]["taskId"] == unchanged.Definition.TaskId
+                        && (string)item["definition"]["name"] == unchanged.Definition.Name), "备份遗漏或改写了非当前编辑任务。");
                 Assert((string)JObject.Parse(File.ReadAllText(backupPath))["tasks"][0]["definition"]["name"] == "未保存任务也进入备份", "编辑器中未保存的任务没有带入外部备份。");
                 Assert(activeBefore == test.ActiveBytes(), "导出备份改动了运行任务文件。");
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -72,6 +72,8 @@ namespace MotionControl.Host.Wpf.Operation
         private void Refresh_Click(object sender, RoutedEventArgs e) { RefreshDisplay(true); }
         /// <summary>搜索按原始位置、代码、说明和补充信息匹配，不改变报警集合。</summary>
         private void SearchChanged(object sender, TextChangedEventArgs e) { if (_timer != null) RefreshDisplay(true); }
+        /// <summary>仅清除查询文字，不复位报警或改变导航资格。</summary>
+        private void ClearFilter_Click(object sender, RoutedEventArgs e) { SearchBox.Clear(); }
         /// <summary>按当前快照更新列表，未变化时保持已有行和滚动位置。</summary>
         public void RefreshDisplay(bool force = false)
         {
@@ -80,6 +82,8 @@ namespace MotionControl.Host.Wpf.Operation
             {
                 // 读取失败不能显示零报警，保留完整诊断并禁用旧记录导航。
                 CountText.Text = T("未读取报警状态");
+                FilterCountText.Text = T("报警筛选数量未知");
+                ClearFilterButton.IsEnabled = SearchBox.Text.Length > 0;
                 SourceText.ToolTip = error.ToString();
                 SourceText.Text = (_guidanceEnglish ? "Alarm/state read failed: " : "报警/状态读取失败：") + error.Message;
                 if (!string.IsNullOrWhiteSpace(_runtime?.RecoveryBlockReason))
@@ -94,6 +98,7 @@ namespace MotionControl.Host.Wpf.Operation
             }
             SourceText.ToolTip = null;
             string query = SearchBox.Text.Trim();
+            ClearFilterButton.IsEnabled = SearchBox.Text.Length > 0;
             var alarms = _snapshot.Alarms.Where(alarm => Matches(alarm, query)).OrderBy(alarm => alarm.Definition.Kind == MachineAlarmKind.StopMachine ? 0 : 1).ThenByDescending(alarm => alarm.FirstRaisedAtUtc).ToList();
             SourceText.Text = T(_snapshot.IsPreview ? "离线页面示例" : "状态来源：设备运行数据") + " · " + T("软件状态采样") + " " + _snapshot.SampledAt.ToString("yyyy-MM-dd HH:mm:ss");
             if (_snapshot.StationReadError != null)
@@ -102,6 +107,10 @@ namespace MotionControl.Host.Wpf.Operation
             {
                 CountText.Text = T("未读取报警状态");
             }
+            else if (_snapshot.State == MachineRunState.Disconnected)
+            {
+                CountText.Text = string.Format(T("断连会话报警计数"), _snapshot.Alarms.Count, _snapshot.Alarms.Count(alarm => alarm.RequiresReset), _snapshot.Alarms.Count(alarm => !alarm.RequiresReset));
+            }
             else
             {
                 int stopAlarmCount = _snapshot.Alarms.Count(alarm => alarm.RequiresReset);
@@ -109,6 +118,8 @@ namespace MotionControl.Host.Wpf.Operation
                 CountText.Text = string.Format(
                     T("报警数量摘要"), _snapshot.Alarms.Count, stopAlarmCount, noticeCount);
             }
+            FilterCountText.Text = !_snapshot.HasRuntime || _snapshot.State == MachineRunState.Disconnected
+                ? T("报警筛选数量未知") : string.Format(T("报警筛选数量格式"), alarms.Count, _snapshot.Alarms.Count);
             EmptyText.Text = !_snapshot.HasRuntime ? T("未读取报警状态") : _snapshot.Alarms.Count == 0 ? T("当前无报警") : T("没有匹配的报警");
             string recoveryReason = _preview == null ? _runtime?.RecoveryBlockReason : null;
             if (!string.IsNullOrWhiteSpace(recoveryReason))
@@ -117,6 +128,11 @@ namespace MotionControl.Host.Wpf.Operation
                 if (_snapshot.HasRuntime && _snapshot.Alarms.Count == 0)
                     EmptyText.Text = _guidanceEnglish ? "No alarms recorded in this session; equipment recovery remains unconfirmed." : "当前会话未记录报警，设备恢复信息仍未确认";
             }
+            if (_snapshot.State == MachineRunState.Disconnected)
+                SourceText.Text += "\n" + T("断连报警状态未知");
+            if (_snapshot.State == MachineRunState.Disconnected && alarms.Count == 0)
+                EmptyText.Text = string.IsNullOrWhiteSpace(recoveryReason) ? T("断连报警状态未知")
+                    : EmptyText.Text + "\n" + T("断连报警状态未知");
             EmptyText.Visibility = alarms.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             if (force || !_rows.Select(row => row.Alarm).SequenceEqual(alarms))
             {

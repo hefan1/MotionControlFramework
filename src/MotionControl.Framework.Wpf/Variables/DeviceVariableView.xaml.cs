@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
@@ -241,6 +241,7 @@ namespace MotionControl.Framework.Wpf.Variables
         /// <summary>显示当前选中变量的名称、类型、值和人工写入权限。</summary>
         private void UpdateSelectedVariableContext()
         {
+            UpdateSelectedDefinitionSummary();
             if (SelectedVariable == null)
             {
                 SelectedVariableContextText.Text = GetLocalizedText("变量写入上下文未选择");
@@ -259,6 +260,24 @@ namespace MotionControl.Framework.Wpf.Variables
                 SelectedVariable.Name,
                 SelectedVariable.DataTypeDisplay,
                 currentValue);
+        }
+
+        /// <summary>只读展示当前服务定义与内存值，缺项不以初始值冒充运行值。</summary>
+        private void UpdateSelectedDefinitionSummary()
+        {
+            if (SelectedVariable == null)
+            {
+                SelectedDefinitionSummaryText.Text = GetLocalizedText("变量摘要未选择");
+                return;
+            }
+            var definition = _variableStore.GetDefinitions().FirstOrDefault(item => string.Equals(item.Name, SelectedVariable.Name, StringComparison.OrdinalIgnoreCase));
+            string missing = GetLocalizedText("变量摘要未提供");
+            string initial = definition == null || definition.InitialValue == null
+                ? missing : definition.InitialValue.Length == 0 && !string.Equals(definition.DataType, "String", StringComparison.OrdinalIgnoreCase)
+                    ? missing : GetConfirmationValue(definition.DataType, definition.InitialValue);
+            string description = string.IsNullOrWhiteSpace(definition?.Description) ? missing : definition.Description;
+            string current = SelectedVariable.HasValue ? GetConfirmationValue(SelectedVariable.DataType, SelectedVariable.CurrentValue) : GetLocalizedText("变量无有效数据");
+            SelectedDefinitionSummaryText.Text = string.Format(GetLocalizedText("变量定义运行摘要格式"), SelectedVariable.Name, SelectedVariable.DataTypeDisplay, initial, description, current);
         }
 
         /// <summary>运行时只在停机、待复位或就绪状态允许现场调整变量。</summary>

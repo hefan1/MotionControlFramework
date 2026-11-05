@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
@@ -26,7 +26,8 @@ namespace MotionControl.OperatorPages.Checks
             var empty = (TextBlock)view.FindName("EmptyText");
             var source = (TextBlock)view.FindName("SourceText");
             var grid = (DataGrid)view.FindName("AlarmGrid");
-            Require(empty.Text == "当前无报警" && !source.Text.Contains("仍未确认"), "正常来源无报警被误显示为恢复阻断。");
+            Require(runtime.State == MachineRunState.Disconnected && empty.Text.Contains("现场报警状态未知")
+                && !source.Text.Contains("仍未确认"), "未连接的初始Runtime被误报现场无报警或恢复阻断。");
             runtime.SetRecoveryBlockReason("AutomaticRun.pending / DO41 guard");
             view.RefreshDisplay();
             Require(empty.Text.Contains("当前会话未记录报警") && source.Text.Contains("设备维护人员")
@@ -42,11 +43,13 @@ namespace MotionControl.OperatorPages.Checks
                 && source.Text.Contains("AutomaticRun.pending"), "停机报警与恢复阻断未同时保留。");
             service.Fail = true;
             view.RefreshDisplay();
+            Require(((TextBlock)view.FindName("FilterCountText")).Text == "Filter matches: unknown", "读取失败仍显示确定的筛选数。");
             Require(empty.Text.Contains("unknown") && source.Text.Contains("alarm-enumeration-failed")
                 && source.Text.Contains("Maintenance") && source.Text.Contains("AutomaticRun.pending")
                 && grid.Items.Count == 0 && !((Button)view.FindName("IoButton")).IsEnabled,
                 "读取失败伪装正常、保留可操作旧报警或隐藏恢复责任。");
             view.SetLanguage("zh-CN");
+            Require(((TextBlock)view.FindName("FilterCountText")).Text == "筛选匹配：未知", "中文读取失败未显示筛选数量未知。");
             Require(empty.Text.Contains("未知") && source.Text.Contains("设备维护人员"), "中文读取失败隐藏恢复说明。");
             service.Fail = false;
             view.RefreshDisplay();
@@ -59,7 +62,8 @@ namespace MotionControl.OperatorPages.Checks
                 "报警复位错误清除了独立恢复阻断。");
             runtime.SetRecoveryBlockReason(null);
             view.RefreshDisplay();
-            Require(empty.Text == "当前无报警" && !source.Text.Contains("仍未确认") && card.Calls == 0,
+            Require(empty.Text.Contains("现场报警状态未知") && !source.Text.Contains("仍未确认")
+                && ((TextBlock)view.FindName("CountText")).Text == "当前会话报警 0 条（停机 0，非停机 0）" && card.Calls == 0,
                 "恢复阻断解除后残留旧提示或只读页面调用硬件。");
         }
         /// <summary>明确失败原因，避免检查静默通过。</summary>

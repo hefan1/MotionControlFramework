@@ -224,6 +224,7 @@ namespace MotionControl.Preparation.Checks
             await failed.StartAsync(CancellationToken.None);
             await failedFlow.Entered.Task;
             await RejectAsync(() => failed.PauseAsync(CancellationToken.None), "停止回调抛错却允许确认安全暂停");
+            Ensure(failedFlow.StopCallbackCount == 1, "检查未实际触发预期的失败停止回调。");
             await failed.ResetAsync(CancellationToken.None);
             Ensure(!failed.IsStationFlowSettlementConfirmed, "停止回调失败但后台任务退出后错误确认收尾。");
         }
@@ -896,6 +897,8 @@ namespace MotionControl.Preparation.Checks
         /// <summary>取消回调异常的 C# 工位替身，用于验证失败不会被正常任务退出掩盖。</summary>
         private sealed class ThrowingStopFlow : IStationFlow
         {
+            /// <summary>验证模拟的停止异常实际由唯一一次取消回调抛出。</summary>
+            internal int StopCallbackCount;
             /// <summary>工位已经注册取消回调。</summary>
             internal readonly TaskCompletionSource<bool> Entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             /// <summary>工位名称。</summary>
@@ -905,10 +908,16 @@ namespace MotionControl.Preparation.Checks
             /// <summary>模拟停止回调返回异常，同时允许后台任务退出。</summary>
             public async Task ExecuteCurrentStepAsync(CancellationToken token)
             {
-                using (token.Register(() => { throw new InvalidOperationException("测试停止回调失败"); }))
+                var stopping = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                using (token.Register(() =>
+                {
+                    Interlocked.Increment(ref StopCallbackCount);
+                    stopping.TrySetResult(true);
+                    throw new InvalidOperationException("测试停止回调失败");
+                }))
                 {
                     Entered.TrySetResult(true);
-                    await Task.Delay(Timeout.Infinite, token);
+                    await stopping.Task.ConfigureAwait(false);
                 }
             }
             /// <summary>测试工位没有额外复位动作。</summary>

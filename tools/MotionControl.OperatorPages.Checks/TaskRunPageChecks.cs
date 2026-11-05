@@ -9,6 +9,7 @@ using System.Windows.Controls;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.Framework.Runtime.Machine;
+using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Host.Wpf;
@@ -39,12 +40,13 @@ namespace MotionControl.OperatorPages.Checks
                 var empty = Field<TextBlock>(type, page, "_emptyState");
                 Require(string.IsNullOrEmpty(guidance.Text)
                     && Field<TextBlock>(type, page, "_runStatus").Text.Contains("连接"), "未连接提示重复或缺失。");
-                Require(alarm.Text.Contains("未确认"), "没有报警来源却当成无报警。");
+                Require(alarm.Text.Contains("未知"), "没有报警来源却当成无报警。");
                 Require(empty.Text.Contains("未确认") && !details.IsExpanded, "未连接状态或诊断默认折叠错误。");
 
                 var card = new ConnectedReadOnlyCard();
                 var group = new MotionCardGroup(new IMotionCard[] { card });
-                var runtime = new MachineRuntime(group, new IStationFlow[] { new ReadOnlyFlow() }, new MachineAlarmService(), new GuardSafety());
+                var alarmService = new MachineAlarmService();
+                var runtime = new MachineRuntime(group, new IStationFlow[] { new ReadOnlyFlow() }, alarmService, new GuardSafety());
                 type.GetField("_runtime", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(page, runtime);
                 type.GetField("_motionCards", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(page, group);
                 var updateNext = type.GetMethod("UpdateNextAction", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -58,6 +60,13 @@ namespace MotionControl.OperatorPages.Checks
                 var monitor = Field<ContentControl>(type, page, "_monitorContent");
                 refresh.Invoke(page, null);
                 Require(empty.Text.Contains("尚未读取") && monitor.Visibility == Visibility.Collapsed, "连接后没有显示未读取状态。");
+                var stopAlarm = new MachineAlarmDefinition("TEST_STOP", "测试报警", MachineAlarmKind.StopMachine);
+                alarmService.ReportCondition(stopAlarm, "未关联来源", true, "条件有效");
+                alarmService.ReportCondition(stopAlarm, "未关联来源", false, "条件恢复");
+                refresh.Invoke(page, null);
+                Require(alarm.Text.Contains("设备级报警：1") && alarm.Text.Contains("待复位：1")
+                    && !alarm.Text.Contains("未关联来源") && !alarm.Text.Contains("测试报警"),
+                    "任务页未保留待复位摘要或重复显示报警全文。");
                 runtime.SetRecoveryBlockReason("上次资源状态待确认");
                 refresh.Invoke(page, null);
                 Require(empty.Text.Contains("恢复信息待确认") && empty.Text.Contains("先核查")
@@ -72,9 +81,8 @@ namespace MotionControl.OperatorPages.Checks
                 refresh.Invoke(page, null);
                 Require(monitor.Visibility == Visibility.Visible && empty.Visibility == Visibility.Collapsed, "已读取时没有显示任务监控。");
                 lost.Invoke(page, null);
-                var alarmGrid = Field<FrameworkElement>(type, page, "_alarmGrid");
-                Require(monitor.Visibility == Visibility.Collapsed && alarmGrid.Visibility == Visibility.Collapsed
-                    && empty.Text.Contains("未确认") && alarm.Text.Contains("未确认"), "已读取会话断线后仍显示旧监控或报警。");
+                Require(monitor.Visibility == Visibility.Collapsed
+                    && empty.Text.Contains("未确认") && alarm.Text.Contains("未知"), "已读取会话断线后仍显示旧监控或报警。");
                 refresh.Invoke(page, null);
                 Require(monitor.Visibility == Visibility.Collapsed, "心跳恢复前旧会话被重新当作实时状态。");
                 type.GetField("_session", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(page, null);

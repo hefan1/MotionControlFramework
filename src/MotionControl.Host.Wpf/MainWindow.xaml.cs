@@ -1013,6 +1013,14 @@ namespace MotionControl.Host.Wpf
                 UpdateMachineStateDisplay();
                 return;
             }
+            if (runtime != null && runtime.State == MachineRunState.Ready &&
+                (!runtime.ConnectionSessionId.HasValue || !runtime.MotionCards.IsConnected))
+            {
+                _automaticStartBlockReason = null;
+                _automaticStartReadinessKnown = false;
+                UpdateMachineStateDisplay();
+                return;
+            }
             if (runtime != null && runtime.State == MachineRunState.Ready && runtime.ControlOwner == MachineControlOwner.TaskEngine)
             {
                 var launcher = _taskMonitorPage as Tasks.TaskMonitorLauncher;
@@ -1021,10 +1029,27 @@ namespace MotionControl.Host.Wpf
                 UpdateMachineStateDisplay();
                 return;
             }
-            if (runtime == null || runtime.State != MachineRunState.Ready || runtime.StationFlows.Count == 0)
+            if (runtime == null || runtime.State != MachineRunState.Ready)
             {
                 _automaticStartBlockReason = null;
                 _automaticStartReadinessKnown = true;
+                UpdateMachineStateDisplay();
+                return;
+            }
+
+            if (runtime.StationFlows.Count == 0)
+            {
+                _automaticStartBlockReason = "尚未配置自动工位，不能启动自动流程。";
+                _automaticStartReadinessKnown = true;
+                UpdateMachineStateDisplay();
+                return;
+            }
+            Guid? session = runtime.ConnectionSessionId;
+            long observationVersion = runtime.SafetyObservationVersion;
+            if (!runtime.IsStationReadinessCurrent(session, observationVersion))
+            {
+                _automaticStartBlockReason = "控制器连接或自动工位入口未确认。";
+                _automaticStartReadinessKnown = false;
                 UpdateMachineStateDisplay();
                 return;
             }
@@ -1059,17 +1084,10 @@ namespace MotionControl.Host.Wpf
                 return;
             }
 
-            if (runtime.State == MachineRunState.Ready)
-            {
-                _automaticStartBlockReason = blockReason;
-                _automaticStartReadinessKnown = true;
-            }
-            else
-            {
-                _automaticStartBlockReason = null;
-                _automaticStartReadinessKnown = true;
-            }
-
+            // 新入口可能已给出自己的结果；当前读取失效时不覆盖新提示。
+            if (!runtime.IsStationReadinessCurrent(session, observationVersion)) return;
+            _automaticStartBlockReason = blockReason;
+            _automaticStartReadinessKnown = true;
             UpdateMachineStateDisplay();
         }
 

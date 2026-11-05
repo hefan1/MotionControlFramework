@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -37,9 +37,14 @@ namespace MotionControl.Host.Wpf
         private readonly Dictionary<IStationFlow, TextBlock> _stepTextByFlow =
             new Dictionary<IStationFlow, TextBlock>();
 
-        /// <summary>按工位保存输入核对入口，等待 DI 的工位才能定向跳转。</summary>
-        private readonly Dictionary<IStationFlow, Button> _inputButtonByFlow =
-            new Dictionary<IStationFlow, Button>();
+        /// <summary>按实际工位对象保留列表行身份，不用显示名称作为选择键。</summary>
+        private readonly Dictionary<IStationFlow, ListBoxItem> _itemByFlow = new Dictionary<IStationFlow, ListBoxItem>();
+
+        /// <summary>本页观察到的最近整机错误，当前报警为空不清除该记录。</summary>
+        private string _lastObservedError;
+
+        /// <summary>本次选中的真实工位对象，仅用于只读显示。</summary>
+        private IStationFlow _selectedFlow;
 
         /// <summary>页面显示期间刷新可能在后台推进的当前工位步骤。</summary>
         private readonly DispatcherTimer _refreshTimer;
@@ -52,36 +57,14 @@ namespace MotionControl.Host.Wpf
             InitializeComponent();
             foreach (IStationFlow flow in _runtime.StationFlows)
             {
-                var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
-                row.Children.Add(new TextBlock
-                {
-                    Text = flow.StationName + "：",
-                    Width = 140,
-                    FontSize = 12,
-                    Foreground = new SolidColorBrush(Color.FromRgb(64, 83, 106))
-                });
-                var stepText = new TextBlock { FontSize = 12, Foreground = new SolidColorBrush(Color.FromRgb(38, 56, 77)) };
-                row.Children.Add(stepText);
-                var inputButton = new Button { Padding = new Thickness(8, 3, 8, 3), Margin = new Thickness(8, 0, 0, 0), Tag = flow };
-                inputButton.SetResourceReference(ContentControl.ContentProperty, "流程页.核对输入");
-                inputButton.SetResourceReference(FrameworkElement.ToolTipProperty, "流程页.核对输入说明");
-                inputButton.Click += OpenStationInput_Click;
-                row.Children.Add(inputButton);
-                StationRowsPanel.Children.Add(row);
-                _stepTextByFlow.Add(flow, stepText);
-                _inputButtonByFlow.Add(flow, inputButton);
+                var text = new TextBlock { FontSize = 14, TextWrapping = TextWrapping.Wrap };
+                var item = new ListBoxItem { Content = text, Tag = flow, MinHeight = 44, Padding = new Thickness(8) };
+                StationList.Items.Add(item);
+                _stepTextByFlow.Add(flow, text);
+                _itemByFlow.Add(flow, item);
             }
-
-            if (_stepTextByFlow.Count == 0)
-            {
-                var emptyText = new TextBlock
-                {
-                    FontSize = 12,
-                    Foreground = new SolidColorBrush(Color.FromRgb(89, 107, 125))
-                };
-                emptyText.SetResourceReference(TextBlock.TextProperty, "未配置自动工位");
-                StationRowsPanel.Children.Add(emptyText);
-            }
+            StationList.SelectionChanged += StationList_SelectionChanged;
+            if (StationList.Items.Count > 0) StationList.SelectedIndex = 0;
 
             _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
             _refreshTimer.Tick += RefreshTimer_Tick;
@@ -170,35 +153,59 @@ namespace MotionControl.Host.Wpf
             NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("任务接入状态"));
         }
 
-        /// <summary>打开 DI 监控并按当前工位等待状态定位对应输入。</summary>
-        private void OpenStationInput_Click(object sender, RoutedEventArgs e)
+        /// <summary>只读选择当前真实工位，不改变执行位置或控制权。</summary>
+        private void StationList_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            var button = sender as Button;
-            var flow = button == null ? null : button.Tag as IStationFlow;
-            var inputState = flow as IStationInputWaitState;
-            if (flow == null || inputState == null || string.IsNullOrWhiteSpace(inputState.WaitingInputName))
-            {
-                return;
-            }
-
-            NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs(
-                "IO监控",
-                flow.StationName,
-                inputState.WaitingInputName));
+            _selectedFlow = (StationList.SelectedItem as ListBoxItem)?.Tag as IStationFlow;
+            RefreshDisplay();
         }
 
-        /// <summary>从总览或报警按工位名称只读定位，保留原页面布局和设备状态。</summary>
+        /// <summary>读取当前选中工位的等待输入后沿原逻辑名路由导航，不猜测输入。</summary>
+        private void OpenStationInput_Click(object sender, RoutedEventArgs e)
+        {
+            if (_controllerConnectionLost || _selectedFlow == null) return;
+            try
+            {
+                var input = _selectedFlow as IStationInputWaitState;
+                string name = input?.WaitingInputName;
+                if (!string.IsNullOrWhiteSpace(name))
+                    NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("IO监控", _selectedFlow.StationName, name));
+            }
+            catch (Exception error)
+            {
+                StationDetailText.Text = (string)FindResource("流程页.读取失败") + "：" + error.GetBaseException().Message;
+                StationInputButton.IsEnabled = false;
+            }
+        }
+
+        /// <summary>名称仅在唯一匹配真实工位时用于只读定位，重名不猜测。</summary>
         public bool FocusStationByName(string stationName)
         {
-            if (_controllerConnectionLost || _runtime.ControlOwner != MachineControlOwner.StationFlows) return false;
-            bool found = false;
-            foreach (var row in _stepTextByFlow)
+            if (_controllerConnectionLost || _runtime.ControlOwner != MachineControlOwner.StationFlows || string.IsNullOrWhiteSpace(stationName)) return false;
+            var matches = _itemByFlow.Where(row => string.Equals(row.Key.StationName, stationName, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (matches.Length != 1) return false;
+            StationList.SelectedItem = matches[0].Value;
+            matches[0].Value.BringIntoView();
+            return true;
+        }
+
+        /// <summary>采集单个工位的项目步骤及输入；失败清除旧值，缺接口不推断独立状态。</summary>
+        private string ReadStation(IStationFlow flow, out string inputName, out bool valid)
+        {
+            inputName = null;
+            valid = false;
+            if (_controllerConnectionLost) return (string)FindResource("流程页.断连未知");
+            try
             {
-                bool selected = string.Equals(row.Key.StationName, stationName, StringComparison.OrdinalIgnoreCase);
-                row.Value.Background = selected ? new SolidColorBrush(Color.FromRgb(230, 241, 255)) : Brushes.Transparent;
-                if (selected) { row.Value.BringIntoView(); found = true; }
+                string step = flow.CurrentStepName;
+                inputName = (flow as IStationInputWaitState)?.WaitingInputName;
+                valid = true;
+                return (string.IsNullOrWhiteSpace(step) ? (string)FindResource("流程页.步骤未提供") : step) + "\n" + (string)FindResource("流程页.数据有效");
             }
-            return found;
+            catch (Exception error)
+            {
+                return (string)FindResource("流程页.读取失败") + "：" + error.GetBaseException().Message;
+            }
         }
 
         /// <summary>刷新当前状态、步骤、报警及最近故障文字。</summary>
@@ -207,7 +214,7 @@ namespace MotionControl.Host.Wpf
             bool showStationFlows = !_controllerConnectionLost && _runtime.ControlOwner == MachineControlOwner.StationFlows;
             bool showTasks = !_controllerConnectionLost && _runtime.ControlOwner == MachineControlOwner.TaskEngine;
             StationStepHeadingText.Visibility = showStationFlows ? Visibility.Visible : Visibility.Collapsed;
-            StationRowsPanel.Visibility = showStationFlows ? Visibility.Visible : Visibility.Collapsed;
+            StationRowsPanel.Visibility = showStationFlows || (_controllerConnectionLost && _runtime.ControlOwner == MachineControlOwner.StationFlows && _stepTextByFlow.Count > 0) ? Visibility.Visible : Visibility.Collapsed;
             TaskRunPanel.Visibility = showTasks ? Visibility.Visible : Visibility.Collapsed;
             NoAutomaticRunText.Visibility = !_controllerConnectionLost && _runtime.ControlOwner == MachineControlOwner.None
                 ? Visibility.Visible : Visibility.Collapsed;
@@ -222,31 +229,55 @@ namespace MotionControl.Host.Wpf
                     : GetMachineStateResourceKey(_runtime.State);
             MachineStateText.Text = ((string)FindResource("整机当前状态"))
                 + (string)FindResource(stateResourceKey);
-            StartReadinessText.Text = _controllerConnectionLost ? (string)FindResource("软件控制器通讯中断") : _automaticStartBlockReason ?? string.Empty;
-            StartReadinessText.Visibility = !_controllerConnectionLost && string.IsNullOrWhiteSpace(_automaticStartBlockReason)
+            string recoveryBlock = _runtime.RecoveryBlockReason;
+            string visibleBlock = string.IsNullOrWhiteSpace(recoveryBlock) ? _automaticStartBlockReason : recoveryBlock;
+            StartReadinessText.Text = _controllerConnectionLost ? (string)FindResource("软件控制器通讯中断") : visibleBlock ?? string.Empty;
+            StartReadinessText.Visibility = !_controllerConnectionLost && string.IsNullOrWhiteSpace(visibleBlock)
                 ? Visibility.Collapsed
                 : Visibility.Visible;
-            string resetGuidance = !_controllerConnectionLost && _runtime.State == MachineRunState.ResetRequired
+            string resetGuidance = !_controllerConnectionLost && _runtime.State == MachineRunState.ResetRequired && string.IsNullOrWhiteSpace(visibleBlock)
                 ? (string)FindResource("整机复位提示")
                 : string.Empty;
             ResetGuidanceText.Text = resetGuidance;
             ResetGuidanceText.Visibility = string.IsNullOrWhiteSpace(resetGuidance)
                 ? Visibility.Collapsed
                 : Visibility.Visible;
-            foreach (KeyValuePair<IStationFlow, TextBlock> row in _stepTextByFlow)
+            foreach (var row in _stepTextByFlow)
             {
-                row.Value.Text = row.Key.CurrentStepName;
-                Button inputButton = _inputButtonByFlow[row.Key];
-                var inputState = row.Key as IStationInputWaitState;
-                string inputName = inputState == null ? null : inputState.WaitingInputName;
-                inputButton.Visibility = string.IsNullOrWhiteSpace(inputName) ? Visibility.Collapsed : Visibility.Visible;
-                inputButton.IsEnabled = !string.IsNullOrWhiteSpace(inputName);
-                inputButton.ToolTip = string.IsNullOrWhiteSpace(inputName)
-                    ? null
-                    : string.Format((string)FindResource("流程页.核对输入说明"), inputName);
+                string input;
+                bool valid;
+                string step = ReadStation(row.Key, out input, out valid);
+                row.Value.Text = row.Key.StationName + " — " + step + "\n" + (string)FindResource(valid ? "流程页.独立状态未提供" : "流程页.数据未知");
+                if (ReferenceEquals(row.Key, _selectedFlow))
+                {
+                    StationDetailText.Text = row.Key.StationName + "\n" + (string)FindResource("流程页.CSharp来源") + "\n" + step
+                        + "\n" + (string)FindResource(valid ? "流程页.独立状态未提供" : "流程页.数据未知")
+                        + "\n" + (string.IsNullOrWhiteSpace(input) ? (string)FindResource("流程页.输入未提供") : string.Format((string)FindResource("流程页.等待输入"), input));
+                    StationInputButton.IsEnabled = valid && !string.IsNullOrWhiteSpace(input);
+                    StationInputButton.ToolTip = StationInputButton.IsEnabled ? input : (string)FindResource("流程页.输入未提供");
+                }
+            }
+            if (_selectedFlow == null)
+            {
+                StationDetailText.Text = (string)FindResource("未配置自动工位");
+                StationInputButton.IsEnabled = false;
             }
 
-            MachineAlarmRecord[] alarms = _runtime.AlarmService.Alarms.ToArray();
+            MachineAlarmRecord[] alarms;
+            bool alarmReadFailed = false;
+            try { alarms = _runtime.AlarmService.Alarms.ToArray(); }
+            catch (Exception error)
+            {
+                alarms = new MachineAlarmRecord[0];
+                alarmReadFailed = true;
+                AlarmText.ToolTip = error.GetBaseException().Message;
+            }
+            bool codeMode = _runtime.ControlOwner == MachineControlOwner.StationFlows;
+            AlarmDetailsPanel.Visibility = codeMode ? Visibility.Collapsed : Visibility.Visible;
+            StationAlarmSummaryText.Text = alarmReadFailed || _controllerConnectionLost
+                ? (string)FindResource("流程页.报警状态未知")
+                : alarms.Length == 0 ? string.Empty : string.Format((string)FindResource("报警数量摘要"), alarms.Length, alarms.Count(a => a.RequiresReset), alarms.Count(a => !a.RequiresReset));
+            StationAlarmSummaryText.Visibility = codeMode && !string.IsNullOrEmpty(StationAlarmSummaryText.Text) ? Visibility.Visible : Visibility.Collapsed;
             if (alarms.Length == 0)
             {
                 AlarmText.Text = _controllerConnectionLost
@@ -266,9 +297,10 @@ namespace MotionControl.Host.Wpf
                 if (_controllerConnectionLost) AlarmText.Text += "\n" + (string)FindResource("软件控制器通讯中断");
             }
 
-            LastErrorText.Text = _runtime.LastError == null
-                ? string.Empty
-                : ((string)FindResource("最近故障")) + _runtime.LastError.GetBaseException().Message;
+            if (alarmReadFailed) AlarmText.Text = (string)FindResource("流程页.报警状态未知");
+            if (_runtime.LastError != null) _lastObservedError = _runtime.LastError.GetBaseException().Message;
+            LastErrorText.Visibility = string.IsNullOrEmpty(_lastObservedError) ? Visibility.Collapsed : Visibility.Visible;
+            LastErrorText.Text = string.IsNullOrEmpty(_lastObservedError) ? string.Empty : ((string)FindResource("最近故障")) + _lastObservedError;
         }
 
         /// <summary>把 Runtime 状态映射到与主窗口一致的多语言资源键。</summary>

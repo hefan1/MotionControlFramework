@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Runtime.Machine;
+using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Host.Wpf.Configuration;
 using MotionControl.TaskEngine.Configuration;
 
@@ -53,7 +54,8 @@ namespace MotionControl.Host.Wpf
         internal EquipmentProjectView CreateEquipmentProjectPage()
         {
             var page = new EquipmentProjectView(GetEquipmentProjectService(), GetEquipmentProjectApplyBlockedReason,
-                AcquireEquipmentProjectApplyGateAsync, RequireEquipmentProjectRestart);
+                AcquireEquipmentProjectApplyGateAsync, RequireEquipmentProjectRestart,
+                new ConfigurationChangeJournal(_configurationStore, MachineId));
             page.SetLanguage(_mainWindow.CurrentLanguage);
             _mainWindow.LanguageChanged += (sender, args) => page.SetLanguage(_mainWindow.CurrentLanguage);
             return page;

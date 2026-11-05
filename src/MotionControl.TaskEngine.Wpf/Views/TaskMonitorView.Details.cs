@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -14,6 +14,9 @@ namespace MotionControl.TaskEngine.Wpf.Views
     /// <summary>步骤详情按动作类型直接分派，状态记录与定义参数分开显示。</summary>
     public partial class TaskMonitorView
     {
+        /// <summary>会话引用不可变，只缓存当前选择与语言对应的有界显示字段。</summary>
+        private readonly TaskProjectionDetailCache _projectionDetailCache = new TaskProjectionDetailCache();
+
         /// <summary>只有选择变化时重建关联按钮；刷新数值不会打断键盘焦点。</summary>
         private TaskStepRow _referenceRow;
         /// <summary>上次构建关联入口时的界面语言标记。</summary>
@@ -69,6 +72,9 @@ namespace MotionControl.TaskEngine.Wpf.Views
             AddMotionDetails(node, fields, parameters, references);
             AddSignalDetails(node, diagnostic, fields, parameters, references);
             AddFlowDetails(row, fields, parameters, references);
+            var selectedStation = StationsGrid.SelectedItem as MotionControl.TaskEngine.Wpf.Monitoring.TaskStationRow;
+            fields.AddRange(_projectionDetailCache.Read(_session.Projection, _session.ProjectionError,
+                selectedStation?.Id, row.TaskId, node.Id, _guidanceEnglish));
             FlowDetails.ItemsSource = fields;
             ParametersList.ItemsSource = parameters;
             DetailNotice.Text = row.Snapshot?.State == TaskNodeState.Failed ? T("故障恢复提示")

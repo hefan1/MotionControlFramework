@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
@@ -58,7 +58,7 @@ namespace MotionControl.OperatorPages.Checks
             overview.SetRuntime(runtime);
             overview.SetConnectionStatus(true, null);
             overview.SetTaskStationProvider(() => data);
-            var cards = (ItemsControl)overview.FindName("StationCards");
+            var cards = (ItemsControl)overview.FindName("StationTable");
             if (cards.Items.Count != 2 || ((FrameworkElement)overview.FindName("AggregateMetrics")).Visibility != Visibility.Collapsed)
                 throw new InvalidOperationException("任务工位未显示，或仍显示生产统计。");
             var safetyPanel = (FrameworkElement)overview.FindName("SafetySummaryPanel");

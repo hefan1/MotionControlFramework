@@ -9,9 +9,17 @@ namespace MotionControl.Framework.Runtime.Machine
     public sealed partial class MachineRuntime
     {
         /// <summary>检查手动操作条件并刷新已配置的急停状态；未配置软件 DI 不阻止手动调试。</summary>
-        public async Task<ManualOperationBlockReason> GetManualOperationBlockReasonAsync(
-            CancellationToken cancellationToken)
+        public Task<ManualOperationBlockReason> GetManualOperationBlockReasonAsync(CancellationToken cancellationToken)
         {
+            return CheckManualOperationBlockAsync(cancellationToken, commandLockHeld: false);
+        }
+
+        /// <summary>页面查询按原连接与控制权上报；实际手动操作已持命令锁，沿用原联锁路径。</summary>
+        private async Task<ManualOperationBlockReason> CheckManualOperationBlockAsync(
+            CancellationToken cancellationToken, bool commandLockHeld)
+        {
+            Guid? session = ConnectionSessionId;
+            long observationVersion = SafetyObservationVersion;
             ManualOperationBlockReason stateReason = GetManualOperationStateBlockReason();
             if (stateReason != ManualOperationBlockReason.None)
             {
@@ -21,7 +29,15 @@ namespace MotionControl.Framework.Runtime.Machine
             bool emergencyStopActive;
             try
             {
-                emergencyStopActive = await UpdateEmergencyStopAlarmAsync(cancellationToken).ConfigureAwait(false);
+                if (commandLockHeld)
+                    emergencyStopActive = await UpdateEmergencyStopAlarmAsync(cancellationToken).ConfigureAwait(false);
+                else
+                {
+                    if (!IsReadConnectionCurrent(session, observationVersion)) return ManualOperationBlockReason.EmergencyStopStatusUnavailable;
+                    emergencyStopActive = await UpdateEmergencyStopAlarmAsync(cancellationToken, session, observationVersion, manualObservation: true)
+                        .ConfigureAwait(false);
+                    if (!IsReadConnectionCurrent(session, observationVersion)) return ManualOperationBlockReason.EmergencyStopStatusUnavailable;
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -201,7 +217,7 @@ namespace MotionControl.Framework.Runtime.Machine
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                ManualOperationBlockReason blockReason = await GetManualOperationBlockReasonAsync(cancellationToken)
+                ManualOperationBlockReason blockReason = await CheckManualOperationBlockAsync(cancellationToken, commandLockHeld: true)
                     .ConfigureAwait(false);
                 if (blockReason == ManualOperationBlockReason.None)
                 {
@@ -244,7 +260,7 @@ namespace MotionControl.Framework.Runtime.Machine
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                ManualOperationBlockReason blockReason = await GetManualOperationBlockReasonAsync(cancellationToken)
+                ManualOperationBlockReason blockReason = await CheckManualOperationBlockAsync(cancellationToken, commandLockHeld: true)
                     .ConfigureAwait(false);
 
                 // 急停输入已经恢复；仅整机急停报警尚未复位时，允许先处理轴驱动报警。

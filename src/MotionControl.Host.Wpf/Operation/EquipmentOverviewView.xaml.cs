@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -57,8 +57,66 @@ namespace MotionControl.Host.Wpf.Operation
         private OperationSnapshot _preview;
         /// <summary>只在本页可见时刷新软件状态。</summary>
         private readonly DispatcherTimer _timer;
-        /// <summary>保持卡片与滚动上下文，不在每次刷新时重建全部控件。</summary>
-        private readonly List<StationOverviewCard> _cards = new List<StationOverviewCard>();
+        /// <summary>选中工位的实际身份；C# 使用工位对象，任务使用唯一提供器标识。</summary>
+        private object _selectedStationKey;
+        /// <summary>更新工位表时避免选择事件回写临时空状态。</summary>
+        private bool _updatingStationTable;
+        /// <summary>详情只消费本轮已采集快照，不在选择事件中再次采样。</summary>
+        private OperationSnapshot _stationTableSnapshot;
+        /// <summary>选择只改变本站详情，不改变控制权。</summary>
+        private void StationTable_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_updatingStationTable) return;
+            var item = StationTable.SelectedItem as ListBoxItem;
+            _selectedStationKey = item?.Tag;
+            SelectedStationText.Text = item?.ToolTip as string ?? string.Empty;
+            var station = item?.DataContext as StationOverviewData;
+            var snapshot = _stationTableSnapshot;
+            string key = station == null ? null : string.IsNullOrEmpty(station.Id) ? station.Name : station.Id;
+            bool unique = key != null && snapshot != null && FindStation(snapshot, key) != null && (!_connectionStatusKnown || _isCardConnected);
+            SelectedFlowButton.Tag = SelectedReasonButton.Tag = SelectedInputButton.Tag = key;
+            SelectedFlowButton.IsEnabled = SelectedReasonButton.IsEnabled = unique;
+            SelectedInputButton.Visibility = unique && !string.IsNullOrWhiteSpace(station.WaitingInputName) ? Visibility.Visible : Visibility.Collapsed;
+        }
+        /// <summary>按当前真实来源生成可滚动工位表；没有稳定身份不跨刷新猜测选择。</summary>
+        private void UpdateStationTable(OperationSnapshot snapshot, bool connectionLost)
+        {
+            _updatingStationTable = true;
+            _stationTableSnapshot = snapshot;
+            var flows = _preview == null && snapshot.ControlOwner == MachineControlOwner.StationFlows
+                ? _runtime.StationFlows.ToArray() : new IStationFlow[0];
+            for (int index = 0; index < snapshot.Stations.Count; index++)
+            {
+                var station = snapshot.Stations[index];
+                object key = index < flows.Length ? (object)flows[index]
+                    : !string.IsNullOrWhiteSpace(station.Id) && snapshot.Stations.Count(s => s.Id == station.Id) == 1 ? station.Id : null;
+                string state = connectionLost ? T("总览数据未知") : string.IsNullOrWhiteSpace(station.StateText)
+                    ? T("整机状态") + " · " + T(!string.IsNullOrWhiteSpace(_automaticStartBlockReason) ? "启动条件未满足" : OperationUi.StateKey(snapshot.State)) : station.StateText;
+                string step = connectionLost ? T("总览数据未知") : string.IsNullOrWhiteSpace(station.CurrentStep) ? T("总览未提供") : station.CurrentStep;
+                string wait = connectionLost ? T("总览数据未知") : station.WaitingInputName ?? T("总览未提供");
+                string description = station.Name + "\n" + state + "\n" + T(OperationUi.StepLabelKey(snapshot.State, station)) + "\n" + step + "\n" + wait + "\n" + T("总览采样缺省");
+                var item = key == null ? null : StationTable.Items.OfType<ListBoxItem>().FirstOrDefault(existing => Equals(existing.Tag, key));
+                if (item == null)
+                {
+                    item = new ListViewItem { MinHeight = 44, Padding = new Thickness(8), FontSize = 14 };
+                    StationTable.Items.Insert(index, item);
+                }
+                else if (StationTable.Items.IndexOf(item) != index)
+                {
+                    StationTable.Items.Remove(item);
+                    StationTable.Items.Insert(index, item);
+                }
+                item.Tag = key;
+                item.DataContext = station;
+                item.ToolTip = description;
+                item.Content = new[] { station.Name, state, T(OperationUi.StepLabelKey(snapshot.State, station)) + "：" + step, wait, T("总览采样缺省") };
+                if (key != null && Equals(key, _selectedStationKey)) StationTable.SelectedItem = item;
+            }
+            while (StationTable.Items.Count > snapshot.Stations.Count) StationTable.Items.RemoveAt(StationTable.Items.Count - 1);
+            if (StationTable.SelectedItem == null && StationTable.Items.Count > 0) StationTable.SelectedIndex = 0;
+            _updatingStationTable = false;
+            StationTable_SelectionChanged(null, null);
+        }
         /// <summary>创建总览；无 Runtime 时明确显示未读取。</summary>
         public EquipmentOverviewView()
         {
@@ -109,7 +167,7 @@ namespace MotionControl.Host.Wpf.Operation
         }
         /// <summary>切换本页语言后重建文字，不修改设备数据。</summary>
         public void SetLanguage(string language)
-        { OperationUi.SetLanguage(this, language); _cards.Clear(); StationCards.Items.Clear(); RefreshDisplay(); }
+        { OperationUi.SetLanguage(this, language); RefreshDisplay(); }
         /// <summary>可见时启动刷新。</summary>
         private void ViewLoaded(object sender, RoutedEventArgs e) { RefreshDisplay(); _timer.Start(); }
         /// <summary>离开时停止刷新，保留卡片与滚动位置。</summary>
@@ -196,24 +254,13 @@ namespace MotionControl.Host.Wpf.Operation
                 : T(_isTaskSessionLoaded == null ? "任务会话状态待查看"
                     : _isTaskSessionLoaded() ? "任务已读取，暂无工位状态" : "任务未读取请先读取");
             TaskRunStatusText.ToolTip = snapshot.StationReadError?.ToString();
-            StationCards.Visibility = connectionLost ? Visibility.Collapsed : Visibility.Visible;
+
             EmptyText.Text = snapshot.Stations.Count == 0 && !taskOwner
                 ? T(!snapshot.HasRuntime ? "尚无运行时，请先检查控制卡连接"
                     : snapshot.ControlOwner == MachineControlOwner.None ? "当前未启用自动运行" : "未配置自动工位") : "";
             EmptyText.Visibility = snapshot.Stations.Count == 0 && !taskOwner ? Visibility.Visible : Visibility.Collapsed;
-            bool changed = _cards.Count != snapshot.Stations.Count || _cards.Where((card, index) =>
-                card.StationName != snapshot.Stations[index].Name || card.StationId != snapshot.Stations[index].Id).Any();
-            if (changed)
-            {
-                _cards.Clear(); StationCards.Items.Clear();
-                foreach (var station in snapshot.Stations)
-                {
-                    var card = new StationOverviewCard(this, station.Id, station.Name, OpenFlow, OpenReason, OpenStationInput);
-                    _cards.Add(card); StationCards.Items.Add(card.Container);
-                }
-            }
-            for (int index = 0; index < _cards.Count; index++)
-                _cards[index].Update(snapshot, snapshot.Stations[index], startBlocked, startChecking);
+            StationTable.Visibility = connectionLost ? Visibility.Collapsed : Visibility.Visible;
+            UpdateStationTable(snapshot, connectionLost);
             if (!snapshot.HasRuntime || (connectionLost && snapshot.Alarms.Count == 0))
             {
                 AlertText.Text = T("未读取报警状态");
@@ -251,16 +298,38 @@ namespace MotionControl.Host.Wpf.Operation
         {
             try { return _preview ?? OperationSnapshot.Read(_runtime,
                 _connectionStatusKnown && !_isCardConnected ? null : _taskStationProvider); }
-            catch (Exception error) { return new OperationSnapshot { SampledAt = DateTime.Now, LastError = error.ToString() }; }
-        }
-        /// <summary>按窗口宽度排列工位卡片；四个及以上工位可使用四列，窄窗仍在工位区滚动。</summary>
-        private void CardsSizeChanged(object sender, SizeChangedEventArgs e)
-        {
-            if (e.NewSize.Width < 100) return;
-            int maximumColumns = _cards.Count >= 4 ? 4 : 3;
-            int columns = Math.Max(1, Math.Min(maximumColumns, (int)(e.NewSize.Width / 290)));
-            double width = Math.Max(250, e.NewSize.Width / columns - 12);
-            foreach (var card in _cards) if (Math.Abs(card.Container.Width - width) > 0.5) card.Container.Width = width;
+            catch (Exception error)
+            {
+                var result = new OperationSnapshot { SampledAt = DateTime.Now, LastError = error.ToString() };
+                if (_runtime == null || _runtime.ControlOwner != MachineControlOwner.StationFlows) return result;
+                result.HasRuntime = true;
+                result.State = _runtime.State;
+                result.ControlOwner = _runtime.ControlOwner;
+                try { result.Alarms = _runtime.AlarmService.Alarms.ToList(); }
+                catch (Exception alarmError)
+                {
+                    // 保留原始采集错误与报警读取错误；HasRuntime=false 使现有报警条显示未知。
+                    result.HasRuntime = false;
+                    result.LastError = error.ToString() + "\n" + alarmError.ToString();
+                }
+                foreach (var flow in _runtime.StationFlows)
+                {
+                    var row = new StationOverviewData { Name = flow.StationName, Id = flow.StationName };
+                    try
+                    {
+                        row.CurrentStep = flow.CurrentStepName;
+                        row.WaitingInputName = (flow as IStationInputWaitState)?.WaitingInputName;
+                    }
+                    catch (Exception readError)
+                    {
+                        row.StateText = T("总览数据未知");
+                        row.CurrentStep = T("总览数据未知");
+                        row.Detail = readError.GetBaseException().Message;
+                    }
+                    result.Stations.Add(row);
+                }
+                return result;
+            }
         }
         /// <summary>依据整机状态和自动工位配置提示可执行的下一步，不从动作文字猜测复位或回零结果。</summary>
         private static string NextAction(OperationSnapshot snapshot)
@@ -302,13 +371,7 @@ namespace MotionControl.Host.Wpf.Operation
                 ? station.PreviewReason
                 : string.IsNullOrWhiteSpace(station.Detail) ? BuildStationReason(snapshot)
                     : station.Detail + "\n\n" + BuildStationReason(snapshot);
-            string alarmDetails = string.Join("\n", snapshot.Alarms.Where(alarm =>
-                string.Equals(alarm.SourceName, station.Name, StringComparison.OrdinalIgnoreCase)
-                || !string.IsNullOrEmpty(station.Id) && string.Equals(alarm.SourceName, station.Id, StringComparison.OrdinalIgnoreCase)).Select(alarm =>
-                alarm.SourceName + " / " + alarm.Definition.Message + "：" + alarm.Detail));
-            string alarmSection = string.IsNullOrWhiteSpace(alarmDetails)
-                ? string.Empty
-                : "\n\n" + T("当前报警") + "：\n" + alarmDetails;
+            string alarmSection = string.Empty; // 未提供明确报警归属接口，不按同名推断。
             MessageBox.Show(station.Name + "\n" + T(OperationUi.StepLabelKey(snapshot.State, station)) + "：" + station.CurrentStep
                 + "\n\n" + reason + alarmSection,
                 T("工位状态与处理建议"), MessageBoxButton.OK, MessageBoxImage.Information);
@@ -355,9 +418,11 @@ namespace MotionControl.Host.Wpf.Operation
         /// <summary>优先按执行入口标识定位；没有标识的传统工位按名称匹配。</summary>
         private static StationOverviewData FindStation(OperationSnapshot snapshot, string key)
         {
-            return snapshot.Stations.FirstOrDefault(station => !string.IsNullOrEmpty(station.Id)
-                && string.Equals(station.Id, key, StringComparison.OrdinalIgnoreCase))
-                ?? snapshot.Stations.FirstOrDefault(station => string.Equals(station.Name, key, StringComparison.OrdinalIgnoreCase));
+            var ids = snapshot.Stations.Where(station => !string.IsNullOrEmpty(station.Id) && string.Equals(station.Id, key, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (ids.Length == 1) return ids[0];
+            if (ids.Length > 1) return null;
+            var names = snapshot.Stations.Where(station => string.Equals(station.Name, key, StringComparison.OrdinalIgnoreCase)).ToArray();
+            return names.Length == 1 ? names[0] : null;
         }
         /// <summary>进入当前报警，不执行复位。</summary>
         private void Alarms_Click(object sender, RoutedEventArgs e) { NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("当前报警")); }
@@ -378,85 +443,4 @@ namespace MotionControl.Host.Wpf.Operation
         internal string T(string text) { return OperationUi.T(this, text); }
     }
 
-    /// <summary>一个工位的固定卡片控件，刷新只更新文字。</summary>
-    internal sealed class StationOverviewCard
-    {
-        /// <summary>启动条件检查或拦截时使用的提示色。</summary>
-        private static readonly Brush StartReadinessBrush = new SolidColorBrush(Color.FromRgb(132, 91, 10));
-
-        /// <summary>稳定工位名称用于保持卡片顺序。</summary>
-        internal string StationName { get; private set; }
-        /// <summary>执行入口的工位标识，用于同名工位的准确定位。</summary>
-        internal string StationId { get; private set; }
-        /// <summary>卡片外边框。</summary>
-        internal Border Container { get; private set; }
-        /// <summary>所属页面提供语言文字。</summary>
-        private readonly EquipmentOverviewView _owner;
-        /// <summary>当前整机约束下的状态文字。</summary>
-        private readonly TextBlock _state;
-        /// <summary>当前流程动作原文。</summary>
-        private readonly TextBlock _step;
-        /// <summary>根据整机状态说明当前步骤是待执行、正在执行还是暂停保留。</summary>
-        private readonly TextBlock _stepLabel;
-        /// <summary>提示操作员从流程与信号页面确认下一步。</summary>
-        private readonly TextBlock _note;
-        /// <summary>工位明确等待 DI 时提供直接核对入口。</summary>
-        private readonly Button _inputButton;
-        /// <summary>以工位、动作和等待说明构造卡片；查看入口不发送设备命令。</summary>
-        internal StationOverviewCard(EquipmentOverviewView owner, string id, string name, RoutedEventHandler flow,
-            RoutedEventHandler reason, RoutedEventHandler input)
-        {
-            _owner = owner; StationId = id; StationName = name;
-            string key = string.IsNullOrEmpty(id) ? name : id;
-            var panel = new StackPanel { Margin = new Thickness(15) };
-            panel.Children.Add(new TextBlock { Text = name, FontSize = 20, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = name });
-            _state = new TextBlock { Margin = new Thickness(0, 6, 0, 6), FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap }; panel.Children.Add(_state);
-            _stepLabel = new TextBlock { Foreground = Brushes.SlateGray };
-            panel.Children.Add(_stepLabel);
-            _step = new TextBlock { TextWrapping = TextWrapping.Wrap, MinHeight = 30, Margin = new Thickness(0, 6, 0, 6), FontSize = 15 }; panel.Children.Add(_step);
-            _note = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = new SolidColorBrush(Color.FromRgb(64, 83, 106)), MinHeight = 28 }; panel.Children.Add(_note);
-            var actions = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
-            var view = new Button { Content = owner.T("查看流程"), Tag = key }; view.Click += flow; actions.Children.Add(view);
-            var why = new Button { Content = owner.T("查看原因"), Tag = key }; why.Click += reason; actions.Children.Add(why); panel.Children.Add(actions);
-            _inputButton = new Button { Content = owner.T("核对输入"), Tag = key, Visibility = Visibility.Collapsed };
-            _inputButton.SetValue(FrameworkElement.ToolTipProperty, owner.T("从当前等待步骤定位对应输入"));
-            _inputButton.Click += input; actions.Children.Add(_inputButton);
-            Container = new Border { Width = 315, Margin = new Thickness(0, 0, 12, 12), Background = Brushes.White, BorderBrush = new SolidColorBrush(Color.FromRgb(217, 224, 232)), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6), Child = panel };
-        }
-        /// <summary>显示执行入口明确提供的状态与条件；未提供独立状态时明确标注整机状态。</summary>
-        internal void Update(OperationSnapshot snapshot, StationOverviewData station, bool startBlocked, bool startChecking)
-        {
-            string stateKey = startBlocked ? "启动条件未满足"
-                : startChecking ? "正在检查启动条件"
-                : OperationUi.StateKey(snapshot.State);
-            bool independentState = !string.IsNullOrWhiteSpace(station.StateText);
-            _state.Text = independentState ? station.StateText : _owner.T("整机状态") + " · " + _owner.T(stateKey);
-            _state.Foreground = independentState ? ReadStateBrush(station.StateColor)
-                : startBlocked || startChecking ? StartReadinessBrush : OperationUi.StateBrush(snapshot.State);
-            _stepLabel.Text = _owner.T(OperationUi.StepLabelKey(snapshot.State, station));
-            _step.Text = string.IsNullOrEmpty(station.CurrentStep) ? _owner.T("未提供当前步骤") : station.CurrentStep;
-            bool waitingInput = !string.IsNullOrWhiteSpace(station.WaitingInputName);
-            string detail = station.Detail;
-            if (string.IsNullOrWhiteSpace(detail))
-                detail = string.Join("；", snapshot.Alarms.Where(alarm =>
-                    string.Equals(alarm.SourceName, station.Name, StringComparison.OrdinalIgnoreCase)
-                    || !string.IsNullOrEmpty(station.Id) && string.Equals(alarm.SourceName, station.Id, StringComparison.OrdinalIgnoreCase))
-                    .Select(alarm => alarm.Definition.Message));
-            _note.Text = !string.IsNullOrWhiteSpace(detail) ? detail
-                : waitingInput ? _owner.T("当前等待输入") + "：" + station.WaitingInputName
-                    : _owner.T("查看工位运行了解当前步骤");
-            _inputButton.Visibility = waitingInput ? Visibility.Visible : Visibility.Collapsed;
-        }
-        /// <summary>只接受明确的 RGB 状态颜色，来源未提供颜色时使用中性文字色。</summary>
-        private static Brush ReadStateBrush(string color)
-        {
-            if (color == null || color.Length != 7 || color[0] != '#') return Brushes.SlateGray;
-            byte red, green, blue;
-            if (!byte.TryParse(color.Substring(1, 2), System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out red)
-                || !byte.TryParse(color.Substring(3, 2), System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out green)
-                || !byte.TryParse(color.Substring(5, 2), System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out blue))
-                return Brushes.SlateGray;
-            return new SolidColorBrush(Color.FromRgb(red, green, blue));
-        }
-    }
 }

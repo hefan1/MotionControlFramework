@@ -5,9 +5,9 @@
  <sys:String x:Key="任务编辑.保存并检查">Save and check</sys:String>
  <sys:String x:Key="任务编辑.草稿已保存">Draft saved</sys:String>
  <sys:String x:Key="任务编辑.备份与恢复">Backup and restore</sys:String>
- <sys:String x:Key="任务编辑.备份说明">This file includes this machine's station schedule, task library, and shared resources. It does not include axis mapping, IO mapping, device variables, or communication settings, and can only be restored to the same machine ID. Restoring replaces only the draft; active task files stay unchanged and are checked against the current hardware configuration.</sys:String>
+ <sys:String x:Key="任务编辑.备份说明">The backup contains the complete task workspace for this machine: station schedule, task library, and shared resources. Exporting from the editor also includes the current unsaved task and preserves its unsaved indicator. Axis and IO mappings, device variables, and communication settings are excluded. Restore is limited to the same machine ID, replaces only the draft, leaves active files unchanged, and checks against the current hardware configuration.</sys:String>
  <sys:String x:Key="任务编辑.导出任务配置备份">Export task configuration backup...</sys:String>
- <sys:String x:Key="任务编辑.导出当前任务备份">Export current task backup...</sys:String>
+ <sys:String x:Key="任务编辑.导出当前任务备份">Export equipment task backup...</sys:String>
  <sys:String x:Key="任务编辑.从备份恢复为草稿">Restore backup as draft...</sys:String>
  <sys:String x:Key="任务编辑.其他草稿操作">Other draft actions</sys:String>
  <sys:String x:Key="任务编辑.重新读取最新草稿">Reload latest draft</sys:String>
@@ -49,7 +49,7 @@
  <sys:String x:Key="任务编辑.步骤">Step</sys:String>
  <sys:String x:Key="任务编辑.步骤超时(ms)">Step timeout (ms)</sys:String>
  <sys:String x:Key="任务编辑.参与运行">Enabled</sys:String>
- <sys:String x:Key="任务编辑.草稿已保存，未改变运行版本">Draft saved. Active files are unchanged.</sys:String>
+ <sys:String x:Key="任务编辑.草稿已保存，未改变运行版本">Workspace draft saved; running files and the loaded session remain unchanged.</sys:String>
  <sys:String x:Key="任务编辑.草稿与现有目录已载入">Draft and existing catalog loaded</sys:String>
  <sys:String x:Key="任务编辑.插入">Insert</sys:String>
  <sys:String x:Key="任务编辑.查看引用">View references</sys:String>
@@ -250,7 +250,7 @@
  <sys:String x:Key="任务编辑.运行工位说明">These automatic station flows are currently loaded in the equipment runtime. Their presence does not mean they are running. A task draft marked “Not applied” does not change these flows; names are shown for operator comparison.</sys:String>
  <sys:String x:Key="任务编辑.仅更新任务文件，不启动设备">Updating task files does not start the equipment. Reload the task to use the updated configuration.</sys:String>
  <sys:String x:Key="任务编辑.确认更新以下任务文件">Update the following task files? This will not start the equipment. Reload the task to use the updated configuration.</sys:String>
- <sys:String x:Key="任务编辑.任务文件已更新">Task files updated. Reload the task to use the new configuration.</sys:String>
+ <sys:String x:Key="任务编辑.任务文件已更新">Running task files updated; the current session was not reloaded. The new configuration must be accepted by the actual task-loading process.</sys:String>
  <sys:String x:Key="任务编辑.有未保存修改，运行版本未改变">Unsaved changes. Active files are unchanged.</sys:String>
  <sys:String x:Key="任务编辑.有效">Active</sys:String>
  <sys:String x:Key="任务编辑.右值">Right value</sys:String>

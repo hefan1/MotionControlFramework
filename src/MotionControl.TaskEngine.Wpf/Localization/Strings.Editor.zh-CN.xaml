@@ -5,9 +5,9 @@
  <sys:String x:Key="任务编辑.保存并检查">保存并检查</sys:String>
  <sys:String x:Key="任务编辑.草稿已保存">草稿已保存</sys:String>
  <sys:String x:Key="任务编辑.备份与恢复">备份与恢复</sys:String>
- <sys:String x:Key="任务编辑.备份说明">这里只备份本机的工位安排、任务库和共享资源，不包含轴映射、IO映射、设备变量或通讯参数；备份只能恢复到相同设备标识。恢复只替换草稿，运行任务文件保持不变，并会按当前硬件配置重新检查。</sys:String>
+ <sys:String x:Key="任务编辑.备份说明">备份范围为当前设备的完整任务工作区：工位安排、任务库和共享资源；从编辑器导出也包含当前未保存任务，并保留未保存标记。不包含轴映射、IO映射、设备变量或通讯参数；备份只能恢复到相同设备标识。恢复只替换草稿，运行任务文件保持不变，并会按当前硬件配置重新检查。</sys:String>
  <sys:String x:Key="任务编辑.导出任务配置备份">导出任务配置备份...</sys:String>
- <sys:String x:Key="任务编辑.导出当前任务备份">导出当前任务备份...</sys:String>
+ <sys:String x:Key="任务编辑.导出当前任务备份">导出设备任务备份...</sys:String>
  <sys:String x:Key="任务编辑.从备份恢复为草稿">从备份恢复为草稿...</sys:String>
  <sys:String x:Key="任务编辑.其他草稿操作">其他草稿操作</sys:String>
  <sys:String x:Key="任务编辑.重新读取最新草稿">重新读取最新草稿</sys:String>
@@ -49,7 +49,7 @@
  <sys:String x:Key="任务编辑.步骤">步骤</sys:String>
  <sys:String x:Key="任务编辑.步骤超时(ms)">步骤超时(ms)</sys:String>
  <sys:String x:Key="任务编辑.参与运行">参与运行</sys:String>
- <sys:String x:Key="任务编辑.草稿已保存，未改变运行版本">草稿已保存，未改变运行版本</sys:String>
+ <sys:String x:Key="任务编辑.草稿已保存，未改变运行版本">工作区草稿已保存；运行文件和已加载会话未改变。</sys:String>
  <sys:String x:Key="任务编辑.草稿与现有目录已载入">草稿与现有目录已载入</sys:String>
  <sys:String x:Key="任务编辑.插入">插入</sys:String>
  <sys:String x:Key="任务编辑.查看引用">查看引用</sys:String>
@@ -250,7 +250,7 @@
  <sys:String x:Key="任务编辑.运行工位说明">此处显示正式设备当前加载的自动工位流程，不代表这些工位正在运行。任务草稿显示“未应用”时，不会改变现有流程；名称用于现场对照。</sys:String>
  <sys:String x:Key="任务编辑.仅更新任务文件，不启动设备">更新任务文件不会启动设备；更新后需重新读取任务才能使用新配置。</sys:String>
  <sys:String x:Key="任务编辑.确认更新以下任务文件">确认更新以下任务文件？本操作不会启动设备；更新后需重新读取任务才能使用新配置。</sys:String>
- <sys:String x:Key="任务编辑.任务文件已更新">任务文件已更新；重新读取任务后使用新配置。</sys:String>
+ <sys:String x:Key="任务编辑.任务文件已更新">运行任务文件已更新；本操作未重新加载当前会话。新配置需由实际任务装载流程采用。</sys:String>
  <sys:String x:Key="任务编辑.有未保存修改，运行版本未改变">有未保存修改，运行版本未改变</sys:String>
  <sys:String x:Key="任务编辑.有效">有效</sys:String>
  <sys:String x:Key="任务编辑.右值">右值</sys:String>

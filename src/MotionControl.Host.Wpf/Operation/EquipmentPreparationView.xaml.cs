@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
@@ -59,6 +59,8 @@ namespace MotionControl.Host.Wpf.Operation
         public void SetRuntime(MachineRuntime runtime)
         {
             _runtime = runtime;
+            _startBlockReason = null;
+            _startReadinessChecking = false;
             _error = null;
             _diagnostic = null;
             _rows.Clear();
@@ -100,6 +102,12 @@ namespace MotionControl.Host.Wpf.Operation
         private void Refresh()
         {
             if (SummaryText == null) return;
+            StartConditionsButton.Content = PageText("启动条件", "Start conditions");
+            ReturnToPreparationButton.Content = PageText("返回设备准备", "Back to preparation");
+            RefreshStartConditionsButton.Content = PageText("重新读取条件", "Refresh conditions");
+            RefreshStartConditionsButton.ToolTip = PageText("仅观察已有内存，不读取设备。", "Observe existing memory only; no device reads.");
+            StartConditionsTitle.Text = PageText("启动条件摘要 / 只读", "Start conditions / read only");
+            RefreshStartConditionsSnapshot();
             StationColumn.Header = T("工位"); StateColumn.Header = T("准备状态"); ActionColumn.Header = T("当前动作");
             bool connected = _runtime != null && _runtime.State != MachineRunState.Disconnected && _runtime.MotionCards.IsConnected;
             var snapshots = connected ? _runtime.PreparationStations : null;
@@ -192,6 +200,21 @@ namespace MotionControl.Host.Wpf.Operation
 
         /// <summary>按当前页面语言显示本页专用提示。</summary>
         private string PageText(string chinese, string english) { return _english ? english : chinese; }
+
+        /// <summary>在准备内容区查看只读摘要的接入状态，不读取设备或改变启动门禁。</summary>
+        private void StartConditions_Click(object sender, RoutedEventArgs e)
+        {
+            PreparationContent.Visibility = Visibility.Collapsed;
+            StartConditionsContent.Visibility = Visibility.Visible;
+            RefreshStartConditionsSnapshot();
+        }
+
+        /// <summary>返回原准备页面，不提交回零或切换设备会话。</summary>
+        private void ReturnToPreparation_Click(object sender, RoutedEventArgs e)
+        {
+            StartConditionsContent.Visibility = Visibility.Collapsed;
+            PreparationContent.Visibility = Visibility.Visible;
+        }
 
         /// <summary>展示实际证据路径和处理边界，不推断现场状态、不提供解除门禁操作。</summary>
         private string BuildRecoveryDiagnostic()

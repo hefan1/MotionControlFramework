@@ -214,8 +214,8 @@ namespace MotionControl.Framework.Runtime.Machine
                 }
                 _preparationCallerCancellation = cancellationToken.Register(() =>
                 {
-                    RequestPreparationStop(currentPreparation);
-                    _ = StopPreparationAfterAlarmAsync(currentPreparation);
+                    if (RequestPreparationStop(currentPreparation) != null)
+                        _ = StopPreparationAfterAlarmAsync(currentPreparation);
                 });
             }
             finally { _commandLock.Release(); }
@@ -321,7 +321,7 @@ namespace MotionControl.Framework.Runtime.Machine
             catch (Exception error) { SetStatus(MachineRunState.Alarmed, error); }
         }
 
-        /// <summary>只请求取消，不等待后台步骤，供停机报警事件使用。</summary>
+        /// <summary>首次登记取消时返回对应准备令牌；重复报警不另起停止任务，显式停止仍可重新核查停稳。</summary>
         private CancellationTokenSource RequestPreparationStop(CancellationTokenSource expected = null)
         {
             lock (_preparationSync)
@@ -332,8 +332,9 @@ namespace MotionControl.Framework.Runtime.Machine
                 {
                     _preparationStopRequested = true;
                     _preparationCancellationTask = Task.Run(() => current.Cancel());
+                    return current;
                 }
-                return current;
+                return null;
             }
         }
 

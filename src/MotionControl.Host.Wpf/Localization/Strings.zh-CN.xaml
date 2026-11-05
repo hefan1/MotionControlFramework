@@ -1,4 +1,4 @@
-<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
     <!-- x:Key 保留中文界面原文，方便按画面文字在代码和资源中搜索。 -->
@@ -474,6 +474,8 @@
     <sys:String x:Key="安全联锁读取失败">安全联锁配置读取失败：{0}</sys:String>
     <sys:String x:Key="安全联锁保存成功">安全联锁配置已保存。</sys:String>
     <sys:String x:Key="安全联锁保存失败">安全联锁配置保存失败：{0}</sys:String>
+    <sys:String x:Key="安全联锁已保存但通知失败">安全输入配置已保存，但完成通知失败：{0}</sys:String>
+    <sys:String x:Key="安全联锁已保存但监控失败">安全输入配置已保存并生效，现场按钮监控恢复失败：{0}</sys:String>
     <sys:String x:Key="安全联锁配置不可保存">配置文件或 DI 映射读取失败，当前不能保存。</sys:String>
     <sys:String x:Key="安全联锁输入必须来自DI映射">请选择 IO 映射中已配置的 DI 名称，或清空该项。</sys:String>
     <sys:String x:Key="IO映射恢复失败格式">IO 映射保存或应用失败，恢复原配置时也发生错误：{0}</sys:String>
@@ -631,7 +633,7 @@
     <sys:String x:Key="变量写入值提示">按所选类型输入值；小数用英文句点，日期时间可输入 yyyy-MM-dd HH:mm:ss</sys:String>
     <sys:String x:Key="变量写入当前值">写入当前值</sys:String>
     <sys:String x:Key="变量页面就绪">变量监控已就绪。</sys:String>
-    <sys:String x:Key="变量运行值说明">当前值仅保存在运行内存；新初值在下次启动时生效。</sys:String>
+    <sys:String x:Key="变量运行值说明">定义新增、编辑、删除确认后立即保存 Parameters/DeviceVariables.json；名称或类型变化后请核查任务引用。当前值来自变量存储，仅写本次运行内存，不修改初始值；写入资格沿用设备状态及 AllowOperatorWrite 原规则。</sys:String>
     <sys:String x:Key="变量写入上下文未选择">先选择变量；只有允许现场写入的变量可以修改。</sys:String>
     <sys:String x:Key="变量写入上下文可写">写入目标：{0}（{1}），当前值：{2}</sys:String>
     <sys:String x:Key="变量写入上下文只读">当前选择：{0}（{1}），当前值：{2}；此变量禁止现场写入。</sys:String>
@@ -724,7 +726,7 @@
     <sys:String x:Key="报警库新增非停机">新增非停机报警</sys:String>
     <sys:String x:Key="报警库删除">删除选中</sys:String>
     <sys:String x:Key="报警库保存">保存报警库</sys:String>
-    <sys:String x:Key="报警库运行语义">任务运行中触发停机报警会受控停止当前轴并要求复位；非停机报警只提示，条件恢复后自动清除。当前连接使用已加载的报警目录。</sys:String>
+    <sys:String x:Key="报警库运行语义">当前工程报警定义目录：新增、删除和编辑先保留草稿，保存整个报警库后写入文件。保存不触发、解除报警或启动设备；更改代码后请人工核查任务引用。</sys:String>
     <sys:String x:Key="报警库代码">报警代码</sys:String>
     <sys:String x:Key="报警库说明">报警说明</sys:String>
     <sys:String x:Key="报警库类型">类别</sys:String>
@@ -767,4 +769,25 @@
  <sys:String x:Key="设备准备">设备准备</sys:String>
  <sys:String x:Key="设备准备页面说明">按设备定义准备工位；完成后由操作员启动生产。</sys:String>
  <sys:String x:Key="状态准备中">设备准备中</sys:String>
+    <sys:String x:Key="流程页.报警状态未知">报警状态未知，请查看当前报警并核查连接。</sys:String>
+    <sys:String x:Key="流程页.CSharp来源">来源：当前 Runtime 的 C# 设备工位；选择仅查看，不执行。</sys:String>
+    <sys:String x:Key="流程页.选中工位">选中工位 / 现场核对</sys:String>
+    <sys:String x:Key="流程页.独立状态未提供">独立工位状态：未提供；整机状态见页首。</sys:String>
+    <sys:String x:Key="流程页.步骤未提供">未提供当前步骤</sys:String>
+    <sys:String x:Key="流程页.读取失败">读取失败，状态未知</sys:String>
+    <sys:String x:Key="流程页.数据未知">数据状态：未知</sys:String>
+    <sys:String x:Key="流程页.断连未知">连接已丢失，当前步骤未知；不沿用旧步骤。</sys:String>
+    <sys:String x:Key="流程页.输入未提供">当前未提供有效的等待输入名称，不能定向定位。</sys:String>
+    <sys:String x:Key="流程页.数据有效">已读取项目提供的步骤；数据质量、采样时间与版本未提供。</sys:String>
+    <sys:String x:Key="流程页.等待输入">当前等待输入：{0}</sys:String>
+    <sys:String x:Key="安全联锁暂停语义说明">现场“停止按钮”请求暂停并保留步骤；顶部“停止”结束本次自动生产。软件配置不替代硬件安全回路。</sys:String>
+    <sys:String x:Key="安全联锁映射未知">映射读取失败：物理地址未提供；不表示输入无效。</sys:String>
+    <sys:String x:Key="安全联锁绑定为空">未配置；不默认绑定输入。</sys:String>
+    <sys:String x:Key="安全联锁绑定地址">已保存映射：{0}；实时输入与采样时间未提供。</sys:String>
+    <sys:String x:Key="安全联锁绑定失效">引用未映射：{0}；保留原文本，请核查 IO 映射。</sys:String>
+    <sys:String x:Key="报警库加载待核对">文件保存与运行中活动报警分开；当前连接使用的目录加载状态待核对。</sys:String>
+    <sys:String x:Key="变量摘要未选择">请选择变量查看定义与运行值。</sys:String>
+    <sys:String x:Key="变量摘要未提供">未配置 / 未提供</sys:String>
+    <sys:String x:Key="变量定义运行摘要格式">定义：{0} · {1}；初始值：{2}；说明：{3}
+当前内存值：{4}。定义保存与运行值写入分别生效。</sys:String>
 </ResourceDictionary>

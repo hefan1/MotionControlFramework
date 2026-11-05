@@ -181,7 +181,6 @@ namespace MotionControl.Framework.Runtime.Configuration
 
             var temporaryPath = filePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
             string backupPath = null;
-            Exception saveError = null;
 
             try
             {
@@ -203,40 +202,20 @@ namespace MotionControl.Framework.Runtime.Configuration
                 {
                     File.Move(temporaryPath, filePath);
                 }
+                // 原子安装成功后临时文件已被移动；此后不再执行可能失败的文件操作。
+                return backupPath;
             }
-            catch (Exception error)
+            catch (Exception saveError)
             {
-                saveError = error;
-            }
-
-            try
-            {
-                if (File.Exists(temporaryPath))
+                try { if (File.Exists(temporaryPath)) File.Delete(temporaryPath); }
+                catch (Exception cleanupError)
                 {
-                    File.Delete(temporaryPath);
+                    throw new AggregateException("保存设备配置失败，且临时文件清理也失败。", saveError, cleanupError);
                 }
-            }
-            catch (Exception cleanupError)
-            {
-                if (saveError != null)
-                {
-                    throw new AggregateException(
-                        "保存设备配置失败，且临时文件清理也失败。",
-                        saveError,
-                        cleanupError);
-                }
-
-                throw new InvalidOperationException("设备配置已保存，但临时文件清理失败。", cleanupError);
-            }
-
-            if (saveError != null)
-            {
                 throw new InvalidOperationException(
                     "保存设备配置失败：MachineId='" + machineId + "'，文件='" + relativeFilePath + "'。",
                     saveError);
             }
-
-            return backupPath;
         }
 
         /// <summary>验证相对 JSON 路径，并确保目标文件位于设备配置目录内。</summary>

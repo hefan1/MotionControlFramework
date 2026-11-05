@@ -16,6 +16,8 @@ namespace MotionControl.TaskEngine.Machine
     /// <summary>一台设备的多工位任务入口；统一运行许可，各工位按任务定义独立执行。</summary>
     public sealed partial class TaskMachineController : IAutomaticProductionPause
     {
+        /// <summary>设备初始化执行工位的保留键；用于关联同一会话的初始化快照。</summary>
+        internal const string InitializationStationId = "__initialization";
         /// <summary>保护整机状态和工位记录，锁内不等待任务完成。</summary>
         private readonly object _sync = new object();
         /// <summary>本会话独占的任务设备，可连接内存设备或已接入的运动控制卡。</summary>
@@ -103,7 +105,7 @@ namespace MotionControl.TaskEngine.Machine
             _stations = _configuration.Stations.Select(station => new StationExecutionControl(this, station)).ToList();
             if (_configuration.InitializationTaskId != null)
                 _initialization = new StationExecutionControl(this, new StationTaskConfiguration {
-                    StationId = "__initialization", Name = "设备初始化", TaskId = _configuration.InitializationTaskId, Mode = StationTaskMode.Once });
+                    StationId = InitializationStationId, Name = "设备初始化", TaskId = _configuration.InitializationTaskId, Mode = StationTaskMode.Once });
             else { _initialized = true; _initializationPermit.TrySetResult(true); }
             _device.ClaimMachine(this);
             AlarmService.StopAlarmRaised += AlarmService_StopAlarmRaised;

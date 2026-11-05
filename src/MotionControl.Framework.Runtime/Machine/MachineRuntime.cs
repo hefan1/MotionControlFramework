@@ -80,6 +80,14 @@ namespace MotionControl.Framework.Runtime.Machine
 
         /// <summary>当前独占设备命令权的执行入口；同一时刻只允许一个入口启动设备。</summary>
         private MachineControlOwner _controlOwner;
+        /// <summary>每次执行入口或安全输入配置更换时递增，识别切换后又返回的旧读取。</summary>
+        private long _safetyObservationVersion;
+
+        /// <summary>控制权及安全输入配置版本；在线变更进行中时返回负值。</summary>
+        public long SafetyObservationVersion { get { lock (_readSessionLock) return _onlineSafetyInputsChanging ? -1 : _safetyObservationVersion; } }
+
+        /// <summary>在线映射变更期间拒绝观察查询，完成后由新轮次重读。</summary>
+        private bool _onlineSafetyInputsChanging;
         /// <summary>当前任务会话的唯一所有者。</summary>
         private object _taskEngineOwner;
         /// <summary>兼容未传所有者的旧调用。</summary>
@@ -98,11 +106,14 @@ namespace MotionControl.Framework.Runtime.Machine
 
         /// <summary>观察并回收当前整机流程任务的后台任务。</summary>
         private Task _flowObserverTask = Task.CompletedTask;
+        /// <summary>使连接或控制权切换与页面急停报警的提交互斥；驱动异步读取始终在锁外。</summary>
+        private readonly object _readSessionLock = new object();
+
         /// <summary>当前控制卡连接周期的唯一标识；断卡后为空，重连会产生新标识。</summary>
         private Guid? _connectionSessionId;
 
         /// <summary>读取本次控制卡连接周期标识；同一 Runtime 对象重连也会改变。</summary>
-        public Guid? ConnectionSessionId { get { lock (_statusLock) return _connectionSessionId; } }
+        public Guid? ConnectionSessionId { get { lock (_readSessionLock) return _connectionSessionId; } }
 
         /// <summary>当前 C# 工位流程及报警交接均正常收尾；只用于同连接会话恢复，不能证明物理安全。</summary>
         public bool IsStationFlowSettlementConfirmed
@@ -342,10 +353,9 @@ namespace MotionControl.Framework.Runtime.Machine
         {
             if (ProductionStopReviewRequired) return "生产已停止，旧工步尚未明确核查。";
             if (RecoveryBlockReason != null) return "设备恢复信息未确认，不能准备或启动：" + RecoveryBlockReason;
-            if (State != MachineRunState.Ready)
-            {
-                return null;
-            }
+            Guid? session = ConnectionSessionId;
+            long observationVersion = SafetyObservationVersion;
+            if (!IsStationReadinessCurrent(session, observationVersion)) return ReadinessContextChanged;
 
             if (_flowScheduler.StationFlows.Count == 0)
             {
@@ -364,7 +374,7 @@ namespace MotionControl.Framework.Runtime.Machine
 
             try
             {
-                if (await UpdateEmergencyStopAlarmAsync(cancellationToken).ConfigureAwait(false))
+                if (await UpdateEmergencyStopAlarmAsync(cancellationToken, session, observationVersion).ConfigureAwait(false))
                 {
                     return "急停输入仍处于触发状态，设备不能启动。";
                 }
@@ -377,7 +387,12 @@ namespace MotionControl.Framework.Runtime.Machine
                         _flowScheduler.HasPendingInitialization,
                         cancellationToken)
                     .ConfigureAwait(false);
-                return null;
+                if (!IsStationReadinessCurrent(session, observationVersion) || !IsEmergencyStopMonitoringConfigured()
+                    || IsShutdownInProgress || ProductionStopReviewRequired || RecoveryBlockReason != null)
+                    return ReadinessContextChanged;
+                if (Volatile.Read(ref _activeManualOperationCount) > 0)
+                    return "仍有手动动作执行，请等待动作完成后再启动自动流程。";
+                return GetPreparationStartBlockReason();
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -385,8 +400,25 @@ namespace MotionControl.Framework.Runtime.Machine
             }
             catch (Exception readinessError)
             {
-                return readinessError.Message;
+                return string.IsNullOrWhiteSpace(readinessError.Message) ? "无法确认自动启动条件。" : readinessError.Message;
             }
+        }
+
+        /// <summary>原读取上下文失效时的保守提示。</summary>
+        private const string ReadinessContextChanged = "设备状态、连接或执行入口已变化，自动启动条件待重新确认。";
+
+        /// <summary>检查读数仍属于当前已连接、就绪的工位控制入口。</summary>
+        public bool IsStationReadinessCurrent(Guid? session, long observationVersion)
+        {
+            return State == MachineRunState.Ready && ControlOwner == MachineControlOwner.StationFlows
+                && IsReadConnectionCurrent(session, observationVersion);
+        }
+
+        /// <summary>核对只读联锁查询的卡连接与独占入口变更次数。</summary>
+        private bool IsReadConnectionCurrent(Guid? session, long observationVersion)
+        {
+            return observationVersion >= 0 && session.HasValue && ConnectionSessionId == session && SafetyObservationVersion == observationVersion
+                && _motionCards.IsConnected;
         }
 
         /// <summary>连接控制卡前载入上次初始化完成标记，供设备流程重连后检查现场状态。</summary>
@@ -410,13 +442,13 @@ namespace MotionControl.Framework.Runtime.Machine
                     _flowScheduler.ResetForNewConnection();
                     InvalidatePreparations("控制器已重新连接，请重新确认工位准备。");
                     await _motionCards.ConnectAsync(cancellationToken).ConfigureAwait(false);
-                    lock (_statusLock) _connectionSessionId = Guid.NewGuid();
+                    lock (_readSessionLock) _connectionSessionId = Guid.NewGuid();
                     SetStatus(MachineRunState.ResetRequired, null);
                     StartControlInputMonitor();
                 }
                 catch (Exception connectionError)
                 {
-                    lock (_statusLock) _connectionSessionId = null;
+                    lock (_readSessionLock) _connectionSessionId = null;
                     SetStatus(MachineRunState.Disconnected, connectionError);
                     throw;
                 }
@@ -449,7 +481,7 @@ namespace MotionControl.Framework.Runtime.Machine
 
                 EnsureNoManualOperationsInProgress("断开运动控制卡");
                 InvalidatePreparationRecordReuse();
-                lock (_statusLock) _connectionSessionId = null;
+                lock (_readSessionLock) _connectionSessionId = null;
 
                 try
                 {
@@ -631,6 +663,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 EnsureStopFeedbackReadSettled();
                 EnsureNoPreparationInProgress("切换任务执行入口");
                 EnsureNoManualOperationsInProgress("切换任务执行入口");
+                lock (_readSessionLock)
                 lock (_controlOwnerLock)
                 {
                     if (_taskEngineOwner != null)
@@ -658,6 +691,7 @@ namespace MotionControl.Framework.Runtime.Machine
                     _ownerBeforeTaskEngine = _controlOwner;
                     _taskEngineOwner = owner;
                     _controlOwner = MachineControlOwner.TaskEngine;
+                    _safetyObservationVersion++;
                 }
             }
             finally
@@ -684,6 +718,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 if (_shutdownSealed) throw new InvalidOperationException("设备已封存退出交接，不能提前释放任务控制权。");
                 EnsureStopFeedbackReadSettled();
                 EnsureNoPreparationInProgress("关闭任务会话");
+                lock (_readSessionLock)
                 lock (_controlOwnerLock)
                 {
                     if (_controlOwner != MachineControlOwner.TaskEngine)
@@ -703,6 +738,7 @@ namespace MotionControl.Framework.Runtime.Machine
                     }
 
                     _controlOwner = _ownerBeforeTaskEngine;
+                    _safetyObservationVersion++;
                     _taskEngineOwner = null;
                 }
             }

@@ -1,4 +1,4 @@
-<UserControl x:Class="MotionControl.Framework.Wpf.Variables.DeviceVariableView"
+﻿<UserControl x:Class="MotionControl.Framework.Wpf.Variables.DeviceVariableView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              Background="#F3F6FA">
@@ -243,11 +243,13 @@
                            Foreground="#40536A"
                            TextTrimming="CharacterEllipsis"
                            ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
-                <TextBlock Grid.Row="1"
-                           Grid.ColumnSpan="2"
-                           Margin="0,5,0,0"
-                           Foreground="#596B7D"
-                           Text="{DynamicResource 变量运行值说明}" />
+                <StackPanel Grid.Row="1" Grid.ColumnSpan="2">
+                    <TextBlock x:Name="SelectedDefinitionSummaryText" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                               MaxHeight="58" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
+                               Margin="0,6,0,0" Foreground="#40536A" />
+                    <TextBlock Margin="0,5,0,0" Foreground="#596B7D"
+                               TextWrapping="Wrap" Text="{DynamicResource 变量运行值说明}" />
+                </StackPanel>
             </Grid>
         </Border>
 

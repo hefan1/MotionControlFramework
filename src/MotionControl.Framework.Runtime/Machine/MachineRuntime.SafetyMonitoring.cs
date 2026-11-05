@@ -11,45 +11,68 @@ namespace MotionControl.Framework.Runtime.Machine
     public sealed partial class MachineRuntime
     {
         /// <summary>读取已配置的急停输入并更新停机报警；未配置时关闭软件监控且不生成急停报警。</summary>
-        private async Task<bool> UpdateEmergencyStopAlarmAsync(CancellationToken cancellationToken)
+        private async Task<bool> UpdateEmergencyStopAlarmAsync(CancellationToken cancellationToken,
+            Guid? readinessSession = null, long? observationVersion = null, bool manualObservation = false)
         {
+            bool active = false;
+            string message;
+            Exception failure = null;
             if (!IsEmergencyStopMonitoringConfigured())
             {
-                _alarmService.ReportCondition(
-                    EmergencyStopAlarm,
-                    "整机急停输入",
-                    false,
-                    "软件急停 DI 未配置，软件状态监控未启用；设备安全停机仍由硬件安全回路负责。");
-                return false;
+                message = "软件急停 DI 未配置，软件状态监控未启用；设备安全停机仍由硬件安全回路负责。";
+            }
+            else
+            {
+                try
+                {
+                    active = await _safetyStatus.ReadEmergencyStopActiveAsync(cancellationToken).ConfigureAwait(false);
+                    message = active ? "急停输入有效，请释放急停并检查安全回路。" : "急停输入已恢复。";
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception readError)
+                {
+                    active = true;
+                    failure = readError;
+                    message = "已配置的急停 DI 映射无效或读取失败，按软件联锁配置禁止动作。原因：" + readError.Message;
+                }
             }
 
-            bool emergencyStopActive;
-            try
+            if (observationVersion.HasValue)
             {
-                emergencyStopActive = await _safetyStatus
-                    .ReadEmergencyStopActiveAsync(cancellationToken)
-                    .ConfigureAwait(false);
+                // 释放反馈仅在命令空闲时提交，持锁到上报结束以免覆盖并发命令的新报警。
+                if (!active && !_commandLock.Wait(0)) throw new InvalidOperationException(ReadinessContextChanged);
+                try
+                {
+                    lock (_readSessionLock)
+                    {
+                        if (!readinessSession.HasValue || _connectionSessionId != readinessSession
+                            || observationVersion.Value < 0 || SafetyObservationVersion != observationVersion.Value)
+                            throw new InvalidOperationException(ReadinessContextChanged);
+                        // 同会话真实急停或读取失败必须锁存，即使设备命令正在执行。
+                        if (!active)
+                        {
+                            bool valid = manualObservation
+                                ? _motionCards.IsConnected && GetManualOperationStateBlockReason() == ManualOperationBlockReason.None
+                                : IsStationReadinessCurrent(readinessSession, observationVersion.Value);
+                            if (!valid) throw new InvalidOperationException(ReadinessContextChanged);
+                        }
+                        _alarmService.ReportCondition(EmergencyStopAlarm, "整机急停输入", active, message);
+                    }
+                }
+                finally
+                {
+                    if (!active) _commandLock.Release();
+                }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            else
             {
-                throw;
+                _alarmService.ReportCondition(EmergencyStopAlarm, "整机急停输入", active, message);
             }
-            catch (Exception readError)
-            {
-                _alarmService.ReportCondition(
-                    EmergencyStopAlarm,
-                    "整机急停输入",
-                    true,
-                    "已配置的急停 DI 映射无效或读取失败，按软件联锁配置禁止动作。原因：" + readError.Message);
-                throw new InvalidOperationException("已配置的急停 DI 状态读取失败，软件联锁已禁止动作。", readError);
-            }
-
-            _alarmService.ReportCondition(
-                EmergencyStopAlarm,
-                "整机急停输入",
-                emergencyStopActive,
-                emergencyStopActive ? "急停输入有效，请释放急停并检查安全回路。" : "急停输入已恢复。");
-            return emergencyStopActive;
+            if (failure != null) throw new InvalidOperationException("已配置的急停 DI 状态读取失败，软件联锁已禁止动作。", failure);
+            return active;
         }
 
         /// <summary>启动流程期间周期读取急停输入，触发时借助停机报警暂停整机流程。</summary>
