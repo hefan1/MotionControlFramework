@@ -73,3 +73,10 @@
 - 轴监控按选中行展示完整映射、位置、速度、限位和读取诊断，未知值不推定正常；详情按字段分行，可滚动复制。安全联锁页说明各输入的既有行为、映射冲突和未保存状态，保留原保存校验与互斥。
 - 安全页在窄屏下将内容区设为可滚动、保存和取消固定；中英文长标签自动换行。离屏检查覆盖四种尺寸/语言组合、逐项输入可达和按钮不被裁切，图片在 `.artifacts/ui-safety-layout/`；轴详情与变量筛选预览在 `.artifacts/ui-filter-layout/`。这些预览未激活窗口，不是 Sandbox 或现场验收。
 - 最终 `MotionControl.OperatorPages.Checks` 53 组、`MotionControl.Preparation.Checks` 19 组及 `MotionControl.TaskPreparation.Checks` 通过。期间修复只读列绑定、英文窄屏工具栏、轴详情超宽及换行问题；均为内部检查。
+
+## 第六阶段：条件与配置来源
+
+- 启动条件只读汇总同一运行时报警集合中的活动停机报警和条件已恢复、仍待复位数量；读取失败、会话或配置变化时显示未知并作废旧定位。选中条件显示真实原因及来源，关联入口只导航，不采集 DI 或发送动作。
+- 报警库区分真实空目录、搜索无匹配及读取失败；独立搜索不改变编辑选择，类型显示随语言更新。任务配置区分草稿、已载入运行文件快照和未提供的当前会话来源；任务过多时注明摘要只列部分。
+- 启动条件内部布局覆盖中英文、824×600/1200×800、0/40 个准备工位；列表摘要按宽省略，完整原因可在详情查看。`MotionControl.OperatorPages.Checks` 54 组、`MotionControl.TaskEditing.Checks` 17 组通过，均为内部检查。
+- 一份用于布局核查的临时副本保留在 `C:\Users\ASUS\AppData\Local\Temp\MCF-ConditionLayout-ab44d4ddeb7c419bad20d600bc077f33`；递归清理命令被自动策略拒绝（`blocked by policy`），未执行删除。

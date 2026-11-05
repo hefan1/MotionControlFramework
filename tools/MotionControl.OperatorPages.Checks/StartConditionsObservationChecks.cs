@@ -2,6 +2,7 @@
 using System.Linq;
 using System.Collections.Generic;
 using System.Threading;
+using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.Preparation;
@@ -30,7 +31,7 @@ namespace MotionControl.OperatorPages.Checks
             var message = (TextBlock)page.FindName("StartConditionsMessage");
             var list = (ListBox)page.FindName("StartConditionsList");
             Assert(message.Text.Contains("覆盖不完整") && message.Text.Contains("设备采样时间"), "缺少覆盖与时间边界。");
-            Assert(list.Items.Count == 1 && list.Items[0].ToString().Contains("未知"), "空运行时应仅显示未知连接。");
+            Assert(list.Items.Count == 2 && list.Items.Cast<object>().All(item => item.ToString().Contains("未知")), "空运行时连接和报警应显示未知。");
             page.SetAutomaticStartReadiness("obsolete blocker", false);
             page.SetRuntime(null);
             ((Button)page.FindName("StartConditionsButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -60,18 +61,76 @@ namespace MotionControl.OperatorPages.Checks
             Assert((string)station.GetType().GetProperty("ObjectId").GetValue(station) == "StableStation42" && station.ToString().Contains("不满足"), "准备状态未保留真实对象ID或未准备结论。");
             sessionField.SetValue(runtime, null);
             page.SetAutomaticStartReadiness("obsolete blocker", false);
-            Assert(card.IsConnected && list.Items.Count == 1 && list.Items[0].ToString().Contains("未知")
+            Assert(card.IsConnected && list.Items.Count == 2 && list.Items.Cast<object>().All(item => item.ToString().Contains("未知"))
                 && !((Button)page.FindName("PrepareAllButton")).IsEnabled, "卡仍报告连接但 Runtime 会话失效时保留了准备资格或旧结论。");
             sessionField.SetValue(runtime, Guid.NewGuid());
             card.Connected = false;
             ((Button)page.FindName("RefreshStartConditionsButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Assert(list.Items.Count == 1 && list.Items[0].ToString().Contains("未知"), "断开后保留旧准备或恢复结论。");
+            Assert(list.Items.Count == 2 && list.Items.Cast<object>().All(item => item.ToString().Contains("未知")), "断开后保留旧准备或恢复结论。");
             page.SetRuntime(null);
-            Assert(list.Items.Count == 1 && !list.Items[0].ToString().Contains("StableStation42"), "更换Runtime未清旧对象。");
+            Assert(list.Items.Count == 2 && !list.Items.Cast<object>().Any(item => item.ToString().Contains("StableStation42")), "更换Runtime未清旧对象。");
             Assert(card.LifecycleCalls == 0 && loads == 0 && navigations == 0, "内存刷新触发动作或配置装载。");
             page.SetLanguage("en-US");
             Assert(message.Text.Contains("incomplete coverage") && message.Text.Contains("UI observation time"), "英文缺少准确边界。");
             Assert(list.Items[0].ToString().Contains("Unknown"), "未知态未切换英文。");
+            CheckSelectedConditions();
+            PreparationConditionLayoutChecks.Run();
+        }
+
+        /// <summary>复核停机与提醒分类、失败恢复、原报警入口和已验证工位定位。</summary>
+        private static void CheckSelectedConditions()
+        {
+            var card = new GuardCard { IsConnected = true };
+            var service = new AlarmRestartRecoveryChecks.FailingAlarmService();
+            var runtime = new MachineRuntime(new MotionCardGroup(new[] { card }), Array.Empty<IStationFlow>(), service, new GuardSafety());
+            runtime.ConfigurePreparations(new[] { new ObservedPreparation() });
+            runtime.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
+            var stop = new MachineAlarmDefinition("CHECK_STOP", "停机检查", MachineAlarmKind.StopMachine);
+            service.ReportCondition(stop, "活动源", true, "仍成立");
+            service.ReportCondition(stop, "已恢复源", true, "曾成立");
+            service.ReportCondition(stop, "已恢复源", false, "已恢复");
+            service.ReportCondition(new MachineAlarmDefinition("CHECK_INFO", "提醒", MachineAlarmKind.NonStop), "提示源", true, "提示");
+            int loads = 0;
+            string target = null;
+            var page = new EquipmentPreparationView(() => { loads++; return Task.CompletedTask; }, name => target = name);
+            page.SetRuntime(runtime);
+            var list = (ListBox)page.FindName("StartConditionsList");
+            var detail = (TextBlock)page.FindName("ConditionDetailText");
+            var go = (Button)page.FindName("ConditionTargetButton");
+            void Click(string name) { ((Button)page.FindName(name)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); }
+            void Select(string key) { list.SelectedItem = list.Items.Cast<object>().Single(item =>
+                Equals(item.GetType().GetProperty("Key").GetValue(item), key)); }
+            Click("StartConditionsButton");
+            Select("runtime.stop-alarms");
+            Assert(detail.Text.Contains("活动 1 条") && detail.Text.Contains("条件已恢复待复位 1 条") && detail.Text.Contains("设备运行时报警记录"),
+                "停机条件总数混入了非停机提醒或丢失真实来源。");
+            Click("ConditionTargetButton");
+            Assert(target == "当前报警", "停机记录没有沿原报警页只读导航。");
+            service.Fail = true;
+            Click("RefreshStartConditionsButton");
+            Assert(detail.Text.Contains("未知") && detail.Text.Contains("alarm-enumeration-failed") && !detail.Text.Contains("活动 1 条"),
+                "服务失败时仍显示上轮计数。");
+            service.Fail = false;
+            page.SetLanguage("en-US");
+            Assert(detail.Text.Contains("Active: 1") && detail.Text.Contains("awaiting reset: 1"), "报警详情未恢复为当前英文记录。");
+            Select("preparation/StableStation42");
+            Click("ConditionTargetButton");
+            var grid = (DataGrid)page.FindName("StationsGrid");
+            Assert(grid.SelectedItem != null && Equals(grid.SelectedItem.GetType().GetProperty("Id").GetValue(grid.SelectedItem), "StableStation42")
+                && ((FrameworkElement)page.FindName("PreparationContent")).Visibility == Visibility.Visible,
+                "准备条件未按真实工位标识定位。");
+            Click("StartConditionsButton");
+            Select("preparation/StableStation42");
+            runtime.ConfigurePreparations(new[] { new ObservedPreparation() });
+            Click("ConditionTargetButton");
+            Assert(list.SelectedItem == null && !go.IsEnabled, "配置换代后仍使用旧目标。");
+            Select("runtime.stop-alarms");
+            card.IsConnected = false;
+            target = null;
+            Click("ConditionTargetButton");
+            Assert(target == null && !go.IsEnabled && list.Items.Cast<object>().All(item => item.ToString().Contains("Unknown")),
+                "失效会话仍沿旧结论导航。");
+            Assert(loads == 0 && card.Calls == 0, "启动条件详情触发配置装载或设备调用。");
         }
         /// <summary>仅报告连接缓存；生命周期若被意外调用立即失败。</summary>
         private sealed class ObservedCard : IMotionCard

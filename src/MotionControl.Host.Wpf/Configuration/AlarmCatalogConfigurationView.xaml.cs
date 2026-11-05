@@ -29,6 +29,8 @@ namespace MotionControl.Host.Wpf.Configuration
 
         /// <summary>记录是否存在尚未保存的编辑。</summary>
         private bool _dirty;
+        /// <summary>区分真实空目录和读取失败后的空显示集合。</summary>
+        private bool _catalogLoaded;
 
         /// <summary>载入当前设备报警库；读取失败时保留错误提示并允许在确认后修复。</summary>
         public AlarmCatalogConfigurationView(MachineAlarmCatalogStore store, string machineId)
@@ -45,10 +47,12 @@ namespace MotionControl.Host.Wpf.Configuration
         /// <summary>从磁盘读取报警定义副本，保留配置损坏或缺失的具体诊断。</summary>
         private void LoadAlarms()
         {
+            _catalogLoaded = false;
             try
             {
                 MachineAlarmCatalogDocument document = _store.Load(_machineId);
                 Alarms = new ObservableCollection<MachineAlarmCatalogEntry>(document.Alarms.Select(alarm => alarm.Copy()));
+                _catalogLoaded = true;
                 DataContext = null;
                 DataContext = this;
                 StatusText.SetResourceReference(TextBlock.TextProperty, "报警库读取完成");
@@ -134,8 +138,10 @@ namespace MotionControl.Host.Wpf.Configuration
                     Alarms = Alarms.Select(alarm => alarm.Copy()).ToList()
                 };
                 string backupPath = _store.Save(_machineId, document);
+                _catalogLoaded = true;
                 _dirty = false;
                 AlarmGrid.Items.Refresh();
+                RefreshLocalizedText();
                 SetStatus(string.IsNullOrWhiteSpace(backupPath)
                     ? T("报警库保存成功")
                     : T("报警库保存成功，已备份") + " " + backupPath);
@@ -265,13 +271,14 @@ namespace MotionControl.Host.Wpf.Configuration
         {
             RefreshSearchGuidance();
         }
-
         /// <summary>切换语言时重绘搜索计数及选中指导，不重建结果或改变编辑内容。</summary>
         public void RefreshLocalizedText()
         {
             if (SearchResults == null || Alarms == null) return;
             SearchCountText.Text = string.Format(T("报警库搜索数量"), SearchResults.Items.Count, Alarms.Count);
             RefreshSearchGuidance();
+            CatalogEmptyText.Text = !_catalogLoaded ? T("报警库目录未知") : Alarms.Count == 0 ? T("报警库空目录") : string.Empty;
+            SearchEmptyText.Text = _catalogLoaded && Alarms.Count > 0 && SearchResults.Items.Count == 0 ? T("报警库搜索无匹配") : string.Empty;
         }
 
         /// <summary>只展示选中搜索副本包含的实际指导，缺少时明确未配置。</summary>

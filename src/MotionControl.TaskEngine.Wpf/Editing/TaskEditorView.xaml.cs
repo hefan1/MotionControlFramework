@@ -22,7 +22,20 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         public bool IsDirty
         {
             get { return _isDirty; }
-            private set { _isDirty = value; if (DirtyIndicator != null) DirtyIndicator.Visibility = value ? Visibility.Visible : Visibility.Collapsed; }
+            private set { _isDirty = value; if (DirtyIndicator != null) DirtyIndicator.Visibility = value ? Visibility.Visible : Visibility.Collapsed; RefreshSourceSummary(); }
+        }
+        /// <summary>调用方持有的工作区及文件快照说明，不被当作当前会话来源。</summary>
+        private string _sourceSummary;
+        /// <summary>只替换来源显示，不读表单、不保存或更新文件。</summary>
+        public void SetSourceSummary(string summary) { _sourceSummary = summary; RefreshSourceSummary(); }
+        /// <summary>当前编辑副本的dirty状态优先于上次完整工作区保存时间。</summary>
+        private void RefreshSourceSummary()
+        {
+            if (EditorSourceSummaryText == null) return;
+            EditorSourceSummaryText.Text = (_language == "en-US"
+                ? "Current task draft: " + Definition.TaskId + " R" + Definition.Revision + (IsDirty ? " · unsaved task edits" : " · no pending task edits")
+                : "当前任务草稿：" + Definition.TaskId + " R" + Definition.Revision + (IsDirty ? " · 当前任务有未保存修改" : " · 当前任务无待保存编辑"))
+                + "\n" + (_sourceSummary ?? (_language == "en-US" ? "Workspace / file snapshot / current session metadata not provided." : "工作区 / 文件快照 / 当前会话元数据未提供。"));
         }
         /// <summary>编辑副本的未保存状态。</summary>
         private bool _isDirty;
@@ -79,6 +92,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         public void SetLanguage(string language)
         {
             _language = language; TaskEditingUi.SetLanguage(this, language);
+            RefreshSourceSummary();
             UpdateHeaders();
             TaskVersionText.Text = T("草稿基准版本") + " R" + Definition.Revision;
             if (TryRead()) { RebuildTree(_selected?.Id); }

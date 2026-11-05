@@ -50,6 +50,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("安全联锁未保存状态与冲突", V14SafetyUnsavedChecks.Run, ref failures);
             Check("安全联锁滚动与固定操作区布局", V14SafetyLayoutChecks.Run, ref failures);
             Check("V1.4 报警库本地筛选与选择", V14AlarmCatalogSearchChecks.Run, ref failures);
+            Check("报警库空态及类型语言", V14AlarmCatalogDisplayChecks.Run, ref failures);
             Check("工位运行会话失效和报警未知", FlowStatusSessionChecks.Run, ref failures);
             Check("轴监控异步迟到和读取失败", RunAxisMonitorAsyncChecks, ref failures);
             Check("轴监控只读详情", V14AxisDetailChecks.Run, ref failures);
@@ -87,7 +88,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("产品记录只读显示两种来源及错误", ProductRecordChecks.Run, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：53 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：54 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }

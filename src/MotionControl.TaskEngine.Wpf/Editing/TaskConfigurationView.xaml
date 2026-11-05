@@ -11,6 +11,7 @@
    <Button x:Name="RecoverButton" Content="{DynamicResource 任务编辑.恢复上次应用}" Click="Recover_Click"/>
   </WrapPanel></Border>
   <StackPanel x:Name="ConfigurationStatus" Grid.Row="1" Margin="2,7">
+   <ScrollViewer MaxHeight="90" VerticalScrollBarVisibility="Auto"><TextBlock x:Name="SourceSummaryText" TextWrapping="Wrap" Foreground="#596B7D" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/></ScrollViewer>
    <TextBlock x:Name="StatusText" TextWrapping="Wrap" Foreground="#176BD0"/>
    <Border x:Name="RuntimeContextPanel" Background="#F7F9FC" BorderBrush="#D8E2EE" BorderThickness="1" CornerRadius="6" Padding="9,7" Margin="0,5,0,0">
     <DockPanel LastChildFill="True">

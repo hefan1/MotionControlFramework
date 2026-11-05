@@ -42,7 +42,8 @@ namespace MotionControl.TaskEditing.Checks
             Check("无效参数不部分修改任务模型", InvalidFieldsKeepDefinition, ref failed);
             Check("任务检查字段显示为易读名称", ReadableIssueFields, ref failed);
             Check("任务库筛选及引用保护", V14TaskLibrarySearchChecks.Run, ref failed);
-            Console.WriteLine("任务编辑内部检查：16 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
+            Check("任务草稿、文件与会话来源", V14TaskSourceSummaryChecks.Run, ref failed);
+            Console.WriteLine("任务编辑内部检查：17 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
             return failed == 0 ? 0 : 1;
         }
         /// <summary>逐项执行并保留异常堆栈。</summary>

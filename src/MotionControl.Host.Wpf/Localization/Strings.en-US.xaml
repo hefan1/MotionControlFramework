@@ -814,4 +814,8 @@ Current memory value: {4}. Saving definitions and writing runtime values are sep
     <sys:String x:Key="安全联锁有未保存修改">This page has unsaved changes.</sys:String>
     <sys:String x:Key="安全联锁无未保存修改">Matches the last successfully loaded or saved configuration; does not confirm equipment feedback.</sys:String>
     <sys:String x:Key="安全联锁本行冲突">This DI has conflicting control uses; existing save validation rejects it</sys:String>
+    <sys:String x:Key="报警库搜索关系">Search results are for reading guidance. Select and edit definitions in the full list below; searching keeps the editing selection.</sys:String>
+    <sys:String x:Key="报警库空目录">The catalog is empty. Use an Add button to create a definition.</sys:String>
+    <sys:String x:Key="报警库搜索无匹配">No matching definitions. Clear the search to view all.</sys:String>
+    <sys:String x:Key="报警库目录未知">Catalog read failed; contents are unknown. Review the read error.</sys:String>
 </ResourceDictionary>

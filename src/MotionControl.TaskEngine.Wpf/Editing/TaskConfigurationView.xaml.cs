@@ -186,6 +186,9 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         private void RefreshPermission(object sender, EventArgs e)
         {
             RefreshRuntimeContext();
+            string sourceSummary = TaskSourceSummary.Build(_workspace, _activeWorkspace, _dirty, _sourceChanged, _language == "en-US");
+            SourceSummaryText.Text = sourceSummary;
+            _editor?.SetSourceSummary(sourceSummary);
             string reason = _getBlockedReason();
             if (_workspace == null) reason = T("任务配置尚未成功加载，请先处理上方错误提示");
             if (_store.HasPendingApply(_machineId)) reason = T("上次应用未完成，请先恢复");

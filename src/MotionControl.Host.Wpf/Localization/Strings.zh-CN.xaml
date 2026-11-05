@@ -824,4 +824,8 @@
     <sys:String x:Key="安全联锁有未保存修改">本页有未保存修改。</sys:String>
     <sys:String x:Key="安全联锁无未保存修改">与最后成功载入或保存的配置一致；不表示现场反馈已确认。</sys:String>
     <sys:String x:Key="安全联锁本行冲突">此 DI 用于多个控制用途，原保存校验将拒绝</sys:String>
+    <sys:String x:Key="报警库搜索关系">搜索结果用于只读查阅指导；下方完整列表用于选择并编辑，搜索不改变编辑选择。</sys:String>
+    <sys:String x:Key="报警库空目录">当前报警库为空，请使用新增按钮建立定义。</sys:String>
+    <sys:String x:Key="报警库搜索无匹配">没有匹配定义，清除搜索可查看全部。</sys:String>
+    <sys:String x:Key="报警库目录未知">报警库读取失败，目录内容未知；请查看读取错误。</sys:String>
 </ResourceDictionary>
