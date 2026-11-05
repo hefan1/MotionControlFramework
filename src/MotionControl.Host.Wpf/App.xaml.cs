@@ -414,6 +414,7 @@ namespace MotionControl.Host.Wpf
         private void MainWindow_LanguageChanged(object sender, EventArgs e)
         {
             _taskConfigurationPage?.SetLanguage(_mainWindow.CurrentLanguage);
+            _alarmCatalogPage?.RefreshLocalizedText();
             if (_axisMappingPage != null)
             {
                 _axisMappingPage.RefreshLocalizedText();

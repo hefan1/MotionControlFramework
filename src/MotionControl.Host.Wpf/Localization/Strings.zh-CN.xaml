@@ -347,7 +347,9 @@
     <sys:String x:Key="轴监控伺服已使能">已使能</sys:String>
     <sys:String x:Key="轴监控伺服未使能">未使能</sys:String>
     <sys:String x:Key="轴监控运动中">运动中</sys:String>
-    <sys:String x:Key="轴监控已停止">已停止</sys:String>
+    <sys:String x:Key="轴监控已停止">已确认停止</sys:String>
+    <sys:String x:Key="轴监控停稳未知">停稳未知</sys:String>
+    <sys:String x:Key="轴监控部分反馈待确认">部分反馈待确认</sys:String>
     <sys:String x:Key="轴监控已回零">已回零</sys:String>
     <sys:String x:Key="轴监控未回零">未回零</sys:String>
     <sys:String x:Key="轴监控硬限位简写">硬 </sys:String>
@@ -790,4 +792,13 @@
     <sys:String x:Key="变量摘要未提供">未配置 / 未提供</sys:String>
     <sys:String x:Key="变量定义运行摘要格式">定义：{0} · {1}；初始值：{2}；说明：{3}
 当前内存值：{4}。定义保存与运行值写入分别生效。</sys:String>
+    <sys:String x:Key="报警库搜索指导">搜索与处置指导</sys:String>
+    <sys:String x:Key="报警库搜索标签">代码、说明（内存草稿）</sys:String>
+    <sys:String x:Key="报警库清除搜索">清除</sys:String>
+    <sys:String x:Key="报警库搜索来源">草稿编辑与文件保存分别生效；当前运行时目录加载状态未知。</sys:String>
+    <sys:String x:Key="报警库搜索数量">匹配 {0} / 共 {1} 条</sys:String>
+    <sys:String x:Key="报警库选择指导">选择搜索结果查看指导。</sys:String>
+    <sys:String x:Key="报警库指导未配置">未配置</sys:String>
+    <sys:String x:Key="报警库检查指导标签">检查：</sys:String>
+    <sys:String x:Key="报警库恢复指导标签">恢复：</sys:String>
 </ResourceDictionary>

@@ -11,20 +11,20 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>检查手动操作条件并刷新已配置的急停状态；未配置软件 DI 不阻止手动调试。</summary>
         public Task<ManualOperationBlockReason> GetManualOperationBlockReasonAsync(CancellationToken cancellationToken)
         {
-            return CheckManualOperationBlockAsync(cancellationToken, commandLockHeld: false);
+            return CheckManualOperationBlockAsync(ConnectionSessionId, cancellationToken, commandLockHeld: false);
         }
 
         /// <summary>页面查询按原连接与控制权上报；实际手动操作已持命令锁，沿用原联锁路径。</summary>
         private async Task<ManualOperationBlockReason> CheckManualOperationBlockAsync(
-            CancellationToken cancellationToken, bool commandLockHeld)
+            Guid? session, CancellationToken cancellationToken, bool commandLockHeld)
         {
-            Guid? session = ConnectionSessionId;
             long observationVersion = SafetyObservationVersion;
             ManualOperationBlockReason stateReason = GetManualOperationStateBlockReason();
             if (stateReason != ManualOperationBlockReason.None)
             {
                 return stateReason;
             }
+            if (!IsConnectionSessionCurrent(session)) return ManualOperationBlockReason.MotionCardDisconnected;
 
             bool emergencyStopActive;
             try
@@ -60,6 +60,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 return ManualOperationBlockReason.EmergencyStopAlarmNotReset;
             }
 
+            if (!IsConnectionSessionCurrent(session)) return ManualOperationBlockReason.MotionCardDisconnected;
             return GetManualOperationStateBlockReason();
         }
 
@@ -214,10 +215,11 @@ namespace MotionControl.Framework.Runtime.Machine
         private async Task<ManualOperationBlockReason> BeginManualOperationAsync(
             CancellationToken cancellationToken)
         {
+            Guid? session = ConnectionSessionId;
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                ManualOperationBlockReason blockReason = await CheckManualOperationBlockAsync(cancellationToken, commandLockHeld: true)
+                ManualOperationBlockReason blockReason = await CheckManualOperationBlockAsync(session, cancellationToken, commandLockHeld: true)
                     .ConfigureAwait(false);
                 if (blockReason == ManualOperationBlockReason.None)
                 {
@@ -236,10 +238,13 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>在整机命令锁内登记恢复或专用停止；仅停止允许穿过未确认的自动流程收尾。</summary>
         private async Task<ManualOperationBlockReason> BeginManualRecoveryOperationAsync(CancellationToken cancellationToken, bool allowUnsettledStop = false)
         {
+            Guid? session = allowUnsettledStop ? null : ConnectionSessionId;
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 ManualOperationBlockReason blockReason = GetManualOperationStateBlockReason(allowUnsettledStop);
+                if (!allowUnsettledStop && blockReason == ManualOperationBlockReason.None && !IsConnectionSessionCurrent(session))
+                    return ManualOperationBlockReason.MotionCardDisconnected;
                 if (blockReason == ManualOperationBlockReason.None)
                 {
                     Interlocked.Increment(ref _activeManualOperationCount);
@@ -257,20 +262,22 @@ namespace MotionControl.Framework.Runtime.Machine
         private async Task<ManualOperationBlockReason> BeginManualAxisAlarmResetAsync(
             CancellationToken cancellationToken)
         {
+            Guid? session = ConnectionSessionId;
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                ManualOperationBlockReason blockReason = await CheckManualOperationBlockAsync(cancellationToken, commandLockHeld: true)
+                ManualOperationBlockReason blockReason = await CheckManualOperationBlockAsync(session, cancellationToken, commandLockHeld: true)
                     .ConfigureAwait(false);
 
                 // 急停输入已经恢复；仅整机急停报警尚未复位时，允许先处理轴驱动报警。
                 if (blockReason == ManualOperationBlockReason.EmergencyStopAlarmNotReset)
                 {
-                    blockReason = ManualOperationBlockReason.None;
+                    blockReason = GetManualOperationStateBlockReason();
                 }
 
                 if (blockReason == ManualOperationBlockReason.None)
                 {
+                    if (!IsConnectionSessionCurrent(session)) return ManualOperationBlockReason.MotionCardDisconnected;
                     Interlocked.Increment(ref _activeManualOperationCount);
                 }
 

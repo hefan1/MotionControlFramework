@@ -27,6 +27,16 @@ namespace MotionControl.Host.Wpf
         /// <summary>控制器会话异常丢失后，工艺步骤和轴状态仅为最后已知值。</summary>
         private bool _controllerConnectionLost;
 
+        /// <summary>创建页面时的真实 Runtime 会话；新连接由 Host 重新组合页面。</summary>
+        private readonly Guid? _viewSession;
+
+        /// <summary>失联、断卡或更换会话时不显示原步骤或定位输入。</summary>
+        private bool HasCurrentSession()
+        {
+            return !_controllerConnectionLost && _viewSession.HasValue && _runtime.ConnectionSessionId == _viewSession
+                && _runtime.State != MachineRunState.Disconnected && _runtime.MotionCards.IsConnected;
+        }
+
         /// <summary>当前自动启动条件未满足时显示的具体原因。</summary>
         private string _automaticStartBlockReason;
 
@@ -53,6 +63,7 @@ namespace MotionControl.Host.Wpf
         public FlowStatusView(MachineRuntime runtime, Func<bool> isTaskSessionLoaded = null)
         {
             _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+            _viewSession = runtime.ConnectionSessionId;
             _isTaskSessionLoaded = isTaskSessionLoaded;
             InitializeComponent();
             foreach (IStationFlow flow in _runtime.StationFlows)
@@ -163,25 +174,31 @@ namespace MotionControl.Host.Wpf
         /// <summary>读取当前选中工位的等待输入后沿原逻辑名路由导航，不猜测输入。</summary>
         private void OpenStationInput_Click(object sender, RoutedEventArgs e)
         {
-            if (_controllerConnectionLost || _selectedFlow == null) return;
+            if (!HasCurrentSession() || _runtime.ControlOwner != MachineControlOwner.StationFlows || _selectedFlow == null)
+            {
+                RefreshDisplay();
+                return;
+            }
             try
             {
                 var input = _selectedFlow as IStationInputWaitState;
                 string name = input?.WaitingInputName;
-                if (!string.IsNullOrWhiteSpace(name))
+                if (HasCurrentSession() && _runtime.ControlOwner == MachineControlOwner.StationFlows && !string.IsNullOrWhiteSpace(name))
                     NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("IO监控", _selectedFlow.StationName, name));
+                else RefreshDisplay();
             }
             catch (Exception error)
             {
                 StationDetailText.Text = (string)FindResource("流程页.读取失败") + "：" + error.GetBaseException().Message;
                 StationInputButton.IsEnabled = false;
+                StationInputButton.ToolTip = (string)FindResource("流程页.输入未提供");
             }
         }
 
         /// <summary>名称仅在唯一匹配真实工位时用于只读定位，重名不猜测。</summary>
         public bool FocusStationByName(string stationName)
         {
-            if (_controllerConnectionLost || _runtime.ControlOwner != MachineControlOwner.StationFlows || string.IsNullOrWhiteSpace(stationName)) return false;
+            if (!HasCurrentSession() || _runtime.ControlOwner != MachineControlOwner.StationFlows || string.IsNullOrWhiteSpace(stationName)) return false;
             var matches = _itemByFlow.Where(row => string.Equals(row.Key.StationName, stationName, StringComparison.OrdinalIgnoreCase)).ToArray();
             if (matches.Length != 1) return false;
             StationList.SelectedItem = matches[0].Value;
@@ -194,7 +211,7 @@ namespace MotionControl.Host.Wpf
         {
             inputName = null;
             valid = false;
-            if (_controllerConnectionLost) return (string)FindResource("流程页.断连未知");
+            if (!HasCurrentSession()) return (string)FindResource("流程页.断连未知");
             try
             {
                 string step = flow.CurrentStepName;
@@ -211,18 +228,24 @@ namespace MotionControl.Host.Wpf
         /// <summary>刷新当前状态、步骤、报警及最近故障文字。</summary>
         private void RefreshDisplay()
         {
-            bool showStationFlows = !_controllerConnectionLost && _runtime.ControlOwner == MachineControlOwner.StationFlows;
-            bool showTasks = !_controllerConnectionLost && _runtime.ControlOwner == MachineControlOwner.TaskEngine;
+            RefreshDisplay(!HasCurrentSession());
+        }
+
+        /// <summary>连接在本轮失效时，重绘未知状态并放弃本轮读数。</summary>
+        private void RefreshDisplay(bool disconnected)
+        {
+            bool showStationFlows = !disconnected && _runtime.ControlOwner == MachineControlOwner.StationFlows;
+            bool showTasks = !disconnected && _runtime.ControlOwner == MachineControlOwner.TaskEngine;
             StationStepHeadingText.Visibility = showStationFlows ? Visibility.Visible : Visibility.Collapsed;
-            StationRowsPanel.Visibility = showStationFlows || (_controllerConnectionLost && _runtime.ControlOwner == MachineControlOwner.StationFlows && _stepTextByFlow.Count > 0) ? Visibility.Visible : Visibility.Collapsed;
+            StationRowsPanel.Visibility = showStationFlows || (disconnected && _runtime.ControlOwner == MachineControlOwner.StationFlows && _stepTextByFlow.Count > 0) ? Visibility.Visible : Visibility.Collapsed;
             TaskRunPanel.Visibility = showTasks ? Visibility.Visible : Visibility.Collapsed;
-            NoAutomaticRunText.Visibility = !_controllerConnectionLost && _runtime.ControlOwner == MachineControlOwner.None
+            NoAutomaticRunText.Visibility = !disconnected && _runtime.ControlOwner == MachineControlOwner.None
                 ? Visibility.Visible : Visibility.Collapsed;
             if (showTasks)
                 TaskRunStatusText.Text = (string)FindResource(_isTaskSessionLoaded == null ? "流程页.任务状态待查看"
                     : _isTaskSessionLoaded() ? "流程页.任务已读取" : "流程页.任务未读取");
             StationStepHeadingText.Text = (string)FindResource("流程页." + OperationUi.StepLabelKey(_runtime.State));
-            string stateResourceKey = _controllerConnectionLost ? "状态未连接" : !string.IsNullOrWhiteSpace(_automaticStartBlockReason)
+            string stateResourceKey = disconnected ? "状态未连接" : !string.IsNullOrWhiteSpace(_automaticStartBlockReason)
                 ? "状态启动条件未满足"
                 : _automaticStartReadinessChecking
                     ? "状态检查启动条件"
@@ -231,11 +254,12 @@ namespace MotionControl.Host.Wpf
                 + (string)FindResource(stateResourceKey);
             string recoveryBlock = _runtime.RecoveryBlockReason;
             string visibleBlock = string.IsNullOrWhiteSpace(recoveryBlock) ? _automaticStartBlockReason : recoveryBlock;
-            StartReadinessText.Text = _controllerConnectionLost ? (string)FindResource("软件控制器通讯中断") : visibleBlock ?? string.Empty;
-            StartReadinessText.Visibility = !_controllerConnectionLost && string.IsNullOrWhiteSpace(visibleBlock)
+            string connectionMessage = (string)FindResource(_controllerConnectionLost ? "软件控制器通讯中断" : "状态未连接");
+            StartReadinessText.Text = disconnected ? connectionMessage : visibleBlock ?? string.Empty;
+            StartReadinessText.Visibility = !disconnected && string.IsNullOrWhiteSpace(visibleBlock)
                 ? Visibility.Collapsed
                 : Visibility.Visible;
-            string resetGuidance = !_controllerConnectionLost && _runtime.State == MachineRunState.ResetRequired && string.IsNullOrWhiteSpace(visibleBlock)
+            string resetGuidance = !disconnected && _runtime.State == MachineRunState.ResetRequired && string.IsNullOrWhiteSpace(visibleBlock)
                 ? (string)FindResource("整机复位提示")
                 : string.Empty;
             ResetGuidanceText.Text = resetGuidance;
@@ -246,7 +270,9 @@ namespace MotionControl.Host.Wpf
             {
                 string input;
                 bool valid;
-                string step = ReadStation(row.Key, out input, out valid);
+                input = null;
+                valid = false;
+                string step = disconnected ? (string)FindResource("流程页.断连未知") : ReadStation(row.Key, out input, out valid);
                 row.Value.Text = row.Key.StationName + " — " + step + "\n" + (string)FindResource(valid ? "流程页.独立状态未提供" : "流程页.数据未知");
                 if (ReferenceEquals(row.Key, _selectedFlow))
                 {
@@ -263,41 +289,39 @@ namespace MotionControl.Host.Wpf
                 StationInputButton.IsEnabled = false;
             }
 
-            MachineAlarmRecord[] alarms;
-            bool alarmReadFailed = false;
-            try { alarms = _runtime.AlarmService.Alarms.ToArray(); }
-            catch (Exception error)
+            MachineAlarmRecord[] alarms = null;
+            AlarmText.ToolTip = null;
+            if (!disconnected)
             {
-                alarms = new MachineAlarmRecord[0];
-                alarmReadFailed = true;
-                AlarmText.ToolTip = error.GetBaseException().Message;
+                try { alarms = _runtime.AlarmService.Alarms.ToArray(); }
+                catch (Exception error) { AlarmText.ToolTip = error.GetBaseException().Message; }
+            }
+            // 工位或报警提供器读取期间也可能断连；清除这一轮已经填入的步骤和定位。
+            if (!disconnected && !HasCurrentSession())
+            {
+                RefreshDisplay(true);
+                return;
             }
             bool codeMode = _runtime.ControlOwner == MachineControlOwner.StationFlows;
             AlarmDetailsPanel.Visibility = codeMode ? Visibility.Collapsed : Visibility.Visible;
-            StationAlarmSummaryText.Text = alarmReadFailed || _controllerConnectionLost
-                ? (string)FindResource("流程页.报警状态未知")
-                : alarms.Length == 0 ? string.Empty : string.Format((string)FindResource("报警数量摘要"), alarms.Length, alarms.Count(a => a.RequiresReset), alarms.Count(a => !a.RequiresReset));
-            StationAlarmSummaryText.Visibility = codeMode && !string.IsNullOrEmpty(StationAlarmSummaryText.Text) ? Visibility.Visible : Visibility.Collapsed;
-            if (alarms.Length == 0)
+            string summary = alarms == null ? (string)FindResource("流程页.报警状态未知") : alarms.Length == 0
+                ? string.Empty : string.Format((string)FindResource("报警数量摘要"), alarms.Length,
+                    alarms.Count(a => a.RequiresReset), alarms.Count(a => !a.RequiresReset));
+            StationAlarmSummaryText.Text = summary;
+            StationAlarmSummaryText.Visibility = codeMode && summary.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+            if (alarms == null)
             {
-                AlarmText.Text = _controllerConnectionLost
-                    ? (string)FindResource("软件控制器通讯中断")
-                    : (string)FindResource("无当前报警");
+                AlarmText.Text = disconnected ? connectionMessage + "\n" + summary : summary;
             }
+            else if (alarms.Length == 0) AlarmText.Text = (string)FindResource("无当前报警");
             else
             {
-                int stopAlarmCount = alarms.Count(alarm => alarm.RequiresReset);
-                string summary = string.Format(
-                    (string)FindResource("报警数量摘要"), alarms.Length, stopAlarmCount, alarms.Length - stopAlarmCount);
                 string details = string.Join("\n", alarms.Select(alarm =>
                     alarm.SourceName + " / " + alarm.Definition.Code + " / " + alarm.Definition.Message
                     + "：" + alarm.Detail
                     + (alarm.ConditionActive ? string.Empty : (string)FindResource("报警待复位"))));
                 AlarmText.Text = summary + "\n" + details;
-                if (_controllerConnectionLost) AlarmText.Text += "\n" + (string)FindResource("软件控制器通讯中断");
             }
-
-            if (alarmReadFailed) AlarmText.Text = (string)FindResource("流程页.报警状态未知");
             if (_runtime.LastError != null) _lastObservedError = _runtime.LastError.GetBaseException().Message;
             LastErrorText.Visibility = string.IsNullOrEmpty(_lastObservedError) ? Visibility.Collapsed : Visibility.Visible;
             LastErrorText.Text = string.IsNullOrEmpty(_lastObservedError) ? string.Empty : ((string)FindResource("最近故障")) + _lastObservedError;

@@ -38,6 +38,7 @@ namespace MotionControl.OperatorPages.Checks
                 Assert(Get(rows[0], "LastStatus") != null, "单轴失败清除了其他轴结果。");
                 Assert((bool)Get(rows[1], "HasReadError"), "单轴失败没有标为未知。");
                 Assert(((TextBlock)view.FindName("MonitorStatusText")).Text.Contains("设备采样时间"), "时间说明缺少设备采样能力边界。");
+                await CheckStopFeedbackAsync(view, first, rows[0]);
 
                 first.Pending = new TaskCompletionSource<AxisStatus>();
                 Task refresh = Refresh(view);
@@ -87,6 +88,38 @@ namespace MotionControl.OperatorPages.Checks
             }
             finally { window.Close(); }
         }
+        /// <summary>经正常监控读取核对速度容差、冲突反馈及非有限数值的显示。</summary>
+        private static async Task CheckStopFeedbackAsync(AxisMonitorView view, SampleAxis axis, object row)
+        {
+            async Task Check(double velocity, bool moving, string expected)
+            {
+                axis.Pending = new TaskCompletionSource<AxisStatus>();
+                axis.Pending.SetResult(new AxisStatus(12, velocity, true, moving, true, false, false, null, null, false, null, false));
+                await Refresh(view);
+                Assert((string)Get(row, "MotionStateText") == expected, "停稳判定错误，速度：" + velocity + "，运动标志：" + moving);
+                if (double.IsNaN(velocity) || double.IsInfinity(velocity))
+                    Assert((string)Get(row, "VelocityText") == "未知" && (string)Get(row, "ReadStateText") == "部分反馈待确认",
+                        "非有限速度仍显示为有效读数。");
+            }
+            await Check(0, false, "已确认停止");
+            await Check(0.001, false, "已确认停止");
+            await Check(-0.001, false, "已确认停止");
+            await Check(0.00101, false, "停稳未知");
+            await Check(-0.00101, false, "停稳未知");
+            await Check(double.NaN, false, "停稳未知");
+            await Check(double.PositiveInfinity, false, "停稳未知");
+            await Check(double.NegativeInfinity, false, "停稳未知");
+            await Check(0, true, "运动中");
+
+            axis.Pending = new TaskCompletionSource<AxisStatus>();
+            axis.Pending.SetResult(new AxisStatus(double.NaN, 0, true, false, true, false, false, null, null, false,
+                null, false, double.PositiveInfinity));
+            await Refresh(view);
+            string position = (string)Get(row, "PositionText");
+            Assert(position.Split(new[] { "未知" }, StringSplitOptions.None).Length == 3
+                && (string)Get(row, "ReadStateText") == "部分反馈待确认", "无效反馈位置或指令位置仍显示为有效。");
+        }
+
         /// <summary>等待当前测试读取轮次结束，避免依赖固定延时。</summary>
         private static async Task DrainAsync(AxisMonitorView view)
         {

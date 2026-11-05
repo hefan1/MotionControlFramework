@@ -82,6 +82,7 @@ namespace MotionControl.Framework.Runtime.Machine
         internal async Task StartControlledClearanceAsync(string profileId, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(profileId)) throw new ArgumentException("清料配置编号不能为空。", nameof(profileId));
+            Guid? session = ConnectionSessionId;
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             IControlledClearanceReservation reservation = null;
             ControlledClearanceExecutor executor = null;
@@ -91,6 +92,7 @@ namespace MotionControl.Framework.Runtime.Machine
             {
                 if (!_clearanceProfiles.TryGetValue(profileId, out profile))
                     throw new InvalidOperationException("设备未注册该清料配置，不能执行：" + profileId);
+                if (!IsConnectionSessionCurrent(session)) throw new InvalidOperationException("控制器连接会话未确认或已变化，不能清料。");
                 ControlledClearancePlan plan = profile.Plan;
                 foreach (string axis in profile.RequiredResources.Where(item => item.StartsWith("Axis:", StringComparison.OrdinalIgnoreCase)))
                     _motionCards.GetAxis(axis.Substring(5));
@@ -108,7 +110,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 if (notifications == null || notifications.Status != TaskStatus.RanToCompletion)
                     throw new InvalidOperationException("旧报警通知尚未完成交接，不能清料。");
                 EnsureNoManualOperationsInProgress("启动清料");
-                if (!_motionCards.IsConnected || _controlInputIo == null) throw new InvalidOperationException("控制器或逻辑 IO 不可用，不能清料。");
+                if (_controlInputIo == null) throw new InvalidOperationException("逻辑 IO 不可用，不能清料。");
                 if (_beforeClearance == null || _clearanceActionsObserved == null) throw new InvalidOperationException("清料持久记录未配置，不能动作。");
                 executor = new ControlledClearanceExecutor(_motionCards.Axes.ToDictionary(axis => axis.Name, StringComparer.OrdinalIgnoreCase), _controlInputIo);
                 if (!IsEmergencyStopMonitoringConfigured()) throw new InvalidOperationException("清料必须配置有效急停输入。");
@@ -125,6 +127,7 @@ namespace MotionControl.Framework.Runtime.Machine
                             ?? throw new InvalidOperationException("当前任务入口不支持清料资源保护。");
                 }
                 // 先持久保存清料活动，再申请包含原隔离的完整资源；失败一律保留记录。
+                if (!IsConnectionSessionCurrent(session)) throw new InvalidOperationException("控制器连接会话已变化，不能清料。");
                 RecoveryBlockReason = "清料已改变或可能改变现场，需核查资源和恢复记录后重新准备。";
                 _beforeClearance();
                 evidenceEstablished = true;
@@ -139,6 +142,7 @@ namespace MotionControl.Framework.Runtime.Machine
                     await resourceReady.ConfigureAwait(false);
                 }
                 cancellationToken.ThrowIfCancellationRequested();
+                if (!IsConnectionSessionCurrent(session)) throw new InvalidOperationException("控制器连接会话已失效，不能启动清料。");
                 var gate = _alarmService as IMachineAlarmStartGate;
                 if (gate == null) throw new InvalidOperationException("报警服务不支持原子检查清料许可。");
                 var start = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -162,7 +166,7 @@ namespace MotionControl.Framework.Runtime.Machine
                             _clearancePlan = plan;
                             _clearanceProfile = profile;
                             runCancellation = _preparationCancellation = new CancellationTokenSource();
-                            _preparationTask = Task.Run(async () => { await start.Task.ConfigureAwait(false); await RunControlledClearanceAsync(plan, executor, reservation, runCancellation).ConfigureAwait(false); });
+                            _preparationTask = Task.Run(async () => { await start.Task.ConfigureAwait(false); await RunControlledClearanceAsync(plan, executor, reservation, runCancellation, session).ConfigureAwait(false); });
                         }
                         _state = MachineRunState.Preparing;
                         _lastError = null;
@@ -280,11 +284,12 @@ namespace MotionControl.Framework.Runtime.Machine
 
         /// <summary>由 Runtime 持有取消、动作、停轴与证据直至完整结算。</summary>
         private async Task RunControlledClearanceAsync(ControlledClearancePlan plan, ControlledClearanceExecutor executor,
-            IControlledClearanceReservation reservation, CancellationTokenSource cancellation)
+            IControlledClearanceReservation reservation, CancellationTokenSource cancellation, Guid? session)
         {
             Exception failure = null;
             try
             {
+                EnsureConnectionSessionCurrent(session, "开始清料动作");
                 await executor.ExecuteAsync(plan, cancellation.Token).ConfigureAwait(false);
                 cancellation.Token.ThrowIfCancellationRequested();
                 if (executor.HasUnsettledAction) throw new InvalidOperationException("清料动作仍有未确认收尾。");
@@ -307,7 +312,11 @@ namespace MotionControl.Framework.Runtime.Machine
                     failure = new InvalidOperationException("清料结束时设备处于报警状态。");
                 if (failure == null)
                 {
-                    try { _clearanceActionsObserved(); }
+                    try
+                    {
+                        EnsureConnectionSessionCurrent(session, "登记清料动作完成");
+                        _clearanceActionsObserved();
+                    }
                     catch (Exception recordError) { failure = new InvalidOperationException("清料结束记录保存失败。", recordError); }
                 }
                 try { await StopEmergencyStopMonitorAsync().ConfigureAwait(false); }
@@ -320,6 +329,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 {
                     try
                     {
+                        EnsureConnectionSessionCurrent(session, "确认清料完成");
                         var gate = _alarmService as IMachineAlarmStartGate;
                         if (gate == null) throw new InvalidOperationException("报警服务不支持原子检查清料结束状态。");
                         lock (_statusLock)

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
@@ -39,6 +39,7 @@ namespace MotionControl.Host.Wpf.Configuration
             InitializeComponent();
             DataContext = this;
             LoadAlarms();
+            Search_TextChanged(this, null);
         }
 
         /// <summary>从磁盘读取报警定义副本，保留配置损坏或缺失的具体诊断。</summary>
@@ -154,6 +155,7 @@ namespace MotionControl.Host.Wpf.Configuration
             SelectedAlarm = AlarmGrid.SelectedItem as MachineAlarmCatalogEntry;
             DeleteButton.IsEnabled = SelectedAlarm != null;
             ShowSelectedAlarm();
+            Search_TextChanged(this, null);
         }
 
         /// <summary>将表单文字与类型选择变化标记为未保存。</summary>
@@ -233,6 +235,55 @@ namespace MotionControl.Host.Wpf.Configuration
         {
             _dirty = true;
             SetStatus("报警库有未保存修改");
+            Search_TextChanged(this, null);
+        }
+
+        /// <summary>只读搜索内存草稿，不提交表单或刷新编辑选择。</summary>
+        private void Search_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (SearchResults == null || Alarms == null) return;
+            string query = (SearchBox.Text ?? string.Empty).Trim();
+            var entries = Alarms.Select(alarm => alarm == SelectedAlarm
+                ? new MachineAlarmCatalogEntry { Code = CodeBox.Text, Message = MessageTextBox.Text,
+                    CheckGuidance = CheckGuidanceBox.Text, RecoveryGuidance = RecoveryGuidanceBox.Text }
+                : alarm.Copy()).Where(alarm => string.IsNullOrEmpty(query)
+                    || (alarm.Code ?? string.Empty).IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0
+                    || (alarm.Message ?? string.Empty).IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+            SearchResults.ItemsSource = entries;
+            RefreshLocalizedText();
+        }
+
+        /// <summary>清除查询，保留编辑字段及脏状态。</summary>
+        private void ClearSearch_Click(object sender, RoutedEventArgs e)
+        {
+            SearchBox.Text = string.Empty;
+            Search_TextChanged(sender, null);
+        }
+
+        /// <summary>显示真实指导与缺项，未配置时不推断恢复动作。</summary>
+        private void SearchResults_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            RefreshSearchGuidance();
+        }
+
+        /// <summary>切换语言时重绘搜索计数及选中指导，不重建结果或改变编辑内容。</summary>
+        public void RefreshLocalizedText()
+        {
+            if (SearchResults == null || Alarms == null) return;
+            SearchCountText.Text = string.Format(T("报警库搜索数量"), SearchResults.Items.Count, Alarms.Count);
+            RefreshSearchGuidance();
+        }
+
+        /// <summary>只展示选中搜索副本包含的实际指导，缺少时明确未配置。</summary>
+        private void RefreshSearchGuidance()
+        {
+            if (SearchGuidanceText == null) return;
+            var alarm = SearchResults.SelectedItem as MachineAlarmCatalogEntry;
+            SearchGuidanceText.Text = alarm == null ? T("报警库选择指导")
+                : alarm.Code + " — " + alarm.Message + "\n" + T("报警库检查指导标签")
+                    + (string.IsNullOrWhiteSpace(alarm.CheckGuidance) ? T("报警库指导未配置") : alarm.CheckGuidance)
+                    + "\n" + T("报警库恢复指导标签")
+                    + (string.IsNullOrWhiteSpace(alarm.RecoveryGuidance) ? T("报警库指导未配置") : alarm.RecoveryGuidance);
         }
 
         /// <summary>读取 Host 当前语言资源；缺少翻译时显示传入的中文原文。</summary>

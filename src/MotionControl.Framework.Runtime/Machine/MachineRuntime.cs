@@ -115,6 +115,20 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>读取本次控制卡连接周期标识；同一 Runtime 对象重连也会改变。</summary>
         public Guid? ConnectionSessionId { get { lock (_readSessionLock) return _connectionSessionId; } }
 
+        /// <summary>判断提交时的连接是否仍有效；这里只检查连接反馈，不采集轴或 IO。</summary>
+        public bool IsConnectionSessionCurrent(Guid? session)
+        {
+            return session.HasValue && ConnectionSessionId == session && _motionCards.IsConnected
+                && State != MachineRunState.Disconnected;
+        }
+
+        /// <summary>阻止已失效连接发布下一步动作或成功状态；调用方不得在状态或报警锁内检查驱动连接。</summary>
+        private void EnsureConnectionSessionCurrent(Guid? session, string operation)
+        {
+            if (!IsConnectionSessionCurrent(session))
+                throw new InvalidOperationException("控制器连接会话未确认或已变化，不能" + operation + "。");
+        }
+
         /// <summary>当前 C# 工位流程及报警交接均正常收尾；只用于同连接会话恢复，不能证明物理安全。</summary>
         public bool IsStationFlowSettlementConfirmed
         {
@@ -485,29 +499,31 @@ namespace MotionControl.Framework.Runtime.Machine
 
                 try
                 {
+                    InvalidatePreparationSnapshots("控制器连接会话已失效，准备状态需重新确认。");
                     await StopControlInputMonitorAsync().ConfigureAwait(false);
                     await _motionCards.DisconnectAsync(cancellationToken).ConfigureAwait(false);
-                    InvalidatePreparations("控制器已断开，准备状态无效。");
-                    SetStatus(MachineRunState.Disconnected, null);
+                    SetDisconnectStatus(MachineRunState.Disconnected, null);
                 }
                 catch (Exception disconnectError)
                 {
-                    SetStatus(MachineRunState.Alarmed, disconnectError);
+                    SetDisconnectStatus(MachineRunState.Alarmed, disconnectError);
                     // 断卡失败后仍有卡连接时，恢复现场按钮轮询；重新建立输入基线，
                     // 不把断卡期间已经有效的电平误当成新的按钮上升沿。
-                    if (_motionCards.Cards.Any(card => card.IsConnected))
+                    try
                     {
-                        try
-                        {
-                            StartControlInputMonitor();
-                        }
-                        catch (Exception monitorError)
-                        {
-                            throw new AggregateException("断卡失败，且现场按钮监控恢复失败，请检查现场。",
-                                disconnectError, monitorError);
-                        }
+                        if (_motionCards.Cards.Any(card => card.IsConnected)) StartControlInputMonitor();
+                    }
+                    catch (Exception monitorError)
+                    {
+                        throw new AggregateException("断卡失败，且无法确认剩余连接或恢复现场按钮监控，请检查现场。",
+                            disconnectError, monitorError);
                     }
                     throw;
+                }
+                finally
+                {
+                    // 准备订阅者不参与驱动断卡，其异常不能改变断卡结果或覆盖驱动异常。
+                    NotifyDisconnectedSubscribers(PreparationChanged, "准备状态");
                 }
             }
             finally
@@ -525,10 +541,14 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>确认停稳并复位报警；仅调用方已明确核查旧工步时允许解除停止门禁。</summary>
         public async Task ResetAsync(CancellationToken cancellationToken, bool confirmedStoppedProduction)
         {
+            Guid? session = ConnectionSessionId;
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 if (IsShutdownInProgress) throw new InvalidOperationException("设备正在安全退出，不能复位或重新运行。");
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!IsConnectionSessionCurrent(session))
+                    throw new InvalidOperationException("控制器连接会话未确认或已变化，不能复位设备。");
                 EnsureNoPreparationInProgress("报警复位");
                 EnsureOneOfStates(
                     new[] { MachineRunState.ResetRequired, MachineRunState.Paused, MachineRunState.Stopped, MachineRunState.Alarmed },
@@ -582,6 +602,8 @@ namespace MotionControl.Framework.Runtime.Machine
                     {
                         try
                         {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            if (!IsConnectionSessionCurrent(session)) throw new InvalidOperationException("控制器连接会话已失效，不能复位轴。");
                             await axis.ResetAlarmAsync(cancellationToken).ConfigureAwait(false);
                         }
                         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -598,6 +620,7 @@ namespace MotionControl.Framework.Runtime.Machine
 
                     try
                     {
+                        EnsureConnectionSessionCurrent(session, "复位设备初始化流程");
                         await _flowScheduler
                             .ResetEquipmentInitializationAsync(cancellationToken)
                             .ConfigureAwait(false);
@@ -615,6 +638,7 @@ namespace MotionControl.Framework.Runtime.Machine
                     {
                         try
                         {
+                            EnsureConnectionSessionCurrent(session, "复位工位");
                             await flow.ResetAsync(cancellationToken).ConfigureAwait(false);
                         }
                         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -629,7 +653,9 @@ namespace MotionControl.Framework.Runtime.Machine
                         }
                     }
 
+                    EnsureConnectionSessionCurrent(session, "复位停机报警");
                     _alarmService.ResetStopAlarms();
+                    EnsureConnectionSessionCurrent(session, "确认设备复位完成");
                     SetReadyIfNoStopAlarm(confirmedStoppedProduction);
                 }
                 catch (Exception resetError)
@@ -748,6 +774,7 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>执行可选设备初始化后，从各工位保留的当前步骤启动设备流程。</summary>
         public async Task StartAsync(CancellationToken cancellationToken)
         {
+            Guid? session = ConnectionSessionId;
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
@@ -762,6 +789,8 @@ namespace MotionControl.Framework.Runtime.Machine
                     throw new InvalidOperationException("尚未配置工位流程，不能启动自动运行。");
                 }
 
+                if (!IsConnectionSessionCurrent(session))
+                    throw new InvalidOperationException("控制器连接会话未确认或已变化，不能启动工位。");
                 EnsureState(MachineRunState.Ready, "启动前必须先成功复位设备。");
                 if (ProductionStopReviewRequired) throw new InvalidOperationException("生产已停止，旧工步尚未明确核查，不能启动。");
                 EnsureRecoveryTrusted();
@@ -799,9 +828,10 @@ namespace MotionControl.Framework.Runtime.Machine
                         throw new TimeoutException("上一次工位状态与监控仍在收尾，不能启动。");
                     }
                     await previousObserver.ConfigureAwait(false);
-                    if (!IsStationFlowSettlementConfirmed)
+                    if (!IsConnectionSessionCurrent(session) || !IsStationFlowSettlementConfirmed)
                         throw new InvalidOperationException("上一次工位流程或停机报警尚未确认收尾，不能启动。");
                     RecordBeforeAutomaticRun();
+                    EnsureConnectionSessionCurrent(session, "启动工位");
                     SetRunningIfNoStopAlarm();
                     StartEmergencyStopMonitor();
                     var startGate = _alarmService as IMachineAlarmStartGate;
@@ -811,6 +841,7 @@ namespace MotionControl.Framework.Runtime.Machine
                     Task runTask = null;
                     try
                     {
+                        EnsureConnectionSessionCurrent(session, "发放工位启动许可");
                         // 仅将可取消调度和异步内存许可一同提交；不会在报警锁线程调用设备。
                         startGate.ExecuteWhenNoStopAlarm(() =>
                         {
@@ -934,13 +965,40 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>线程安全地更新设备状态和最近错误，并通知界面。</summary>
         private void SetStatus(MachineRunState state, Exception error)
         {
+            UpdateStatusFields(state, error);
+            RaiseStatusChanged();
+        }
+
+        /// <summary>先提交驱动断卡的真实结果，再独立通知每个订阅者；界面异常只记录诊断。</summary>
+        private void SetDisconnectStatus(MachineRunState state, Exception error)
+        {
+            UpdateStatusFields(state, error);
+            NotifyDisconnectedSubscribers(StatusChanged, "断卡状态");
+        }
+
+        /// <summary>仅在断卡尝试结束后逐个通知订阅者，其他状态变更保留原有派发行为。</summary>
+        private void NotifyDisconnectedSubscribers(EventHandler handlers, string source)
+        {
+            if (handlers == null) return;
+            foreach (EventHandler handler in handlers.GetInvocationList())
+            {
+                try { handler(this, EventArgs.Empty); }
+                catch (Exception notificationError)
+                {
+                    System.Diagnostics.Trace.TraceError(source + "订阅者处理失败：" + notificationError);
+                }
+            }
+        }
+
+        /// <summary>在同一状态锁内更新整机状态及对应错误，不调用外部代码。</summary>
+        private void UpdateStatusFields(MachineRunState state, Exception error)
+        {
             lock (_statusLock)
             {
                 _state = state;
                 _lastError = error;
             }
 
-            RaiseStatusChanged();
         }
 
         /// <summary>通知订阅者设备状态已变化。</summary>

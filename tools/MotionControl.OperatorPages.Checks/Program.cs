@@ -47,6 +47,8 @@ namespace MotionControl.OperatorPages.Checks
             Check("任务运行空状态与诊断", TaskRunPageChecks.Run, ref failures);
             Check("设备状态资源覆盖与中英文显示", MachineStateLocalization, ref failures);
             Check("V1.4 安全联锁绑定来源和缺省", V14SafetyInterlockChecks.Run, ref failures);
+            Check("V1.4 报警库本地筛选与选择", V14AlarmCatalogSearchChecks.Run, ref failures);
+            Check("工位运行会话失效和报警未知", FlowStatusSessionChecks.Run, ref failures);
             Check("轴监控异步迟到和读取失败", RunAxisMonitorAsyncChecks, ref failures);
             Check("启动条件异步读取的连接与控制权归属", () => RunUiAsync(AutomaticStartReadinessSessionChecks.RunAsync), ref failures);
             Check("变量定义与内存摘要", V14VariableSummaryChecks.Run, ref failures);
@@ -75,7 +77,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("产品记录只读显示两种来源及错误", ProductRecordChecks.Run, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：41 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：43 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }
@@ -261,7 +263,8 @@ namespace MotionControl.OperatorPages.Checks
             Assert(((TextBlock)overview.FindName("NextActionText")).Text == reason, "总览没有显示准确的启动拦截原因。");
             Assert(FindControls<TextBlock>(overview).Any(text => text.Text.Contains("整机状态 · 启动条件未满足")), "工位卡片仍显示整机已就绪。");
 
-            var runtime = CreateRuntime(new GuardCard(), new MachineAlarmService());
+            var runtime = CreateRuntime(new GuardCard { IsConnected = true }, new MachineAlarmService());
+            runtime.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
             var flowStatus = new FlowStatusView(runtime);
             VerifyCSharpStationView(runtime);
             flowStatus.SetAutomaticStartReadiness(reason, false);
@@ -284,12 +287,14 @@ namespace MotionControl.OperatorPages.Checks
             Assert(list.Items.Count == runtime.StationFlows.Count(), "工位列表不是实际工位集合。");
             page.SetAutomaticStartReadiness("恢复信息未确认，先核查现场", false);
             Assert(((TextBlock)page.FindName("ResetGuidanceText")).Visibility == Visibility.Collapsed, "恢复阻断时仍建议通用复位。");
-            runtime.SetRecoveryBlockReason("运行记录仍需维护人员核查");
-            page.SetAutomaticStartReadiness(null, false);
-            Assert(((TextBlock)page.FindName("ResetGuidanceText")).Visibility == Visibility.Collapsed
-                && ((TextBlock)page.FindName("StartReadinessText")).Text.Contains("运行记录仍需维护人员核查"),
+            var recoveryRuntime = CreateRuntime(new GuardCard { IsConnected = true }, new MachineAlarmService());
+            recoveryRuntime.SetRecoveryBlockReason("运行记录仍需维护人员核查");
+            recoveryRuntime.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
+            var recoveryPage = new FlowStatusView(recoveryRuntime);
+            recoveryPage.SetAutomaticStartReadiness(null, false);
+            Assert(((TextBlock)recoveryPage.FindName("ResetGuidanceText")).Visibility == Visibility.Collapsed
+                && ((TextBlock)recoveryPage.FindName("StartReadinessText")).Text.Contains("运行记录仍需维护人员核查"),
                 "非就绪状态下未读取 Runtime 的真实恢复阻断。");
-            runtime.SetRecoveryBlockReason(null);
             OperatorNavigationEventArgs target = null;
             page.NavigationRequested += (sender, args) => target = args;
             FindButton(page, "查看当前报警").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -297,7 +302,8 @@ namespace MotionControl.OperatorPages.Checks
                 "报警导航猜测过滤条件或改变控制权。");
             var missing = new InspectableFlow("重复", null);
             var failed = new InspectableFlow("原不同名", "此前真实步骤") { FailRead = true };
-            var testRuntime = CreateRuntime(new GuardCard(), new MachineAlarmService(), missing, failed);
+            var testRuntime = CreateRuntime(new GuardCard { IsConnected = true }, new MachineAlarmService(), missing, failed);
+            testRuntime.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
             failed.StationName = "重复";
             var testPage = new FlowStatusView(testRuntime);
             Assert(!testPage.FocusStationByName("重复"), "重名工位被猜测定位。");
@@ -318,10 +324,11 @@ namespace MotionControl.OperatorPages.Checks
         /// <summary>任务控制入口不能把保留的 C# 工位当成任务步骤。</summary>
         private static void TaskOwnerDisplay()
         {
-            var card = new GuardCard();
+            var card = new GuardCard { IsConnected = true };
             var runtime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { card }),
                 new IStationFlow[] { new ReadOnlyFlow("旧流程工位") }, new MachineAlarmService(), new GuardSafety(),
                 controlOwner: MachineControlOwner.TaskEngine);
+            runtime.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
             bool loaded = false;
             var snapshot = OperationSnapshot.Read(runtime);
             Assert(snapshot.ControlOwner == MachineControlOwner.TaskEngine && snapshot.Stations.Count == 0,
@@ -358,6 +365,7 @@ namespace MotionControl.OperatorPages.Checks
             var manualRuntime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { card }),
                 new IStationFlow[] { new ReadOnlyFlow("已配置但未启用") }, new MachineAlarmService(), new GuardSafety(),
                 controlOwner: MachineControlOwner.None);
+            manualRuntime.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
             var manualOverview = new EquipmentOverviewView(); manualOverview.SetRuntime(manualRuntime);
             Assert(((TextBlock)manualOverview.FindName("EmptyText")).Text.Contains("未启用自动运行"),
                 "仅手动入口错误断言未配置工位。");
@@ -424,7 +432,7 @@ namespace MotionControl.OperatorPages.Checks
         /// <summary>验证 Host 导航不重复 IO 监控入口，并保留原内容区导航。</summary>
         private static void HostNavigation()
         {
-            var card = new GuardCard();
+            var card = new GuardCard { IsConnected = true };
             var alarmService = new MachineAlarmService();
             var flow = new ReadOnlyInputFlow();
             var alarm = new MachineAlarmDefinition("CLAMP_TIMEOUT", "等待夹紧到位超时", MachineAlarmKind.StopMachine,
@@ -434,6 +442,7 @@ namespace MotionControl.OperatorPages.Checks
             var notice = new MachineAlarmDefinition("VISION_REVIEW", "视觉结果待复核", MachineAlarmKind.NonStop);
             alarmService.ReportCondition(notice, visionFlow.StationName, true, "视觉结果等待操作员复核");
             var runtime = CreateRuntime(card, alarmService, flow, visionFlow);
+            runtime.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
             var window = new MainWindow();
             try
             {
@@ -474,8 +483,7 @@ namespace MotionControl.OperatorPages.Checks
                 FindButton(original, "查看当前报警").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 var alarms = content.Content as CurrentAlarmsView;
                 Assert(alarms != null && card.Calls == 0, "报警导航失败或触发了控制卡操作。");
-                Assert(((TextBlock)alarms.FindName("CountText")).Text == "当前会话报警 2 条（停机 1，非停机 1）"
-                    && ((TextBlock)alarms.FindName("SourceText")).Text.Contains("现场报警状态未知")
+                Assert(((TextBlock)alarms.FindName("CountText")).Text == crossPageAlarmSummary
                     && ((DataGrid)alarms.FindName("AlarmGrid")).Items.Cast<AlarmDisplayRow>().Count(row => row.Alarm.RequiresReset) == 1,
                     "从总览进入当前报警后，报警分类数量与流程状态页不一致。");
 
@@ -741,8 +749,8 @@ namespace MotionControl.OperatorPages.Checks
         public int Calls { get; private set; }
         /// <summary>检查专用卡标识。</summary>
         public string ControllerId { get { return "ReadOnlyCheck"; } }
-        /// <summary>不建立连接。</summary>
-        public bool IsConnected { get { return false; } }
+        /// <summary>由测试声明内存卡是否已在线，页面不得实施连接或断开。</summary>
+        public bool IsConnected { get; internal set; }
         /// <summary>无需任何实轴。</summary>
         public IReadOnlyCollection<IAxis> Axes { get { return new IAxis[0]; } }
         /// <summary>页面若意外连接立即失败。</summary>

@@ -26,6 +26,7 @@ namespace MotionControl.Framework.Runtime.Machine
         private async Task RunConfigurationChangeAsync(Func<Task> change, CancellationToken cancellationToken, bool safetyInputSave)
         {
             if (change == null) throw new ArgumentNullException(nameof(change));
+            Guid? session = ConnectionSessionId;
             if (safetyInputSave)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -37,14 +38,13 @@ namespace MotionControl.Framework.Runtime.Machine
             {
                 if (IsShutdownInProgress) throw new InvalidOperationException("设备正在安全退出，不能修改控制卡配置。");
                 EnsureStopFeedbackReadSettled();
-                if (State == MachineRunState.Disconnected)
-                    throw new InvalidOperationException("控制卡尚未连接，不能在线应用配置。");
+                if (!IsConnectionSessionCurrent(session))
+                    throw new InvalidOperationException("控制卡连接会话未确认或已变化，不能在线应用配置。");
                 if (State == MachineRunState.Running || State == MachineRunState.Pausing || _flowScheduler.IsRunning)
                     throw new InvalidOperationException("工位流程仍在运行或等待停止，请先暂停并确认流程停止后再应用配置。");
                 EnsureNoManualOperationsInProgress("应用控制卡配置");
                 if (safetyInputSave && (IsPreparing || IsClearing || IsTaskEngineControlClaimed
-                    || !_flowScheduler.IsSettlementConfirmed || _flowObserverTask.Status != TaskStatus.RanToCompletion
-                    || !_motionCards.IsConnected || !ConnectionSessionId.HasValue))
+                    || !_flowScheduler.IsSettlementConfirmed || _flowObserverTask.Status != TaskStatus.RanToCompletion))
                     throw new InvalidOperationException("控制器连接、任务会话或设备动作收尾尚未确认，安全输入配置未保存。");
 
                 // 点动的发起调用可以先于轴实际停止返回，保存安全输入前另取全轴停稳反馈。
@@ -69,6 +69,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 {
                     await StopControlInputMonitorAsync().ConfigureAwait(true);
                     if (safetyInputSave) cancellationToken.ThrowIfCancellationRequested();
+                    if (!IsConnectionSessionCurrent(session)) throw new InvalidOperationException("控制卡连接会话已失效，未应用配置。");
                     await change().ConfigureAwait(true);
                 }
                 catch (Exception error) { failure = error; }

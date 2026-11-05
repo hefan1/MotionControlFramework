@@ -48,6 +48,8 @@ namespace MotionControl.OperatorPages.Checks
             runtime.ConfigurePreparations(new[] { new ObservedPreparation() });
             // 仅布置测试内存状态；绝不调用 Runtime.ConnectAsync 或设备生命周期。
             typeof(MachineRuntime).GetField("_state", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(runtime, MachineRunState.Ready);
+            var sessionField = typeof(MachineRuntime).GetField("_connectionSessionId", BindingFlags.NonPublic | BindingFlags.Instance);
+            sessionField.SetValue(runtime, Guid.NewGuid());
             page.SetRuntime(runtime);
             page.SetAutomaticStartReadiness(null, false);
             string all = string.Join("\n", list.Items.Cast<object>());
@@ -56,6 +58,11 @@ namespace MotionControl.OperatorPages.Checks
             Assert(all.Contains("Host 未提供已完成结论") && all.Contains("未知"), "Host 空原因被解释为已完成或通过。");
             var station = list.Items.Cast<object>().Single(item => (string)item.GetType().GetProperty("Key").GetValue(item) == "preparation/StableStation42");
             Assert((string)station.GetType().GetProperty("ObjectId").GetValue(station) == "StableStation42" && station.ToString().Contains("不满足"), "准备状态未保留真实对象ID或未准备结论。");
+            sessionField.SetValue(runtime, null);
+            page.SetAutomaticStartReadiness("obsolete blocker", false);
+            Assert(card.IsConnected && list.Items.Count == 1 && list.Items[0].ToString().Contains("未知")
+                && !((Button)page.FindName("PrepareAllButton")).IsEnabled, "卡仍报告连接但 Runtime 会话失效时保留了准备资格或旧结论。");
+            sessionField.SetValue(runtime, Guid.NewGuid());
             card.Connected = false;
             ((Button)page.FindName("RefreshStartConditionsButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert(list.Items.Count == 1 && list.Items[0].ToString().Contains("未知"), "断开后保留旧准备或恢复结论。");

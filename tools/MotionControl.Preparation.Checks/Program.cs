@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Flow;
+using MotionControl.Framework.Contracts.IO;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Contracts.Preparation;
 using MotionControl.Framework.Contracts.Safety;
@@ -19,7 +20,7 @@ namespace MotionControl.Preparation.Checks
         /// <summary>执行全部检查并返回失败退出码。</summary>
         private static int Main()
         {
-            try { RunAsync().GetAwaiter().GetResult(); Console.WriteLine("设备准备：18 组检查通过（仅内部逻辑检查）。"); return 0; }
+            try { RunAsync().GetAwaiter().GetResult(); Console.WriteLine("设备准备：19 组检查通过（仅内部逻辑检查）。"); return 0; }
             catch (Exception error) { Console.Error.WriteLine(error); return 1; }
         }
 
@@ -41,6 +42,7 @@ namespace MotionControl.Preparation.Checks
             await PreparationAlarmGateAsync();
             await StationFlowStartAlarmGateAsync();
             await StationFlowSettlementAndConnectionAsync();
+            await FailedDisconnectInvalidatesPreparationAsync();
             await OldAlarmTimeoutDoesNotAffectNewRunAsync();
             await OldPreparationStopDoesNotAffectNewRunAsync();
             await PreparationPreflightMarkerAsync();
@@ -227,6 +229,317 @@ namespace MotionControl.Preparation.Checks
             Ensure(failedFlow.StopCallbackCount == 1, "检查未实际触发预期的失败停止回调。");
             await failed.ResetAsync(CancellationToken.None);
             Ensure(!failed.IsStationFlowSettlementConfirmed, "停止回调失败但后台任务退出后错误确认收尾。");
+        }
+
+        /// <summary>断卡失败但卡仍连接、复位回到 Ready 时拒绝设备准备；真实重连后重新执行。</summary>
+        private static async Task FailedDisconnectInvalidatesPreparationAsync()
+        {
+            await CheckDisconnectProbeFailureAsync();
+            await CheckQueuedSessionCommandsAsync();
+            await CheckAxisAlarmResetDisconnectAsync();
+            await CheckConnectionLossDuringCallbacksAsync();
+            foreach (var owner in new[] { MachineControlOwner.StationFlows, MachineControlOwner.TaskEngine })
+            {
+                var buttons = new MemoryButtons();
+                var fixture = new Fixture(owner, buttons);
+                int validations = 0, markers = 0;
+                var item = new Preparation("Home", fixture) { OnValidate = () => validations++ };
+                fixture.Runtime.ConfigurePreparations(new[] { item });
+                fixture.Runtime.SetPreparationRecordCallbacks(() => markers++, () => { });
+                await fixture.ConnectAsync();
+                Guid? original = fixture.Runtime.ConnectionSessionId;
+                await fixture.Runtime.PrepareAsync(null, CancellationToken.None);
+                Ensure(fixture.Runtime.IsPrepared, "测试未建立有效准备资格。");
+                int notifications = 0;
+                int disconnectCallsAtNotification = 0;
+                EventHandler throwingSubscriber = (sender, args) =>
+                {
+                    notifications++;
+                    disconnectCallsAtNotification = fixture.Card.DisconnectCalls;
+                    throw new InvalidOperationException("模拟准备订阅者失败");
+                };
+                fixture.Runtime.PreparationChanged += throwingSubscriber;
+                var preparationStates = new List<MachineRunState>();
+                EventHandler observingPreparation = (sender, args) => preparationStates.Add(fixture.Runtime.State);
+                fixture.Runtime.PreparationChanged += observingPreparation;
+                int failedStatusNotifications = 0;
+                var observedStates = new List<MachineRunState>();
+                var observedErrors = new List<Exception>();
+                EventHandler throwingStatus = (sender, args) =>
+                {
+                    failedStatusNotifications++;
+                    throw new InvalidOperationException("模拟状态订阅者失败");
+                };
+                EventHandler observingStatus = (sender, args) =>
+                {
+                    observedStates.Add(fixture.Runtime.State);
+                    observedErrors.Add(fixture.Runtime.LastError);
+                };
+                fixture.Runtime.StatusChanged += throwingStatus;
+                fixture.Runtime.StatusChanged += observingStatus;
+                fixture.Card.FailDisconnect = true;
+                bool invalidatedBeforeDriver = false;
+                fixture.Card.OnDisconnect = () => invalidatedBeforeDriver =
+                    !fixture.Runtime.ConnectionSessionId.HasValue && !fixture.Runtime.IsPrepared;
+                Exception disconnectError = null;
+                try { await fixture.Runtime.DisconnectAsync(CancellationToken.None); }
+                catch (Exception error) { disconnectError = error; }
+                finally
+                {
+                    fixture.Runtime.PreparationChanged -= throwingSubscriber;
+                    fixture.Runtime.PreparationChanged -= observingPreparation;
+                    fixture.Runtime.StatusChanged -= throwingStatus;
+                    fixture.Runtime.StatusChanged -= observingStatus;
+                }
+                Ensure(disconnectError != null && disconnectError.ToString().Contains("模拟断开失败")
+                    && ReferenceEquals(disconnectError, fixture.Runtime.LastError) && notifications == 1
+                    && disconnectCallsAtNotification == 1 && invalidatedBeforeDriver,
+                    "准备资格没有在驱动断卡前失效，或订阅者阻断了断卡/覆盖了驱动错误。");
+                Ensure(fixture.Card.IsConnected && fixture.Runtime.ConnectionSessionId == null
+                    && fixture.Runtime.State == MachineRunState.Alarmed && !fixture.Runtime.IsPrepared,
+                    "断开失败后未使连接及准备资格失效。");
+                Ensure(failedStatusNotifications == 1 && observedStates.SequenceEqual(new[] { MachineRunState.Alarmed })
+                    && ReferenceEquals(observedErrors[0], disconnectError), "失败状态被订阅异常覆盖，或后续状态订阅者没有收到原始故障。");
+                int readsAfterFailure = Volatile.Read(ref buttons.Reads);
+                await WaitAsync(() => Volatile.Read(ref buttons.Reads) > readsAfterFailure);
+                int previousAxisResets = fixture.Axis.ResetCount, previousFlowResets = fixture.Flow.ResetCount;
+                await RejectAsync(() => fixture.Runtime.ResetAsync(CancellationToken.None), "失效会话仍允许复位。");
+                Ensure(fixture.Runtime.State == MachineRunState.Alarmed && ReferenceEquals(fixture.Runtime.LastError, disconnectError)
+                    && fixture.Axis.ResetCount == previousAxisResets && fixture.Flow.ResetCount == previousFlowResets,
+                    "失效会话复位清掉了原断卡故障或执行了轴/工位复位。");
+                int manualCalls = 0;
+                // 代理只计数，不执行任何设备动作。
+                Task CountManual() { manualCalls++; return Task.CompletedTask; }
+                Ensure(await fixture.Runtime.RunManualOperationAsync(CountManual, CancellationToken.None) == ManualOperationBlockReason.MotionCardDisconnected
+                    && await fixture.Runtime.RunManualRecoveryOperationAsync(CountManual, CancellationToken.None) == ManualOperationBlockReason.MotionCardDisconnected
+                    && await fixture.Runtime.RunManualAxisAlarmResetAsync(CountManual, CancellationToken.None) == ManualOperationBlockReason.MotionCardDisconnected
+                    && manualCalls == 0, "连接失效后手动动作、示教或轴报警复位被放行。");
+                Ensure(await fixture.Runtime.RunManualStopAsync(CountManual, CancellationToken.None) == ManualOperationBlockReason.None
+                    && manualCalls == 1, "失效会话内仍连接的控制器无法受控停止。");
+                var taskOwner = new PauseOwner();
+                await fixture.Runtime.AcquireTaskEngineControlAsync(taskOwner, CancellationToken.None);
+                await RejectAsync(() => fixture.Runtime.BeginTaskEngineRunAsync(CancellationToken.None), "失效会话仍能启动任务。");
+                fixture.Runtime.ReleaseTaskEngineControl(taskOwner);
+                int previousValidations = validations, previousMarkers = markers, previousActions = fixture.Log.Count;
+                await RejectAsync(() => fixture.Runtime.PrepareAsync(null, CancellationToken.None), "失效连接仍可准备。");
+                Ensure(validations == previousValidations && markers == previousMarkers && fixture.Log.Count == previousActions,
+                    "会话失效后仍执行准备预检、持久标记或动作。");
+                fixture.Card.FailDisconnect = false;
+                fixture.Runtime.PreparationChanged += throwingSubscriber;
+                fixture.Runtime.PreparationChanged += observingPreparation;
+                fixture.Runtime.StatusChanged += throwingStatus;
+                fixture.Runtime.StatusChanged += observingStatus;
+                try { await fixture.Runtime.DisconnectAsync(CancellationToken.None); }
+                finally
+                {
+                    fixture.Runtime.PreparationChanged -= throwingSubscriber;
+                    fixture.Runtime.PreparationChanged -= observingPreparation;
+                    fixture.Runtime.StatusChanged -= throwingStatus;
+                    fixture.Runtime.StatusChanged -= observingStatus;
+                }
+                Ensure(failedStatusNotifications == 2 && observedStates.SequenceEqual(new[] { MachineRunState.Alarmed, MachineRunState.Disconnected })
+                    && observedErrors[1] == null && fixture.Runtime.LastError == null,
+                    "成功断卡被状态订阅异常误判为失败，或后续订阅者未获知成功。");
+                Ensure(notifications == 2 && disconnectCallsAtNotification == 2 && !fixture.Card.IsConnected
+                    && fixture.Runtime.State == MachineRunState.Disconnected, "准备通知异常改变了断开重试的成功结果。");
+                Ensure(preparationStates.SequenceEqual(new[] { MachineRunState.Alarmed, MachineRunState.Disconnected }),
+                    "抛错的准备订阅者跳过了后续正常订阅者。");
+                await fixture.ConnectAsync();
+                Ensure(fixture.Runtime.ConnectionSessionId.HasValue && fixture.Runtime.ConnectionSessionId != original,
+                    "重连未产生新会话。");
+                await RejectAsync(() => fixture.Runtime.PrepareAsync(null, original, CancellationToken.None),
+                    "重连后接受了原会话的准备请求。");
+                await fixture.Runtime.PrepareAsync(null, CancellationToken.None);
+                Ensure(fixture.Log.Count == previousActions + 1 && fixture.Runtime.IsPrepared, "重连后未重新执行工位准备。");
+                await fixture.Runtime.DisconnectAsync(CancellationToken.None);
+            }
+        }
+
+        /// <summary>在设备回调及持久标记中丢失通信，禁止后续动作、复位成功或准备资格。</summary>
+        private static async Task CheckConnectionLossDuringCallbacksAsync()
+        {
+            var token = CancellationToken.None;
+            foreach (string phase in new[] { "预检", "标记", "工位预检", "完成核查" })
+            {
+                var fixture = new Fixture();
+                var item = new Preparation("Home", fixture);
+                int validations = 0, markers = 0, completions = 0;
+                item.OnValidate = () =>
+                {
+                    validations++;
+                    if ((phase == "预检" && validations == 1) || (phase == "工位预检" && validations == 2))
+                        fixture.Card.ForceOffline();
+                };
+                if (phase == "完成核查") item.OnReady = fixture.Card.ForceOffline;
+                fixture.Runtime.SetPreparationRecordCallbacks(() =>
+                {
+                    markers++;
+                    if (phase == "标记") fixture.Card.ForceOffline();
+                }, () => completions++);
+                fixture.Runtime.ConfigurePreparations(new[] { item });
+                await fixture.ConnectAsync();
+                await RejectAsync(() => fixture.Runtime.PrepareAsync(null, token), "回调后掉线仍报告准备完成：" + phase);
+                Ensure(markers == (phase == "预检" ? 0 : 1) && completions == 0 && !fixture.Runtime.IsPrepared
+                    && fixture.Log.Count == (phase == "完成核查" ? 1 : 0), "掉线后续动作或标记错误：" + phase);
+                await fixture.Runtime.DisconnectAsync(token);
+            }
+            foreach (bool dropDuringAxis in new[] { true, false })
+            {
+                var fixture = new Fixture();
+                if (dropDuringAxis) fixture.Axis.OnReset = fixture.Card.ForceOffline;
+                else fixture.Flow.OnReset = fixture.Card.ForceOffline;
+                await fixture.ConnectAsync();
+                await RejectAsync(() => fixture.Runtime.ResetAsync(token), "复位回调掉线后仍报告 Ready。");
+                Ensure(fixture.Axis.ResetCount == 1 && fixture.Flow.ResetCount == (dropDuringAxis ? 0 : 1)
+                    && fixture.Runtime.State == MachineRunState.Alarmed, "掉线复位后执行了后续回调或发布就绪。");
+                await fixture.Runtime.DisconnectAsync(token);
+            }
+            foreach (bool task in new[] { false, true })
+            {
+                var fixture = new Fixture();
+                int markers = 0;
+                fixture.Runtime.SetBeforeAutomaticRun(() => { markers++; fixture.Card.ForceOffline(); });
+                await fixture.ConnectAsync();
+                await fixture.Runtime.ResetAsync(token);
+                var owner = new PauseOwner();
+                if (task) await fixture.Runtime.AcquireTaskEngineControlAsync(owner, token);
+                await RejectAsync(() => task ? fixture.Runtime.BeginTaskEngineRunAsync(token) : fixture.Runtime.StartAsync(token),
+                    "生产标记回调期间掉线后仍放行。");
+                Ensure(markers == 1 && fixture.Flow.Executions == 0 && fixture.Runtime.State != MachineRunState.Running,
+                    "生产标记后的掉线未阻止运行许可。");
+                if (task) fixture.Runtime.ReleaseTaskEngineControl(owner);
+                await fixture.Runtime.DisconnectAsync(token);
+            }
+            foreach (bool probeFails in new[] { false, true })
+            {
+                var lostDuringRunning = new Fixture();
+                await lostDuringRunning.ConnectAsync();
+                await lostDuringRunning.Runtime.ResetAsync(token);
+                var taskOwner = new PauseOwner();
+                var probeError = new InvalidOperationException("测试厂商连接状态无法读取");
+                await lostDuringRunning.Runtime.AcquireTaskEngineControlAsync(taskOwner, token);
+                lostDuringRunning.Runtime.StatusChanged += (sender, args) =>
+                {
+                    if (lostDuringRunning.Runtime.State != MachineRunState.Running) return;
+                    if (probeFails) lostDuringRunning.Card.ConnectionProbeError = probeError;
+                    else lostDuringRunning.Card.ForceOffline();
+                };
+                InvalidOperationException rejected = null;
+                try { await lostDuringRunning.Runtime.BeginTaskEngineRunAsync(token); }
+                catch (InvalidOperationException error) { rejected = error; }
+                Ensure(rejected != null && (probeFails ? ReferenceEquals(rejected, probeError) : rejected.Message.Contains("连接会话"))
+                    && lostDuringRunning.Runtime.State == MachineRunState.Alarmed
+                    && ReferenceEquals(lostDuringRunning.Runtime.LastError, rejected),
+                    "Running 通知期间连接失效/未知却回到 Ready，或原启动错误被覆盖。");
+                lostDuringRunning.Card.ConnectionProbeError = null;
+                lostDuringRunning.Runtime.ReleaseTaskEngineControl(taskOwner);
+                await lostDuringRunning.Runtime.DisconnectAsync(token);
+            }
+        }
+
+        /// <summary>急停条件已恢复但报警仍锁存时，轴复位特批也必须核对慢读结束后的卡连接。</summary>
+        private static async Task CheckAxisAlarmResetDisconnectAsync()
+        {
+            var fixture = new Fixture();
+            var token = CancellationToken.None;
+            await fixture.ConnectAsync();
+            fixture.Safety.Active = true;
+            Ensure(await fixture.Runtime.GetManualOperationBlockReasonAsync(token) == ManualOperationBlockReason.EmergencyStopInputActive
+                && fixture.Runtime.AlarmService.HasLatchedStopAlarm, "未通过实际手动检查建立急停报警。");
+            fixture.Safety.Active = false;
+            var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            fixture.Safety.NextRead = release;
+            int calls = 0;
+            Task<ManualOperationBlockReason> reset = fixture.Runtime.RunManualAxisAlarmResetAsync(
+                () => { calls++; return Task.CompletedTask; }, token);
+            try
+            {
+                Ensure(!reset.IsCompleted && fixture.Safety.NextRead == null, "复位未进入异步急停读取。");
+                fixture.Card.ForceOffline();
+            }
+            finally { release.TrySetResult(false); }
+            Ensure(await reset == ManualOperationBlockReason.MotionCardDisconnected && calls == 0
+                && fixture.Runtime.AlarmService.HasLatchedStopAlarm, "掉线前的急停释放反馈让轴报警复位越过了连接门禁。");
+            await fixture.Runtime.DisconnectAsync(token);
+        }
+
+        /// <summary>驱动断卡异常后若连线状态查询也失败，两份故障均保留且不盲目重启按钮监控。</summary>
+        private static async Task CheckDisconnectProbeFailureAsync()
+        {
+            var buttons = new MemoryButtons();
+            var fixture = new Fixture(buttons: buttons);
+            await fixture.ConnectAsync();
+            fixture.Card.FailDisconnect = true;
+            var probeError = new InvalidOperationException("模拟卡连接反馈失败");
+            fixture.Card.OnDisconnect = () => fixture.Card.ConnectionProbeError = probeError;
+            AggregateException combined = null;
+            try { await fixture.Runtime.DisconnectAsync(CancellationToken.None); }
+            catch (AggregateException error) { combined = error; }
+            Ensure(combined != null && combined.InnerExceptions.Count == 2
+                && ReferenceEquals(combined.InnerExceptions[0], fixture.Runtime.LastError)
+                && combined.InnerExceptions[0].ToString().Contains("模拟断开失败")
+                && ReferenceEquals(combined.InnerExceptions[1], probeError), "恢复探测异常掩盖了驱动原始断卡故障。");
+            var monitor = typeof(MachineRuntime).GetField("_controlInputMonitorCancellation",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Ensure(monitor.GetValue(fixture.Runtime) == null, "连接反馈未知时启动了按钮轮询。");
+            fixture.Card.OnDisconnect = null;
+            fixture.Card.ConnectionProbeError = null;
+            fixture.Card.FailDisconnect = false;
+            await fixture.Runtime.DisconnectAsync(CancellationToken.None);
+        }
+
+        /// <summary>同一 Runtime 的命令依序排在断开、重连、复位之后，旧提交不可进入新连接。</summary>
+        private static async Task CheckQueuedSessionCommandsAsync()
+        {
+            var fixture = new Fixture();
+            var token = CancellationToken.None;
+            await fixture.ConnectAsync();
+            await fixture.Runtime.ResetAsync(token);
+            int axisResets = fixture.Axis.ResetCount, flowResets = fixture.Flow.ResetCount;
+            await RejectAsync(() => fixture.Runtime.ResetAsync(new CancellationToken(true)), "已取消的复位仍执行。");
+            Ensure(axisResets == fixture.Axis.ResetCount && flowResets == fixture.Flow.ResetCount, "已取消复位调用了设备。");
+            Guid? originalSession = fixture.Runtime.ConnectionSessionId;
+            var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Task held = fixture.Runtime.RunConnectedConfigurationChangeAsync(() => release.Task, token);
+            Task disconnect = fixture.Runtime.DisconnectAsync(token);
+            Task connect = fixture.Runtime.ConnectAsync(token);
+            // 使用计数器代表设备动作；原请求均在连接 A 有效时提交。
+            int manualCalls = 0, configurationCalls = 0;
+            Task CountManual() { manualCalls++; return Task.CompletedTask; }
+            var manual = fixture.Runtime.RunManualOperationAsync(CountManual, token);
+            var recovery = fixture.Runtime.RunManualRecoveryOperationAsync(CountManual, token);
+            var axisReset = fixture.Runtime.RunManualAxisAlarmResetAsync(CountManual, token);
+            Task oldReset = fixture.Runtime.ResetAsync(token);
+            Task oldConfiguration = fixture.Runtime.RunConnectedConfigurationChangeAsync(
+                () => { configurationCalls++; return Task.CompletedTask; }, token);
+            Task oldStationStart = fixture.Runtime.StartAsync(token);
+            var taskOwner = new PauseOwner();
+            Task claim = fixture.Runtime.AcquireTaskEngineControlAsync(taskOwner, token);
+            Task oldTaskStart = fixture.Runtime.BeginTaskEngineRunAsync(token);
+            release.SetResult(true);
+            await held;
+            await disconnect;
+            await connect;
+            Ensure(originalSession != fixture.Runtime.ConnectionSessionId && fixture.Runtime.ConnectionSessionId.HasValue,
+                "测试没有先完成真实断开和重连。");
+            Ensure(await manual == ManualOperationBlockReason.MotionCardDisconnected
+                && await recovery == ManualOperationBlockReason.MotionCardDisconnected
+                && await axisReset == ManualOperationBlockReason.MotionCardDisconnected && manualCalls == 0,
+                "旧连接排队的手动命令进入了新的连接会话。");
+            await RejectAsync(() => oldReset, "排队的旧复位进入新连接。");
+            await RejectAsync(() => oldConfiguration, "排队的旧配置进入新连接。");
+            await claim;
+            foreach (var oldStart in new[] { oldStationStart, oldTaskStart })
+            {
+                string reason = null;
+                try { await oldStart; } catch (InvalidOperationException error) { reason = error.Message; }
+                Ensure(reason != null && reason.Contains("连接会话"), "旧生产启动未按会话失效拒绝。");
+            }
+            fixture.Runtime.ReleaseTaskEngineControl(taskOwner);
+            Ensure(axisResets == fixture.Axis.ResetCount && flowResets == fixture.Flow.ResetCount && configurationCalls == 0,
+                "拒绝旧命令前已经调用设备。");
+            await fixture.Runtime.ResetAsync(token);
+            await fixture.Runtime.DisconnectAsync(token);
         }
 
         /// <summary>C# 流程许可前报警禁止启动；许可后报警须取消并完成工位收尾。</summary>
@@ -736,10 +1049,28 @@ namespace MotionControl.Preparation.Checks
             /// <summary>被检查的通用运行时。</summary>
             internal readonly MachineRuntime Runtime;
             /// <summary>创建无硬件环境。</summary>
-            internal Fixture(MachineControlOwner owner = MachineControlOwner.StationFlows) { Card = new Card(Axis); Runtime = new MachineRuntime(new MotionCardGroup(new[] { Card }), new[] { Flow },
-                new MachineAlarmService(), Safety, pauseTimeout: TimeSpan.FromSeconds(1), safetyPollInterval: TimeSpan.FromMilliseconds(10), controlOwner: owner); }
+            internal Fixture(MachineControlOwner owner = MachineControlOwner.StationFlows, ILogicalIo buttons = null) { Card = new Card(Axis); Runtime = new MachineRuntime(new MotionCardGroup(new[] { Card }), new[] { Flow },
+                new MachineAlarmService(), Safety, pauseTimeout: TimeSpan.FromSeconds(1), safetyPollInterval: TimeSpan.FromMilliseconds(10),
+                controlOwner: owner, controlInputIo: buttons, startInputName: buttons == null ? null : "Start"); }
             /// <summary>连接内存卡，不做物理动作。</summary>
             internal Task ConnectAsync() { return Runtime.ConnectAsync(CancellationToken.None); }
+        }
+
+        /// <summary>按钮始终释放，只计数以验证断开失败后的现场按钮采集已恢复。</summary>
+        private sealed class MemoryButtons : ILogicalIo
+        {
+            /// <summary>累计输入采样次数。</summary>
+            internal int Reads;
+            /// <summary>只提供释放状态，不发起设备命令。</summary>
+            public Task<bool> ReadInputAsync(string name, CancellationToken token)
+            {
+                Interlocked.Increment(ref Reads);
+                return Task.FromResult(false);
+            }
+            /// <summary>此用例禁止读取输出。</summary>
+            public Task<bool> ReadOutputAsync(string name, CancellationToken token) { throw new NotSupportedException(); }
+            /// <summary>此用例禁止写输出。</summary>
+            public Task WriteOutputAsync(string name, bool value, CancellationToken token) { throw new NotSupportedException(); }
         }
 
         /// <summary>用于验证依赖和取消的工位准备替身。</summary>
@@ -765,6 +1096,8 @@ namespace MotionControl.Preparation.Checks
             internal bool RequireDependenciesExecuted;
             /// <summary>在只读预检中注入取消等并发现场变化。</summary>
             internal Action OnValidate;
+            /// <summary>在最终姿态校验期间注入底层掉线。</summary>
+            internal Action OnReady;
             /// <summary>统计校验次数以模拟预检后现场条件变化。</summary>
             private int _validationCount;
             /// <summary>保留本次进度接收器，检查迟到回调不会破坏结果。</summary>
@@ -782,7 +1115,7 @@ namespace MotionControl.Preparation.Checks
             }
             /// <summary>根据测试安排接受或拒绝最终姿态。</summary>
             public Task ValidateReadyAsync(CancellationToken token)
-            { token.ThrowIfCancellationRequested(); if (!ReadyPose) throw new InvalidOperationException("最终姿态不合格"); return Task.CompletedTask; }
+            { token.ThrowIfCancellationRequested(); OnReady?.Invoke(); if (!ReadyPose) throw new InvalidOperationException("最终姿态不合格"); return Task.CompletedTask; }
         }
 
         /// <summary>从不连接真实卡的控制器替身。</summary>
@@ -793,15 +1126,32 @@ namespace MotionControl.Preparation.Checks
             /// <summary>测试卡标识。</summary>
             public string ControllerId { get { return "TestCard"; } }
             /// <summary>内存连接状态。</summary>
-            public bool IsConnected { get; private set; }
+            public bool IsConnected { get { if (ConnectionProbeError != null) throw ConnectionProbeError; return _connected; } }
+            /// <summary>卡的底层连接缓存。</summary>
+            private bool _connected;
+            /// <summary>仅在设备断开失败后模拟连接检测本身抛错。</summary>
+            internal Exception ConnectionProbeError;
             /// <summary>测试轴列表。</summary>
             public IReadOnlyCollection<IAxis> Axes { get; }
             /// <summary>标记连接。</summary>
-            public Task ConnectAsync(CancellationToken token) { IsConnected = true; return Task.CompletedTask; }
-            /// <summary>标记断开。</summary>
-            public Task DisconnectAsync(CancellationToken token) { IsConnected = false; return Task.CompletedTask; }
+            public Task ConnectAsync(CancellationToken token) { _connected = true; return Task.CompletedTask; }
+            /// <summary>模拟断开动作失败且卡仍报告连接。</summary>
+            internal bool FailDisconnect;
+            /// <summary>记录驱动断卡调用次数，和准备通知的发生顺序对照。</summary>
+            internal int DisconnectCalls;
+            /// <summary>在内存卡断开入口观察准备资格是否已失效。</summary>
+            internal Action OnDisconnect;
+            /// <summary>失败时保留连接状态，成功时标记断开。</summary>
+            public Task DisconnectAsync(CancellationToken token)
+            {
+                DisconnectCalls++;
+                OnDisconnect?.Invoke();
+                if (FailDisconnect) throw new InvalidOperationException("模拟断开失败");
+                _connected = false;
+                return Task.CompletedTask;
+            }
             /// <summary>模拟底层通信突然断开，而不经过 Runtime 的主动断卡流程。</summary>
-            internal void ForceOffline() { IsConnected = false; }
+            internal void ForceOffline() { _connected = false; }
         }
 
         /// <summary>提供运动/停止和未知状态的轴替身。</summary>
@@ -838,16 +1188,25 @@ namespace MotionControl.Preparation.Checks
             public Task StopAsync(AxisStopMode mode, CancellationToken token)
             { StopCount++; if (StopFails) throw new InvalidOperationException("测试停止失败"); Moving = false; return StopGate == null ? Task.CompletedTask : StopGate.Task; }
             /// <summary>没有实际驱动报警。</summary>
-            public Task ResetAlarmAsync(CancellationToken token) { return Task.CompletedTask; }
+            public Task ResetAlarmAsync(CancellationToken token) { ResetCount++; OnReset?.Invoke(); return Task.CompletedTask; }
+            /// <summary>在轴复位中模拟通信丢失。</summary>
+            internal Action OnReset;
+            /// <summary>复位调用次数，核对拒绝路径无驱动调用。</summary>
+            internal int ResetCount;
         }
 
         /// <summary>可控急停输入。</summary>
         private sealed class Safety : IMachineSafetyStatus
         {
+            /// <summary>可将下一次安全读取挂起，用于测试命令末端的连接复核。</summary>
+            internal TaskCompletionSource<bool> NextRead;
             /// <summary>是否触发急停。</summary>
             internal volatile bool Active;
             /// <summary>读取当前模拟急停。</summary>
-            public Task<bool> ReadEmergencyStopActiveAsync(CancellationToken token) { return Task.FromResult(Active); }
+            public Task<bool> ReadEmergencyStopActiveAsync(CancellationToken token)
+            {
+                return Interlocked.Exchange(ref NextRead, null)?.Task ?? Task.FromResult(Active);
+            }
         }
 
         /// <summary>等待取消的生产流程，用于证明准备不会启动生产。</summary>
@@ -862,7 +1221,11 @@ namespace MotionControl.Preparation.Checks
             /// <summary>进入生产后一直等待暂停令牌。</summary>
             public async Task ExecuteCurrentStepAsync(CancellationToken token) { Interlocked.Increment(ref Executions); await Task.Delay(Timeout.Infinite, token); }
             /// <summary>不重放生产步骤。</summary>
-            public Task ResetAsync(CancellationToken token) { return Task.CompletedTask; }
+            public Task ResetAsync(CancellationToken token) { ResetCount++; OnReset?.Invoke(); return Task.CompletedTask; }
+            /// <summary>在工位复位中模拟通信丢失。</summary>
+            internal Action OnReset;
+            /// <summary>工位复位次数，用于验证无会话时不调用设备工艺。</summary>
+            internal int ResetCount;
         }
 
         /// <summary>第一轮快速响应取消，第二轮受控延迟收尾以复现跨代定时器。</summary>

@@ -266,6 +266,13 @@ namespace MotionControl.Framework.Wpf.Monitoring
             };
             disconnectedTrigger.Setters.Add(new Setter(TextBlock.ForegroundProperty, System.Windows.Media.Brushes.Gray));
             textStyle.Triggers.Add(disconnectedTrigger);
+            var uncertainTrigger = new DataTrigger
+            {
+                Binding = new System.Windows.Data.Binding(nameof(AxisMonitorRow.HasUncertainFeedback)),
+                Value = true
+            };
+            uncertainTrigger.Setters.Add(new Setter(TextBlock.ForegroundProperty, System.Windows.Media.Brushes.DarkGoldenrod));
+            textStyle.Triggers.Add(uncertainTrigger);
             var errorTrigger = new DataTrigger
             {
                 Binding = new System.Windows.Data.Binding("HasReadError"),
@@ -377,9 +384,12 @@ namespace MotionControl.Framework.Wpf.Monitoring
                 GetText("轴监控反馈指令位置格式"),
                 feedbackPosition,
                 commandPosition);
-            row.VelocityText = FormatPosition(status.Velocity, row.EngineeringUnit) + "/s";
+            row.VelocityText = IsFinite(status.Velocity)
+                ? FormatPosition(status.Velocity, row.EngineeringUnit) + "/s"
+                : GetText("轴监控状态未知");
             row.ServoStateText = status.ServoEnabled ? GetText("轴监控伺服已使能") : GetText("轴监控伺服未使能");
-            row.MotionStateText = status.Moving ? GetText("轴监控运动中") : GetText("轴监控已停止");
+            bool stopped = AxisStopFeedback.IsConfirmedStopped(status);
+            row.MotionStateText = GetText(status.Moving ? "轴监控运动中" : stopped ? "轴监控已停止" : "轴监控停稳未知");
             row.HomedStateText = status.Homed ? GetText("轴监控已回零") : GetText("轴监控未回零");
             row.OriginInputStateText = !status.OriginInputActive.HasValue
                 ? GetText("轴监控原点输入未配置或不可读")
@@ -392,7 +402,10 @@ namespace MotionControl.Framework.Wpf.Monitoring
                     : string.Format(GetText("轴监控报警格式"), status.AlarmMessage)
                 : GetText("轴监控无报警");
             row.HasAlarm = status.AlarmActive;
-            row.ReadStateText = GetText("轴监控读取正常");
+            row.HasUncertainFeedback = !IsFinite(status.Position) || !IsFinite(status.Velocity)
+                || (status.CommandPosition.HasValue && !IsFinite(status.CommandPosition.Value))
+                || (!status.Moving && !stopped);
+            row.ReadStateText = GetText(row.HasUncertainFeedback ? "轴监控部分反馈待确认" : "轴监控读取正常");
             row.ReadErrorMessage = string.IsNullOrWhiteSpace(status.LimitStatusSource)
                 ? string.Empty
                 : GetText("轴监控限位来源格式").Replace("{0}", status.LimitStatusSource);
@@ -422,6 +435,7 @@ namespace MotionControl.Framework.Wpf.Monitoring
         /// <summary>将断开连接或尚未连接时的状态全部显示为未知，不伪装成轴空闲。</summary>
         private void SetDisconnectedState(AxisMonitorRow row)
         {
+            row.HasUncertainFeedback = false;
             row.LastStatus = null;
             row.HasReadError = false;
             row.IsConnected = false;
@@ -442,6 +456,7 @@ namespace MotionControl.Framework.Wpf.Monitoring
         /// <summary>清除过期的轴数值并显示读取错误，避免旧状态看起来仍是实时数据。</summary>
         private void SetReadError(AxisMonitorRow row, string errorMessage)
         {
+            row.HasUncertainFeedback = false;
             row.LastStatus = null;
             row.HasReadError = true;
             row.IsConnected = true;
@@ -479,6 +494,9 @@ namespace MotionControl.Framework.Wpf.Monitoring
             return isActive.Value ? GetText("轴监控限位触发") : GetText("轴监控限位未触发");
         }
 
+        /// <summary>非有限数值不能作为有效的轴反馈显示。</summary>
+        private static bool IsFinite(double value) { return !double.IsNaN(value) && !double.IsInfinity(value); }
+
         /// <summary>按轴工程单位格式化位置、速度或指令位置数值。</summary>
         private string FormatPosition(double? value, string engineeringUnit)
         {
@@ -487,6 +505,7 @@ namespace MotionControl.Framework.Wpf.Monitoring
                 return GetText("轴监控无数据");
             }
 
+            if (!IsFinite(value.Value)) return GetText("轴监控状态未知");
             string number = value.Value.ToString("0.###", CultureInfo.InvariantCulture);
             return string.IsNullOrWhiteSpace(engineeringUnit)
                 ? number

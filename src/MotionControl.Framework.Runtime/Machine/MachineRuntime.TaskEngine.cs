@@ -14,6 +14,8 @@ namespace MotionControl.Framework.Runtime.Machine
         {
             bool enteredRunning = false;
             bool startedSafetyMonitor = false;
+            bool runningConnectionInvalid = false;
+            Guid? session = ConnectionSessionId;
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
@@ -22,6 +24,8 @@ namespace MotionControl.Framework.Runtime.Machine
                 lock (_controlOwnerLock)
                     if (!(_taskEngineOwner is IAutomaticProductionPause))
                         throw new InvalidOperationException("任务执行入口未提供受控暂停能力，不能启动生产。");
+                if (!IsConnectionSessionCurrent(session))
+                    throw new InvalidOperationException("控制器连接会话未确认或已变化，不能启动任务。");
                 EnsureOneOfStates(new[] { MachineRunState.Ready }, "设备必须先复位到就绪状态，再启动任务。");
                 if (ProductionStopReviewRequired) throw new InvalidOperationException("生产已停止，旧工步尚未明确核查，不能启动任务。");
                 EnsureRecoveryTrusted();
@@ -44,16 +48,24 @@ namespace MotionControl.Framework.Runtime.Machine
                         throw new InvalidOperationException("逻辑轴存在报警，不能启动任务：" + axis.Name + "，" + status.AlarmMessage);
                 }
 
+                if (!IsConnectionSessionCurrent(session))
+                    throw new InvalidOperationException("控制器连接会话已失效，不能启动任务。");
                 RecordBeforeAutomaticRun();
+                EnsureConnectionSessionCurrent(session, "启动任务");
                 SetRunningIfNoStopAlarm();
                 enteredRunning = true;
                 StartEmergencyStopMonitor();
                 startedSafetyMonitor = true;
+                // 若外部连接反馈本身抛错，状态未确认，不能从启动失败恢复 Ready。
+                runningConnectionInvalid = true;
+                if (!IsConnectionSessionCurrent(session))
+                    throw new InvalidOperationException("控制器连接会话已失效，不能发放任务启动许可。");
+                runningConnectionInvalid = false;
             }
             catch (Exception startError)
             {
                 if (startedSafetyMonitor) await StopEmergencyStopMonitorAsync().ConfigureAwait(false);
-                if (_alarmService.HasLatchedStopAlarm)
+                if (runningConnectionInvalid || _alarmService.HasLatchedStopAlarm)
                     SetStatus(MachineRunState.Alarmed, startError);
                 else if (enteredRunning && State == MachineRunState.Running)
                     SetStatus(MachineRunState.Ready, startError);

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -60,7 +60,8 @@ namespace MotionControl.Host.Wpf.Operation
             string unknown = PageText("未知", "Unknown");
             try
             {
-                bool connected = runtime != null && runtime.State != MachineRunState.Disconnected && runtime.MotionCards.IsConnected;
+                Guid? session = runtime?.ConnectionSessionId;
+                bool connected = runtime != null && runtime.IsConnectionSessionCurrent(session);
                 observations.Add(new StartConditionObservation { Key = "runtime.connection", Description = (connected ? PageText("连接会话已建立；当前读写未核实", "Connection session established; current communication unverified") : unknown) + " / " + PageText("连接状态缓存", "Connection state cache") });
                 if (connected)
                 {
@@ -73,9 +74,15 @@ namespace MotionControl.Host.Wpf.Operation
                     observations.Add(new StartConditionObservation { Key = "host.start-readiness", Description = (_startReadinessChecking ? unknown + PageText("：Host 检查中", ": Host checking") : !string.IsNullOrWhiteSpace(_startBlockReason) ? PageText("不满足：", "Unmet: ") + _startBlockReason : unknown + PageText("：Host 未提供已完成结论", ": Host has not supplied a completed conclusion")) + " / " + PageText("主界面检查缓存", "Host check cache") });
                 }
                 if (!ReferenceEquals(runtime, _runtime)) return;
+                if (connected && !runtime.IsConnectionSessionCurrent(session))
+                {
+                    observations.RemoveRange(1, observations.Count - 1);
+                    observations[0].Description = unknown + " / " + PageText("连接状态缓存", "Connection state cache");
+                    connected = false;
+                }
                 StartConditionsMessage.Text = PageText("部分只读内存观察 / 覆盖不完整，不能判断整体可启动。每项设备采样时间、有效期未提供；下方时间仅为界面观察时间。", "Partial read-only memory observations / incomplete coverage; cannot determine overall start permission. Device sample time and validity are not provided for any item; the time below is UI observation time only.")
                     + "\n" + PageText("界面观察：", "UI observed: ") + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-                    + " · " + PageText("连接会话：", "Connection session: ") + (runtime?.ConnectionSessionId?.ToString() ?? PageText("未提供", "Not provided"))
+                    + " · " + PageText("连接会话：", "Connection session: ") + (connected ? session.Value.ToString() : PageText("未提供", "Not provided"))
                     + " · " + PageText("控制来源：", "Control source: ") + (runtime == null ? unknown : runtime.ControlOwner.ToString())
                     + "\n" + PageText("工程版本、设备身份和整体快照序号未提供；准备、恢复与 Host 缓存并非原子设备快照。启动提交时仍执行原完整检查。", "Project version, equipment identity and overall snapshot sequence are not provided; preparation, recovery and Host cache are not an atomic device snapshot. Existing complete checks still run on start submission.");
             }

@@ -136,6 +136,9 @@ namespace MotionControl.OperatorPages.Checks
             var runtime = new MachineRuntime(new MotionCardGroup(new IMotionCard[] { card }),
                 new IStationFlow[] { new ReadOnlyFlow() }, new MachineAlarmService(), new GuardSafety());
             var runtimeType = typeof(MachineRuntime);
+            // 正式连接提供会话标识。此离线页面夹具只布置内存，不调用卡驱动。
+            var session = runtimeType.GetField("_connectionSessionId", BindingFlags.Instance | BindingFlags.NonPublic);
+            session.SetValue(runtime, Guid.NewGuid());
             runtimeType.GetField("_state", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(runtime, MachineRunState.Preparing);
             runtimeType.GetField("_preparing", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(runtime, true);
             runtimeType.GetField("_clearing", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(runtime, true);
@@ -155,6 +158,11 @@ namespace MotionControl.OperatorPages.Checks
             Require(summary.Text == "清料状态待确认" && guidance.Text.Contains("未确认安全结束"), "清料失败时错误报告仍在正常执行。");
             page.SetLanguage("en-US");
             Require(summary.Text.Contains("requires inspection") && stop.Content.ToString() == "Stop clearance", "清料状态没有随语言切换。");
+            session.SetValue(runtime, null);
+            page.SetAutomaticStartReadiness("obsolete session blocker", false);
+            var checks = ((TextBlock)page.FindName("ReadOnlyChecksText")).Text;
+            Require(checks.Contains("Unknown") && !checks.Contains("obsolete session blocker") && stop.IsEnabled,
+                "会话失效后仍显示旧 Host 阻断，或丢失已有清料的停止入口。");
             runtimeType.GetField("_clearing", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(runtime, false);
             page.SetRuntime(runtime);
             Require(stop.Content.ToString() == "Stop preparation", "退出清料后未恢复回零停止文案。");

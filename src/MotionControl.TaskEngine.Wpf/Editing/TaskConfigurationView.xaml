@@ -1,4 +1,4 @@
-<UserControl x:Class="MotionControl.TaskEngine.Wpf.Editing.TaskConfigurationView"
+﻿<UserControl x:Class="MotionControl.TaskEngine.Wpf.Editing.TaskConfigurationView"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="#F3F6FA">
  <UserControl.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="../Styles/TaskMonitorStyles.xaml"/><ResourceDictionary Source="../Styles/TaskEditingStyles.xaml"/><ResourceDictionary Source="../Localization/Strings.Editor.zh-CN.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></UserControl.Resources>
  <Grid Margin="14,8,14,12"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition x:Name="ConfigIssueRow" Height="100"/></Grid.RowDefinitions>
@@ -44,7 +44,13 @@
    </Grid></TabItem>
    <TabItem Header="{DynamicResource 任务编辑.任务库}"><DockPanel Margin="8"><WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
     <Button Content="{DynamicResource 任务编辑.新增任务}" Click="NewTask_Click"/><Button Content="{DynamicResource 任务编辑.复制任务}" Click="CopyTask_Click"/><Button Content="{DynamicResource 任务编辑.导入任务}" Click="ImportTask_Click"/><Button Content="{DynamicResource 任务编辑.编辑任务}" Click="EditTask_Click"/><Button Content="{DynamicResource 任务编辑.查看引用}" Click="References_Click"/><Button Content="{DynamicResource 任务编辑.删除任务}" Click="RemoveTask_Click"/>
-   </WrapPanel><DataGrid x:Name="TasksGrid" AutoGenerateColumns="False" ColumnHeaderStyle="{StaticResource 编辑表头}" IsReadOnly="True" MouseDoubleClick="EditTask_Click"><DataGrid.Columns>
+   </WrapPanel><WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+    <TextBlock Text="{DynamicResource 任务编辑.任务搜索标签}" VerticalAlignment="Center"/>
+    <TextBox x:Name="LibrarySearchBox" Width="240" Margin="8,0" TextChanged="LibrarySearchChanged" ToolTip="{DynamicResource 任务编辑.任务搜索标签}"/>
+    <Button x:Name="ClearLibrarySearchButton" Content="{DynamicResource 任务编辑.清除任务筛选}" Click="ClearLibrarySearch_Click"/>
+    <TextBlock x:Name="LibraryMatchText" VerticalAlignment="Center" Margin="8,0"/>
+    <TextBlock x:Name="LibraryEmptyText" VerticalAlignment="Center" Margin="8,0"/>
+   </WrapPanel><DataGrid x:Name="TasksGrid" SelectionChanged="LibrarySelectionChanged" AutoGenerateColumns="False" ColumnHeaderStyle="{StaticResource 编辑表头}" IsReadOnly="True" MouseDoubleClick="EditTask_Click"><DataGrid.Columns>
     <DataGridTextColumn Binding="{Binding Definition.Name}" Width="1.3*" MinWidth="130"/><DataGridTextColumn Binding="{Binding Definition.TaskId}" Width="*" MinWidth="110"/><DataGridTextColumn Binding="{Binding AppliedVersion}" Width="105"/><DataGridTextColumn Binding="{Binding DraftState}" Width="140"/><DataGridTextColumn Binding="{Binding FileName}" Width="1.5*" MinWidth="125"/>
    </DataGrid.Columns></DataGrid></DockPanel></TabItem>
   </TabControl></ContentControl>

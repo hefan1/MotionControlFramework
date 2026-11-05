@@ -56,6 +56,9 @@ namespace MotionControl.Framework.Wpf.Monitoring
         /// <summary>标记当前轴状态是否读取失败。</summary>
         public bool HasReadError { get; set; }
 
+        /// <summary>已读到轴状态，但数值无效或运动标志与速度不一致。</summary>
+        public bool HasUncertainFeedback { get; set; }
+
         /// <summary>标记当前状态行是否对应已连接的控制卡。</summary>
         public bool IsConnected { get; set; }
 

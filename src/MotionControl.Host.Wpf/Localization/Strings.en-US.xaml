@@ -339,7 +339,9 @@
     <sys:String x:Key="轴监控伺服已使能">Enabled</sys:String>
     <sys:String x:Key="轴监控伺服未使能">Disabled</sys:String>
     <sys:String x:Key="轴监控运动中">Moving</sys:String>
-    <sys:String x:Key="轴监控已停止">Stopped</sys:String>
+    <sys:String x:Key="轴监控已停止">Confirmed stopped</sys:String>
+    <sys:String x:Key="轴监控停稳未知">Stop unconfirmed</sys:String>
+    <sys:String x:Key="轴监控部分反馈待确认">Feedback uncertain</sys:String>
     <sys:String x:Key="轴监控已回零">Homed</sys:String>
     <sys:String x:Key="轴监控未回零">Not homed</sys:String>
     <sys:String x:Key="轴监控硬限位简写">Hard </sys:String>
@@ -780,4 +782,13 @@
     <sys:String x:Key="变量摘要未提供">Not configured / not provided</sys:String>
     <sys:String x:Key="变量定义运行摘要格式">Definition: {0} · {1}; initial value: {2}; description: {3}
 Current memory value: {4}. Saving definitions and writing runtime values are separate operations.</sys:String>
+    <sys:String x:Key="报警库搜索指导">Search and guidance</sys:String>
+    <sys:String x:Key="报警库搜索标签">Code and message (memory draft)</sys:String>
+    <sys:String x:Key="报警库清除搜索">Clear</sys:String>
+    <sys:String x:Key="报警库搜索来源">Draft edits and file saves are separate; the loaded runtime catalog is unknown.</sys:String>
+    <sys:String x:Key="报警库搜索数量">Matches {0} / {1}</sys:String>
+    <sys:String x:Key="报警库选择指导">Select a search result for guidance.</sys:String>
+    <sys:String x:Key="报警库指导未配置">Not configured</sys:String>
+    <sys:String x:Key="报警库检查指导标签">Check: </sys:String>
+    <sys:String x:Key="报警库恢复指导标签">Recovery: </sys:String>
 </ResourceDictionary>

@@ -123,7 +123,13 @@ namespace MotionControl.Framework.Runtime.Machine
         }
 
         /// <summary>独占执行全部或指定工位准备；成功后仅进入就绪，不启动生产。</summary>
-        public async Task PrepareAsync(string stationId, CancellationToken cancellationToken)
+        public Task PrepareAsync(string stationId, CancellationToken cancellationToken)
+        {
+            return PrepareAsync(stationId, ConnectionSessionId, cancellationToken);
+        }
+
+        /// <summary>准备只接受提交时的连接周期；排队或装载配置期间重连须重新发起。</summary>
+        public async Task PrepareAsync(string stationId, Guid? expectedSession, CancellationToken cancellationToken)
         {
             Task operation;
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -138,7 +144,8 @@ namespace MotionControl.Framework.Runtime.Machine
                     "设备当前不能执行工位回零；有报警时请先处理并复位。");
                 if (_flowScheduler.IsRunning) throw new InvalidOperationException("生产流程尚未退出，不能准备设备。");
                 EnsureNoManualOperationsInProgress("准备设备");
-                if (!_motionCards.IsConnected) throw new InvalidOperationException("控制器未连接，不能准备设备。");
+                if (!IsConnectionSessionCurrent(expectedSession))
+                    throw new InvalidOperationException("控制器连接会话未确认或已变化，不能准备设备。");
                 if (!IsEmergencyStopMonitoringConfigured()) throw new InvalidOperationException("设备准备必须配置有效的急停输入。");
                 if (await UpdateEmergencyStopAlarmAsync(cancellationToken).ConfigureAwait(false))
                     throw new InvalidOperationException("急停输入仍有效，不能准备设备。");
@@ -161,6 +168,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 // 预检可能等待外部条件；写标记前再次拒绝已发生的取消、状态变化和停机报警。
                 // 标记回调涉及磁盘和恢复锁，不能放入报警原子门禁；写入后仍保留原有最终门禁。
                 cancellationToken.ThrowIfCancellationRequested();
+                EnsureConnectionSessionCurrent(expectedSession, "写入设备准备标记");
                 lock (_statusLock)
                 {
                     if (_state != MachineRunState.Ready && _state != MachineRunState.ResetRequired && _state != MachineRunState.Paused)
@@ -170,6 +178,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 // 持久标记必须在设备步骤、使能或轴运动之前创建；写失败不进入准备状态。
                 if (_beforePreparation != null) { _beforePreparation(); _preparationRecordPending = true; }
                 lock (_preparationSync) _preparationRecordReusable = false;
+                EnsureConnectionSessionCurrent(expectedSession, "执行设备准备");
                 lock (_statusLock)
                 {
                     if (_state != MachineRunState.Ready && _state != MachineRunState.ResetRequired && _state != MachineRunState.Paused)
@@ -210,7 +219,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 lock (_preparationSync)
                 {
                     CancellationTokenSource runCancellation = _preparationCancellation;
-                    operation = _preparationTask = Task.Run(() => RunPreparationAsync(selected, runCancellation));
+                    operation = _preparationTask = Task.Run(() => RunPreparationAsync(selected, runCancellation, expectedSession));
                 }
                 _preparationCallerCancellation = cancellationToken.Register(() =>
                 {
@@ -346,7 +355,7 @@ namespace MotionControl.Framework.Runtime.Machine
         }
 
         /// <summary>按依赖顺序逐工位核对前序姿态及自身前提后执行；任何失败或取消都不得给出完成资格。</summary>
-        private async Task RunPreparationAsync(IStationPreparation[] selected, CancellationTokenSource cancellation)
+        private async Task RunPreparationAsync(IStationPreparation[] selected, CancellationTokenSource cancellation, Guid? session)
         {
             CancellationToken token = cancellation.Token;
             IStationPreparation active = null;
@@ -360,6 +369,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 {
                     active = item;
                     ThrowIfPreparationStopRequested(token);
+                    EnsureConnectionSessionCurrent(session, "准备工位");
                     bool alreadyReady;
                     lock (_preparationSync) alreadyReady = _preparationStates[item.StationId].IsPrepared;
                     if (alreadyReady)
@@ -395,15 +405,18 @@ namespace MotionControl.Framework.Runtime.Machine
                         }
                         RaisePreparationChanged();
                     });
+                    EnsureConnectionSessionCurrent(session, "启动工位准备动作");
                     try { await item.ExecuteAsync(progress, token).ConfigureAwait(false); }
                     finally { lock (_preparationSync) acceptingProgress = false; }
                     ThrowIfPreparationStopRequested(token);
                     await item.ValidateReadyAsync(token).ConfigureAwait(false);
                     await EnsurePreparationAxesStoppedAsync(token, true).ConfigureAwait(false);
                     ThrowIfPreparationStopRequested(token);
+                    EnsureConnectionSessionCurrent(session, "确认工位准备完成");
                     SetPreparationSnapshot(item, StationPreparationState.Ready, "准备完成", "等待启动生产。");
                 }
                 ThrowIfPreparationStopRequested(token);
+                EnsureConnectionSessionCurrent(session, "确认设备准备完成");
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested || _preparationStopRequested) { stopped = true; }
             catch (Exception error) { failure = error; }
@@ -469,7 +482,11 @@ namespace MotionControl.Framework.Runtime.Machine
                     lock (_preparationSync) canCompleteRecord = failure == null && !_preparationStopUnconfirmed && _preparationStopRequests == 0 && !_preparationStopRequested;
                     if (canCompleteRecord && !_alarmService.HasLatchedStopAlarm && State != MachineRunState.Alarmed)
                     {
-                        try { CompletePreparationRecord(); }
+                        try
+                        {
+                            EnsureConnectionSessionCurrent(session, "完成准备记录");
+                            CompletePreparationRecord();
+                        }
                         catch (Exception recordError)
                         {
                             failure = new InvalidOperationException("准备安全结束记录保存失败，请联系维护人员。", recordError);
@@ -482,6 +499,11 @@ namespace MotionControl.Framework.Runtime.Machine
                     }
                     lock (_preparationSync) _preparing = _preparationStopUnconfirmed || _preparationStopRequests != 0 || _preparationStopRequested;
                     Exception previousFailure = failure;
+                    if (failure == null)
+                    {
+                        try { EnsureConnectionSessionCurrent(session, "确认设备准备状态"); }
+                        catch (Exception connectionError) { failure = connectionError; }
+                    }
                     failure = SetPreparationCompletionStatus(stopped, failure);
                     if (previousFailure == null && failure != null && active != null)
                     {
@@ -610,6 +632,13 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>手动动作或新连接使准备资格失效；不得清空设备载具、产品或生产工步。</summary>
         private void InvalidatePreparations(string reason)
         {
+            InvalidatePreparationSnapshots(reason);
+            RaisePreparationChanged();
+        }
+
+        /// <summary>仅撤销准备资格。断开控制卡时先更新内存，等驱动尝试结束再通知界面。</summary>
+        private void InvalidatePreparationSnapshots(string reason)
+        {
             lock (_preparationSync)
             {
                 foreach (IStationPreparation item in _preparations)
@@ -617,7 +646,6 @@ namespace MotionControl.Framework.Runtime.Machine
                         item.StationName, StationPreparationState.NotPrepared, "需要重新准备", reason);
                 // 保留生产历史，避免手动改变机构后重新回零却续跑旧生产工步。
             }
-            RaisePreparationChanged();
         }
 
         /// <summary>指定工位失效时一并撤销依赖它的工位资格，不让旧完成状态跨越变化的前提。</summary>

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -325,14 +325,40 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             else if (StationsGrid.Items.Count > 0) StationsGrid.SelectedIndex = 0;
             _loading = false; BuildStation((StationsGrid.SelectedItem as TaskStationEditRow)?.Source);
         }
+        /// <summary>筛选隐藏选择后保留真实TaskId，不把首个匹配任务改成编辑目标。</summary>
+        private string _librarySelectionId;
+        /// <summary>列表重绑期间忽略自动产生的选择通知。</summary>
+        private bool _refreshingLibraryFilter;
+        /// <summary>只记录实际选中的任务身份，不写入工作区。</summary>
+        private void LibrarySelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_refreshingLibraryFilter && SelectedLibraryTask != null) _librarySelectionId = SelectedLibraryTask.Definition.TaskId;
+        }
+        /// <summary>搜索仅刷新可见列表，不执行ReadSettings或引用检查。</summary>
+        private void LibrarySearchChanged(object sender, TextChangedEventArgs e) { if (_workspace != null) RefreshLibraryRows(); }
+        /// <summary>只清查询文本，不修改任务定义或保存状态。</summary>
+        private void ClearLibrarySearch_Click(object sender, RoutedEventArgs e) { LibrarySearchBox.Clear(); }
         /// <summary>按稳定任务标识刷新只读版本行，保留选择；不重新读取文件或改变草稿。</summary>
         private void RefreshLibraryRows()
         {
             if (_workspace == null) return;
-            string id = SelectedLibraryTask?.Definition.TaskId;
-            var rows = _workspace.Tasks.Select(task => new TaskLibraryRow(task, AppliedVersion(task.Definition.TaskId), DraftState(task))).ToList();
-            TasksGrid.ItemsSource = rows;
-            TasksGrid.SelectedItem = rows.FirstOrDefault(row => string.Equals(row.Definition.TaskId, id, StringComparison.OrdinalIgnoreCase));
+            string id = SelectedLibraryTask?.Definition.TaskId ?? _librarySelectionId;
+            string query = LibrarySearchBox.Text.Trim();
+            var rows = _workspace.Tasks.Where(task => query.Length == 0
+                || (task.Definition.Name ?? string.Empty).IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0
+                || (task.Definition.TaskId ?? string.Empty).IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
+                .Select(task => new TaskLibraryRow(task, AppliedVersion(task.Definition.TaskId), DraftState(task))).ToList();
+            _refreshingLibraryFilter = true;
+            try
+            {
+                TasksGrid.ItemsSource = rows;
+                TasksGrid.SelectedItem = rows.FirstOrDefault(row => string.Equals(row.Definition.TaskId, id, StringComparison.OrdinalIgnoreCase));
+            }
+            finally { _refreshingLibraryFilter = false; }
+            _librarySelectionId = id;
+            LibraryMatchText.Text = string.Format(T("任务筛选数量格式"), rows.Count, _workspace.Tasks.Count);
+            LibraryEmptyText.Text = _workspace.Tasks.Count == 0 ? T("任务库为空") : rows.Count == 0 ? T("没有匹配任务") : string.Empty;
+            ClearLibrarySearchButton.IsEnabled = LibrarySearchBox.Text.Length > 0;
         }
         /// <summary>显示已应用文件修订号，新任务没有已应用版本。</summary>
         private string AppliedVersion(string taskId)
@@ -525,6 +551,11 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         {
             IReadOnlyList<TaskValidationIssue> previousCheckIssues = _lastCheckIssues;
 
+            // 返回目标是刚编辑的真实任务；即使被当前筛选隐藏，也不回退到进入前的旧选择。
+            _librarySelectionId = _editingEntry?.Definition.TaskId;
+            _refreshingLibraryFilter = true;
+            try { TasksGrid.SelectedItem = null; }
+            finally { _refreshingLibraryFilter = false; }
             ContentHost.Content = MainTabs;
             _editor = null;
             ShowEditor(false);

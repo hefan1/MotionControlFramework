@@ -52,6 +52,7 @@ namespace MotionControl.MachineDevice.Checks
             Run("清料租约独占资源并保留原隔离", ClearanceLeaseRetainsIsolation, ref failures);
             Run("真实设备清料凭证继承资源并保持失败隔离", MachineClearanceReservationChecks, ref failures);
             Run("整机清料成功与停止均保留正确资源边界", MachineClearanceLifecycleChecks, ref failures);
+            Run("清料拒绝无会话和排队跨连接的请求", () => CheckClearanceConnectionAsync().GetAwaiter().GetResult(), ref failures);
             Run("设备互锁有条件时拒绝执行", InterlockRejectsConfiguredConditions, ref failures);
             Run("进入与退出互锁在任务接管前拒绝", InterlocksRejectedBeforeTaskControl, ref failures);
             Run("隔离资源阻止关闭会话且恢复后可重试", BlockedResourcesPreventClose, ref failures);
@@ -71,7 +72,7 @@ namespace MotionControl.MachineDevice.Checks
             Run("设备凭证跨设备及迟到调用保护", DeviceMoveTokenOwnership, ref failures);
             Run("命令前拒绝与命令后异常严格区分", PreflightDoesNotMaskStartedMotion, ref failures);
 
-            Console.WriteLine("真机任务设备检查：共 39 组，失败 " + failures + "。未连接控制器。");
+            Console.WriteLine("真机任务设备检查：共 40 组，失败 " + failures + "。未连接控制器。");
             return failures == 0 ? 0 : 1;
         }
 
@@ -955,11 +956,13 @@ namespace MotionControl.MachineDevice.Checks
 
             /// <summary>可注入断卡失败，验证退出封存及证据继续保留。</summary>
             internal Exception DisconnectError { get; set; }
+            /// <summary>由检查在状态通知里模拟意外掉线。</summary>
+            internal bool Offline;
 
             /// <summary>当前连接状态；检查不建立真实连接。</summary>
             public bool IsConnected
             {
-                get { return true; }
+                get { return !Offline; }
             }
 
             /// <summary>本卡的逻辑轴。</summary>

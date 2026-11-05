@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
@@ -109,8 +109,14 @@ namespace MotionControl.Host.Wpf.Operation
             StartConditionsTitle.Text = PageText("启动条件摘要 / 只读", "Start conditions / read only");
             RefreshStartConditionsSnapshot();
             StationColumn.Header = T("工位"); StateColumn.Header = T("准备状态"); ActionColumn.Header = T("当前动作");
-            bool connected = _runtime != null && _runtime.State != MachineRunState.Disconnected && _runtime.MotionCards.IsConnected;
+            var session = _runtime?.ConnectionSessionId;
+            bool connected = _runtime != null && _runtime.IsConnectionSessionCurrent(session);
             var snapshots = connected ? _runtime.PreparationStations : null;
+            if (connected && !_runtime.IsConnectionSessionCurrent(session))
+            {
+                connected = false;
+                snapshots = null;
+            }
             if (snapshots != null)
             {
                 foreach (var old in _rows.Where(row => !snapshots.Any(item => item.StationId == row.Id)).ToList()) _rows.Remove(old);
@@ -268,11 +274,15 @@ namespace MotionControl.Host.Wpf.Operation
             try
             {
                 var commandRuntime = _runtime;
+                var session = commandRuntime.ConnectionSessionId;
+                if (!commandRuntime.IsConnectionSessionCurrent(session))
+                    throw new InvalidOperationException(PageText("控制器连接会话未确认，请重新连接后提交回零。",
+                        "Controller session unconfirmed. Reconnect before requesting homing."));
                 if (_ensureConfiguration != null) await _ensureConfiguration();
                 if (!ReferenceEquals(commandRuntime, _runtime))
                     throw new InvalidOperationException(PageText("设备连接已变化，请重新核对后提交回零。",
                         "The device connection changed. Review the current device before requesting homing again."));
-                await _runtime.PrepareAsync(stationId, CancellationToken.None);
+                await commandRuntime.PrepareAsync(stationId, session, CancellationToken.None);
             }
             catch (OperationCanceledException) { _error = T("回零已停止，请检查当前机构状态后重新回零。"); }
             catch (Exception error) { SetError(error); }
