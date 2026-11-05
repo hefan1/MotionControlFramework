@@ -87,6 +87,31 @@ namespace MotionControl.Framework.Runtime.Machine
             get { lock (_preparationSync) return _preparations.Select(p => _preparationStates[p.StationId]).ToArray(); }
         }
 
+        /// <summary>当前已安装准备配置的代次，独立于连接和控制权。</summary>
+        public long PreparationConfigurationVersion { get { lock (_preparationSync) return _preparationConfigurationVersion; } }
+
+        /// <summary>在同一把准备锁中取得传递前置项与所属配置代次；顺序与准备提交一致。</summary>
+        public IReadOnlyList<StationPreparationSnapshot> ReadPreparationSelection(string stationId, out long configurationVersion)
+        {
+            lock (_preparationSync)
+            {
+                configurationVersion = _preparationConfigurationVersion;
+                if (string.IsNullOrWhiteSpace(stationId)) return Array.Empty<StationPreparationSnapshot>();
+                var selected = SelectPreparations(stationId);
+                var included = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var rows = new List<StationPreparationSnapshot>(selected.Length);
+                foreach (IStationPreparation item in selected)
+                {
+                    if (item.Dependencies == null || item.Dependencies.Any(id => !included.Contains(id))
+                        || !_preparationStates.TryGetValue(item.StationId, out var state))
+                        throw new InvalidOperationException("工位准备依赖或状态不完整：" + item.StationId);
+                    included.Add(item.StationId);
+                    rows.Add(state);
+                }
+                return rows.AsReadOnly();
+            }
+        }
+
         /// <summary>正在准备或尚未停止收尾时为真。</summary>
         public bool IsPreparing { get { lock (_preparationSync) return _preparing; } }
 

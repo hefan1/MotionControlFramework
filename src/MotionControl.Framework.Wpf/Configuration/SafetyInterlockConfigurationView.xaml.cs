@@ -106,6 +106,21 @@ namespace MotionControl.Framework.Wpf.Configuration
             set { SetInputName(ref _resetInputName, value, nameof(ResetInputName)); }
         }
 
+        /// <summary>最后成功载入或保存的四项配置副本；读取失败时不伪造新基准。</summary>
+        private string[] _savedBindings;
+        /// <summary>与最后成功版本比较，不代表配置已被硬件或监控采用。</summary>
+        public bool HasUnsavedChanges => _savedBindings != null && !CurrentBindingNames().SequenceEqual(_savedBindings, StringComparer.Ordinal);
+        /// <summary>根据真实基准显示未保存状态，缺基准时不声明已保存。</summary>
+        public string UnsavedChangesSummary => (string)FindResource(_savedBindings == null ? "安全联锁修改基准未知" : HasUnsavedChanges ? "安全联锁有未保存修改" : "安全联锁无未保存修改");
+        /// <summary>按原保存规则只去首尾空白，顺序固定为启动、暂停、复位及软件联锁。</summary>
+        private string[] CurrentBindingNames() => new[] { StartInputName, PauseInputName, ResetInputName, EmergencyStopInputName }.Select(name => (name ?? string.Empty).Trim()).ToArray();
+        /// <summary>成功载入或文件保存后接受实际版本副本，不改变保存通知。</summary>
+        private void AcceptSavedBindings(string[] names)
+        {
+            _savedBindings = names.ToArray();
+            RefreshMappingSummaries();
+        }
+
         /// <summary>现场启动绑定对应的已保存逻辑映射，不表示实时输入反馈。</summary>
         public string StartMappingSummary => DescribeMapping(StartInputName);
         /// <summary>现场暂停绑定对应的已保存逻辑映射。</summary>
@@ -121,9 +136,10 @@ namespace MotionControl.Framework.Wpf.Configuration
             if (!_configurationCanBeSaved) return (string)FindResource("安全联锁映射未知");
             if (logicalName.Length == 0) return (string)FindResource("安全联锁绑定为空");
             string address;
-            return _mappedInputAddresses.TryGetValue(logicalName, out address)
+            bool conflict = CurrentBindingNames().Count(item => string.Equals(item, logicalName, StringComparison.OrdinalIgnoreCase)) > 1;
+            return (conflict ? (string)FindResource("安全联锁本行冲突") + " · " : string.Empty) + (_mappedInputAddresses.TryGetValue(logicalName, out address)
                 ? string.Format((string)FindResource("安全联锁绑定地址"), address)
-                : string.Format((string)FindResource("安全联锁绑定失效"), logicalName);
+                : string.Format((string)FindResource("安全联锁绑定失效"), logicalName));
         }
         /// <summary>刷新四行只读映射说明，不改变绑定或保存资格。</summary>
         private void RefreshMappingSummaries()
@@ -132,6 +148,8 @@ namespace MotionControl.Framework.Wpf.Configuration
             OnPropertyChanged(nameof(PauseMappingSummary));
             OnPropertyChanged(nameof(ResetMappingSummary));
             OnPropertyChanged(nameof(EmergencyStopMappingSummary));
+            OnPropertyChanged(nameof(HasUnsavedChanges));
+            OnPropertyChanged(nameof(UnsavedChangesSummary));
         }
 
         /// <summary>读取现有按钮和安全设置、DI 候选项，并显示配置文件位置。</summary>
@@ -186,6 +204,7 @@ namespace MotionControl.Framework.Wpf.Configuration
                 }
 
                 UpdateLoadedConfigurationStatus("安全联锁读取完成");
+                AcceptSavedBindings(CurrentBindingNames());
             }
             catch (Exception error)
             {
@@ -363,6 +382,7 @@ namespace MotionControl.Framework.Wpf.Configuration
                 if (SaveConfigurationAsync == null)
                     _configurationStore.SaveJson(_machineId, SafetyInterlockFilePath, configuration);
                 else monitorError = await SaveConfigurationAsync(configuration);
+                AcceptSavedBindings(new[] { configuration.StartInputName, configuration.PauseInputName, configuration.ResetInputName, configuration.EmergencyStopInputName });
                 if (monitorError != null) SetStatus("安全联锁已保存但监控失败", monitorError);
                 else SetStatus(string.IsNullOrWhiteSpace(configuration.EmergencyStopInputName)
                     ? "安全联锁未配置"

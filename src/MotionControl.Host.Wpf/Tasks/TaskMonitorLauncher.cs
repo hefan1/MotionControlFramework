@@ -114,6 +114,13 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>当前是否已装载一个整机任务会话。</summary>
         internal bool HasTaskSession { get { return _session != null; } }
 
+        /// <summary>确认页面查看的是当前 Runtime 已发布的任务设备，而非装载中的定义。</summary>
+        internal bool HasPublishedPreparationSession(MachineRuntime runtime, Guid? session)
+        {
+            var device = _session?.TaskDevice as MotionControl.TaskEngine.MachineDevice.MachineTaskDevice;
+            return ReferenceEquals(runtime, _runtime) && session.HasValue && device?.BoundConnectionSessionId == session;
+        }
+
         /// <summary>返回当前会话身份，供恢复保护区分是否为同一次任务接管。</summary>
         internal object CurrentTaskSession { get { return _session; } }
 

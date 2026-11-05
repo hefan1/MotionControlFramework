@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Windows.Data;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -550,8 +550,32 @@ namespace MotionControl.Framework.Wpf.Monitoring
             int count = _axisRows.Count(MatchesAxisFilter);
             AxisMatchText.Text = string.Format(GetText("轴筛选数量"), count, _axisRows.Count)
                 + (_axisRows.Count == 0 ? " · " + GetText("轴监控没有映射轴") : count == 0 ? " · " + GetText("轴筛选无匹配") : string.Empty);
+            RefreshAxisDetail();
             ClearAxisFilterButton.IsEnabled = AxisSearchBox.Text.Length > 0 || AttentionOnlyBox.IsChecked == true;
         }
+        /// <summary>选择轴仅重绘缓存详情，不读取硬件或发送动作。</summary>
+        private void AxisSelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            RefreshAxisDetail();
+        }
+
+        /// <summary>展示完整映射、缓存反馈与原始错误；无状态时明确未知。</summary>
+        private void RefreshAxisDetail()
+        {
+            if (AxisDetailText == null) return;
+            var row = AxisStatusGrid.SelectedItem as AxisMonitorRow;
+            if (row == null) { AxisDetailText.Text = GetText("轴详情未选择"); return; }
+            string unknown = GetText("轴详情未知");
+            bool valid = row.LastStatus != null && !row.HasReadError && row.IsConnected;
+            // XAML 字符串会折叠普通换行；先展开模板分隔符，避免改变设备名称或原始错误。
+            string template = GetText("轴详情格式").Replace("|", Environment.NewLine);
+            AxisDetailText.Text = string.Format(template, row.LogicalAxisName,
+                row.PhysicalAxisText, valid ? row.PositionText : unknown, valid ? row.VelocityText : unknown,
+                valid ? row.PositiveLimitText : unknown, valid ? row.NegativeLimitText : unknown,
+                row.ReadStateText, string.IsNullOrWhiteSpace(row.ReadErrorMessage) ? GetText("轴详情无错误") : row.ReadErrorMessage)
+                .Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
+        }
+
         /// <summary>编辑查询只刷新视图，不改变采样集合。</summary>
         private void AxisFilterChanged(object sender, TextChangedEventArgs e) { RefreshFilteredRows(); }
         /// <summary>切换异常条件只刷新视图，不发送命令。</summary>

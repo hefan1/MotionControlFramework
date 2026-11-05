@@ -27,6 +27,8 @@ namespace MotionControl.Host.Wpf.Operation
         private bool _startReadinessChecking;
         /// <summary>按当前入口读取任务配置；不启动生产。</summary>
         private readonly Func<Task> _ensureConfiguration;
+        /// <summary>只核对已发布任务会话，不装载任务或建立控制权。</summary>
+        private readonly Func<MachineRuntime, Guid?, bool> _hasPublishedTaskSession;
         /// <summary>进入已有监控或生产页面的导航回调。</summary>
         private readonly Action<string> _navigate;
         /// <summary>稳定的工位行，刷新时保持操作员选择。</summary>
@@ -44,9 +46,15 @@ namespace MotionControl.Host.Wpf.Operation
 
         /// <summary>创建页面，命令与导航由 Host 显式接入。</summary>
         public EquipmentPreparationView(Func<Task> ensureConfiguration, Action<string> navigate)
+            : this(ensureConfiguration, navigate, null) { }
+
+        /// <summary>由 Host 提供只读的任务会话身份，区分当前任务定义与设备原准备配置。</summary>
+        public EquipmentPreparationView(Func<Task> ensureConfiguration, Action<string> navigate,
+            Func<MachineRuntime, Guid?, bool> hasPublishedTaskSession)
         {
             InitializeComponent();
             _ensureConfiguration = ensureConfiguration;
+            _hasPublishedTaskSession = hasPublishedTaskSession;
             _navigate = navigate;
             StationsGrid.ItemsSource = _rows;
             _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
@@ -111,6 +119,7 @@ namespace MotionControl.Host.Wpf.Operation
             StationColumn.Header = T("工位"); StateColumn.Header = T("准备状态"); ActionColumn.Header = T("当前动作");
             var session = _runtime?.ConnectionSessionId;
             bool connected = _runtime != null && _runtime.IsConnectionSessionCurrent(session);
+            long stationListVersion = connected ? _runtime.PreparationConfigurationVersion : -1;
             var snapshots = connected ? _runtime.PreparationStations : null;
             if (connected && !_runtime.IsConnectionSessionCurrent(session))
             {
@@ -168,6 +177,44 @@ namespace MotionControl.Host.Wpf.Operation
             DetailText.Text = selected == null ? T("选择工位可查看当前动作和处理说明；相关前置工位会按依赖顺序一起准备。")
                 : selected.Name + " · " + selected.StateText + "\n" + selected.Action
                     + (string.IsNullOrWhiteSpace(selected.Detail) ? string.Empty : "\n" + SimplifyError(selected.Detail));
+            var previewRuntime = _runtime;
+            string previewText = BuildDependencyPreview(selected, session, stationListVersion);
+            if (ReferenceEquals(previewRuntime, _runtime) && ReferenceEquals(selected, StationsGrid.SelectedItem))
+                DependencyPreviewText.Text = previewText;
+        }
+
+        /// <summary>沿 Runtime 的实际准备顺序显示范围，连接或控制入口变化时丢弃失效读数。</summary>
+        private string BuildDependencyPreview(PreparationRow selected, Guid? session, long stationListVersion)
+        {
+            var runtime = _runtime;
+            string unknown = PageText("所选回零范围待确认。", "Selected homing scope is unknown.");
+            try
+            {
+                if (runtime == null || !runtime.IsConnectionSessionCurrent(session)) return unknown;
+                var owner = runtime.ControlOwner;
+                long version = runtime.SafetyObservationVersion;
+                bool task = owner == MotionControl.Framework.Contracts.Flow.MachineControlOwner.TaskEngine;
+                if (task && _hasPublishedTaskSession?.Invoke(runtime, session) != true)
+                    return unknown + PageText(" 当前连接尚无已发布的任务准备会话。", " No task preparation session is published for this connection.");
+                if (selected == null) return string.Empty;
+                var rows = runtime.ReadPreparationSelection(selected.Id, out long selectionVersion);
+                if (rows.Count == 0 || selectionVersion != stationListVersion) return unknown;
+                string heading = task
+                    ? PageText("任务会话准备顺序（提交时复检）", "Task session preparation order (rechecked on submission)")
+                    : PageText("设备准备顺序（提交时复检）", "Equipment preparation order (rechecked on submission)");
+                string description = heading + "\n" + string.Join("\n", rows.Select((row, index) =>
+                    (index + 1) + ". " + row.StationName + " [" + row.StationId + "] · "
+                    + (row.IsPrepared ? PageText("已准备，仅复核", "Prepared; recheck only")
+                        : PageText("需执行准备，先核查前置条件", "Preparation required after prerequisite checks"))));
+                // 查询发布会话会进入 Host；文字生成并完成外部回调后再复核准备配置。
+                if ((task && _hasPublishedTaskSession?.Invoke(runtime, session) != true)
+                    || !ReferenceEquals(runtime, _runtime) || !runtime.IsConnectionSessionCurrent(session)
+                    || version < 0 || runtime.SafetyObservationVersion != version || runtime.ControlOwner != owner
+                    || runtime.PreparationConfigurationVersion != selectionVersion)
+                    return unknown;
+                return description;
+            }
+            catch (Exception error) { return unknown + " " + error.GetBaseException().Message; }
         }
 
         /// <summary>汇总已有只读快照；未知条件留待设备执行入口复检，不读取硬件或调用启动校验。</summary>

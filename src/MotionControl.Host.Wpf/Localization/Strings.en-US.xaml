@@ -802,4 +802,16 @@ Current memory value: {4}. Saving definitions and writing runtime values are sep
     <sys:String x:Key="变量人工可写">Operator writable</sys:String>
     <sys:String x:Key="变量筛选数量">Matches {0} / Total {1}</sys:String>
     <sys:String x:Key="变量筛选目标隐藏">The selected variable is hidden by the filter. Clear the filter or select a visible variable.</sys:String>
+    <sys:String x:Key="轴详情未选择">Select an axis for full feedback and read diagnostics.</sys:String>
+    <sys:String x:Key="轴详情未知">Unknown</sys:String>
+    <sys:String x:Key="轴详情无错误">No read diagnostics provided</sys:String>
+    <sys:String x:Key="轴详情格式">Logical axis: {0}|Mapping: {1}|Feedback / command position: {2}|Velocity: {3}|Positive limits: {4}|Negative limits: {5}|Read status: {6}|Read diagnostics (error or source): {7}</sys:String>
+    <sys:String x:Key="安全联锁启动行为">Field start: requests start only when the existing start conditions permit.</sys:String>
+    <sys:String x:Key="安全联锁暂停行为">Field pause (original Stop input): requests pause and retains the step; the top Stop ends automatic production.</sys:String>
+    <sys:String x:Key="安全联锁复位行为">Field reset: requests machine reset under existing conditions; does not start production.</sys:String>
+    <sys:String x:Key="安全联锁软件保护行为">Software interlock: uses the existing software safety logic; does not represent the hardware safety circuit.</sys:String>
+    <sys:String x:Key="安全联锁修改基准未知">Last successful version unavailable; modification state unknown.</sys:String>
+    <sys:String x:Key="安全联锁有未保存修改">This page has unsaved changes.</sys:String>
+    <sys:String x:Key="安全联锁无未保存修改">Matches the last successfully loaded or saved configuration; does not confirm equipment feedback.</sys:String>
+    <sys:String x:Key="安全联锁本行冲突">This DI has conflicting control uses; existing save validation rejects it</sys:String>
 </ResourceDictionary>

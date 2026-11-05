@@ -48,7 +48,8 @@ namespace MotionControl.Host.Wpf
         {
             _equipmentOverviewPage = new EquipmentOverviewView();
             _currentAlarmsPage = new CurrentAlarmsView();
-            _equipmentPreparationPage = new EquipmentPreparationView(EnsurePreparationConfigurationAsync, NavigatePreparationPage);
+            _equipmentPreparationPage = new EquipmentPreparationView(EnsurePreparationConfigurationAsync, NavigatePreparationPage,
+                (runtime, session) => (_taskMonitorPage as Tasks.TaskMonitorLauncher)?.HasPublishedPreparationSession(runtime, session) == true);
             var runMessage = new TextBlock { Margin = new Thickness(18), TextWrapping = TextWrapping.Wrap };
             runMessage.SetResourceReference(TextBlock.TextProperty, "工位运行未连接提示");
             _stationRunEmptyPage = new UserControl { Content = runMessage };

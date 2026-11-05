@@ -48,7 +48,12 @@
      <Button Content="{DynamicResource 操作页.查看轴状态}" Click="AxisMonitor_Click" Padding="10,5" Margin="0,0,8,0"/>
      <Button x:Name="AxisManualButton" Content="{DynamicResource 操作页.检查轴使能}" Click="AxisManual_Click" Padding="10,5"/>
     </WrapPanel>
-    <TextBlock x:Name="DetailText" TextWrapping="Wrap" Foreground="#40536A" VerticalAlignment="Center"/>
+    <ScrollViewer MaxHeight="112" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+     <StackPanel>
+      <TextBlock x:Name="DetailText" TextWrapping="Wrap" Foreground="#40536A"/>
+      <TextBlock x:Name="DependencyPreviewText" TextWrapping="Wrap" Foreground="#40536A" Margin="0,4,0,0"/>
+     </StackPanel>
+    </ScrollViewer>
    </DockPanel>
   </Border>
  </Grid>

@@ -812,4 +812,16 @@
     <sys:String x:Key="变量人工可写">允许人工写入</sys:String>
     <sys:String x:Key="变量筛选数量">匹配 {0} / 共 {1}</sys:String>
     <sys:String x:Key="变量筛选目标隐藏">当前变量被筛选隐藏；请先清除筛选或选择可见变量。</sys:String>
+    <sys:String x:Key="轴详情未选择">选择轴查看完整反馈与读取诊断。</sys:String>
+    <sys:String x:Key="轴详情未知">未知</sys:String>
+    <sys:String x:Key="轴详情无错误">未提供读取诊断</sys:String>
+    <sys:String x:Key="轴详情格式">逻辑轴：{0}|映射：{1}|反馈/指令位置：{2}|速度：{3}|正限位：{4}|负限位：{5}|读取：{6}|读取诊断（错误或来源）：{7}</sys:String>
+    <sys:String x:Key="安全联锁启动行为">现场启动用途：满足原启动条件后请求启动。</sys:String>
+    <sys:String x:Key="安全联锁暂停行为">现场暂停用途（原停止按钮）：请求暂停并保留步骤；不同于顶部停止结束本次自动生产。</sys:String>
+    <sys:String x:Key="安全联锁复位行为">现场复位用途：发出整机复位请求，仍受原复位条件限制，不自动启动。</sys:String>
+    <sys:String x:Key="安全联锁软件保护行为">软件联锁用途：按既有软件安全联锁处理；不代表硬件安全回路。</sys:String>
+    <sys:String x:Key="安全联锁修改基准未知">最后成功版本未提供，修改状态未知。</sys:String>
+    <sys:String x:Key="安全联锁有未保存修改">本页有未保存修改。</sys:String>
+    <sys:String x:Key="安全联锁无未保存修改">与最后成功载入或保存的配置一致；不表示现场反馈已确认。</sys:String>
+    <sys:String x:Key="安全联锁本行冲突">此 DI 用于多个控制用途，原保存校验将拒绝</sys:String>
 </ResourceDictionary>

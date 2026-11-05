@@ -31,8 +31,12 @@ namespace MotionControl.OperatorPages.Checks
                     SetLanguage(axis, language); axis.RefreshLocalizedText();
                     ((TextBox)axis.FindName("AxisSearchBox")).Text = "Axis";
                     ((CheckBox)axis.FindName("AttentionOnlyBox")).IsChecked = true;
+                    ((DataGrid)axis.FindName("AxisStatusGrid")).SelectedIndex = 0;
                     Render(axis, output, "axis-filter", language, width, height,
-                        new[] { "AxisSearchBox", "AttentionOnlyBox", "ClearAxisFilterButton", "AxisMatchText", "AxisStatusGrid" });
+                        new[] { "AxisSearchBox", "AttentionOnlyBox", "ClearAxisFilterButton", "AxisMatchText", "AxisStatusGrid", "AxisDetailText" });
+                    var axisDetail = (TextBox)axis.FindName("AxisDetailText");
+                    if (!axisDetail.Text.Contains(Environment.NewLine) || axisDetail.ActualHeight < 50)
+                        throw new InvalidOperationException("选中轴详情未分行显示：" + language + "/" + width);
                     var definitions = Enumerable.Range(0, 20).Select(index => new DeviceVariableDefinition { Name = "Variable_" + index,
                         DataType = "Boolean", InitialValue = "false", Description = "长说明：用于内部布局检查，不关联设备。", AllowOperatorWrite = index == 0 }).ToArray();
                     var variables = new DeviceVariableView(new DeviceVariableStore(definitions), new MachineConfigurationStore(Path.Combine(output, "unused-config")), "Machine01");

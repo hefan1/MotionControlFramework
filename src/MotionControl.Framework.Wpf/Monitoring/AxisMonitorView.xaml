@@ -1,11 +1,12 @@
-﻿<UserControl x:Class="MotionControl.Framework.Wpf.Monitoring.AxisMonitorView"
+<UserControl x:Class="MotionControl.Framework.Wpf.Monitoring.AxisMonitorView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              Background="#F3F6FA">
     <Grid Margin="14,8,14,12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
+            <RowDefinition Height="*" MinHeight="140" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <Border Grid.Row="0"
@@ -48,6 +49,7 @@
                 BorderThickness="1"
                 CornerRadius="6">
             <DataGrid x:Name="AxisStatusGrid"
+                      SelectionChanged="AxisSelectionChanged"
                       AutoGenerateColumns="False"
                       CanUserAddRows="False"
                       CanUserDeleteRows="False"
@@ -98,6 +100,9 @@
                     </Style>
                 </DataGrid.CellStyle>
             </DataGrid>
+        </Border>
+        <Border Grid.Row="2" Margin="0,8,0,0" Padding="10" Background="White" BorderBrush="#D9E0E8" BorderThickness="1" CornerRadius="6">
+            <TextBox x:Name="AxisDetailText" MaxHeight="150" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" BorderThickness="0" Background="Transparent" HorizontalAlignment="Stretch" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" />
         </Border>
     </Grid>
 </UserControl>
