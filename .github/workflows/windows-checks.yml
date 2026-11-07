@@ -1,0 +1,33 @@
+name: Windows 构建与内部检查
+
+on:
+  push:
+    branches: [master, 'codex/**']
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+# 检查只需读取源码；不连接现场设备，不发布构建，不写回仓库。
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: 取得本次提交源码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: 安装构建 SDK
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6
+        with:
+          dotnet-version: '8.0.x'
+      - name: 构建正式 Host 并运行内部检查
+        shell: pwsh
+        run: ./tools/Verify-V18.ps1
