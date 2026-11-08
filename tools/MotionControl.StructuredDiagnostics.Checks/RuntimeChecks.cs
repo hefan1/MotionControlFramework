@@ -62,12 +62,17 @@ namespace MotionControl.StructuredDiagnostics.Checks
             finally { await CancelAndFinish(run).ConfigureAwait(false); }
         }
 
-        /// <summary>并行两个输入同时等待，两个末端诊断都存在，完成其中一项不覆盖另一项。</summary>
+        /// <summary>两个顺序分支并行等待各自输入，末端诊断同时存在，完成其中一项不覆盖另一项。</summary>
         internal static async Task ParallelWaits()
         {
             var device = new InMemoryTaskDevice(Fixtures.Catalog());
             var parallel = new ParallelGroupNode { Id = "parallel", Name = "双输入并行", Branches = new List<TaskNode> {
-                Fixtures.Wait("first", Fixtures.FirstInput), Fixtures.Wait("second", Fixtures.SecondInput)
+                new SequenceNode { Id = "first-branch", Name = "第一输入分支", Children = new List<TaskNode> {
+                    Fixtures.Wait("first", Fixtures.FirstInput)
+                } },
+                new SequenceNode { Id = "second-branch", Name = "第二输入分支", Children = new List<TaskNode> {
+                    Fixtures.Wait("second", Fixtures.SecondInput)
+                } }
             } };
             TaskRun run = new TaskExecutionEngine().Start(Fixtures.Definition(parallel), device);
             try

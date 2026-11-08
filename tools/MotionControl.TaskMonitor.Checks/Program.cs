@@ -855,7 +855,7 @@ namespace MotionControl.TaskMonitor.Checks
             }
         }
 
-        /// <summary>由真实快照核对完整等待集合、交接原因及采样质量，并保留操作员提示和原始工程诊断。</summary>
+        /// <summary>由真实快照核对完整等待集合、交接原因及采样质量，并核对中英文提示和原始工程诊断。</summary>
         private static void ExerciseOperatorWaitDescriptions(Application application)
         {
             var catalog = new TaskResourceCatalog(new TaskAxisInfo[0], new string[0], new string[0],
@@ -947,7 +947,18 @@ namespace MotionControl.TaskMonitor.Checks
                     && pressRow.Detail.Contains("未知") && loadRow.Detail.Contains("Load.Ready") && loadRow.Detail.Contains("未知")
                     && pressRow.EngineeringDetail.Contains("Press.Request=未知"), "未知信号被误显示为有效信号，或等待对象及原始采样丢失。");
                 view.SetLanguage("en-US"); view.Refresh();
-                Assert(pressRow.Detail.Contains("unknown") && loadRow.Detail.Contains("unknown"), "未知状态没有随语言切换。");
+                Assert(pressRow.Detail.StartsWith("Handshake status unknown; check the related signals；", StringComparison.Ordinal)
+                    && pressRow.Detail.Contains("Press.Request: expected ON; actual Unknown; Unknown sample")
+                    && pressRow.Detail.Contains("Press.Complete: expected OFF; actual OFF; Valid sample"),
+                    "英文交接提示未显示未知请求、已知完成信号或正确阶段。");
+                Assert(loadRow.Detail.StartsWith("Wait condition；", StringComparison.Ordinal)
+                    && loadRow.Detail.Contains("Load.Ready: expected Equal true; actual Unknown; Unknown sample")
+                    && ((TextBlock)view.FindName("DetailSummary")).Text == loadRow.Detail,
+                    "英文条件等待提示未显示未知采样，或步骤详情没有同步语言。");
+                Assert(pressRow.EngineeringDetail == pressRow.Snapshot.Detail
+                    && pressRow.EngineeringDetail.Contains("Press.Request=未知")
+                    && loadRow.EngineeringDetail == loadRow.Snapshot.Run.Nodes.Single(node => node.NodeId == "wait").Detail,
+                    "切换显示语言改变了原始工程诊断。");
                 view.SetLanguage("zh-CN"); device.SetVariable("Press.Request", "true");
                 WaitWithDispatcher(() => session.Machine.GetSnapshot().Stations.Single(station => station.StationId == "press")
                     .Diagnostics?.ReasonCode == "handshake.wait_request_reset_after_completion",

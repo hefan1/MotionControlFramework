@@ -24,6 +24,8 @@
 
 现在使用合法的稳定名称，把原特殊文字保留在 `DisplayName`，并增加二者分别保留的断言。输入和资源名称中的特殊标点继续参与诊断检查；未知、未读取及完整对象引用的断言保留。没有放宽生产变量命名规则。
 
+第一次 Windows 回归继续运行到 `RuntimeChecks.ParallelWaits`，暴露原测试把输入等待直接放入并行分支的结构错误。现按已有定义规则，为两个分支分别增加明确的 `SequenceNode`，保留原等待节点、同时等待、独立完成及完整等待集合断言；没有放宽任务定义校验。
+
 ### 3. 资源会话清理的证据保留与系统语言
 
 入口：`src/MotionControl.TaskEngine/Resources/TaskResourceJournal.cs` 的 `Save`、`ClearSafeSession`；对应检查为 `tools/MotionControl.MachineDevice.Checks/ResourceJournalChecks.cs` 的 `ResourceJournalCloseChecks`。
@@ -64,6 +66,8 @@
 
 检查保留条件等待、未知反馈、中英文切换和完成后的交接阶段；没有采样的阶段必须显示未提供，不能借用上一阶段的有效值。生产等待语义和动作许可没有为适配旧文案而回退。
 
+第一次回归推进到英文未知状态断言后，发现旧断言只匹配小写 `unknown`，而结构化实际值和质量资源显示为 `Unknown`。现按真实英文资源核对等待对象、实际值及未知质量，同时核对详情刷新，避免把大小写或旧摘要变化误判为页面未刷新。
+
 ## 检查入口的可读性
 
 入口：`tools/Verify-V18.ps1`。
@@ -74,6 +78,10 @@
 
 ## 验证记录
 
-提交前已核对差异、调用顺序和中文说明，并执行 `git diff --check`。本轮开发环境不能运行 Windows WPF；修复提交的正式编译和全部内部检查以对应 GitHub Actions 运行结果为准，实际结果在后续验证记录中补充。
+提交前已核对差异、调用顺序和中文说明，并执行 `git diff --check`。本轮开发环境不能直接运行 Windows WPF，正式编译和内部检查在 Windows GitHub Actions 上执行。
+
+第一次修复提交 `19a32c18f5a95c3b7a142e9185cb4f97390d1c28` 的 [Windows 回归记录](https://github.com/hefan1/MotionControlFramework/actions/runs/42448215320) 显示：正式 Host 和 15 个检查项目均编译通过；13 个检查项目通过，剩余并行分支结构和英文未知提示两项检查失败。资源清理三个障碍场景、相对目标诊断和操作页面 54 组检查已在这一轮通过。
+
+上述两项剩余问题继续修复后，完整运行同一入口。每次提交的最终结果与详细失败信息保存在该提交关联的 GitHub Actions 日志和中文结果表中；核对时须同时确认提交 SHA，不能用上一轮结果代表后续代码。可从 [分支的检查运行列表](https://github.com/hefan1/MotionControlFramework/actions/workflows/windows-checks.yml?query=branch%3Acodex%2Fv1.8-framework-improvements) 定位对应提交。
 
 本轮没有操作正式 Host 桌面、厂商仿真器或实物控制器。内部检查使用内存设备、替身对象和临时配置，不等同于正式界面或设备验收。
