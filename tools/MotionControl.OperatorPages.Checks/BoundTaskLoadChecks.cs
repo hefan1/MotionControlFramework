@@ -1,13 +1,17 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Controls;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.IO;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Contracts.Preparation;
+using MotionControl.Framework.Contracts.Safety;
 using MotionControl.Framework.Contracts.Variables;
 using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.Framework.Runtime.Configuration;
@@ -33,7 +37,7 @@ namespace MotionControl.OperatorPages.Checks
             var window = new MainWindow();
             var card = new LoadCard();
             var cards = new MotionCardGroup(new[] { card });
-            var runtime = new MachineRuntime(cards, new IStationFlow[0], new MachineAlarmService(), new GuardSafety());
+            var runtime = new MachineRuntime(cards, new IStationFlow[0], new MachineAlarmService(), new SafeCheckSafety());
             var variables = new DeviceVariableStore(new DeviceVariableDefinition[0]);
             var io = new NoIo();
             var oldPreparation = new CheckPreparation("old");
@@ -46,9 +50,12 @@ namespace MotionControl.OperatorPages.Checks
                 => (Task)type.GetMethod(name, flags).Invoke(page, arguments);
             object Published() => type.GetField("_session", flags).GetValue(page);
             var token = CancellationToken.None;
+            Exception testError = null;
+            Exception cleanupError = null;
             try
             {
                 WriteMachine(store, id);
+                string ioMappingPath = Path.Combine(store.GetMachineDirectory(id), "HardwareConfig/IoMapping.json");
                 await runtime.ConnectAsync(token);
                 runtime.ConfigurePreparations(new[] { oldPreparation });
                 await Invoke("SetMachineContextAsync", runtime, cards, io, variables, new[] { oldPreparation });
@@ -111,21 +118,131 @@ namespace MotionControl.OperatorPages.Checks
                 await Invoke("CloseTaskSessionAsync", false);
                 Require(!runtime.IsTaskEngineControlClaimed, "重试关闭未归还失败装载的实际控制权。");
                 File.Delete(invalid);
+                store.SaveJson(id, "HardwareConfig/IoMapping.json", new
+                {
+                    schemaVersion = 1,
+                    digitalInputs = new object[0],
+                    digitalOutputs = new object[0]
+                });
                 await Invoke("LoadTaskSessionAsync");
                 Require(Published() != null && runtime.IsTaskEngineControlClaimed, "当前连接没有正常发布任务。");
+
+                object loadedSession = Published();
+                object loadedDevice = loadedSession.GetType().GetProperty("TaskDevice").GetValue(loadedSession);
+                var sessionCatalog = (TaskResourceCatalog)loadedDevice.GetType().GetProperty("Catalog").GetValue(loadedDevice);
+                store.SaveJson(id, "HardwareConfig/IoMapping.json", new
+                {
+                    schemaVersion = 1,
+                    digitalInputs = new[] { new { name = "DI_Later", controllerId = "Memory", channel = 0, activeHigh = true } },
+                    digitalOutputs = new object[0]
+                });
+                type.GetMethod("RefreshCatalog", flags).Invoke(page, null);
+                var displayedCatalog = (TaskResourceCatalog)type.GetField("_catalog", flags).GetValue(page);
+                var catalogDetails = (TextBlock)type.GetField("_catalogDetails", flags).GetValue(page);
+                Require(ReferenceEquals(displayedCatalog, sessionCatalog) && displayedCatalog.Inputs.Count == 0
+                    && catalogDetails.Text.Contains("已加载会话") && !catalogDetails.Text.Contains("DI_Later"),
+                    "已加载任务会话的目录详情被磁盘新配置替换。");
                 await Invoke("CloseTaskSessionAsync", false);
+                displayedCatalog = (TaskResourceCatalog)type.GetField("_catalog", flags).GetValue(page);
+                Require(displayedCatalog.Inputs.Contains("DI_Later") && catalogDetails.Text.Contains("尚未装入任务会话"),
+                    "关闭会话后没有自动显示当前保存目录或仍把它标为运行会话目录。");
+
+                await Invoke("LoadTaskSessionAsync");
+                File.WriteAllText(ioMappingPath, "{ invalid json");
+                var runCommand = type.GetMethod("RunCommandAsync", flags);
+                var closeWithSuccessText = new Func<Task>(async () =>
+                {
+                    await Invoke("CloseTaskSessionAsync", false);
+                    type.GetMethod("SetSuccessText", flags).Invoke(page, new object[] { "任务执行已停止" });
+                });
+                await (Task)runCommand.Invoke(page, new object[] { closeWithSuccessText, "任务停止失败", "任务运行复位建议" });
+                var lastError = (Exception)type.GetField("_lastError", flags).GetValue(page);
+                var status = (TextBlock)type.GetField("_status", flags).GetValue(page);
+                var diagnostics = (TextBox)type.GetField("_diagnosticText", flags).GetValue(page);
+                Require(lastError != null && status.Text.Contains("无法读取任务关联配置") && diagnostics.Text.Contains("IoMapping.json"),
+                    "停止任务后保存目录错误未保留。错误=" + (lastError?.ToString() ?? "null") + "；状态=" + status.Text);
+
+                type.GetMethod("ShowError", flags).Invoke(page, new object[]
+                {
+                    new InvalidOperationException("上一条顶部操作错误"), "任务启动失败", "任务运行复位建议"
+                });
+                await Reject(Invoke("RunFromHostAsync", true), "请先连接运动控制卡");
+                lastError = (Exception)type.GetField("_lastError", flags).GetValue(page);
+                Require(lastError == null && status.Text.Length == 0 && diagnostics.Text.Length == 0,
+                    "顶部启停命令开始前没有清除旧页面错误，成功操作时会遗留旧提示。");
+
+                var setMachineContext = type.GetMethod("SetMachineContextAsync", flags);
+                await (Task)setMachineContext.Invoke(page, new[]
+                {
+                    type.GetField("_runtime", flags).GetValue(page),
+                    type.GetField("_motionCards", flags).GetValue(page),
+                    type.GetField("_logicalIo", flags).GetValue(page),
+                    type.GetField("_variables", flags).GetValue(page),
+                    type.GetField("_equipmentPreparations", flags).GetValue(page)
+                });
+                lastError = (Exception)type.GetField("_lastError", flags).GetValue(page);
+                status = (TextBlock)type.GetField("_status", flags).GetValue(page);
+                Require(lastError != null && status.Text.Contains("无法读取任务关联配置"),
+                    "控制器上下文更新清除了仍未解决的保存目录错误。");
+
+                store.SaveJson(id, "HardwareConfig/IoMapping.json", new
+                {
+                    schemaVersion = 1,
+                    digitalInputs = new object[0],
+                    digitalOutputs = new object[0]
+                });
+                type.GetMethod("RefreshCatalog", flags).Invoke(page, null);
+                await Invoke("LoadTaskSessionAsync");
+                type.GetMethod("ShowError", flags).Invoke(page, new object[]
+                {
+                    new InvalidOperationException("顶部启动前的旧错误"), "任务启动失败", "任务运行复位建议"
+                });
+                await Invoke("ResetFromHostAsync", true);
+                await Invoke("RunFromHostAsync", true);
+                lastError = (Exception)type.GetField("_lastError", flags).GetValue(page);
+                status = (TextBlock)type.GetField("_status", flags).GetValue(page);
+                Require(lastError == null && status.Text == window.TryFindResource("任务执行已启动") as string
+                    && diagnostics.Text.Length == 0,
+                    "顶部启动成功后仍显示旧错误，或没有显示新的成功状态。错误="
+                        + (lastError?.Message ?? "无") + "；状态=" + status.Text + "；诊断=" + diagnostics.Text);
+                type.GetMethod("ShowError", flags).Invoke(page, new object[]
+                {
+                    new InvalidOperationException("顶部暂停前的旧错误"), "任务暂停失败", "任务运行复位建议"
+                });
+                await Invoke("RunFromHostAsync", false);
+                lastError = (Exception)type.GetField("_lastError", flags).GetValue(page);
+                status = (TextBlock)type.GetField("_status", flags).GetValue(page);
+                Require(lastError == null && status.Text == window.TryFindResource("任务执行已暂停") as string
+                    && diagnostics.Text.Length == 0,
+                    "顶部暂停成功后仍显示旧错误，或没有显示新的成功状态。错误="
+                        + (lastError?.Message ?? "无") + "；状态=" + status.Text + "；诊断=" + diagnostics.Text);
             }
+            catch (Exception error) { testError = error; }
             finally
             {
                 card.Resume.Set();
+                try { await Invoke("StopTaskSessionForShutdownAsync"); }
+                catch (Exception error) { cleanupError = error; }
                 try { await Invoke("CloseTaskSessionAsync", false); }
+                catch (Exception error) { cleanupError = cleanupError ?? error; }
+                window.Close();
+                try
+                {
+                    if (runtime.State != MachineRunState.Disconnected)
+                        await runtime.StopStationFlowsForShutdownAsync(token);
+                    if (runtime.State != MachineRunState.Disconnected) await runtime.DisconnectAsync(token);
+                }
+                catch (Exception error) { cleanupError = cleanupError ?? error; }
                 finally
                 {
-                    window.Close();
-                    if (runtime.State != MachineRunState.Disconnected) await runtime.DisconnectAsync(token);
-                    if (Directory.Exists(root)) Directory.Delete(root, true);
+                    try { if (Directory.Exists(root)) Directory.Delete(root, true); }
+                    catch (Exception error) { cleanupError = cleanupError ?? error; }
                 }
             }
+            if (testError != null && cleanupError != null)
+                throw new AggregateException("检查失败且测试收尾也未完全成功。", testError, cleanupError);
+            if (testError != null) ExceptionDispatchInfo.Capture(testError).Throw();
+            if (cleanupError != null) throw new InvalidOperationException("测试收尾未完成。", cleanupError);
         }
 
         /// <summary>生成仅有一个等待步骤的合法设备；没有硬件通道或动作。</summary>
@@ -215,6 +332,13 @@ namespace MotionControl.OperatorPages.Checks
             public Task ExecuteAsync(IProgress<StationPreparationProgress> progress, CancellationToken token) { throw new NotSupportedException(); }
             /// <summary>禁止设备校验。</summary>
             public Task ValidateReadyAsync(CancellationToken token) { throw new NotSupportedException(); }
+        }
+
+        /// <summary>为启动/暂停检查提供显式正常的内存急停输入，不连接任何安全硬件。</summary>
+        private sealed class SafeCheckSafety : IMachineSafetyStatus
+        {
+            public Task<bool> ReadEmergencyStopActiveAsync(CancellationToken token)
+                => Task.FromResult(false);
         }
     }
 }

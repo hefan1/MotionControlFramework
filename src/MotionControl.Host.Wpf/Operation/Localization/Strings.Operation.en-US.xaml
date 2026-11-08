@@ -4,6 +4,10 @@
  <sys:String x:Key="操作页.查看任务运行">View station operation</sys:String>
  <sys:String x:Key="操作页.任务入口操作提示">Use the buttons above to control the equipment. Open station operation to view steps and load tasks when prompted.</sys:String>
  <sys:String x:Key="操作页.任务会话状态待查看">Station data is not confirmed. Open station operation to inspect it.</sys:String>
+ <sys:String x:Key="操作页.总览上下文已变化请重新选择">The device connection or task session changed. Select the current station again.</sys:String>
+ <sys:String x:Key="操作页.任务会话身份待确认">The task session identity is unconfirmed. Station navigation is unavailable.</sys:String>
+ <sys:String x:Key="操作页.总览控制权采样期间变化">The device control owner changed while status was sampled. This station data was discarded; wait for the next refresh.</sys:String>
+ <sys:String x:Key="操作页.总览任务会话采样期间变化">The task session changed while status was sampled. This station data was discarded; wait for the next refresh.</sys:String>
  <sys:String x:Key="操作页.任务已读取请查看运行状态">Tasks are loaded. Open station operation to review stations, steps, and alarms.</sys:String>
  <sys:String x:Key="操作页.任务未读取请先读取">Equipment tasks are not loaded. Open station operation and follow the loading prompt.</sys:String>
  <sys:String x:Key="操作页.任务已读取，暂无工位状态">Tasks are loaded, but station status is unavailable. Open station operation to inspect it.</sys:String>

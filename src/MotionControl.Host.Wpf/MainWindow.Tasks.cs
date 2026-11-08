@@ -59,6 +59,7 @@ namespace MotionControl.Host.Wpf
         {
             _taskMonitorPage = page;
             var launcher = page as Tasks.TaskMonitorLauncher;
+            _equipmentOverviewPage.SetTaskSessionIdentityProvider(launcher == null ? null : (Func<object>) (() => launcher.CurrentTaskSession));
             _equipmentOverviewPage.SetTaskSessionStateProvider(launcher == null ? (Func<bool>)null : () => launcher.HasTaskSession);
             _equipmentOverviewPage.SetTaskStationProvider(launcher == null ? null
                 : (Func<System.Collections.Generic.IReadOnlyList<Operation.StationOverviewData>>)launcher.ReadStationOverview);

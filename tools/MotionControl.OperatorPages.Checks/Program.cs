@@ -348,11 +348,13 @@ namespace MotionControl.OperatorPages.Checks
                 controlOwner: MachineControlOwner.TaskEngine);
             runtime.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
             bool loaded = false;
+            object taskSessionIdentity = new object();
             var snapshot = OperationSnapshot.Read(runtime);
             Assert(snapshot.ControlOwner == MachineControlOwner.TaskEngine && snapshot.Stations.Count == 0,
                 "任务入口快照包含未运行的 C# 工位。");
             var overview = new EquipmentOverviewView();
             overview.SetRuntime(runtime); overview.SetConnectionStatus(true, null);
+            overview.SetTaskSessionIdentityProvider(() => taskSessionIdentity);
             overview.SetTaskSessionStateProvider(() => loaded);
             Assert(((Border)overview.FindName("TaskRunPanel")).Visibility == Visibility.Visible
                 && ((TextBlock)overview.FindName("TaskRunStatusText")).Text.Contains("尚未读取")

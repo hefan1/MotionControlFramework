@@ -45,6 +45,8 @@ namespace MotionControl.Host.Wpf.Tasks
         private readonly TextBlock _catalogDetails;
         /// <summary>上次读取的目录，用于切换语言时更新统计文字。</summary>
         private TaskResourceCatalog _catalog;
+        /// <summary>当前目录是否来自已装载任务会话的冻结快照。</summary>
+        private bool _catalogFromLoadedSession;
         /// <summary>供维护人员核对的任务来源。</summary>
         private readonly TextBlock _loadedSource;
         /// <summary>已读取任务的原始来源。</summary>
@@ -59,6 +61,8 @@ namespace MotionControl.Host.Wpf.Tasks
         private string _failureOperationKey;
         /// <summary>最近一次失败后的建议资源键。</summary>
         private string _failureAdviceKey;
+        /// <summary>保存任务关联目录读取失败，设备上下文更新时不能误清除该配置问题。</summary>
+        private Exception _catalogReadError;
         /// <summary>最近成功操作的文字键，用于切换语言时重新显示。</summary>
         private string _successTextKey;
         /// <summary>成功提示对应的任务状态；任务关闭后的停止提示使用空值。</summary>
@@ -319,6 +323,8 @@ namespace MotionControl.Host.Wpf.Tasks
             _successTextKey = null;
             _status.Text = string.Empty;
             ClearError();
+            if (_catalogReadError != null)
+                ShowError(_catalogReadError, "任务目录读取失败", "任务配置检查建议");
             UpdateRunStatus();
             UpdateCommandAvailability();
             RefreshPageText();
@@ -492,6 +498,8 @@ namespace MotionControl.Host.Wpf.Tasks
                 }
 
                 _session = loaded;
+                _catalog = loaded.TaskDevice.Catalog;
+                _catalogFromLoadedSession = true;
                 _monitor = new TaskMonitorView(loaded);
                 _monitor.HideSourcePath();
                 _taskSource = loaded.Source;
@@ -594,13 +602,13 @@ namespace MotionControl.Host.Wpf.Tasks
         internal async Task RunFromHostAsync(bool start)
         {
             if (_commandInProgress) throw new InvalidOperationException("任务命令正在执行，请等待完成。");
+            ClearError();
             _commandInProgress = true;
             UpdateCommandAvailability();
             try
             {
                 if (start) await StartTaskCoreAsync().ConfigureAwait(true);
                 else await PauseTaskCoreAsync().ConfigureAwait(true);
-                ClearError();
             }
             finally
             {
@@ -722,6 +730,7 @@ namespace MotionControl.Host.Wpf.Tasks
             _monitor = null;
             _monitorContent.Content = null;
             _taskSource = null;
+            RefreshCatalog();
             _emptyState.Visibility = Visibility.Visible;
             UpdateRunStatus();
             UpdateCommandAvailability();
@@ -729,15 +738,28 @@ namespace MotionControl.Host.Wpf.Tasks
             _host.RefreshMachineStateDisplay();
         }
 
-        /// <summary>显示最新目录数量，不缓存为第二份映射。</summary>
+        /// <summary>读取当前会话冻结目录，或在没有会话时读取当前保存配置。</summary>
         private void RefreshCatalog()
         {
             try
             {
-                var namedResources = new MotionControl.TaskEngine.Configuration.TaskMachineConfigurationStore(_store)
-                    .LoadNamedResources(_machineId);
-                var catalog = new TaskResourceCatalogLoader(_store).Load(_machineId, namedResources);
+                TaskResourceCatalog catalog;
+                if (_session != null)
+                {
+                    catalog = _session.TaskDevice.Catalog;
+                    if (catalog == null)
+                        throw new InvalidOperationException("已加载任务会话未提供冻结资源目录，不能改用磁盘目录代替。");
+                    _catalogFromLoadedSession = true;
+                }
+                else
+                {
+                    var namedResources = new MotionControl.TaskEngine.Configuration.TaskMachineConfigurationStore(_store)
+                        .LoadNamedResources(_machineId);
+                    catalog = new TaskResourceCatalogLoader(_store).Load(_machineId, namedResources);
+                    _catalogFromLoadedSession = false;
+                }
                 if (_lastError != null) _status.Text = string.Empty;
+                _catalogReadError = null;
                 ClearError();
                 _catalog = catalog;
                 RefreshCatalogDetails();
@@ -745,6 +767,8 @@ namespace MotionControl.Host.Wpf.Tasks
             catch (Exception error)
             {
                 _catalog = null;
+                _catalogFromLoadedSession = false;
+                _catalogReadError = error;
                 _catalogDetails.Text = string.Empty;
                 ShowError(error, "任务目录读取失败", "任务配置检查建议");
             }
@@ -864,12 +888,12 @@ namespace MotionControl.Host.Wpf.Tasks
         private async Task RunCommandAsync(Func<Task> command, string operationKey, string adviceKey)
         {
             if (_commandInProgress) return;
+            ClearError();
             _commandInProgress = true;
             UpdateCommandAvailability();
             try
             {
                 await command().ConfigureAwait(true);
-                ClearError();
             }
             catch (Exception error)
             {
@@ -960,12 +984,15 @@ namespace MotionControl.Host.Wpf.Tasks
             _status.Text = operation + "\n" + reason + "\n" + advice;
         }
 
-        /// <summary>成功后清除过期的错误详情。</summary>
+        /// <summary>清除旧错误详情；有错误提示时同步清空对应可见文字。</summary>
         private void ClearError()
         {
+            bool wasShowingError = _lastError != null;
             _lastError = null;
             _failureOperationKey = null;
             _failureAdviceKey = null;
+            if (wasShowingError)
+                _status.Text = _successTextKey == null ? string.Empty : SuccessText(_successTextKey);
             _status.Foreground = Brush("#26384D");
             _diagnosticText.Text = string.Empty;
             _diagnosticText.Visibility = Visibility.Collapsed;
@@ -1090,18 +1117,27 @@ namespace MotionControl.Host.Wpf.Tasks
             RefreshConnectionDisplay();
         }
 
-        /// <summary>使用已读取的目录更新统计与来源路径，不再次读取设备配置。</summary>
+        /// <summary>按实际来源展示目录统计；已装载会话固定显示其冻结目录。</summary>
         private void RefreshCatalogDetails()
         {
             if (_catalog == null) return;
+            string sourcePath = _catalogFromLoadedSession
+                ? (string.IsNullOrWhiteSpace(_taskSource) ? PageText("会话来源未提供", "Session source not provided") : _taskSource)
+                : _store.GetMachineDirectory(_machineId);
+            string sourceDescription = _catalogFromLoadedSession
+                ? PageText("目录来源：已加载会话的冻结快照；磁盘后续修改不会改变本次会话。",
+                    "Catalog source: frozen snapshot of the loaded session; later disk changes do not alter this session.")
+                : PageText("目录来源：当前保存配置；尚未装入任务会话，不代表运行时目录。",
+                    "Catalog source: current saved configuration; no task session is loaded, so this is not the runtime catalog.");
             _catalogDetails.Text = string.Format(GetText("任务关联目录统计"), _catalog.Axes.Count, _catalog.Inputs.Count,
                 _catalog.Outputs.Count, _catalog.Variables.Count, _catalog.TeachPoints.Count)
-                + "\n" + _store.GetMachineDirectory(_machineId) + "\n" + string.Join("\n", _catalog.Notices);
+                + "\n" + sourceDescription + "\n" + sourcePath + "\n" + string.Join("\n", _catalog.Notices);
         }
 
         /// <summary>记录成功操作并根据当前语言显示反馈。</summary>
         private void SetSuccessText(string key)
         {
+            if (_lastError != null) return;
             _successTextKey = key;
             switch (key)
             {

@@ -57,11 +57,13 @@ namespace MotionControl.OperatorPages.Checks
                 return machine;
             }
             var runtime = ConnectedTaskRuntime();
+            object taskSessionIdentity = new object();
             var data = new List<StationOverviewData> {
                 new StationOverviewData { Id = "Press", Name = "压合工位", CurrentStep = "等待夹具到位", Detail = "夹紧到位信号未满足" },
                 new StationOverviewData { Id = "Inspect", Name = "检测工位", CurrentStep = "等待来料" }
             };
             var overview = new EquipmentOverviewView();
+            overview.SetTaskSessionIdentityProvider(() => taskSessionIdentity);
             overview.SetRuntime(runtime);
             overview.SetConnectionStatus(true, null);
             overview.SetTaskStationProvider(() => data);
