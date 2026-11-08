@@ -24,4 +24,5 @@
 - 解决方案 Release 编译：0 警告、0 错误。沙盒操作页检查 57 组通过，包含宽窄布局、实际任务会话身份变化、未知质量和准备提示；新增检查在修复前分别复现过失败。
 - 在沙盒真实 Host 中读取任务、选择工位并截图；测试输出和截图保存在本机未跟踪目录 `tmp/v18-ui-review-20261108/results/`。其中 `39-guarded-overview-wide.png`、`40-guarded-preparation-wide.png`、`42-guarded-preparation-narrow.png`、`43-guarded-overview-narrow.png` 为最终代码截图，`08-overview-selected.png`、`10-preparation-selected.png` 为本轮修改前的基线。
 - 软件控制器接口在回零按钮提交前确认 13 轴均未使能、未运动，14 个映射输出均不活动；正式界面返回 `Feeder_Z` 尚未使能并拦截。再次读取接口，13 轴仍停止，14 个输出仍不活动；截图 `41-guarded-preparation-blocked.png`。这只验证该沙盒拦截路径，不代表真机回零、安全回路或其他硬件厂家已验证。
+- 合并后主工作区重新 Release 编译，0 警告、0 错误；因主工作区生成文件的哈希与隔离工作树不同，另建沙盒启动主工作区实际 `MotionControl.Host.Wpf.exe`，核对复制前后 SHA-256 一致（`26C859AB2CFE9265EF2C3D817FEE979434E1FF4E5E5A9A4F24A2082943BD801D`）。重新读取任务并核对两页（`47-main-exact-overview-clean.png`、`45-main-exact-preparation.png`），再次提交回零得到未使能拦截（`46-main-exact-preparation-blocked.png`），接口复查 13 轴停止且 14 个映射输出不活动。Host 和软件控制器均正常退出，测试配置已留存在证据目录。
 - 尚未在生产运行、实际报警、复位恢复和真实设备上完成本轮两页的所有状态验收，也未完成其他三页的目标布局。
