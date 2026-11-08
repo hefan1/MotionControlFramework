@@ -22,10 +22,12 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             }
             return english
                 ? "Draft: " + (draft?.MachineId ?? "not provided") + (draft == null ? " · draft / editing state unknown" : dirty ? " · unsaved workspace changes" : " · no pending workspace edits") + "; full workspace saved at: " + saved
-                    + "\nLoaded runtime-file snapshot (not the executing session): " + versions + (changed ? " · source files changed; snapshot is not current" : " · no source change reported by existing checks")
+                    + "\nLoaded runtime-file snapshot (not the executing session): " + versions + " · snapshot agreement with current files is unverified."
+                    + (draft == null ? "\nDraft base not provided." : changed ? "\nThe draft base needs review; source changed or could not be verified." : "\nThe latest check reported no draft-base mismatch.")
                     + "\nCurrent session: version / session ID / load time not provided. Saving or updating files does not load a session."
                 : "草稿：" + (draft?.MachineId ?? "未提供") + (draft == null ? " · 草稿 / 编辑状态未知" : dirty ? " · 工作区有未保存修改" : " · 工作区无待保存编辑") + "；完整工作区保存时间：" + saved
-                    + "\n已载入运行文件快照（不是正在执行的会话）：" + versions + (changed ? " · 来源文件已变化，快照不是当前文件" : " · 原检查尚未报告来源变化")
+                    + "\n已载入运行文件快照（不是正在执行的会话）：" + versions + " · 文件快照与当前文件的一致性未确认。"
+                    + (draft == null ? "\n草稿基准未提供。" : changed ? "\n草稿基准待核查：来源已变化或无法确认。" : "\n最近检查未报告草稿基准不一致。")
                     + "\n当前会话：版本 / 会话标识 / 加载时间未提供。保存或更新文件不等于载入会话。";
         }
     }

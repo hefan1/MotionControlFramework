@@ -134,9 +134,30 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         {
             StatusText.Text = text ?? string.Empty;
             StatusText.Foreground = new SolidColorBrush(Color.FromRgb(0x17, 0x6B, 0xD0));
-            ErrorDiagnosticsText.Clear();
-            ErrorDiagnosticsExpander.IsExpanded = false;
-            ErrorDiagnosticsExpander.Visibility = Visibility.Collapsed;
+            if (_sourceReadFailed && _sourceReadError != null)
+            {
+                ErrorDiagnosticsText.Text = new InvalidOperationException(T("任务来源无法读取，请先恢复读取"), _sourceReadError).ToString();
+                ErrorDiagnosticsExpander.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                ErrorDiagnosticsText.Clear();
+                ErrorDiagnosticsExpander.IsExpanded = false;
+                ErrorDiagnosticsExpander.Visibility = Visibility.Collapsed;
+            }
+        }
+        /// <summary>主动操作的结果需要可见；输入时的普通状态更新不改变人员滚动位置。</summary>
+        private void SetActionStatusText(string text)
+        {
+            SetStatusText(text);
+            RevealStatusText();
+        }
+        /// <summary>回到消息首行，并将消息带入状态区视口。</summary>
+        private void RevealStatusText()
+        {
+            StatusMessageScroll.ScrollToTop();
+            ConfigurationStatusScroll.UpdateLayout();
+            StatusText.BringIntoView();
         }
         /// <summary>缺少轴参数文件时提示操作员去映射页处理；完整异常留在默认收起的详情里。</summary>
         private void ShowError(Exception error)
@@ -155,6 +176,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             ErrorDiagnosticsText.Text = error.ToString();
             ErrorDiagnosticsExpander.IsExpanded = false;
             ErrorDiagnosticsExpander.Visibility = Visibility.Visible;
+            RevealStatusText();
         }
         /// <summary>完整读取草稿、目录与来源状态后再替换页面；读取失败保留本窗口的编辑内容。</summary>
         public void LoadWorkspace()
@@ -173,7 +195,8 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 _lastCheckIssues = null;
                 _sourceChanged = sourceChanged;
                 _observedPreparationSignature = preparationSignature;
-                _preparationReadFailed = false;
+                _sourceReadFailed = false;
+                _sourceReadError = null;
                 _editor = null;
                 ContentHost.Content = MainTabs;
                 ShowEditor(false);
@@ -190,6 +213,34 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         private void ViewLoaded(object sender, RoutedEventArgs e) { RefreshPermission(sender, e); _timer.Start(); }
         /// <summary>移出页面停止轮询，草稿仍保留在页面对象中。</summary>
         private void ViewUnloaded(object sender, RoutedEventArgs e) { _timer.Stop(); }
+        /// <summary>宽屏并列工位与草稿表单，窄屏上下排列并保留足够的可滚动高度。</summary>
+        private void StationWorkspace_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            bool narrow = e.NewSize.Width < 1000;
+            if ((Grid.GetColumn(StationSettingsCard) == 0) == narrow) return;
+            StationWorkspaceScroll.VerticalScrollBarVisibility = narrow ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled;
+            NarrowStationIdentity.Visibility = narrow ? Visibility.Visible : Visibility.Collapsed;
+            StationWorkspace.Height = narrow ? 760 : double.NaN;
+            StationListColumn.Width = new GridLength(narrow ? 1 : 1.6, GridUnitType.Star);
+            StationGapColumn.Width = new GridLength(narrow ? 0 : 10);
+            StationSettingsColumn.Width = narrow ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+            StationListRow.Height = narrow ? new GridLength(300) : new GridLength(1, GridUnitType.Star);
+            StationGapRow.Height = new GridLength(narrow ? 8 : 0);
+            StationSettingsRow.Height = narrow ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+            Grid.SetColumn(StationSettingsCard, narrow ? 0 : 2);
+            Grid.SetRow(StationSettingsCard, narrow ? 2 : 0);
+        }
+
+        /// <summary>分别说明编辑状态、已载入文件快照和未提供的会话信息。</summary>
+        private void RefreshSummaryCards()
+        {
+            DraftSummaryText.Text = T(_workspace == null ? "编辑状态未知" : _dirty ? "有未保存编辑" : "无待保存编辑")
+                + (_workspace != null && _sourceChanged ? " · " + T("草稿基准待核查") : string.Empty);
+            FileSummaryText.Text = _activeWorkspace?.Tasks == null ? T("文件快照未提供")
+                : string.Format(T("已载入文件快照数量格式"), _activeWorkspace.Tasks.Count);
+            SessionSummaryText.Text = T("会话信息未提供");
+        }
+
         /// <summary>显示应用禁用原因，并在来源变化时提供保留草稿或重新载入入口。</summary>
         private void RefreshPermission(object sender, EventArgs e)
         {
@@ -197,6 +248,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             RefreshRuntimeContext();
             string sourceSummary = TaskSourceSummary.Build(_workspace, _activeWorkspace, _dirty, _sourceChanged, _language == "en-US");
             SourceSummaryText.Text = sourceSummary;
+            RefreshSummaryCards();
             _editor?.SetSourceSummary(sourceSummary);
             string reason = _getBlockedReason();
             bool pending;
@@ -205,13 +257,16 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             catch (Exception error) { pending = true; pendingError = error.Message; }
             if (_workspace == null) reason = T("任务配置尚未成功加载，请先处理上方错误提示");
             if (_editor != null) reason = T("请先保存并返回任务配置");
-            if (_sourceChanged) reason = T("来源文件已经变化，请先同步草稿或重新载入运行文件");
+            if (_sourceChanged) reason = T(_sourceReadFailed ? "任务来源无法读取，请先恢复读取" : "来源文件已经变化，请先同步草稿或重新载入运行文件");
             if (pending) reason = pendingError == null ? T("上次应用未完成，请先恢复")
                 : (_language == "en-US" ? "Cannot verify task recovery marker: " : "无法确认任务恢复标记：") + pendingError;
             ApplyButton.IsEnabled = _workspace != null && string.IsNullOrEmpty(reason); ApplyButton.ToolTip = reason;
             RebaseDraftButton.Visibility = _workspace != null && _sourceChanged ? Visibility.Visible : Visibility.Collapsed;
-            RebaseDraftButton.IsEnabled = _workspace != null && _editor == null && !pending;
+            RebaseDraftButton.IsEnabled = _workspace != null && _editor == null && !pending && !_sourceReadFailed;
             ReloadRuntimeButton.Visibility = _workspace != null && _sourceChanged ? Visibility.Visible : Visibility.Collapsed;
+            ReloadRuntimeButton.IsEnabled = !_sourceReadFailed;
+            RebaseDraftButton.ToolTip = T(_sourceReadFailed ? "任务来源无法读取，请先恢复读取" : "保留草稿并同步来源提示");
+            ReloadRuntimeButton.ToolTip = T(_sourceReadFailed ? "任务来源无法读取，请先恢复读取" : "重新载入运行文件提示");
             SaveAndCheckButton.IsEnabled = _workspace != null;
             BackupRestoreButton.IsEnabled = _workspace != null;
             ContentHost.IsEnabled = _workspace != null;
@@ -288,12 +343,10 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         {
             CurrentFlowRequested?.Invoke(this, EventArgs.Empty);
         }
-        /// <summary>只标记当前配置表单修改，编辑器有自己的修改状态。</summary>
+        /// <summary>只标记当前配置表单修改；搜索和只读诊断不修改草稿。</summary>
         private void TextChanged(object sender, TextChangedEventArgs e)
         {
-            // 错误诊断框只读，不参与配置草稿修改检测。
-            if (ReferenceEquals(e.OriginalSource, ErrorDiagnosticsText)) return;
-            MarkDirty();
+            if (e.OriginalSource is DependencyObject source && (StationDetails.IsAncestorOf(source) || MachineDetails.IsAncestorOf(source))) MarkDirty();
         }
         /// <summary>下拉只在详情区变更时标记，选择列表行不算编辑。</summary>
         private void ChoiceChanged(object sender, SelectionChangedEventArgs e)
@@ -307,6 +360,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             if (_loading || _editor != null || _workspace == null) return;
             bool refreshRows = !_dirty || _lastCheckIssues != null;
             _dirty = true; _lastCheckIssues = null;
+            RefreshSummaryCards();
             SetStatusText(T("有未保存修改，运行版本未改变")); ShowIssues(new TaskValidationIssue[0]);
             if (refreshRows) RefreshLibraryRows();
         }
@@ -314,7 +368,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         /// <summary>列本身不在可视树中，明确赋值表头以可靠切换局部语言资源。</summary>
         private void UpdateHeaders()
         {
-            string[][] texts = { new[] { "参与运行", "工位名称", "执行任务", "运行方式", "设备文件版本", "操作" }, new[] { "任务名称", "任务标识", "设备文件版本", "草稿状态", "文件" }, new[] { "等级", "任务", "动作步骤", "字段", "说明" } };
+            string[][] texts = { new[] { "参与运行", "工位名称", "执行任务", "运行方式", "文件快照版本", "操作" }, new[] { "任务名称", "任务标识", "文件快照版本", "草稿状态", "文件" }, new[] { "等级", "任务", "动作步骤", "字段", "说明" } };
             DataGrid[] grids = { StationsGrid, TasksGrid, IssuesGrid };
             for (int g = 0; g < grids.Length; g++) for (int i = 0; i < texts[g].Length; i++) grids[g].Columns[i].Header = T(texts[g][i]);
         }
@@ -350,7 +404,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         private void LibrarySelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (!_refreshingLibraryFilter && SelectedLibraryTask != null) _librarySelectionId = SelectedLibraryTask.Definition.TaskId;
-            if (!_refreshingLibraryFilter) RefreshTaskDeletePermission();
+            if (!_refreshingLibraryFilter) { RefreshLibraryActionAvailability(); RefreshTaskDeletePermission(); }
         }
         /// <summary>搜索只改变可见任务，删除按钮仍按所选任务的真实引用刷新。</summary>
         private void LibrarySearchChanged(object sender, TextChangedEventArgs e) { if (_workspace != null) RefreshLibraryRows(); }
@@ -377,7 +431,18 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             LibraryMatchText.Text = string.Format(T("任务筛选数量格式"), rows.Count, _workspace.Tasks.Count);
             LibraryEmptyText.Text = _workspace.Tasks.Count == 0 ? T("任务库为空") : rows.Count == 0 ? T("没有匹配任务") : string.Empty;
             ClearLibrarySearchButton.IsEnabled = LibrarySearchBox.Text.Length > 0;
+            RefreshLibraryActionAvailability();
             RefreshTaskDeletePermission();
+        }
+        /// <summary>没有实际选中目标时，不开放复制、编辑或查看引用。</summary>
+        private void RefreshLibraryActionAvailability()
+        {
+            bool selected = SelectedLibraryTask != null;
+            foreach (Button button in new[] { CopyTaskButton, EditTaskButton, ReferencesButton })
+            {
+                button.IsEnabled = selected;
+                button.ToolTip = selected ? null : T("请先选择任务");
+            }
         }
         /// <summary>显示已应用文件修订号，新任务没有已应用版本。</summary>
         private string AppliedVersion(string taskId)
@@ -419,10 +484,11 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         /// <summary>工位的请求字段仅在请求触发方式下显示。</summary>
         private void BuildStation(StationTaskConfiguration station)
         {
-            _loading = true; _station = station; StationDetails.Children.Clear();
-            if (station == null) { StationDetails.Children.Add(TaskEditingUi.Label(this, "暂无工位，请新增工位")); _loading = false; return; }
+            _loading = true; _station = station; _stationName = null; StationDetails.Children.Clear();
+            if (station == null) { StationDetails.Children.Add(TaskEditingUi.Label(this, "暂无工位，请新增工位")); UpdateStationIdentity(); _loading = false; return; }
             StationDetails.Children.Add(TaskEditingUi.Label(this, "工位标识")); StationDetails.Children.Add(new TextBlock { Text = station.StationId });
             _stationName = TaskEditingUi.Text(station.Name); AddStationField("工位名称", _stationName);
+            _stationName.TextChanged += StationNameChanged;
             _stationTask = TaskChoices(station.TaskId); AddStationField("执行任务", _stationTask);
             _mode = TaskEditingUi.Choices(this, new object[] { StationTaskMode.Once, StationTaskMode.Cyclic, StationTaskMode.OnRequest }, new[] { "单次执行", "独立循环", "请求触发" }, station.Mode); AddStationField("运行方式", _mode);
             _enabled = new CheckBox { Content = T("参与运行"), IsChecked = station.Enabled, Margin = new Thickness(0, 7, 0, 3) }; StationDetails.Children.Add(_enabled);
@@ -431,8 +497,18 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             _request = TaskEditingUi.Names(variables, station.RequestVariable); _complete = TaskEditingUi.Names(variables, station.CompletedVariable);
             _signals = new StackPanel(); _signals.Children.Add(TaskEditingUi.Label(this, "请求变量(bool)")); _signals.Children.Add(_request); _signals.Children.Add(TaskEditingUi.Label(this, "完成变量(bool)")); _signals.Children.Add(_complete);
             StationDetails.Children.Add(_signals); _signals.Visibility = station.Mode == StationTaskMode.OnRequest ? Visibility.Visible : Visibility.Collapsed;
-            _mode.SelectionChanged += ModeChanged; _loading = false;
+            _mode.SelectionChanged += ModeChanged; UpdateStationIdentity(); _loading = false;
         }
+        /// <summary>窄屏固定显示当前真实工位的名称与稳定标识，随表单输入同步。</summary>
+        private void UpdateStationIdentity()
+        {
+            string name = _stationName?.Text ?? _station?.Name;
+            NarrowStationIdentityText.Text = _station == null ? T("未选择工位")
+                : T("正在编辑工位") + "：" + (string.IsNullOrWhiteSpace(name) ? T("工位名称未填写") : name)
+                    + " · " + _station.StationId;
+        }
+        /// <summary>输入名称只改变表单和身份提示，不提交配置。</summary>
+        private void StationNameChanged(object sender, TextChangedEventArgs e) { UpdateStationIdentity(); }
         /// <summary>工位字段只负责显示和输入。</summary>
         private void AddStationField(string text, FrameworkElement control) { StationDetails.Children.Add(TaskEditingUi.Label(this, text)); StationDetails.Children.Add(control); }
         /// <summary>模式切换保留未提交输入，保存时清除不适用的握手引用。</summary>
@@ -527,7 +603,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 if (!_editor.ConfirmLeave()) return false;
             }
             var task = _workspace.Tasks.FirstOrDefault(item => string.Equals(item.Definition.TaskId, taskId, StringComparison.OrdinalIgnoreCase));
-            if (task == null) { SetStatusText(T("未选择或引用失效")); return false; }
+            if (task == null) { SetActionStatusText(T("未选择或引用失效")); return false; }
             OpenEditor(task); return _editor != null;
         }
         /// <summary>外部预览导航返回配置页时，仍先让人员决定如何处理未保存任务。</summary>
@@ -624,11 +700,11 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             try
             {
                 var references = References(task.Definition.TaskId);
-                if (references.Count > 0) { SetStatusText(T("任务仍被引用，不能删除") + "\n" + string.Join("\n", references)); return; }
+                if (references.Count > 0) { SetActionStatusText(T("任务仍被引用，不能删除") + "\n" + string.Join("\n", references)); return; }
                 if (MessageBox.Show(T("确认删除任务") + "：" + task.Definition.Name, T("删除任务"), MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
                 // 确认窗口停留期间准备文件可能被外部修改，删除草稿前再读一次真实引用。
                 references = References(task.Definition.TaskId);
-                if (references.Count > 0) { SetStatusText(T("任务仍被引用，不能删除") + "\n" + string.Join("\n", references)); return; }
+                if (references.Count > 0) { SetActionStatusText(T("任务仍被引用，不能删除") + "\n" + string.Join("\n", references)); return; }
                 _workspace.Tasks.Remove(task); _dirty = true; Rebuild();
             }
             catch (Exception error) { RefreshTaskDeletePermission(); ShowError(error); }
@@ -639,6 +715,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             if (!SaveDraft() || _editor != null) return;
             Check_Click(sender, e);
             if (_lastCheckIssues != null) SetStatusText(T("草稿已保存") + "；" + StatusText.Text);
+            RevealStatusText();
         }
         /// <summary>打开低频维护操作，不把备份和草稿恢复按钮放在日常工具栏。</summary>
         private void BackupRestore_Click(object sender, RoutedEventArgs e)
@@ -659,9 +736,10 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         /// <summary>先保留完整草稿副本，再把草稿绑定到当前来源并立即检查引用。</summary>
         private void RebaseDraft_Click(object sender, RoutedEventArgs e)
         {
-            if (_workspace == null || _editor != null || !ReadSettings()) return;
+            if (_workspace == null || _editor != null || !CanResolveTaskSources() || !ReadSettings()) return;
             if (MessageBox.Show(T("保留草稿并同步来源确认说明"), T("保留草稿并同步来源"),
                 MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+            if (!CanResolveTaskSources()) return;
 
             try
             {
@@ -670,22 +748,24 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 string backupPath = _store.RebaseDraftToCurrentSources(_workspace);
                 _activeWorkspace = _store.Load(_machineId, false);
                 _catalog = _store.LoadCatalog(_workspace);
-                _sourceChanged = _store.ComputeSignature(_machineId) != _workspace.BaseSignature;
+                string preparationSignature;
+                _sourceChanged = ComputeSourceSignatureForAction(out preparationSignature) != _workspace.BaseSignature;
                 Rebuild();
 
-                _observedPreparationSignature = _store.ComputePreparationSignature(_machineId);
-                _preparationReadFailed = false;
                 _lastCheckIssues = _store.Check(_workspace);
                 ShowIssues(_lastCheckIssues);
                 RefreshLibraryRows();
-                _sourceChanged = _store.ComputeSignature(_machineId) != _workspace.BaseSignature;
+                _sourceChanged = ComputeSourceSignatureForAction(out preparationSignature) != _workspace.BaseSignature;
+                _observedPreparationSignature = preparationSignature;
+                _sourceReadFailed = false;
+                _sourceReadError = null;
                 bool hasErrors = _lastCheckIssues.Any(issue => issue.Severity == TaskIssueSeverity.Error);
-                SetStatusText(T("草稿来源已同步") + "；" + T(hasErrors ? "检查发现问题" : _lastCheckIssues.Count > 0 ? "检查有提醒" : "检查通过")
+                SetActionStatusText(T("草稿来源已同步") + "；" + T(hasErrors ? "检查发现问题" : _lastCheckIssues.Count > 0 ? "检查有提醒" : "检查通过")
                     + (_sourceChanged ? "；" + T("来源文件再次变化，请重新检查") : "") + "\n"
                     + T("同步前草稿备份") + "：" + backupPath);
                 RefreshPermission(null, EventArgs.Empty);
             }
-            catch (Exception error) { ShowError(error); }
+            catch (Exception error) { RefreshSourceAfterActionFailure(); ShowError(error); RefreshPermission(null, EventArgs.Empty); }
         }
         /// <summary>把当前页面内容导出到人员选择的 JSON 文件，可选带入尚未保存的任务。</summary>
         private void ExportWorkspaceBackup(TaskWorkspaceTask editedTask)
@@ -705,7 +785,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             try
             {
                 _store.ExportBackup(_workspace, dialog.FileName, editedTask);
-                SetStatusText(T("任务配置备份已导出") + "\n" + dialog.FileName);
+                SetActionStatusText(T("任务配置备份已导出") + "\n" + dialog.FileName);
                 if (editedTask != null) _editor?.ShowBackupExported(dialog.FileName);
             }
             catch (Exception error) { ShowError(error); }
@@ -736,7 +816,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 if (_lastCheckIssues != null)
                 {
                     bool hasErrors = _lastCheckIssues.Any(item => item.Severity == TaskIssueSeverity.Error);
-                    SetStatusText(T(hasErrors ? "备份已恢复为草稿，检查发现问题"
+                    SetActionStatusText(T(hasErrors ? "备份已恢复为草稿，检查发现问题"
                         : _lastCheckIssues.Count > 0 ? "备份已恢复为草稿，检查有提醒" : "备份已恢复为草稿，检查通过")
                         + "\n" + T("恢复前草稿已自动保留") + "：" + currentCopy);
                 }
@@ -758,7 +838,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 TaskWorkspaceDocument previousWorkspace = _workspace;
                 LoadWorkspace();
                 if (currentCopy != null && !ReferenceEquals(_workspace, previousWorkspace))
-                    SetStatusText(T("草稿已重新读取，当前内容已保留") + "\n" + currentCopy);
+                    SetActionStatusText(T("草稿已重新读取，当前内容已保留") + "\n" + currentCopy);
             }
             catch (Exception error) { ShowError(error); }
         }
@@ -777,11 +857,13 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             if (_workspace == null || !ReadSettings()) return;
             try
             {
-                _observedPreparationSignature = _store.ComputePreparationSignature(_machineId);
-                _preparationReadFailed = false;
-                string before = _store.ComputeSignature(_machineId);
+                string preparationSignature;
+                string before = ComputeSourceSignatureForAction(out preparationSignature);
                 var issues = _store.Check(_workspace);
-                string after = _store.ComputeSignature(_machineId);
+                string after = ComputeSourceSignatureForAction(out preparationSignature);
+                _observedPreparationSignature = preparationSignature;
+                _sourceReadFailed = false;
+                _sourceReadError = null;
                 _sourceChanged = after != _workspace.BaseSignature;
                 _lastCheckIssues = before == after ? issues : null;
                 ShowIssues(_lastCheckIssues ?? new TaskValidationIssue[0]);
@@ -793,10 +875,9 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             }
             catch (Exception error)
             {
-                _lastCheckIssues = null;
-                ShowIssues(new TaskValidationIssue[0]);
-                RefreshLibraryRows();
+                RefreshSourceAfterActionFailure();
                 ShowError(error);
+                RefreshPermission(null, EventArgs.Empty);
             }
         }
         /// <summary>说明检查覆盖的范围；后端能力通过不等于现场准备或动作已完成。</summary>
@@ -818,18 +899,20 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             {
                 string blocked = _getBlockedReason(); if (!string.IsNullOrEmpty(blocked)) throw new InvalidOperationException(blocked);
                 var issues = _store.Check(_workspace); ShowIssues(issues);
-                if (issues.Any(item => item.Severity == TaskIssueSeverity.Error)) { SetStatusText(T("存在错误，不能应用")); return; }
+                if (issues.Any(item => item.Severity == TaskIssueSeverity.Error)) { SetActionStatusText(T("存在错误，不能应用")); return; }
                 if (MessageBox.Show(T("确认更新以下任务文件") + "\n" + string.Join("\n", _workspace.Tasks.Select(item => item.Definition.Name)), T("更新任务文件"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
                 blocked = _getBlockedReason(); if (!string.IsNullOrEmpty(blocked)) throw new InvalidOperationException(blocked);
                 string warning; _workspace = _store.Apply(_workspace, out warning); _activeWorkspace = _store.Load(_machineId, false); _catalog = _store.LoadCatalog(_workspace); _dirty = false; _sourceChanged = false; _lastCheckIssues = null; Rebuild();
-                SetStatusText(T("任务文件已更新") + (warning == null ? "" : "\n" + warning));
+                SetActionStatusText(T("任务文件已更新") + (warning == null ? "" : "\n" + warning));
             }
             catch (Exception error) { ShowError(error); }
         }
         /// <summary>明确放弃草稿并重新读取运行任务文件，执行前保留当前页面内容。</summary>
         private void ReloadRuntimeFiles()
         {
+            if (!CanResolveTaskSources()) return;
             if (MessageBox.Show(T("放弃草稿并读取运行版本确认说明"), T("放弃草稿并读取运行版本"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+            if (!CanResolveTaskSources()) return;
             try
             {
                 string currentCopy = null;
@@ -844,7 +927,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 TaskWorkspaceDocument previousWorkspace = _workspace;
                 LoadWorkspace();
                 if (currentCopy != null && !ReferenceEquals(_workspace, previousWorkspace))
-                    SetStatusText(T("已读取运行版本，草稿内容已保留") + "\n" + currentCopy);
+                    SetActionStatusText(T("已读取运行版本，草稿内容已保留") + "\n" + currentCopy);
             }
             catch (Exception error) { ShowError(error); }
         }

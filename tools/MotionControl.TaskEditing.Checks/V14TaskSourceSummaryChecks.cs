@@ -21,10 +21,12 @@ namespace MotionControl.TaskEditing.Checks
                 var build = helper.GetMethod("Build", BindingFlags.Static | BindingFlags.NonPublic);
                 string summary = (string)build.Invoke(null, new object[] { draft, files, true, true, false });
                 if (!summary.Contains("有未保存修改") || !summary.Contains("2026-11-06 10:00:00") || !summary.Contains("R77")
-                    || !summary.Contains("快照不是当前文件") || !summary.Contains("会话标识 / 加载时间未提供"))
+                    || !summary.Contains("草稿基准待核查") || !summary.Contains("文件快照与当前文件的一致性未确认")
+                    || summary.Contains("快照不是当前文件") || !summary.Contains("会话标识 / 加载时间未提供"))
                     throw new InvalidOperationException("来源、dirty、修订或未知会话语义错误");
                 string english = (string)build.Invoke(null, new object[] { draft, files, true, true, true });
-                if (!english.Contains("not the executing session") || !english.Contains("session ID / load time not provided"))
+                if (!english.Contains("not the executing session") || !english.Contains("session ID / load time not provided")
+                    || !english.Contains("draft base needs review") || !english.Contains("snapshot agreement with current files is unverified"))
                     throw new InvalidOperationException("英文来源边界缺失");
                 string unknown = (string)build.Invoke(null, new object[] { null, null, false, false, false });
                 string unknownEnglish = (string)build.Invoke(null, new object[] { null, null, false, false, true });

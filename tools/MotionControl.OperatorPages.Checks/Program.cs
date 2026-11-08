@@ -88,6 +88,8 @@ namespace MotionControl.OperatorPages.Checks
             Check("准备提交期间配置变化与按需装载", () => RunUiAsync(PreparationDependencyPreviewChecks.RunSubmissionAsync), ref failures);
             Check("V1.8 设备准备响应式布局", V18OperatorLayoutChecks.CheckPreparation, ref failures);
             Check("V1.8 设备总览响应式布局", V18OperatorLayoutChecks.CheckOverview, ref failures);
+            Check("V1.8 任务配置来源与响应式布局", V18TaskConfigurationLayoutChecks.LayoutAndState, ref failures);
+            Check("任务库筛选不修改草稿", V18TaskConfigurationLayoutChecks.LibrarySearchIsReadOnly, ref failures);
             Check("V1.8 任务工位运行响应式布局", V18StationRunLayoutChecks.TaskLayout, ref failures);
             Check("V1.8 C# 工位运行响应式布局", V18StationRunLayoutChecks.CSharpLayout, ref failures);
             Check("隐藏任务路径时保留故障提示", V18StationRunLayoutChecks.TaskWarnings, ref failures);
@@ -95,7 +97,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("产品记录只读显示两种来源及错误", ProductRecordChecks.Run, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：60 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：62 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }

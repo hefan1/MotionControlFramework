@@ -1,6 +1,25 @@
 ﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:sys="clr-namespace:System;assembly=mscorlib">
  <sys:String x:Key="任务编辑.：请输入有效数字，小数使用点号。">：请输入有效数字，小数使用点号。</sys:String>
  <sys:String x:Key="任务编辑.：请输入有效整数。">：请输入有效整数。</sys:String>
+ <sys:String x:Key="任务编辑.当前编辑摘要">Current edits</sys:String>
+ <sys:String x:Key="任务编辑.文件快照摘要">Loaded file snapshot</sys:String>
+ <sys:String x:Key="任务编辑.当前会话摘要">Current run session</sys:String>
+ <sys:String x:Key="任务编辑.查看版本与来源详情">View version and source details</sys:String>
+ <sys:String x:Key="任务编辑.设备与草稿工位详情">Equipment and draft station details</sys:String>
+ <sys:String x:Key="任务编辑.设备公共设置">Equipment-wide settings</sys:String>
+ <sys:String x:Key="任务编辑.选中工位草稿设置">Selected station / draft settings</sys:String>
+ <sys:String x:Key="任务编辑.编辑状态未知">Edit status unknown</sys:String>
+ <sys:String x:Key="任务编辑.无待保存编辑">No pending edits</sys:String>
+ <sys:String x:Key="任务编辑.有未保存编辑">Unsaved edits</sys:String>
+ <sys:String x:Key="任务编辑.文件快照未提供">File snapshot not provided</sys:String>
+ <sys:String x:Key="任务编辑.已载入文件快照数量格式">Loaded snapshot of {0} tasks; agreement with current files unverified</sys:String>
+ <sys:String x:Key="任务编辑.草稿基准待核查">Draft base needs review</sys:String>
+ <sys:String x:Key="任务编辑.文件快照版本">File snapshot version</sys:String>
+ <sys:String x:Key="任务编辑.正在编辑工位">Editing station</sys:String>
+ <sys:String x:Key="任务编辑.未选择工位">No station selected</sys:String>
+ <sys:String x:Key="任务编辑.工位名称未填写">Station name not entered</sys:String>
+ <sys:String x:Key="任务编辑.请先选择任务">Select a task first</sys:String>
+ <sys:String x:Key="任务编辑.会话信息未提供">Version, session ID, and load time not provided</sys:String>
  <sys:String x:Key="任务编辑.保存草稿">Save draft</sys:String>
  <sys:String x:Key="任务编辑.保存并检查">Save and check</sys:String>
  <sys:String x:Key="任务编辑.草稿已保存">Draft saved</sys:String>
@@ -20,7 +39,8 @@
  <sys:String x:Key="任务编辑.检查通过">Check passed</sys:String>
  <sys:String x:Key="任务编辑.检查有提醒">Check has notices. Review the results below.</sys:String>
  <sys:String x:Key="任务编辑.来源文件再次变化，请重新检查">Source files changed again. Check the draft again.</sys:String>
- <sys:String x:Key="任务编辑.来源文件已经变化，请先同步草稿或重新载入运行文件">Source files changed. Sync the draft or reload active task files.</sys:String>
+ <sys:String x:Key="任务编辑.来源文件已经变化，请先同步草稿或重新载入运行文件">The draft base differs from its source or cannot be verified. Review it before syncing the draft or reloading task files.</sys:String>
+ <sys:String x:Key="任务编辑.任务来源无法读取，请先恢复读取">A task source file cannot be read, so the draft base cannot be verified. Restore access and check again.</sys:String>
  <sys:String x:Key="任务编辑.放弃草稿并读取运行版本">Discard draft and load active version...</sys:String>
  <sys:String x:Key="任务编辑.关闭">Close</sys:String>
  <sys:String x:Key="任务编辑.请选择任务配置备份保存位置">Choose where to save the task configuration backup</sys:String>
@@ -337,6 +357,7 @@
  <sys:String x:Key="任务编辑.准备配置">Preparation configuration</sys:String>
  <sys:String x:Key="任务编辑.子任务引用">Subtask reference</sys:String>
  <sys:String x:Key="任务编辑.准备配置已变化，旧检查结论失效，请重新检查或装载">Preparation configuration changed. Previous checks are no longer valid; check or reload the definitions.</sys:String>
- <sys:String x:Key="任务编辑.准备配置读取失败，旧检查结论失效">Preparation configuration could not be read. Previous checks are no longer valid.</sys:String>
+ <sys:String x:Key="任务编辑.任务来源读取失败，旧检查结论失效">Task sources could not be read. Previous checks are no longer valid.</sys:String>
+ <sys:String x:Key="任务编辑.任务来源读取已恢复，旧检查结论失效，请重新检查或装载">Task sources are readable again; previous checks are invalid. Check again or reload.</sys:String>
  <sys:String x:Key="任务编辑.无法确认任务引用，不能删除">Task references could not be verified. Deletion is blocked.</sys:String>
 </ResourceDictionary>

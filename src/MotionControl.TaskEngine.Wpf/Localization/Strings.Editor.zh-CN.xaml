@@ -1,6 +1,25 @@
 ﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:sys="clr-namespace:System;assembly=mscorlib">
  <sys:String x:Key="任务编辑.：请输入有效数字，小数使用点号。">：请输入有效数字，小数使用点号。</sys:String>
  <sys:String x:Key="任务编辑.：请输入有效整数。">：请输入有效整数。</sys:String>
+ <sys:String x:Key="任务编辑.当前编辑摘要">当前编辑</sys:String>
+ <sys:String x:Key="任务编辑.文件快照摘要">已载入文件快照</sys:String>
+ <sys:String x:Key="任务编辑.当前会话摘要">当前运行会话</sys:String>
+ <sys:String x:Key="任务编辑.查看版本与来源详情">查看版本与来源详情</sys:String>
+ <sys:String x:Key="任务编辑.设备与草稿工位详情">设备与草稿工位详情</sys:String>
+ <sys:String x:Key="任务编辑.设备公共设置">设备公共设置</sys:String>
+ <sys:String x:Key="任务编辑.选中工位草稿设置">选中工位 / 草稿设置</sys:String>
+ <sys:String x:Key="任务编辑.编辑状态未知">编辑状态未知</sys:String>
+ <sys:String x:Key="任务编辑.无待保存编辑">无待保存编辑</sys:String>
+ <sys:String x:Key="任务编辑.有未保存编辑">有未保存编辑</sys:String>
+ <sys:String x:Key="任务编辑.文件快照未提供">文件快照未提供</sys:String>
+ <sys:String x:Key="任务编辑.已载入文件快照数量格式">已载入 {0} 个任务文件快照；与当前文件一致性未确认</sys:String>
+ <sys:String x:Key="任务编辑.草稿基准待核查">草稿基准待核查</sys:String>
+ <sys:String x:Key="任务编辑.文件快照版本">文件快照版本</sys:String>
+ <sys:String x:Key="任务编辑.正在编辑工位">正在编辑工位</sys:String>
+ <sys:String x:Key="任务编辑.未选择工位">未选择工位</sys:String>
+ <sys:String x:Key="任务编辑.工位名称未填写">工位名称未填写</sys:String>
+ <sys:String x:Key="任务编辑.请先选择任务">请先选择任务</sys:String>
+ <sys:String x:Key="任务编辑.会话信息未提供">版本、会话标识和加载时间未提供</sys:String>
  <sys:String x:Key="任务编辑.保存草稿">保存草稿</sys:String>
  <sys:String x:Key="任务编辑.保存并检查">保存并检查</sys:String>
  <sys:String x:Key="任务编辑.草稿已保存">草稿已保存</sys:String>
@@ -20,7 +39,8 @@
  <sys:String x:Key="任务编辑.检查通过">检查通过</sys:String>
  <sys:String x:Key="任务编辑.检查有提醒">检查有提醒，请查看下方定位结果</sys:String>
  <sys:String x:Key="任务编辑.来源文件再次变化，请重新检查">来源文件再次变化，请重新检查</sys:String>
- <sys:String x:Key="任务编辑.来源文件已经变化，请先同步草稿或重新载入运行文件">来源文件已经变化，请先同步草稿或重新载入运行文件</sys:String>
+ <sys:String x:Key="任务编辑.来源文件已经变化，请先同步草稿或重新载入运行文件">草稿基准与来源不一致或无法确认，请核查后同步草稿或重新载入任务文件</sys:String>
+ <sys:String x:Key="任务编辑.任务来源无法读取，请先恢复读取">任务来源文件无法读取，无法确认草稿基准；请先恢复读取并重新检查</sys:String>
  <sys:String x:Key="任务编辑.放弃草稿并读取运行版本">放弃草稿并读取运行版本...</sys:String>
  <sys:String x:Key="任务编辑.关闭">关闭</sys:String>
  <sys:String x:Key="任务编辑.请选择任务配置备份保存位置">请选择任务配置备份保存位置</sys:String>
@@ -324,6 +344,7 @@
  <sys:String x:Key="任务编辑.准备配置">准备配置</sys:String>
  <sys:String x:Key="任务编辑.子任务引用">子任务引用</sys:String>
  <sys:String x:Key="任务编辑.准备配置已变化，旧检查结论失效，请重新检查或装载">准备配置已变化，旧检查结论失效，请重新检查或装载</sys:String>
- <sys:String x:Key="任务编辑.准备配置读取失败，旧检查结论失效">准备配置读取失败，旧检查结论失效</sys:String>
+ <sys:String x:Key="任务编辑.任务来源读取失败，旧检查结论失效">任务来源读取失败，旧检查结论失效</sys:String>
+ <sys:String x:Key="任务编辑.任务来源读取已恢复，旧检查结论失效，请重新检查或装载">任务来源读取已恢复，旧检查结论失效，请重新检查或装载</sys:String>
  <sys:String x:Key="任务编辑.无法确认任务引用，不能删除">无法确认任务引用，不能删除</sys:String>
 </ResourceDictionary>

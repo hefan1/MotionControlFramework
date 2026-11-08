@@ -2,49 +2,86 @@
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="#F3F6FA">
  <UserControl.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="../Styles/TaskMonitorStyles.xaml"/><ResourceDictionary Source="../Styles/TaskEditingStyles.xaml"/><ResourceDictionary Source="../Localization/Strings.Editor.zh-CN.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></UserControl.Resources>
  <Grid Margin="14,8,14,12"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition x:Name="ConfigIssueRow" Height="100"/></Grid.RowDefinitions>
-  <Border x:Name="ConfigToolbar" Background="#F7F9FC" BorderBrush="#D8E2EE" BorderThickness="1" CornerRadius="6" Padding="7"><WrapPanel>
+  <Border x:Name="ConfigToolbar" Grid.Row="1" Background="#F7F9FC" BorderBrush="#D8E2EE" BorderThickness="1" CornerRadius="6" Padding="7"><WrapPanel>
    <Button x:Name="SaveAndCheckButton" Content="{DynamicResource 任务编辑.保存并检查}" Click="SaveAndCheck_Click" Style="{StaticResource 编辑主要按钮}"/>
    <Button x:Name="BackupRestoreButton" Content="{DynamicResource 任务编辑.备份与恢复}" Click="BackupRestore_Click"/>
    <Button x:Name="ApplyButton" Content="{DynamicResource 任务编辑.更新任务文件}" Click="Apply_Click"/>
-   <Button x:Name="RebaseDraftButton" Content="{DynamicResource 任务编辑.保留草稿并同步来源}" ToolTip="{DynamicResource 任务编辑.保留草稿并同步来源提示}" Click="RebaseDraft_Click" Visibility="Collapsed"/>
-   <Button x:Name="ReloadRuntimeButton" Content="{DynamicResource 任务编辑.重新载入运行文件}" ToolTip="{DynamicResource 任务编辑.重新载入运行文件提示}" Click="ReloadRuntimeFiles_Click" Visibility="Collapsed"/>
+   <Button x:Name="RebaseDraftButton" Content="{DynamicResource 任务编辑.保留草稿并同步来源}" ToolTip="{DynamicResource 任务编辑.保留草稿并同步来源提示}" ToolTipService.ShowOnDisabled="True" Click="RebaseDraft_Click" Visibility="Collapsed"/>
+   <Button x:Name="ReloadRuntimeButton" Content="{DynamicResource 任务编辑.重新载入运行文件}" ToolTip="{DynamicResource 任务编辑.重新载入运行文件提示}" ToolTipService.ShowOnDisabled="True" Click="ReloadRuntimeFiles_Click" Visibility="Collapsed"/>
    <Button x:Name="RecoverButton" Content="{DynamicResource 任务编辑.恢复上次应用}" Click="Recover_Click"/>
   </WrapPanel></Border>
-  <StackPanel x:Name="ConfigurationStatus" Grid.Row="1" Margin="2,7">
-   <ScrollViewer MaxHeight="90" VerticalScrollBarVisibility="Auto"><TextBlock x:Name="SourceSummaryText" TextWrapping="Wrap" Foreground="#596B7D" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/></ScrollViewer>
-   <TextBlock x:Name="StatusText" TextWrapping="Wrap" Foreground="#176BD0"/>
+  <ScrollViewer x:Name="ConfigurationStatusScroll" MaxHeight="210" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+  <StackPanel x:Name="ConfigurationStatus" Margin="2,0,2,6">
+   <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+    <Border Style="{StaticResource 内容边框}" Padding="8" Margin="0,0,6,0"><StackPanel>
+     <TextBlock Text="{DynamicResource 任务编辑.当前编辑摘要}" Foreground="#596B7D"/>
+     <TextBlock x:Name="DraftSummaryText" TextWrapping="Wrap" FontWeight="SemiBold"/>
+    </StackPanel></Border>
+    <Border Grid.Column="1" Style="{StaticResource 内容边框}" Padding="8" Margin="0,0,6,0"><StackPanel>
+     <TextBlock Text="{DynamicResource 任务编辑.文件快照摘要}" Foreground="#596B7D"/>
+     <TextBlock x:Name="FileSummaryText" TextWrapping="Wrap" FontWeight="SemiBold"/>
+    </StackPanel></Border>
+    <Border Grid.Column="2" Style="{StaticResource 内容边框}" Padding="8"><StackPanel>
+     <TextBlock Text="{DynamicResource 任务编辑.当前会话摘要}" Foreground="#596B7D"/>
+     <TextBlock x:Name="SessionSummaryText" TextWrapping="Wrap" FontWeight="SemiBold"/>
+    </StackPanel></Border>
+   </Grid>
+   <Expander x:Name="SourceDetailsExpander" Header="{DynamicResource 任务编辑.查看版本与来源详情}" Margin="0,4,0,0">
+    <ScrollViewer MaxHeight="110" VerticalScrollBarVisibility="Auto"><TextBlock x:Name="SourceSummaryText" TextWrapping="Wrap" Foreground="#596B7D" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/></ScrollViewer>
+   </Expander>
+   <ScrollViewer x:Name="StatusMessageScroll" MaxHeight="40" VerticalScrollBarVisibility="Auto"><TextBlock x:Name="StatusText" TextWrapping="Wrap" Foreground="#176BD0"/></ScrollViewer>
    <Border x:Name="RuntimeContextPanel" Background="#F7F9FC" BorderBrush="#D8E2EE" BorderThickness="1" CornerRadius="6" Padding="9,7" Margin="0,5,0,0">
     <DockPanel LastChildFill="True">
      <Button x:Name="CurrentFlowButton" DockPanel.Dock="Right" Content="{DynamicResource 任务编辑.查看当前流程状态}" Click="CurrentFlow_Click" Margin="10,0,0,0" Padding="9,4" VerticalAlignment="Center"/>
      <StackPanel>
       <TextBlock x:Name="RuntimeStateText" FontWeight="SemiBold" Foreground="#26384D"/>
-      <TextBlock x:Name="RuntimeReadinessText" TextWrapping="Wrap" Margin="0,3,0,0" Foreground="#845B0A" Visibility="Collapsed"/>
-      <TextBlock x:Name="RuntimeStationsText" TextWrapping="Wrap" Margin="0,3,0,0" Foreground="#40536A"/>
-      <TextBlock x:Name="TaskDraftStationsText" TextWrapping="Wrap" Margin="0,3,0,0" Foreground="#40536A"/>
+      <ScrollViewer MaxHeight="44" VerticalScrollBarVisibility="Auto"><TextBlock x:Name="RuntimeReadinessText" TextWrapping="Wrap" Margin="0,3,0,0" Foreground="#845B0A" Visibility="Collapsed"/></ScrollViewer>
       <TextBlock x:Name="TaskDraftBoundaryText" TextWrapping="Wrap" Margin="0,2,0,0" Foreground="#845B0A"/>
+      <Expander x:Name="RuntimeDetailsExpander" Header="{DynamicResource 任务编辑.设备与草稿工位详情}" Margin="0,3,0,0">
+       <ScrollViewer MaxHeight="110" VerticalScrollBarVisibility="Auto"><StackPanel>
+        <TextBlock x:Name="RuntimeStationsText" TextWrapping="Wrap" Margin="0,3,0,0" Foreground="#40536A"/>
+        <TextBlock x:Name="TaskDraftStationsText" TextWrapping="Wrap" Margin="0,3,0,0" Foreground="#40536A"/>
+       </StackPanel></ScrollViewer>
+      </Expander>
      </StackPanel>
     </DockPanel>
    </Border>
    <Expander x:Name="ErrorDiagnosticsExpander" Margin="0,5,0,0" Visibility="Collapsed" Header="{DynamicResource 任务编辑.查看完整诊断信息}" Background="#F7F9FC" BorderBrush="#D9E0E8" BorderThickness="1" Padding="6">
     <TextBox x:Name="ErrorDiagnosticsText" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="150" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
    </Expander>
-   <TextBlock x:Name="ApplyReasonText" TextWrapping="Wrap" Foreground="#946200"/>
+   <ScrollViewer MaxHeight="44" VerticalScrollBarVisibility="Auto"><TextBlock x:Name="ApplyReasonText" TextWrapping="Wrap" Foreground="#946200"/></ScrollViewer>
   </StackPanel>
+  </ScrollViewer>
   <ContentControl x:Name="ContentHost" Grid.Row="2"><TabControl x:Name="MainTabs">
-   <TabItem Header="{DynamicResource 任务编辑.工位安排}"><Grid Margin="8"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*" MinHeight="120"/><RowDefinition Height="1.3*" MinHeight="150"/></Grid.RowDefinitions>
-    <WrapPanel><Button Content="{DynamicResource 任务编辑.新增工位}" Click="AddStation_Click"/><Button Content="{DynamicResource 任务编辑.移除工位}" Click="RemoveStation_Click"/></WrapPanel>
-    <DataGrid x:Name="StationsGrid" Grid.Row="1" IsReadOnly="True" AutoGenerateColumns="False" ColumnHeaderStyle="{StaticResource 编辑表头}" SelectionChanged="StationSelected"><DataGrid.Columns>
-     <DataGridCheckBoxColumn Binding="{Binding Source.Enabled}" Width="75"/><DataGridTextColumn Binding="{Binding Source.Name}" Width="*" MinWidth="110"/><DataGridTextColumn Binding="{Binding TaskName}" Width="1.5*" MinWidth="130"/><DataGridTextColumn Binding="{Binding Mode}" Width="125"/>
-     <DataGridTextColumn Binding="{Binding AppliedVersion}" Width="105"/>
-     <DataGridTemplateColumn Width="100"><DataGridTemplateColumn.CellTemplate><DataTemplate><Button Content="{DynamicResource 任务编辑.编辑任务}" Tag="{Binding Source}" Click="EditStationTask_Click" Padding="5,2" MinHeight="24"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-    </DataGrid.Columns></DataGrid>
-    <Grid Grid.Row="2" Margin="0,8,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-     <Border Style="{StaticResource 内容边框}"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel x:Name="StationDetails" Margin="10"/></ScrollViewer></Border>
-     <Border Grid.Column="2" Style="{StaticResource 内容边框}"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel x:Name="MachineDetails" Margin="10"/></ScrollViewer></Border>
+   <TabItem Header="{DynamicResource 任务编辑.工位安排}">
+    <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+    <Border x:Name="NarrowStationIdentity" Visibility="Collapsed" Margin="8,6,8,0" Padding="8,5" Background="#EAF2FC" BorderBrush="#D8E2EE" BorderThickness="1" CornerRadius="4">
+     <TextBlock x:Name="NarrowStationIdentityText" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" FontWeight="SemiBold"/>
+    </Border>
+    <ScrollViewer x:Name="StationWorkspaceScroll" Grid.Row="1" Margin="8" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Disabled">
+     <Grid x:Name="StationWorkspace" SizeChanged="StationWorkspace_SizeChanged">
+      <Grid.ColumnDefinitions><ColumnDefinition x:Name="StationListColumn" Width="1.6*"/><ColumnDefinition x:Name="StationGapColumn" Width="10"/><ColumnDefinition x:Name="StationSettingsColumn" Width="*"/></Grid.ColumnDefinitions>
+      <Grid.RowDefinitions><RowDefinition x:Name="StationListRow" Height="*"/><RowDefinition x:Name="StationGapRow" Height="0"/><RowDefinition x:Name="StationSettingsRow" Height="0"/></Grid.RowDefinitions>
+      <Border x:Name="StationListCard" Style="{StaticResource 内容边框}"><Grid Margin="8"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+       <DockPanel><WrapPanel DockPanel.Dock="Right"><Button Content="{DynamicResource 任务编辑.新增工位}" Click="AddStation_Click"/><Button Content="{DynamicResource 任务编辑.移除工位}" Click="RemoveStation_Click"/></WrapPanel>
+        <TextBlock Text="{DynamicResource 任务编辑.工位安排}" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/></DockPanel>
+       <DataGrid x:Name="StationsGrid" Grid.Row="1" IsReadOnly="True" AutoGenerateColumns="False" ColumnHeaderStyle="{StaticResource 编辑表头}" SelectionChanged="StationSelected"><DataGrid.Columns>
+        <DataGridCheckBoxColumn Binding="{Binding Source.Enabled}" Width="75"/><DataGridTextColumn Binding="{Binding Source.Name}" Width="*" MinWidth="110"/><DataGridTextColumn Binding="{Binding TaskName}" Width="1.5*" MinWidth="130"/><DataGridTextColumn Binding="{Binding Mode}" Width="125"/>
+        <DataGridTextColumn Binding="{Binding AppliedVersion}" Width="105"/>
+        <DataGridTemplateColumn Width="100"><DataGridTemplateColumn.CellTemplate><DataTemplate><Button Content="{DynamicResource 任务编辑.编辑任务}" Tag="{Binding Source}" Click="EditStationTask_Click" Padding="5,2" MinHeight="24"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+       </DataGrid.Columns></DataGrid>
+      </Grid></Border>
+      <Border x:Name="StationSettingsCard" Grid.Column="2" Style="{StaticResource 内容边框}"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel Margin="10">
+       <Expander x:Name="MachineSettingsExpander" Header="{DynamicResource 任务编辑.设备公共设置}" Margin="0,0,0,8" Padding="5" BorderBrush="#D8E2EE" BorderThickness="1"><StackPanel x:Name="MachineDetails" Margin="5"/></Expander>
+       <TextBlock Text="{DynamicResource 任务编辑.选中工位草稿设置}" FontSize="15" FontWeight="SemiBold"/>
+       <StackPanel x:Name="StationDetails"/>
+      </StackPanel></ScrollViewer></Border>
+     </Grid>
+    </ScrollViewer>
     </Grid>
-   </Grid></TabItem>
+   </TabItem>
    <TabItem Header="{DynamicResource 任务编辑.任务库}"><DockPanel Margin="8"><WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-    <Button Content="{DynamicResource 任务编辑.新增任务}" Click="NewTask_Click"/><Button Content="{DynamicResource 任务编辑.复制任务}" Click="CopyTask_Click"/><Button Content="{DynamicResource 任务编辑.导入任务}" Click="ImportTask_Click"/><Button Content="{DynamicResource 任务编辑.编辑任务}" Click="EditTask_Click"/><Button Content="{DynamicResource 任务编辑.查看引用}" Click="References_Click"/><Button x:Name="RemoveTaskButton" Content="{DynamicResource 任务编辑.删除任务}" Click="RemoveTask_Click" ToolTipService.ShowOnDisabled="True"/>
+    <Button Content="{DynamicResource 任务编辑.新增任务}" Click="NewTask_Click"/><Button x:Name="CopyTaskButton" Content="{DynamicResource 任务编辑.复制任务}" Click="CopyTask_Click" ToolTipService.ShowOnDisabled="True"/><Button Content="{DynamicResource 任务编辑.导入任务}" Click="ImportTask_Click"/><Button x:Name="EditTaskButton" Content="{DynamicResource 任务编辑.编辑任务}" Click="EditTask_Click" ToolTipService.ShowOnDisabled="True"/><Button x:Name="ReferencesButton" Content="{DynamicResource 任务编辑.查看引用}" Click="References_Click" ToolTipService.ShowOnDisabled="True"/><Button x:Name="RemoveTaskButton" Content="{DynamicResource 任务编辑.删除任务}" Click="RemoveTask_Click" ToolTipService.ShowOnDisabled="True"/>
    </WrapPanel><WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
     <TextBlock Text="{DynamicResource 任务编辑.任务搜索标签}" VerticalAlignment="Center"/>
     <TextBox x:Name="LibrarySearchBox" Width="240" Margin="8,0" TextChanged="LibrarySearchChanged" ToolTip="{DynamicResource 任务编辑.任务搜索标签}"/>
