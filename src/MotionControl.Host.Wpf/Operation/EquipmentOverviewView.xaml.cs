@@ -20,6 +20,8 @@ namespace MotionControl.Host.Wpf.Operation
         private MachineRuntime _runtime;
         /// <summary>查询正式任务页面是否已读取任务；未提供时不推断会话状态。</summary>
         private Func<bool> _isTaskSessionLoaded;
+        /// <summary>读取当前任务运行会话对象，区分同 Runtime 上先后装载的不同任务。</summary>
+        private Func<object> _taskSessionIdentityProvider;
         /// <summary>从实际任务会话读取工位，不读取文件或推进任务。</summary>
         private Func<IReadOnlyList<StationOverviewData>> _taskStationProvider;
         /// <summary>当前任务会话中需要现场核查的资源摘要；不得推断为夹具实际状态。</summary>
@@ -66,6 +68,24 @@ namespace MotionControl.Host.Wpf.Operation
         private OperationSnapshot _stationTableSnapshot;
         /// <summary>记录本轮数据所属的 Runtime 和连接，以便点击时再次核对。</summary>
         private MachineRuntime _stationTableRuntime;
+        /// <summary>当前工位表是否已记录过观察上下文。</summary>
+        private bool _hasStationTableContext;
+        /// <summary>工位表上次观察时的 Runtime。</summary>
+        private MachineRuntime _stationContextRuntime;
+        /// <summary>工位表上次观察时的控制器连接会话。</summary>
+        private Guid? _stationContextConnectionSession;
+        /// <summary>工位表上次观察时的控制权来源。</summary>
+        private MachineControlOwner? _stationContextControlOwner;
+        /// <summary>上次观察的任务会话身份是否可确认。</summary>
+        private bool _stationContextTaskIdentityKnown;
+        /// <summary>上次观察的任务运行会话对象。</summary>
+        private object _stationContextTaskIdentity;
+        /// <summary>上下文变化后，要求操作员重新选定工位。</summary>
+        private bool _selectionNeedsUserChoice;
+        /// <summary>当前工位表所属任务身份是否已确认。</summary>
+        private bool _stationTableTaskIdentityKnown;
+        /// <summary>当前工位表所属任务运行会话对象。</summary>
+        private object _stationTableTaskIdentity;
         private Guid? _stationTableSession;
 
         /// <summary>Host 的失联提示和 Runtime 的真实会话均可使当前观察失效。</summary>
@@ -86,22 +106,92 @@ namespace MotionControl.Host.Wpf.Operation
         {
             if (_updatingStationTable) return;
             var item = StationTable.SelectedItem as ListBoxItem;
+            if (item != null) _selectionNeedsUserChoice = false;
             _selectedStationKey = item?.Tag;
-            SelectedStationText.Text = item?.ToolTip as string ?? string.Empty;
             var station = item?.DataContext as StationOverviewData;
             var snapshot = _stationTableSnapshot;
             string key = station == null ? null : string.IsNullOrEmpty(station.Id) ? station.Name : station.Id;
-            bool unique = key != null && snapshot != null && FindStation(snapshot, key) != null && IsObservationCurrent(_stationTableRuntime, _stationTableSession);
+            if (item == null)
+            {
+                bool taskIdentityMissing = snapshot?.ControlOwner == MachineControlOwner.TaskEngine
+                    && (!_stationTableTaskIdentityKnown || _stationTableTaskIdentity == null);
+                SelectedStationText.Text = taskIdentityMissing ? T("任务会话身份待确认")
+                    : _selectionNeedsUserChoice ? T("总览上下文已变化请重新选择") : string.Empty;
+                SelectedFlowButton.Tag = SelectedReasonButton.Tag = SelectedInputButton.Tag = null;
+                SelectedFlowButton.IsEnabled = SelectedReasonButton.IsEnabled = SelectedInputButton.IsEnabled = false;
+                SelectedInputButton.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            bool taskIdentityCurrent = IsTaskSessionIdentityCurrent(snapshot?.ControlOwner,
+                _stationTableTaskIdentityKnown, _stationTableTaskIdentity);
+            bool controlOwnerCurrent = IsRuntimeControlOwnerCurrent(_stationTableRuntime, snapshot?.ControlOwner);
+            bool connectionCurrent = IsObservationCurrent(_stationTableRuntime, _stationTableSession);
+            if (!taskIdentityCurrent || !controlOwnerCurrent || !connectionCurrent)
+            {
+                _updatingStationTable = true;
+                StationTable.SelectedIndex = -1;
+                _updatingStationTable = false;
+                _selectionNeedsUserChoice = true;
+                _selectedStationKey = null;
+                SelectedStationText.Text = snapshot?.ControlOwner == MachineControlOwner.TaskEngine && !taskIdentityCurrent
+                    ? T("任务会话身份待确认") : T("总览上下文已变化请重新选择");
+                SelectedFlowButton.Tag = SelectedReasonButton.Tag = SelectedInputButton.Tag = null;
+                SelectedFlowButton.IsEnabled = SelectedReasonButton.IsEnabled = SelectedInputButton.IsEnabled = false;
+                SelectedInputButton.Visibility = Visibility.Collapsed;
+                RefreshDisplay();
+                return;
+            }
+
+            _selectionNeedsUserChoice = false;
+            SelectedStationText.Text = item.ToolTip as string ?? string.Empty;
+            bool unique = key != null && snapshot != null && FindStation(snapshot, key) != null
+                && taskIdentityCurrent && controlOwnerCurrent && connectionCurrent;
             SelectedFlowButton.Tag = SelectedReasonButton.Tag = SelectedInputButton.Tag = key;
             SelectedFlowButton.IsEnabled = SelectedReasonButton.IsEnabled = unique;
             SelectedInputButton.IsEnabled = unique && !string.IsNullOrWhiteSpace(station.WaitingInputName);
             SelectedInputButton.Visibility = SelectedInputButton.IsEnabled ? Visibility.Visible : Visibility.Collapsed;
         }
         /// <summary>按当前真实来源生成可滚动工位表；没有稳定身份不跨刷新猜测选择。</summary>
-        private void UpdateStationTable(OperationSnapshot snapshot, bool connectionLost)
+        private void UpdateStationTable(OperationSnapshot snapshot, bool connectionLost,
+            MachineRuntime runtime, Guid? connectionSession, bool taskIdentityKnown, object taskSessionIdentity)
         {
             _updatingStationTable = true;
+            bool contextChanged = _hasStationTableContext
+                && (!ReferenceEquals(runtime, _stationContextRuntime)
+                    || connectionSession != _stationContextConnectionSession
+                    || snapshot.ControlOwner != _stationContextControlOwner
+                    || taskIdentityKnown != _stationContextTaskIdentityKnown
+                    || (taskIdentityKnown && !ReferenceEquals(taskSessionIdentity, _stationContextTaskIdentity)));
+            bool hadEstablishedRuntime = _stationContextRuntime != null || _stationContextConnectionSession.HasValue;
+            if (contextChanged)
+            {
+                StationTable.Items.Clear();
+                StationTable.SelectedIndex = -1;
+                _selectedStationKey = null;
+                _selectionNeedsUserChoice = _selectionNeedsUserChoice || hadEstablishedRuntime;
+            }
+            _hasStationTableContext = true;
+            _stationContextRuntime = runtime;
+            _stationContextConnectionSession = connectionSession;
+            _stationContextControlOwner = snapshot.ControlOwner;
+            _stationContextTaskIdentityKnown = taskIdentityKnown;
+            _stationContextTaskIdentity = taskSessionIdentity;
             _stationTableSnapshot = snapshot;
+            _stationTableTaskIdentityKnown = taskIdentityKnown;
+            _stationTableTaskIdentity = taskSessionIdentity;
+            bool taskIdentityUsable = snapshot.ControlOwner != MachineControlOwner.TaskEngine
+                || (taskIdentityKnown && taskSessionIdentity != null);
+            if (!taskIdentityUsable)
+            {
+                StationTable.Items.Clear();
+                StationTable.SelectedIndex = -1;
+                _selectedStationKey = null;
+                _updatingStationTable = false;
+                StationTable_SelectionChanged(null, null);
+                return;
+            }
+
             var flows = _preview == null && snapshot.ControlOwner == MachineControlOwner.StationFlows
                 ? _runtime.StationFlows.ToArray() : new IStationFlow[0];
             for (int index = 0; index < snapshot.Stations.Count; index++)
@@ -134,9 +224,37 @@ namespace MotionControl.Host.Wpf.Operation
                 if (key != null && Equals(key, _selectedStationKey)) StationTable.SelectedItem = item;
             }
             while (StationTable.Items.Count > snapshot.Stations.Count) StationTable.Items.RemoveAt(StationTable.Items.Count - 1);
-            if (StationTable.SelectedItem == null && StationTable.Items.Count > 0) StationTable.SelectedIndex = 0;
+            if (StationTable.SelectedItem == null && StationTable.Items.Count > 0
+                && !_selectionNeedsUserChoice && taskIdentityUsable)
+                StationTable.SelectedIndex = 0;
             _updatingStationTable = false;
             StationTable_SelectionChanged(null, null);
+        }
+
+        /// <summary>确认定位操作仍属于总览当前显示的任务运行会话。</summary>
+        private bool IsTaskSessionIdentityCurrent(MachineControlOwner? owner, bool identityKnown, object identity)
+        {
+            if (owner != MachineControlOwner.TaskEngine) return true;
+            if (!identityKnown || identity == null || _taskSessionIdentityProvider == null) return false;
+            try { return ReferenceEquals(_taskSessionIdentityProvider(), identity); }
+            catch (Exception error)
+            {
+                System.Diagnostics.Trace.TraceWarning("设备总览无法确认任务会话身份：" + error);
+                return false;
+            }
+        }
+
+        /// <summary>确认本次只读工位快照和定位仍属于 Runtime 当前控制入口。</summary>
+        private bool IsRuntimeControlOwnerCurrent(MachineRuntime runtime, MachineControlOwner? expectedOwner)
+        {
+            if (_preview != null) return _preview.ControlOwner == expectedOwner;
+            if (runtime == null || !ReferenceEquals(runtime, _runtime)) return expectedOwner == null;
+            try { return runtime.ControlOwner == expectedOwner; }
+            catch (Exception error)
+            {
+                System.Diagnostics.Trace.TraceWarning("设备总览无法确认当前控制权来源：" + error);
+                return false;
+            }
         }
         /// <summary>创建总览；无 Runtime 时明确显示未读取。</summary>
         public EquipmentOverviewView()
@@ -151,6 +269,9 @@ namespace MotionControl.Host.Wpf.Operation
         /// <summary>接入任务会话状态查询，供总览区分未读取和已读取任务。</summary>
         public void SetTaskSessionStateProvider(Func<bool> provider)
         { _isTaskSessionLoaded = provider; RefreshDisplay(); }
+        /// <summary>接入当前任务运行会话身份，阻止同一设备连接上不同任务间沿用工位选择。</summary>
+        public void SetTaskSessionIdentityProvider(Func<object> provider)
+        { _taskSessionIdentityProvider = provider; RefreshDisplay(); }
         /// <summary>接入任务入口的只读工位来源；未读取任务时提供方返回空。</summary>
         public void SetTaskStationProvider(Func<IReadOnlyList<StationOverviewData>> provider)
         { _taskStationProvider = provider; RefreshDisplay(); }
@@ -201,9 +322,29 @@ namespace MotionControl.Host.Wpf.Operation
             MachineRuntime runtime = _runtime;
             Guid? session = runtime?.ConnectionSessionId;
             bool connectionLost = _preview == null && runtime != null && !IsObservationCurrent(runtime, session);
+            object taskIdentityBeforeSample = null;
+            bool taskIdentityBeforeKnown = false;
+            bool taskOwnerBeforeSample = false;
+            bool taskIdentitySamplingChanged = false;
+            Exception taskIdentityReadError = null;
+            if (!connectionLost && _preview == null && runtime != null)
+            {
+                try
+                {
+                    taskOwnerBeforeSample = runtime.ControlOwner == MachineControlOwner.TaskEngine;
+                    if (taskOwnerBeforeSample && _taskSessionIdentityProvider != null)
+                    {
+                        taskIdentityBeforeSample = _taskSessionIdentityProvider();
+                        taskIdentityBeforeKnown = true;
+                    }
+                }
+                catch (Exception error) { taskIdentityReadError = error; }
+            }
             OperationSnapshot snapshot = connectionLost ? null : ReadCurrentSnapshot(runtime);
             string safetySummary = null;
             bool? taskLoaded = null;
+            object taskSessionIdentity = null;
+            bool taskIdentityKnown = snapshot == null || snapshot.ControlOwner != MachineControlOwner.TaskEngine;
             if (!connectionLost)
             {
                 try { if (_preview == null && _taskSafetySummaryProvider != null) safetySummary = _taskSafetySummaryProvider(); }
@@ -213,6 +354,34 @@ namespace MotionControl.Host.Wpf.Operation
                     try { taskLoaded = _isTaskSessionLoaded(); }
                     catch (Exception error) { snapshot.StationReadError = error; }
                 }
+                if (_preview == null && snapshot.ControlOwner == MachineControlOwner.TaskEngine)
+                {
+                    bool taskIdentityAfterKnown = false;
+                    if (_taskSessionIdentityProvider != null)
+                    {
+                        try
+                        {
+                            taskSessionIdentity = _taskSessionIdentityProvider();
+                            taskIdentityAfterKnown = true;
+                        }
+                        catch (Exception error) { taskIdentityReadError = taskIdentityReadError ?? error; }
+                    }
+                    taskIdentitySamplingChanged = taskOwnerBeforeSample && taskIdentityBeforeKnown
+                        && taskIdentityBeforeSample != null && taskIdentityAfterKnown
+                        && taskSessionIdentity != null && !ReferenceEquals(taskIdentityBeforeSample, taskSessionIdentity);
+                    taskIdentityKnown = taskOwnerBeforeSample && taskIdentityBeforeKnown && taskIdentityAfterKnown
+                        && taskIdentityBeforeSample != null && taskSessionIdentity != null
+                        && ReferenceEquals(taskIdentityBeforeSample, taskSessionIdentity);
+                    if (!taskIdentityKnown)
+                    {
+                        snapshot.Stations.Clear();
+                        if (taskIdentitySamplingChanged)
+                            snapshot.StationReadError = new InvalidOperationException(T("总览任务会话采样期间变化"));
+                        else if (taskIdentityReadError != null)
+                            snapshot.StationReadError = taskIdentityReadError;
+                        safetySummary = null;
+                    }
+                }
             }
             if (!ReferenceEquals(runtime, _runtime)) return;
             if (_preview == null && runtime != null && (connectionLost || !IsObservationCurrent(runtime, session)))
@@ -221,6 +390,21 @@ namespace MotionControl.Host.Wpf.Operation
                 snapshot = ReadUnavailableSnapshot(runtime);
                 if (!ReferenceEquals(runtime, _runtime)) return;
                 safetySummary = null;
+                taskIdentityKnown = snapshot.ControlOwner != MachineControlOwner.TaskEngine;
+                taskSessionIdentity = null;
+            }
+            if (_preview == null && runtime != null && !connectionLost
+                && !IsRuntimeControlOwnerCurrent(runtime, snapshot.ControlOwner))
+            {
+                MachineControlOwner currentOwner = runtime.ControlOwner;
+                snapshot.Stations.Clear();
+                snapshot.ControlOwner = currentOwner;
+                snapshot.State = runtime.State;
+                snapshot.StationReadError = new InvalidOperationException(T("总览控制权采样期间变化"));
+                safetySummary = null;
+                taskLoaded = null;
+                taskSessionIdentity = null;
+                taskIdentityKnown = currentOwner != MachineControlOwner.TaskEngine;
             }
             _stationTableRuntime = runtime;
             _stationTableSession = connectionLost ? null : session;
@@ -288,8 +472,14 @@ namespace MotionControl.Host.Wpf.Operation
             AggregateMetrics.Visibility = Visibility.Collapsed;
             TaskRunPanel.Visibility = showTask && (snapshot.Stations.Count == 0 || snapshot.StationReadError != null)
                 ? Visibility.Visible : Visibility.Collapsed;
-            TaskRunStatusText.Text = connectionLost ? T("总览数据未知") : recoveryBlocked ? T("恢复未确认工位数据未知") : snapshot.StationReadError != null
-                ? T("工位状态读取失败") + "：" + snapshot.StationReadError.Message
+            TaskRunStatusText.Text = connectionLost ? T("总览数据未知")
+                : taskOwner && taskIdentitySamplingChanged ? T("总览任务会话采样期间变化")
+                : taskOwner && !taskIdentityKnown && (taskIdentityReadError != null || snapshot.StationReadError != null)
+                    ? T("工位状态读取失败") + "：" + (taskIdentityReadError ?? snapshot.StationReadError).Message
+                : recoveryBlocked ? T("恢复未确认工位数据未知")
+                : taskOwner && taskLoaded == false ? T("任务未读取请先读取")
+                : taskOwner && !taskIdentityKnown ? T("任务会话身份待确认")
+                : snapshot.StationReadError != null ? T("工位状态读取失败") + "：" + snapshot.StationReadError.Message
                 : T(!taskLoaded.HasValue ? "任务会话状态待查看"
                     : taskLoaded.Value ? "任务已读取，暂无工位状态" : "任务未读取请先读取");
             TaskRunStatusText.ToolTip = snapshot.StationReadError?.ToString();
@@ -299,7 +489,8 @@ namespace MotionControl.Host.Wpf.Operation
                     : snapshot.ControlOwner == MachineControlOwner.None ? "当前未启用自动运行" : "未配置自动工位") : "";
             EmptyText.Visibility = snapshot.Stations.Count == 0 && !taskOwner ? Visibility.Visible : Visibility.Collapsed;
             StationTable.Visibility = connectionLost ? Visibility.Collapsed : Visibility.Visible;
-            UpdateStationTable(snapshot, connectionLost);
+            UpdateStationTable(snapshot, connectionLost, runtime, connectionLost ? null : session,
+                taskIdentityKnown, taskSessionIdentity);
             if (connectionLost) SelectedStationText.Text = T("总览工位步骤与输入未知");
             if (!snapshot.HasRuntime || (connectionLost && snapshot.Alarms.Count == 0))
             {
@@ -391,18 +582,28 @@ namespace MotionControl.Host.Wpf.Operation
                 default: return "检查连接与就绪条件，按设备规则复位后启动";
             }
         }
-        /// <summary>仅按展示行所属会话重新观察，并验证按钮仍指向同一工位。</summary>
+        /// <summary>仅按展示行所属设备和任务会话重新观察，并验证按钮仍指向同一工位。</summary>
         private StationOverviewData ReadNavigationStation(string key, out OperationSnapshot snapshot)
         {
             var runtime = _stationTableRuntime;
             Guid? session = _stationTableSession;
             snapshot = null;
             var displayed = _stationTableSnapshot;
-            if (displayed != null && FindStation(displayed, key) != null && IsObservationCurrent(runtime, session))
+            bool taskIdentityKnown = _stationTableTaskIdentityKnown;
+            object taskIdentity = _stationTableTaskIdentity;
+            if (displayed != null && FindStation(displayed, key) != null
+                && IsObservationCurrent(runtime, session)
+                && IsRuntimeControlOwnerCurrent(runtime, displayed.ControlOwner)
+                && IsTaskSessionIdentityCurrent(displayed.ControlOwner, taskIdentityKnown, taskIdentity))
             {
                 snapshot = ReadCurrentSnapshot(runtime);
-                if (snapshot.ControlOwner == displayed.ControlOwner && IsObservationCurrent(runtime, session))
-                    return FindStation(snapshot, key);
+                if (snapshot.ControlOwner == displayed.ControlOwner && IsObservationCurrent(runtime, session)
+                    && IsRuntimeControlOwnerCurrent(runtime, displayed.ControlOwner)
+                    && IsTaskSessionIdentityCurrent(displayed.ControlOwner, taskIdentityKnown, taskIdentity))
+                {
+                    var current = FindStation(snapshot, key);
+                    if (current != null) return current;
+                }
             }
             RefreshDisplay();
             return null;
