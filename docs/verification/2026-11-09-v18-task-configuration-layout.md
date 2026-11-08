@@ -19,6 +19,8 @@
 - 在隔离副本中将周期填为无效值并尝试切换工位，界面给出整数错误并保留原输入和工位；恢复原值后使用“保存并检查”。候选界面窄屏结果见 `43-task-config-narrow-invalid.png`、`44-task-config-narrow-saved.png`。保存前后对 19 个任务文件和 `TaskMachine.json` 的 20 项 SHA-256 逐一比较，没有变化；保存的是沙盒草稿，不等于更新文件或加载运行会话。
 - 在另一份配置副本中仅给 `ClipInit.json` 追加换行模拟外部字节变化，保留原文件和冲突副本；正式界面显示草稿基准待核查、文件快照与当前文件一致性未确认，并禁用更新任务文件，截图 `40-task-config-conflict.png`。没有执行同步、放弃草稿或更新操作。
 - 在候选正式 Host 的独立配置内临时独占打开 `StationPreparation.json`，界面提示任务来源无法读取，同步和重新载入按钮禁用，完整诊断显示实际文件路径；释放后提示读取已恢复，草稿基准恢复，文件释放前后 SHA-256 相同。截图 `41-task-config-file-locked.png`、`42-task-config-file-recovered.png`。
+- 合并后主工作区 Release 构建 0 警告、0 错误，再次运行操作页内部检查 62 组、任务编辑内部检查 25 组，均为 0 失败。将实际构建的 27 个文件逐一核对 SHA-256 后复制到沙盒，启动正式 Host 复核宽、窄界面（`45-main-task-config-wide.png`、`48-main-task-config-narrow.png`）；Host 哈希为 `B2D3AECC1D8AE0DE212DE2B7B695F622839B5AB374E7FFB3E883268DF687BD38`，任务配置程序集哈希为 `CB4B02712403193DC828730EA0E691E53EB49DE88902C84B762F0EC30B84BBE3`。
+- 在主工作区构建的 Host 中，独占隔离副本的 `AxisParameters.json` 并连续两次执行保存检查，界面显示来源无法读取，同步和重新载入保持禁用，诊断指向该文件；释放后显示读取恢复，文件前后哈希一致。截图 `46-main-source-locked.png`、`47-main-source-recovered.png`。两次保存仅写隔离草稿。
 - 相关界面、脚本、文件哈希和沙盒配置副本保存在本机未跟踪目录 `tmp/v18-station-ui-20261108/results/`。内部隔离回归另覆盖来源其他文件独占、检查期间再次失败、语言切换保留诊断、读取恢复、长错误与保存结果的滚动位置；修复前的失败与修复后的通过结果均留在该目录。
 
 ## 未完成事项
