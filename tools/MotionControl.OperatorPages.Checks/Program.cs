@@ -255,14 +255,21 @@ namespace MotionControl.OperatorPages.Checks
             Assert(((TextBlock)view.FindName("MachineStateText")).Text == "设备已暂停", "整机暂停标签错误。");
             Assert(!FindControls<TextBlock>(view).Any(text => text.Text.Contains("整机状态 · 设备运行中")), "暂停后卡片仍标为运行。");
             Assert(FindControls<TextBlock>(view).Any(text => text.Text.Contains("暂停保留步骤")), "暂停卡片没有说明当前步骤已保留。");
+            var stepLabel = (TextBlock)view.FindName("SelectedStationStepLabelText");
+            Assert(stepLabel != null && stepLabel.Text == "暂停保留步骤", "右侧详情没有标明暂停保留步骤。");
             Assert(OverviewHasCell(view, "40 XY"), "暂停丢失原动作文字。");
             snapshot.State = MachineRunState.ResetRequired;
             view.RefreshDisplay();
             Assert(FindControls<TextBlock>(view).Any(text => text.Text.Contains("待启动步骤")), "等待复位时仍把待执行步骤显示为正在动作。");
+            Assert(stepLabel.Text == "待启动步骤", "右侧详情没有标明待启动步骤。");
+            snapshot.State = MachineRunState.Stopped;
+            view.RefreshDisplay();
+            Assert(stepLabel.Text == "停止保留步骤", "右侧详情没有标明停止保留步骤。");
             snapshot.State = MachineRunState.Paused;
             view.RefreshDisplay();
             view.SetLanguage("en-US"); Assert(((TextBlock)view.FindName("SourceText")).Text == "Offline UI example", "英文来源标签未切换。");
             Assert(OverviewHasCell(view, "Step retained during pause"), "English paused-step label did not localize.");
+            Assert(stepLabel.Text == "Step retained during pause", "右侧暂停保留步骤没有切换英文。");
             bool rejected = false; try { view.SetPreview(new OperationSnapshot()); } catch (ArgumentException) { rejected = true; }
             Assert(rejected, "未标记的快照可伪装成预览。");
         }

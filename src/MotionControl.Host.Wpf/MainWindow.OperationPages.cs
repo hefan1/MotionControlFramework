@@ -47,6 +47,8 @@ namespace MotionControl.Host.Wpf
         private void CreateOperationPages()
         {
             _equipmentOverviewPage = new EquipmentOverviewView();
+            _equipmentOverviewPage.SetTaskPreparationScopeProvider(
+                (runtime, session) => (_taskMonitorPage as Tasks.TaskMonitorLauncher)?.HasPublishedPreparationSession(runtime, session) == true);
             _currentAlarmsPage = new CurrentAlarmsView();
             _equipmentPreparationPage = new EquipmentPreparationView(EnsurePreparationConfigurationAsync, NavigatePreparationPage,
                 (runtime, session) => (_taskMonitorPage as Tasks.TaskMonitorLauncher)?.HasPublishedPreparationSession(runtime, session) == true);

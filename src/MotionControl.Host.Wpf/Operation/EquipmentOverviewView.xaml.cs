@@ -22,6 +22,8 @@ namespace MotionControl.Host.Wpf.Operation
         private Func<bool> _isTaskSessionLoaded;
         /// <summary>读取当前任务运行会话对象，区分同 Runtime 上先后装载的不同任务。</summary>
         private Func<object> _taskSessionIdentityProvider;
+        /// <summary>只读核对任务准备范围是否已发布到当前设备连接和配置代次。</summary>
+        private Func<MachineRuntime, Guid?, bool> _taskPreparationScopeProvider;
         /// <summary>从实际任务会话读取工位，不读取文件或推进任务。</summary>
         private Func<IReadOnlyList<StationOverviewData>> _taskStationProvider;
         /// <summary>当前任务会话中需要现场核查的资源摘要；不得推断为夹具实际状态。</summary>
@@ -155,6 +157,7 @@ namespace MotionControl.Host.Wpf.Operation
             OverviewSelectionFields.Visibility = Visibility.Visible;
             SelectedStationNameText.Text = station.Name;
             SelectedStationStateText.Text = (item.Content as string[])?[1] ?? T("未提供");
+            SelectedStationStepLabelText.Text = T(OperationUi.StepLabelKey(snapshot.State, station));
             bool stationReadFailed = station.StatusReadError != null;
             SelectedStationStepText.Text = stationReadFailed ? T("总览数据未知") : string.IsNullOrWhiteSpace(station.CurrentStep) ? T("总览未提供") : station.CurrentStep;
             SelectedStationWaitText.Text = stationReadFailed ? T("总览数据未知") : StationOperatorPresentation.DescribeWaitItems(station.WaitItems, station.HasWaitInformation, T);
@@ -237,7 +240,8 @@ namespace MotionControl.Host.Wpf.Operation
                 item.DataContext = station;
                 item.ToolTip = description + "\n\n" + DescribeStationEvidence(station);
                 // 质量结论放在单元格首位，完整的来源与采样说明保留在工位详情中。
-                item.Content = new[] { station.Name, state, T(OperationUi.StepLabelKey(snapshot.State, station)) + "：" + step, wait, T("未提供") };
+                item.Content = new[] { station.Name, state, T(OperationUi.StepLabelKey(snapshot.State, station)) + "：" + step, wait,
+                    T(station.StatusReadError == null ? "未提供" : "总览读取失败") };
                 if (key != null && Equals(key, _selectedStationKey)) StationTable.SelectedItem = item;
             }
             while (StationTable.Items.Count > snapshot.Stations.Count) StationTable.Items.RemoveAt(StationTable.Items.Count - 1);
@@ -273,6 +277,37 @@ namespace MotionControl.Host.Wpf.Operation
                 return false;
             }
         }
+
+        /// <summary>只在连接、入口和已发布准备范围均未变化时返回准备是否未完成；否则返回未知。</summary>
+        private bool? ReadPreparationRequired(MachineRuntime runtime, Guid? session, MachineControlOwner? owner,
+            bool taskIdentityKnown, object taskIdentity)
+        {
+            if (_preview != null || runtime == null || !IsObservationCurrent(runtime, session)
+                || (owner != MachineControlOwner.StationFlows && owner != MachineControlOwner.TaskEngine)) return null;
+            try
+            {
+                bool task = owner == MachineControlOwner.TaskEngine;
+                long preparationVersion = runtime.PreparationConfigurationVersion;
+                long observationVersion = runtime.SafetyObservationVersion;
+                if (task && (!IsTaskSessionIdentityCurrent(owner, taskIdentityKnown, taskIdentity)
+                    || _taskPreparationScopeProvider?.Invoke(runtime, session) != true)) return null;
+                bool preparing = runtime.IsPreparing || runtime.IsClearing;
+                bool prepared = runtime.IsPrepared;
+                if ((task && _taskPreparationScopeProvider?.Invoke(runtime, session) != true)
+                    || !ReferenceEquals(runtime, _runtime) || !IsObservationCurrent(runtime, session)
+                    || !IsRuntimeControlOwnerCurrent(runtime, owner)
+                    || !IsTaskSessionIdentityCurrent(owner, taskIdentityKnown, taskIdentity)
+                    || runtime.PreparationConfigurationVersion != preparationVersion
+                    || runtime.SafetyObservationVersion != observationVersion
+                    || runtime.IsPreparing || runtime.IsClearing || preparing) return null;
+                return !prepared;
+            }
+            catch (Exception error)
+            {
+                System.Diagnostics.Trace.TraceWarning("设备总览无法确认准备范围：" + error);
+                return null;
+            }
+        }
         /// <summary>创建总览；无 Runtime 时明确显示未读取。</summary>
         public EquipmentOverviewView()
         {
@@ -289,6 +324,9 @@ namespace MotionControl.Host.Wpf.Operation
         /// <summary>接入当前任务运行会话身份，阻止同一设备连接上不同任务间沿用工位选择。</summary>
         public void SetTaskSessionIdentityProvider(Func<object> provider)
         { _taskSessionIdentityProvider = provider; RefreshDisplay(); }
+        /// <summary>复用设备准备页的任务会话发布校验，不装载任务或读取硬件。</summary>
+        public void SetTaskPreparationScopeProvider(Func<MachineRuntime, Guid?, bool> provider)
+        { _taskPreparationScopeProvider = provider; RefreshDisplay(); }
         /// <summary>接入任务入口的只读工位来源；未读取任务时提供方返回空。</summary>
         public void SetTaskStationProvider(Func<IReadOnlyList<StationOverviewData>> provider)
         { _taskStationProvider = provider; RefreshDisplay(); }
@@ -471,8 +509,9 @@ namespace MotionControl.Host.Wpf.Operation
             SafetySummaryText.Text = safetySummary ?? string.Empty;
             SafetySummaryPanel.Visibility = string.IsNullOrWhiteSpace(safetySummary) ? Visibility.Collapsed : Visibility.Visible;
             bool noNamedAxes = _axisMappingStatusKnown && _configuredAxisCount == 0;
-            bool preparationRequired = !connectionLost && !snapshotFailed && _runtime != null && !_runtime.IsPreparing && !_runtime.IsPrepared
-                && displayState != MachineRunState.Running && displayState != MachineRunState.Pausing;
+            bool? preparationNeeded = !connectionLost && !snapshotFailed
+                ? ReadPreparationRequired(runtime, session, snapshot.ControlOwner, taskIdentityKnown, taskSessionIdentity) : null;
+            bool preparationRequired = preparationNeeded == true && !activeOperation;
             NextActionText.Text = connectionLost ? T("控制器断开后请核对状态") : startBlocked ? _automaticStartBlockReason
                 : startChecking ? T("正在检查启动条件")
                 : showTask && snapshot.Stations.Count == 0 && displayState != MachineRunState.Alarmed && displayState != MachineRunState.Paused && displayState != MachineRunState.Stopped ? T("任务入口操作提示")
@@ -483,10 +522,14 @@ namespace MotionControl.Host.Wpf.Operation
             if (!string.IsNullOrWhiteSpace(safetySummary))
                 NextActionText.Text = recoveryBlocked ? T("恢复阻断核查提示") + (connectionLost || displayState == MachineRunState.Alarmed || activeOperation ? "\n" + NextActionText.Text : string.Empty) : T("资源待核查先查看工位运行");
             // 只在当前连接和运行状态有效时提示准备缺项，不覆盖具体启动阻断或恢复诊断。
-            if (preparationRequired && !activeOperation && !noNamedAxes && (!taskOwner || taskIdentityKnown)
+            if (preparationRequired && !noNamedAxes
                 && !startBlocked && !startChecking && string.IsNullOrWhiteSpace(safetySummary)
                 && (displayState == MachineRunState.ResetRequired || displayState == MachineRunState.Ready))
                 NextActionText.Text = T(displayState == MachineRunState.ResetRequired ? "复位并完成设备准备后核对启动条件" : "完成设备准备后核对启动条件");
+            else if (!preparationNeeded.HasValue && taskOwner && taskIdentityKnown && !activeOperation && !noNamedAxes
+                && !startBlocked && !startChecking && string.IsNullOrWhiteSpace(safetySummary)
+                && (displayState == MachineRunState.ResetRequired || displayState == MachineRunState.Ready))
+                NextActionText.Text = T("准备范围待确认请先核对");
             if (snapshotFailed)
             {
                 NextActionText.Text = T("状态读取失败核查提示")
@@ -496,9 +539,10 @@ namespace MotionControl.Host.Wpf.Operation
             else NextActionText.ToolTip = null;
             bool axisActionRequired = !snapshotFailed && startBlocked
                 && _automaticStartBlockReason.IndexOf("逻辑轴", StringComparison.OrdinalIgnoreCase) >= 0;
-            AutomaticStartActionButton.Content = T(preparationRequired ? "设备准备" : "打开轴手动");
+            bool preparationActionAvailable = preparationRequired && !noNamedAxes;
+            AutomaticStartActionButton.Content = T(preparationActionAvailable ? "设备准备" : "打开轴手动");
             AutomaticStartActionButton.Visibility = string.IsNullOrWhiteSpace(safetySummary)
-                && displayState != MachineRunState.Alarmed && (preparationRequired || axisActionRequired)
+                && !activeOperation && displayState != MachineRunState.Alarmed && (preparationActionAvailable || axisActionRequired)
                 ? Visibility.Visible : Visibility.Collapsed;
             ConnectionStatusPanel.Visibility = snapshotFailed || _preview != null || (_isCardConnected && !noNamedAxes)
                 ? Visibility.Collapsed : Visibility.Visible;
@@ -697,6 +741,13 @@ namespace MotionControl.Host.Wpf.Operation
                     if (_automaticStartReadinessChecking) return T("正在检查启动条件时的建议");
                     if (!string.IsNullOrWhiteSpace(_automaticStartBlockReason))
                         return T("启动条件未满足时的建议") + "\n" + _automaticStartBlockReason;
+                    if (_preview == null)
+                    {
+                        bool? preparation = ReadPreparationRequired(_stationTableRuntime, _stationTableSession, snapshot.ControlOwner,
+                            _stationTableTaskIdentityKnown, _stationTableTaskIdentity);
+                        if (!preparation.HasValue) return T("准备范围待确认请先核对");
+                        if (preparation.Value) return T("完成设备准备后核对启动条件");
+                    }
                     return T("整机就绪时的处理建议");
                 case MachineRunState.Running:
                     return T("整机运行时的处理建议");

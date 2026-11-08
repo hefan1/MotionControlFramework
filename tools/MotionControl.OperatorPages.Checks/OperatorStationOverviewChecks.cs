@@ -78,6 +78,7 @@ namespace MotionControl.OperatorPages.Checks
                 || !((TextBlock)overview.FindName("SelectedStationWaitText")).Text.Contains("未知")
                 || !((TextBlock)overview.FindName("SelectedStationNextText")).Text.Contains("未知")
                 || !((string[])((ListBoxItem)cards.Items[0]).Content)[2].Contains("未知")
+                || ((string[])((ListBoxItem)cards.Items[0]).Content)[4] != "读取失败"
                 || ((TextBlock)overview.FindName("SelectedStationText")).Text.Contains("不应显示的旧建议")
                 || ((Button)overview.FindName("SelectedInputButton")).IsEnabled)
                 throw new InvalidOperationException("工位状态读取失败时仍把步骤、等待或建议显示为当前结论。");

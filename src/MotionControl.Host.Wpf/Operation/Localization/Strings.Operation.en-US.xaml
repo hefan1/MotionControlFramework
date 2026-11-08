@@ -78,7 +78,7 @@
  <sys:String x:Key="操作页.存在停机报警时的复位建议">The machine is waiting for reset with a stop alarm active. Open Current Alarms for its source and recovery guidance. Reset only after the condition clears and the area is safe.</sys:String>
  <sys:String x:Key="操作页.启动条件未满足时的建议">The machine is reset, but Start is blocked by the following condition. Resolve it and check again:</sys:String>
  <sys:String x:Key="操作页.正在检查启动条件时的建议">The system is checking axis, emergency stop and interlock readiness. Check the Start button again shortly.</sys:String>
- <sys:String x:Key="操作页.整机就绪时的处理建议">Start checks passed. Confirm the danger area is clear, then use Start above.</sys:String>
+ <sys:String x:Key="操作页.整机就绪时的处理建议">Verify the start conditions and confirm the danger area is clear before using Start above.</sys:String>
  <sys:String x:Key="操作页.整机运行时的处理建议">Automatic operation is in progress. Use Pause before intervening; this overview does not directly command axes or I/O.</sys:String>
  <sys:String x:Key="操作页.整机暂停时的处理建议">The machine is paused and retains its current steps. Check the equipment and workpieces, then reset and restart as required.</sys:String>
  <sys:String x:Key="操作页.整机报警时的处理建议">The machine is alarmed. Review the current alarm records and recovery guidance. Reset as required after the condition clears.</sys:String>
@@ -96,6 +96,8 @@
  <sys:String x:Key="操作页.检查连接与就绪条件，按设备规则复位后启动">Check connection and readiness, then reset and start as required.</sys:String>
  <sys:String x:Key="操作页.复位并完成设备准备后核对启动条件">Check the connection and site, reset and complete preparation as required, then verify start conditions before starting.</sys:String>
  <sys:String x:Key="操作页.完成设备准备后核对启动条件">Preparation is incomplete. Complete it and verify start conditions before starting.</sys:String>
+ <sys:String x:Key="操作页.准备范围待确认请先核对">Preparation scope is unconfirmed. Check the production page and start conditions.</sys:String>
+ <sys:String x:Key="操作页.总览读取失败">Read failed</sys:String>
  <sys:String x:Key="操作页.设备运行中">Machine running</sys:String>
  <sys:String x:Key="操作页.设备已就绪">Machine ready</sys:String>
  <sys:String x:Key="操作页.启动条件未满足">Start conditions not met</sys:String>

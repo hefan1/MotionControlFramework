@@ -35,7 +35,7 @@ namespace MotionControl.OperatorPages.Checks
                 (FrameworkElement)overview.FindName("OverviewDetailsCard"), "设备总览");
 
             var runtime = new MachineRuntime(new MotionCardGroup(new[] { new GuardCard { IsConnected = true } }),
-                Array.Empty<IStationFlow>(), new MachineAlarmService(), new GuardSafety());
+                new IStationFlow[] { new ReadOnlyFlow() }, new MachineAlarmService(), new GuardSafety());
             runtime.ConfigurePreparations(new[] { new UnpreparedStation() });
             runtime.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
             var liveOverview = new EquipmentOverviewView();
@@ -44,15 +44,29 @@ namespace MotionControl.OperatorPages.Checks
             string action = ((TextBlock)liveOverview.FindName("NextActionText")).Text;
             Require(action.Contains("设备准备") && action.Contains("启动条件") && !action.Contains("复位后启动"),
                 "未完成设备准备时，总览没有提示先完成准备并核对启动条件。实际提示：" + action);
+            var reasonMethod = typeof(EquipmentOverviewView).GetMethod("BuildStationReason", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            var readySnapshot = new OperationSnapshot { State = MachineRunState.Ready, ControlOwner = MachineControlOwner.StationFlows };
+            string Reason() => (string)reasonMethod.Invoke(liveOverview, new object[] { readySnapshot });
+            Require(Reason().Contains("设备准备未完成") && !Reason().Contains("已满足启动检查"),
+                "查看原因声称已满足启动检查，覆盖了尚未完成的设备准备。");
+            liveOverview.SetAutomaticStartReadiness("轴未使能", false);
+            Require(Reason().Contains("轴未使能"), "查看原因覆盖了具体启动拦截。");
+            liveOverview.SetAutomaticStartReadiness(null, true);
+            Require(Reason().Contains("正在检查"), "查看原因覆盖了正在检查的状态。");
+            liveOverview.SetAutomaticStartReadiness(null, false);
             liveOverview.SetAxisMappingStatus(0, 13);
             Require(((TextBlock)liveOverview.FindName("NextActionText")).Text.Contains("轴映射"),
                 "准备提示覆盖了缺少轴映射的当前处理指引。");
+            Require(((Button)liveOverview.FindName("AutomaticStartActionButton")).Visibility == Visibility.Collapsed,
+                "缺少轴映射时仍显示设备准备快捷入口。");
             liveOverview.SetAxisMappingStatus(13, 13);
             var clearing = typeof(MachineRuntime).GetField("_clearing", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
             clearing.SetValue(runtime, true);
             liveOverview.RefreshDisplay();
             Require(((TextBlock)liveOverview.FindName("NextActionText")).Text.Contains("停止清料"),
                 "准备提示覆盖了清料进行中的操作指引。");
+            Require(((Button)liveOverview.FindName("AutomaticStartActionButton")).Visibility == Visibility.Collapsed,
+                "清料进行中仍显示准备或轴手动快捷入口。");
             clearing.SetValue(runtime, false);
             liveOverview.SetConnectionStatus(false, "断连");
             Require(!((TextBlock)liveOverview.FindName("NextActionText")).Text.Contains("完成设备准备"),
@@ -67,6 +81,45 @@ namespace MotionControl.OperatorPages.Checks
             taskOverview.SetRuntime(taskRuntime);
             Require(!((TextBlock)taskOverview.FindName("NextActionText")).Text.Contains("完成设备准备"),
                 "任务会话身份未确认时，仍把旧配置准备状态显示为当前结论。");
+            Require(((Button)taskOverview.FindName("AutomaticStartActionButton")).Visibility == Visibility.Collapsed,
+                "任务会话身份未确认时仍按旧准备配置显示快捷入口。");
+            object validTaskSession = new object();
+            taskOverview.SetTaskSessionIdentityProvider(() => validTaskSession);
+            Require(((Button)taskOverview.FindName("AutomaticStartActionButton")).Visibility == Visibility.Collapsed,
+                "任务准备范围尚未确认发布时仍显示快捷入口。");
+            bool published = true;
+            taskOverview.SetTaskPreparationScopeProvider((current, session) => published);
+            Require(((Button)taskOverview.FindName("AutomaticStartActionButton")).Visibility == Visibility.Visible,
+                "确认当前任务会话后没有恢复设备准备快捷入口。");
+            published = false;
+            taskOverview.RefreshDisplay();
+            Require(((Button)taskOverview.FindName("AutomaticStartActionButton")).Visibility == Visibility.Collapsed
+                && ((TextBlock)taskOverview.FindName("NextActionText")).Text.Contains("准备范围待确认"),
+                "任务仍有身份但准备会话失效时沿用了旧范围或快捷入口。");
+            var taskReadySnapshot = new OperationSnapshot { State = MachineRunState.Ready, ControlOwner = MachineControlOwner.TaskEngine };
+            var taskReason = (string)reasonMethod.Invoke(taskOverview, new object[] { taskReadySnapshot });
+            Require(taskReason.Contains("准备范围待确认") && !taskReason.Contains("已满足启动检查"),
+                "任务准备范围失效后，查看原因仍声称启动检查通过。");
+            int scopeReads = 0;
+            taskOverview.SetTaskPreparationScopeProvider((current, session) => ++scopeReads == 1);
+            Require(((Button)taskOverview.FindName("AutomaticStartActionButton")).Visibility == Visibility.Collapsed
+                && ((TextBlock)taskOverview.FindName("NextActionText")).Text.Contains("准备范围待确认"),
+                "采样过程中发布范围失效后仍显示旧准备结论。");
+            taskOverview.SetTaskPreparationScopeProvider((current, session) => throw new InvalidOperationException("范围读取失败"));
+            Require(((Button)taskOverview.FindName("AutomaticStartActionButton")).Visibility == Visibility.Collapsed,
+                "准备范围校验抛错时仍显示设备准备快捷入口。");
+            taskOverview.SetTaskSessionIdentityProvider(() => throw new InvalidOperationException(new string('错', 1200) + "错误末尾"));
+            Layout(taskOverview, 700, 760);
+            var statusScroll = (ScrollViewer)taskOverview.FindName("TaskRunStatusScroll");
+            Require(statusScroll != null && statusScroll.ScrollableHeight > 0
+                && ((FrameworkElement)taskOverview.FindName("StationTable")).ActualHeight > 50
+                && ((FrameworkElement)taskOverview.FindName("OverviewDetailsCard")).ActualHeight > 100,
+                "长任务读取异常遮挡了工位列表或详情，或者完整错误无法滚动查看。");
+            statusScroll.ScrollToEnd();
+            Layout(taskOverview, 700, 760);
+            Require(statusScroll.VerticalOffset >= statusScroll.ScrollableHeight - 1
+                && ((TextBlock)taskOverview.FindName("TaskRunStatusText")).Text.EndsWith("错误末尾"),
+                "长任务读取异常的末尾不可达。");
         }
 
         /// <summary>宽屏应同时看到列表与详情，窄屏应按阅读顺序改为上下布局。</summary>
