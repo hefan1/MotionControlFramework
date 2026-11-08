@@ -117,6 +117,21 @@ namespace MotionControl.Host.Wpf.Operation
         /// <summary>刷新当前工位状态；不读取另一份映射或推测设备就绪。</summary>
         private void RefreshTimer_Tick(object sender, EventArgs e) { Refresh(); }
 
+        /// <summary>宽屏并排显示准备工位和详情；窄屏保持工位在前并改为上下排列。</summary>
+        private void PreparationWorkspace_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            bool narrow = e.NewSize.Width < 900;
+            if ((Grid.GetColumn(PreparationDetailsCard) == 0) == narrow) return;
+            PreparationListColumn.Width = new GridLength(narrow ? 1 : 3, GridUnitType.Star);
+            PreparationGapColumn.Width = new GridLength(narrow ? 0 : 10);
+            PreparationDetailColumn.Width = narrow ? new GridLength(0) : new GridLength(2, GridUnitType.Star);
+            PreparationListRow.Height = new GridLength(narrow ? 2 : 1, GridUnitType.Star);
+            PreparationGapRow.Height = new GridLength(narrow ? 10 : 0);
+            PreparationDetailRow.Height = narrow ? new GridLength(3, GridUnitType.Star) : new GridLength(0);
+            Grid.SetColumn(PreparationDetailsCard, narrow ? 0 : 2);
+            Grid.SetRow(PreparationDetailsCard, narrow ? 2 : 0);
+        }
+
         /// <summary>将 Runtime 快照转换为简单的工位、状态和动作显示。</summary>
         private void Refresh()
         {

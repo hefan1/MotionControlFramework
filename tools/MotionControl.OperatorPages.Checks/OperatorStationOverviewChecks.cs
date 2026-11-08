@@ -70,6 +70,21 @@ namespace MotionControl.OperatorPages.Checks
             var cards = (ItemsControl)overview.FindName("StationTable");
             if (cards.Items.Count != 2 || ((FrameworkElement)overview.FindName("AggregateMetrics")).Visibility != Visibility.Collapsed)
                 throw new InvalidOperationException("任务工位未显示，或仍显示生产统计。");
+            data[0].StatusReadError = new InvalidOperationException("工位状态读取失败");
+            data[0].NextAction = "不应显示的旧建议";
+            data[0].WaitingInputName = "DI_OLD";
+            overview.RefreshDisplay();
+            if (!((TextBlock)overview.FindName("SelectedStationStepText")).Text.Contains("未知")
+                || !((TextBlock)overview.FindName("SelectedStationWaitText")).Text.Contains("未知")
+                || !((TextBlock)overview.FindName("SelectedStationNextText")).Text.Contains("未知")
+                || !((string[])((ListBoxItem)cards.Items[0]).Content)[2].Contains("未知")
+                || ((TextBlock)overview.FindName("SelectedStationText")).Text.Contains("不应显示的旧建议")
+                || ((Button)overview.FindName("SelectedInputButton")).IsEnabled)
+                throw new InvalidOperationException("工位状态读取失败时仍把步骤、等待或建议显示为当前结论。");
+            data[0].StatusReadError = null;
+            data[0].NextAction = null;
+            data[0].WaitingInputName = null;
+            overview.RefreshDisplay();
             var safetyPanel = (FrameworkElement)overview.FindName("SafetySummaryPanel");
             var safetyText = (TextBlock)overview.FindName("SafetySummaryText");
             overview.SetTaskSafetySummaryProvider(() => "待确认资源：1 组；保持输出状态待核查");

@@ -24,6 +24,9 @@ namespace MotionControl.OperatorPages.Checks
             if (ScrollViewer.GetVerticalScrollBarVisibility(table) != ScrollBarVisibility.Auto || ScrollViewer.GetHorizontalScrollBarVisibility(table) != ScrollBarVisibility.Auto)
                 throw new InvalidOperationException("窄窗或多工位不能滚动");
             if (table.Items.Count != 2) throw new InvalidOperationException("总览未采用实际工位集合");
+            var first = (ListBoxItem)table.Items[0];
+            if (((string[])first.Content)[4] != "未提供" || !((string)first.ToolTip).Contains("采样来源"))
+                throw new InvalidOperationException("缺少读取质量时，表格未直接显示未提供或丢失采样说明。");
             if (!((TextBlock)view.FindName("SelectedStationText")).Text.Contains("未提供")) throw new InvalidOperationException("缺步骤未标未提供");
             OperatorNavigationEventArgs route = null;
             view.NavigationRequested += (sender, args) => route = args;
@@ -42,6 +45,8 @@ namespace MotionControl.OperatorPages.Checks
             view.SetLanguage("en-US");
             if (!Equals(columns[0].Header, "Station / module") || !Equals(columns[4].Header, "Read quality"))
                 throw new InvalidOperationException("英文总览表头未切换");
+            if (((string[])((ListBoxItem)table.Items[0]).Content)[4] != "Not provided")
+                throw new InvalidOperationException("英文读取质量缺失结论未显示。");
             if (!ReferenceEquals(previousSelection, table.SelectedItem)) throw new InvalidOperationException("语言切换丢失真实选择");
             view.SetLanguage("zh-CN");
             view.SetConnectionStatus(false, "断连");

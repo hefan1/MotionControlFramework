@@ -33,32 +33,69 @@
     </StackPanel>
    </DockPanel>
   </Border>
-  <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,12,0,10"><StackPanel>
-   <Border x:Name="TaskRunPanel" Background="White" BorderBrush="#D9E0E8" BorderThickness="1" CornerRadius="6" Padding="16" Margin="0,0,0,10" Visibility="Collapsed">
+  <Grid Grid.Row="1" Margin="0,12,0,10"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+   <Border x:Name="TaskRunPanel" Background="White" BorderBrush="#D9E0E8" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,0,0,10" Visibility="Collapsed">
     <StackPanel>
      <TextBlock Text="{DynamicResource 操作页.任务运行}" FontSize="20" FontWeight="SemiBold" Foreground="#26384D"/>
      <TextBlock x:Name="TaskRunStatusText" TextWrapping="Wrap" Margin="0,10,0,10" Foreground="#40536A"/>
      <Button Content="{DynamicResource 操作页.查看任务运行}" Click="OpenTaskRun_Click" HorizontalAlignment="Left" Padding="12,6"/>
     </StackPanel>
    </Border>
-   <TextBlock x:Name="EmptyText" Foreground="#596B7D" TextWrapping="Wrap" Margin="5,12"/>
-   <ListView x:Name="StationTable" MaxHeight="340" SelectionChanged="StationTable_SelectionChanged" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto">
-    <ListView.Resources><Style TargetType="TextBlock"><Setter Property="TextTrimming" Value="CharacterEllipsis"/><Setter Property="ToolTip" Value="{Binding Text, RelativeSource={RelativeSource Self}}"/></Style></ListView.Resources>
-    <ListView.View><GridView AllowsColumnReorder="False">
-     <GridViewColumn Header="{DynamicResource 操作页.总览列工位}" Width="150" DisplayMemberBinding="{Binding [0]}"/>
-     <GridViewColumn Header="{DynamicResource 操作页.总览列状态}" Width="180" DisplayMemberBinding="{Binding [1]}"/>
-     <GridViewColumn Header="{DynamicResource 操作页.总览列步骤}" Width="230" DisplayMemberBinding="{Binding [2]}"/>
-     <GridViewColumn Header="{DynamicResource 操作页.总览列等待}" Width="160" DisplayMemberBinding="{Binding [3]}"/>
-     <GridViewColumn Header="{DynamicResource 操作页.总览列质量}" Width="230" DisplayMemberBinding="{Binding [4]}"/>
-    </GridView></ListView.View>
-   </ListView>
-   <TextBlock x:Name="SelectedStationText" TextWrapping="Wrap" FontSize="14" Margin="8" />
-   <WrapPanel Margin="8">
-    <Button x:Name="SelectedFlowButton" Content="{DynamicResource 操作页.查看流程}" Click="OpenFlow" Padding="10,4" />
-    <Button x:Name="SelectedReasonButton" Content="{DynamicResource 操作页.查看原因}" Click="OpenReason" Padding="10,4" Margin="8,0" />
-    <Button x:Name="SelectedInputButton" Content="{DynamicResource 操作页.核对输入}" Click="OpenStationInput" Padding="10,4" />
-   </WrapPanel>
-  </StackPanel></ScrollViewer>
+   <TextBlock x:Name="EmptyText" Grid.Row="1" Foreground="#596B7D" TextWrapping="Wrap" Margin="5,6"/>
+   <Grid x:Name="OverviewWorkspace" Grid.Row="2" SizeChanged="OverviewWorkspace_SizeChanged">
+    <Grid.ColumnDefinitions><ColumnDefinition x:Name="OverviewListColumn" Width="3*"/><ColumnDefinition x:Name="OverviewGapColumn" Width="10"/><ColumnDefinition x:Name="OverviewDetailColumn" Width="2*"/></Grid.ColumnDefinitions>
+    <Grid.RowDefinitions><RowDefinition x:Name="OverviewListRow" Height="*"/><RowDefinition x:Name="OverviewGapRow" Height="0"/><RowDefinition x:Name="OverviewDetailRow" Height="0"/></Grid.RowDefinitions>
+    <Border Background="White" BorderBrush="#D9E0E8" BorderThickness="1" CornerRadius="6" Padding="10">
+     <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+      <TextBlock Text="{DynamicResource 操作页.总览工位列表标题}" FontSize="16" FontWeight="SemiBold" Foreground="#26384D" Margin="2,0,0,10"/>
+      <ListView x:Name="StationTable" Grid.Row="1" SelectionChanged="StationTable_SelectionChanged" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto">
+       <ListView.Resources><Style TargetType="TextBlock"><Setter Property="TextTrimming" Value="CharacterEllipsis"/><Setter Property="ToolTip" Value="{Binding Text, RelativeSource={RelativeSource Self}}"/></Style></ListView.Resources>
+       <ListView.View><GridView AllowsColumnReorder="False">
+        <GridViewColumn Header="{DynamicResource 操作页.总览列工位}" Width="130" DisplayMemberBinding="{Binding [0]}"/>
+        <GridViewColumn Header="{DynamicResource 操作页.总览列状态}" Width="135" DisplayMemberBinding="{Binding [1]}"/>
+        <GridViewColumn Header="{DynamicResource 操作页.总览列步骤}" Width="145" DisplayMemberBinding="{Binding [2]}"/>
+        <GridViewColumn Header="{DynamicResource 操作页.总览列等待}" Width="125" DisplayMemberBinding="{Binding [3]}"/>
+        <GridViewColumn Header="{DynamicResource 操作页.总览列质量}" Width="125" DisplayMemberBinding="{Binding [4]}"/>
+       </GridView></ListView.View>
+      </ListView>
+     </Grid>
+    </Border>
+    <Border x:Name="OverviewDetailsCard" Grid.Column="2" Background="White" BorderBrush="#D9E0E8" BorderThickness="1" CornerRadius="6" Padding="14">
+     <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+      <TextBlock Text="{DynamicResource 操作页.总览工位详情标题}" FontSize="16" FontWeight="SemiBold" Foreground="#26384D" Margin="0,0,0,10"/>
+      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+       <StackPanel>
+        <StackPanel x:Name="OverviewSelectionMessage">
+         <TextBlock Text="{DynamicResource 操作页.总览选择工位提示}" TextWrapping="Wrap" Foreground="#596B7D">
+          <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Text, ElementName=SelectedStationText}" Value=""><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+         </TextBlock>
+         <TextBlock Text="{Binding Text, ElementName=SelectedStationText}" TextWrapping="Wrap" FontSize="14" Foreground="#40536A"/>
+        </StackPanel>
+        <StackPanel x:Name="OverviewSelectionFields" Visibility="Collapsed">
+         <TextBlock x:Name="SelectedStationNameText" FontSize="16" FontWeight="SemiBold" Foreground="#26384D" TextWrapping="Wrap"/>
+         <TextBlock Text="{DynamicResource 操作页.总览当前状态标签}" Foreground="#596B7D" Margin="0,12,0,3"/>
+         <TextBlock x:Name="SelectedStationStateText" FontWeight="SemiBold" Foreground="#26384D" TextWrapping="Wrap"/>
+         <TextBlock Text="{DynamicResource 操作页.当前步骤}" Foreground="#596B7D" Margin="0,12,0,3"/>
+         <TextBlock x:Name="SelectedStationStepText" FontWeight="SemiBold" Foreground="#26384D" TextWrapping="Wrap"/>
+         <TextBlock Text="{DynamicResource 操作页.总览等待反馈标签}" Foreground="#596B7D" Margin="0,12,0,3"/>
+         <TextBlock x:Name="SelectedStationWaitText" FontWeight="SemiBold" Foreground="#26384D" TextWrapping="Wrap"/>
+         <TextBlock Text="{DynamicResource 操作页.工位下一步建议}" Foreground="#596B7D" Margin="0,12,0,3"/>
+         <TextBlock x:Name="SelectedStationNextText" FontWeight="SemiBold" Foreground="#26384D" TextWrapping="Wrap"/>
+         <Expander Header="{DynamicResource 操作页.总览完整详情}" Margin="0,12,0,0">
+          <TextBlock x:Name="SelectedStationText" TextWrapping="Wrap" Foreground="#40536A" Margin="0,6,0,0"/>
+         </Expander>
+        </StackPanel>
+       </StackPanel>
+      </ScrollViewer>
+      <WrapPanel Grid.Row="2" Margin="0,10,0,0">
+       <Button x:Name="SelectedFlowButton" Content="{DynamicResource 操作页.查看流程}" Click="OpenFlow" Padding="10,4" Margin="0,0,8,4"/>
+       <Button x:Name="SelectedReasonButton" Content="{DynamicResource 操作页.查看原因}" Click="OpenReason" Padding="10,4" Margin="0,0,8,4"/>
+       <Button x:Name="SelectedInputButton" Content="{DynamicResource 操作页.核对输入}" Click="OpenStationInput" Padding="10,4" Margin="0,0,0,4"/>
+      </WrapPanel>
+     </Grid>
+    </Border>
+   </Grid>
+  </Grid>
   <!-- 保留旧控件名以兼容检查；运行统计不占用操作员总览。 -->
   <Grid x:Name="AggregateMetrics" Grid.Row="2" Visibility="Collapsed"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
    <Border Style="{StaticResource 内容边框}" Padding="16"><StackPanel><TextBlock Text="{DynamicResource 操作页.本次完成}" FontWeight="SemiBold"/><TextBlock x:Name="CompletedText" FontSize="30" Foreground="#2375D1" Margin="0,7,0,0"/></StackPanel></Border>

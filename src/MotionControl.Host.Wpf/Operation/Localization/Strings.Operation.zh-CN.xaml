@@ -1,4 +1,12 @@
 ﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:sys="clr-namespace:System;assembly=mscorlib">
+ <sys:String x:Key="操作页.准备工位列表标题">准备工位 / 当前状态</sys:String>
+ <sys:String x:Key="操作页.准备详情标题">所选工位 / 准备范围</sys:String>
+ <sys:String x:Key="操作页.总览工位列表标题">工位运行摘要</sys:String>
+ <sys:String x:Key="操作页.总览工位详情标题">所选工位 / 当前状态</sys:String>
+ <sys:String x:Key="操作页.总览选择工位提示">选择工位后查看当前状态与等待信息。</sys:String>
+ <sys:String x:Key="操作页.总览当前状态标签">当前状态</sys:String>
+ <sys:String x:Key="操作页.总览等待反馈标签">等待条件与当前反馈</sys:String>
+ <sys:String x:Key="操作页.总览完整详情">查看完整工位详情</sys:String>
  <sys:String x:Key="操作页.任务运行">工位运行</sys:String>
  <sys:String x:Key="操作页.当前未启用自动运行">当前未启用自动运行，可进行手动调试。</sys:String>
  <sys:String x:Key="操作页.查看任务运行">查看工位运行</sys:String>
@@ -86,6 +94,8 @@
  <sys:String x:Key="操作页.未启用自动工位，可进入轴手动和 IO 监控页面调试">未启用自动工位，可进入轴手动和 IO 监控页面调试</sys:String>
  <sys:String x:Key="操作页.检查急停与轴状态，整机复位后可进行手动调试">检查急停与轴状态，整机复位后可进行手动调试</sys:String>
  <sys:String x:Key="操作页.检查连接与就绪条件，按设备规则复位后启动">检查连接与就绪条件，按设备规则复位后启动</sys:String>
+ <sys:String x:Key="操作页.复位并完成设备准备后核对启动条件">检查连接和现场，按设备规则复位并完成设备准备；核对启动条件后再启动。</sys:String>
+ <sys:String x:Key="操作页.完成设备准备后核对启动条件">设备准备未完成；完成准备并核对启动条件后再启动。</sys:String>
  <sys:String x:Key="操作页.设备运行中">设备运行中</sys:String>
  <sys:String x:Key="操作页.设备已就绪">设备已就绪</sys:String>
  <sys:String x:Key="操作页.启动条件未满足">启动条件未满足</sys:String>

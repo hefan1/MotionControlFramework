@@ -115,6 +115,8 @@ namespace MotionControl.Host.Wpf.Operation
             string key = station == null ? null : string.IsNullOrEmpty(station.Id) ? station.Name : station.Id;
             if (item == null)
             {
+                OverviewSelectionFields.Visibility = Visibility.Collapsed;
+                OverviewSelectionMessage.Visibility = Visibility.Visible;
                 bool taskIdentityMissing = !_stationTableTaskNotLoaded && snapshot?.ControlOwner == MachineControlOwner.TaskEngine
                     && (!_stationTableTaskIdentityKnown || _stationTableTaskIdentity == null);
                 SelectedStationText.Text = _stationTableTaskNotLoaded ? string.Empty : taskIdentityMissing ? T("任务会话身份待确认")
@@ -131,6 +133,8 @@ namespace MotionControl.Host.Wpf.Operation
             bool connectionCurrent = IsObservationCurrent(_stationTableRuntime, _stationTableSession);
             if (!taskIdentityCurrent || !controlOwnerCurrent || !connectionCurrent)
             {
+                OverviewSelectionFields.Visibility = Visibility.Collapsed;
+                OverviewSelectionMessage.Visibility = Visibility.Visible;
                 _updatingStationTable = true;
                 StationTable.SelectedIndex = -1;
                 _updatingStationTable = false;
@@ -147,11 +151,19 @@ namespace MotionControl.Host.Wpf.Operation
 
             _selectionNeedsUserChoice = false;
             SelectedStationText.Text = item.ToolTip as string ?? string.Empty;
+            OverviewSelectionMessage.Visibility = Visibility.Collapsed;
+            OverviewSelectionFields.Visibility = Visibility.Visible;
+            SelectedStationNameText.Text = station.Name;
+            SelectedStationStateText.Text = (item.Content as string[])?[1] ?? T("未提供");
+            bool stationReadFailed = station.StatusReadError != null;
+            SelectedStationStepText.Text = stationReadFailed ? T("总览数据未知") : string.IsNullOrWhiteSpace(station.CurrentStep) ? T("总览未提供") : station.CurrentStep;
+            SelectedStationWaitText.Text = stationReadFailed ? T("总览数据未知") : StationOperatorPresentation.DescribeWaitItems(station.WaitItems, station.HasWaitInformation, T);
+            SelectedStationNextText.Text = stationReadFailed ? T("总览数据未知") : string.IsNullOrWhiteSpace(station.NextAction) ? T("未提供") : station.NextAction;
             bool unique = key != null && snapshot != null && FindStation(snapshot, key) != null
                 && taskIdentityCurrent && controlOwnerCurrent && connectionCurrent;
             SelectedFlowButton.Tag = SelectedReasonButton.Tag = SelectedInputButton.Tag = key;
             SelectedFlowButton.IsEnabled = SelectedReasonButton.IsEnabled = unique;
-            SelectedInputButton.IsEnabled = unique && !string.IsNullOrWhiteSpace(station.WaitingInputName);
+            SelectedInputButton.IsEnabled = unique && !stationReadFailed && !string.IsNullOrWhiteSpace(station.WaitingInputName);
             SelectedInputButton.Visibility = SelectedInputButton.IsEnabled ? Visibility.Visible : Visibility.Collapsed;
         }
         /// <summary>按当前真实来源生成可滚动工位表；没有稳定身份不跨刷新猜测选择。</summary>
@@ -206,8 +218,8 @@ namespace MotionControl.Host.Wpf.Operation
                 string state = connectionLost || station.StatusReadError != null ? T("总览数据未知")
                     : string.IsNullOrWhiteSpace(station.StateText)
                         ? T(StationOperatorPresentation.StateKey(station.IndependentState)) : station.StateText;
-                string step = connectionLost ? T("总览数据未知") : string.IsNullOrWhiteSpace(station.CurrentStep) ? T("总览未提供") : station.CurrentStep;
-                string wait = connectionLost ? T("总览数据未知")
+                string step = connectionLost || station.StatusReadError != null ? T("总览数据未知") : string.IsNullOrWhiteSpace(station.CurrentStep) ? T("总览未提供") : station.CurrentStep;
+                string wait = connectionLost || station.StatusReadError != null ? T("总览数据未知")
                     : StationOperatorPresentation.DescribeWaitItems(station.WaitItems, station.HasWaitInformation, T);
                 string description = station.Name + "\n" + state + "\n" + T(OperationUi.StepLabelKey(snapshot.State, station)) + "\n" + step + "\n" + wait + "\n" + T("总览采样缺省");
                 var item = key == null ? null : StationTable.Items.OfType<ListBoxItem>().FirstOrDefault(existing => Equals(existing.Tag, key));
@@ -224,7 +236,8 @@ namespace MotionControl.Host.Wpf.Operation
                 item.Tag = key;
                 item.DataContext = station;
                 item.ToolTip = description + "\n\n" + DescribeStationEvidence(station);
-                item.Content = new[] { station.Name, state, T(OperationUi.StepLabelKey(snapshot.State, station)) + "：" + step, wait, T("总览采样缺省") };
+                // 质量结论放在单元格首位，完整的来源与采样说明保留在工位详情中。
+                item.Content = new[] { station.Name, state, T(OperationUi.StepLabelKey(snapshot.State, station)) + "：" + step, wait, T("未提供") };
                 if (key != null && Equals(key, _selectedStationKey)) StationTable.SelectedItem = item;
             }
             while (StationTable.Items.Count > snapshot.Stations.Count) StationTable.Items.RemoveAt(StationTable.Items.Count - 1);
@@ -320,6 +333,21 @@ namespace MotionControl.Host.Wpf.Operation
         private void ViewUnloaded(object sender, RoutedEventArgs e) { _timer.Stop(); }
         /// <summary>定时仅采样内存状态，不读取卡 SDK。</summary>
         private void TimerTick(object sender, EventArgs e) { RefreshDisplay(); }
+
+        /// <summary>宽屏并排显示工位和详情；窄屏按工位列表、详情的顺序排列。</summary>
+        private void OverviewWorkspace_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            bool narrow = e.NewSize.Width < 900;
+            if ((Grid.GetColumn(OverviewDetailsCard) == 0) == narrow) return;
+            OverviewListColumn.Width = new GridLength(narrow ? 1 : 3, GridUnitType.Star);
+            OverviewGapColumn.Width = new GridLength(narrow ? 0 : 10);
+            OverviewDetailColumn.Width = narrow ? new GridLength(0) : new GridLength(2, GridUnitType.Star);
+            OverviewListRow.Height = new GridLength(narrow ? 2 : 1, GridUnitType.Star);
+            OverviewGapRow.Height = new GridLength(narrow ? 10 : 0);
+            OverviewDetailRow.Height = narrow ? new GridLength(3, GridUnitType.Star) : new GridLength(0);
+            Grid.SetColumn(OverviewDetailsCard, narrow ? 0 : 2);
+            Grid.SetRow(OverviewDetailsCard, narrow ? 2 : 0);
+        }
         /// <summary>展示当前工位动作、等待和报警；两种流程使用各自真实来源。</summary>
         public void RefreshDisplay()
         {
@@ -443,6 +471,8 @@ namespace MotionControl.Host.Wpf.Operation
             SafetySummaryText.Text = safetySummary ?? string.Empty;
             SafetySummaryPanel.Visibility = string.IsNullOrWhiteSpace(safetySummary) ? Visibility.Collapsed : Visibility.Visible;
             bool noNamedAxes = _axisMappingStatusKnown && _configuredAxisCount == 0;
+            bool preparationRequired = !connectionLost && !snapshotFailed && _runtime != null && !_runtime.IsPreparing && !_runtime.IsPrepared
+                && displayState != MachineRunState.Running && displayState != MachineRunState.Pausing;
             NextActionText.Text = connectionLost ? T("控制器断开后请核对状态") : startBlocked ? _automaticStartBlockReason
                 : startChecking ? T("正在检查启动条件")
                 : showTask && snapshot.Stations.Count == 0 && displayState != MachineRunState.Alarmed && displayState != MachineRunState.Paused && displayState != MachineRunState.Stopped ? T("任务入口操作提示")
@@ -452,6 +482,11 @@ namespace MotionControl.Host.Wpf.Operation
             if (clearing && !connectionLost && displayState != MachineRunState.Alarmed) NextActionText.Text = T("清料进行中操作提示");
             if (!string.IsNullOrWhiteSpace(safetySummary))
                 NextActionText.Text = recoveryBlocked ? T("恢复阻断核查提示") + (connectionLost || displayState == MachineRunState.Alarmed || activeOperation ? "\n" + NextActionText.Text : string.Empty) : T("资源待核查先查看工位运行");
+            // 只在当前连接和运行状态有效时提示准备缺项，不覆盖具体启动阻断或恢复诊断。
+            if (preparationRequired && !activeOperation && !noNamedAxes && (!taskOwner || taskIdentityKnown)
+                && !startBlocked && !startChecking && string.IsNullOrWhiteSpace(safetySummary)
+                && (displayState == MachineRunState.ResetRequired || displayState == MachineRunState.Ready))
+                NextActionText.Text = T(displayState == MachineRunState.ResetRequired ? "复位并完成设备准备后核对启动条件" : "完成设备准备后核对启动条件");
             if (snapshotFailed)
             {
                 NextActionText.Text = T("状态读取失败核查提示")
@@ -459,8 +494,6 @@ namespace MotionControl.Host.Wpf.Operation
                 NextActionText.ToolTip = snapshot.LastError;
             }
             else NextActionText.ToolTip = null;
-            bool preparationRequired = !connectionLost && !snapshotFailed && _runtime != null && !_runtime.IsPreparing && !_runtime.IsPrepared
-                && displayState != MachineRunState.Running && displayState != MachineRunState.Pausing;
             bool axisActionRequired = !snapshotFailed && startBlocked
                 && _automaticStartBlockReason.IndexOf("逻辑轴", StringComparison.OrdinalIgnoreCase) >= 0;
             AutomaticStartActionButton.Content = T(preparationRequired ? "设备准备" : "打开轴手动");
@@ -628,24 +661,26 @@ namespace MotionControl.Host.Wpf.Operation
         {
             var station = ReadNavigationStation((string)((Button)sender).Tag, out var snapshot);
             if (station == null) return;
-            string reason = snapshot.IsPreview && !string.IsNullOrEmpty(station.PreviewReason)
+            string reason = station.StatusReadError == null && snapshot.IsPreview && !string.IsNullOrEmpty(station.PreviewReason)
                 ? station.PreviewReason
                 : DescribeStationEvidence(station) + "\n\n" + T("整机状态") + "：\n" + BuildStationReason(snapshot);
             string alarmSection = string.Empty; // 未提供明确报警归属接口，不按同名推断。
-            MessageBox.Show(station.Name + "\n" + T(OperationUi.StepLabelKey(snapshot.State, station)) + "：" + station.CurrentStep
+            string currentStep = station.StatusReadError == null ? station.CurrentStep : T("总览数据未知");
+            MessageBox.Show(station.Name + "\n" + T(OperationUi.StepLabelKey(snapshot.State, station)) + "：" + currentStep
                 + "\n\n" + reason + alarmSection,
                 T("工位状态与处理建议"), MessageBoxButton.OK, MessageBoxImage.Information);
         }
         /// <summary>集中显示工位结构化等待和原始说明；没有来源的建议、完成判据保持未提供。</summary>
         private string DescribeStationEvidence(StationOverviewData station)
         {
+            if (station.StatusReadError != null)
+                return T("总览数据未知") + "\n" + station.StatusReadError;
             string result = StationOperatorPresentation.DescribeWaitItems(station.WaitItems, station.HasWaitInformation, T);
             if (!string.IsNullOrWhiteSpace(station.Detail)) result += "\n" + station.Detail;
             result += "\n" + T("工位下一步建议") + "：" + (station.NextAction ?? T("未提供"));
             result += "\n" + T("工位完成判据") + "：" + (station.CompletionCondition ?? T("未提供"));
             if (station.StatusCapturedAtUtc.HasValue)
                 result += "\n" + T("工位状态记录时间") + "：" + station.StatusCapturedAtUtc.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
-            if (station.StatusReadError != null) result += "\n" + station.StatusReadError.ToString();
             return result;
         }
 
@@ -684,7 +719,8 @@ namespace MotionControl.Host.Wpf.Operation
             string key = (string)((Button)sender).Tag;
             var displayed = _stationTableSnapshot == null ? null : FindStation(_stationTableSnapshot, key);
             var station = ReadNavigationStation(key, out _);
-            if (station == null || string.IsNullOrWhiteSpace(station.WaitingInputName)) return;
+            if (station == null || station.StatusReadError != null || displayed?.StatusReadError != null
+                || string.IsNullOrWhiteSpace(station.WaitingInputName)) return;
             if (!string.Equals(station.WaitingInputName, displayed?.WaitingInputName, StringComparison.OrdinalIgnoreCase))
             {
                 RefreshDisplay();

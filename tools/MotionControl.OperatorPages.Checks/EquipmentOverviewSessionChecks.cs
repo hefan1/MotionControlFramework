@@ -94,7 +94,10 @@ namespace MotionControl.OperatorPages.Checks
             Require(taskStations.SelectedIndex == 0, "同一任务会话内刷新丢失了有效工位选择。");
             taskSessionIdentity = new object();
             taskPage.SetTaskStationProvider(() => new[] { new StationOverviewData
-                { Id = "S01", Name = "新工位名称", CurrentStep = "新会话步骤", WaitingInputName = "DI_New" } });
+                { Id = "S01", Name = "新工位名称", CurrentStep = "新会话步骤", WaitingInputName = "DI_New",
+                    HasWaitInformation = true, NextAction = "核对输入",
+                    WaitItems = new[] { new StationWaitItem(StationWaitKind.Input, null, StationObjectKind.Input,
+                        "DI_New", "DI_New", "True", "True", StationValueQuality.Unknown) } } });
             Require(taskStations.SelectedIndex == -1 && !taskFlow.IsEnabled && taskDetail.Text.Contains("重新选择当前工位")
                 && !taskDetail.Text.Contains("旧工位名称"), "任务会话更换后仍显示或定向到同名旧工位。");
             taskStations.SelectedIndex = 0;
@@ -102,6 +105,13 @@ namespace MotionControl.OperatorPages.Checks
                 && taskFlow.IsEnabled && taskInput.IsEnabled,
                 "明确选择后仍显示旧任务会话详情。选中行=" + taskStations.SelectedIndex
                     + "，流程按钮可用=" + taskFlow.IsEnabled + "，详情=" + taskDetail.Text);
+            Require(((FrameworkElement)taskPage.FindName("OverviewSelectionFields")).Visibility == Visibility.Visible
+                && ((TextBlock)taskPage.FindName("SelectedStationNameText")).Text == "新工位名称"
+                && ((TextBlock)taskPage.FindName("SelectedStationStepText")).Text == "新会话步骤"
+                && ((TextBlock)taskPage.FindName("SelectedStationWaitText")).Text.Contains("DI_New")
+                && ((TextBlock)taskPage.FindName("SelectedStationWaitText")).Text.Contains("未知")
+                && ((TextBlock)taskPage.FindName("SelectedStationNextText")).Text == "核对输入",
+                "右侧工位摘要没有使用当前会话的步骤、等待质量和下一步。");
             taskInput.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Require(taskTarget?.IoPointName == "DI_New" && taskCard.Calls == 0,
                 "明确选择新工位后仍沿用旧会话等待输入或调用了硬件。");
@@ -119,6 +129,7 @@ namespace MotionControl.OperatorPages.Checks
             taskStations.SelectedIndex = 0;
             identityProvider.Invoke(taskPage, new object[] { null });
             Require(taskStations.Items.Count == 0 && taskStations.SelectedIndex == -1
+                && ((FrameworkElement)taskPage.FindName("OverviewSelectionFields")).Visibility == Visibility.Collapsed
                 && !taskFlow.IsEnabled && taskDetail.Text.Contains("身份未确认")
                 && taskStatus.Text.Contains("身份未确认") && !taskStatus.Text.Contains("采样期间发生变化"),
                 "任务身份提供器缺失时仍显示可被误认成当前的工位数据。");
