@@ -112,8 +112,9 @@ namespace MotionControl.TaskEngine.Configuration
                 foreach (JProperty property in files.Properties())
                 {
                     string path = RequireAllowedPath(property.Name);
-                    if (property.Value.Type != JTokenType.String || !contents.TryAddCompatible(path, (string)property.Value))
+                    if (property.Value.Type != JTokenType.String || contents.ContainsKey(path))
                         throw new InvalidDataException("工程配置路径重复或内容无效：" + path);
+                    contents.Add(path, (string)property.Value);
                     if (hashes[path]?.Type != JTokenType.String || !string.Equals((string)hashes[path], HashText((string)property.Value), StringComparison.Ordinal))
                         throw new InvalidDataException("工程配置完整性检查失败：" + path);
                 }
@@ -302,13 +303,5 @@ namespace MotionControl.TaskEngine.Configuration
             }
             finally { if (File.Exists(temporary)) File.Delete(temporary); }
         }
-    }
-
-    /// <summary>为 net48 提供字典的显式去重插入。</summary>
-    internal static class ProjectDictionaryExtensions
-    {
-        /// <summary>已包含键时保留原值并返回 false。</summary>
-        internal static bool TryAddCompatible(this Dictionary<string, string> dictionary, string key, string value)
-        { if (dictionary.ContainsKey(key)) return false; dictionary.Add(key, value); return true; }
     }
 }
