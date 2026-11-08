@@ -166,32 +166,36 @@ namespace MotionControl.StructuredDiagnostics.Checks
                 "交接等待混入了最近完成周期的旧节点。");
         }
 
-        /// <summary>组合条件中尚未求值的变量仍有引用；常量左侧不能遮蔽右侧未知变量。</summary>
+        /// <summary>组合条件保留合法变量标识及未知、未读取质量；特殊显示名称不改变稳定引用。</summary>
         internal static void UnreadConditionReferences()
         {
             var device = new InMemoryTaskDevice(Fixtures.Catalog());
+            var variables = device.ReadVariables();
+            Fixtures.Require(variables.Single(value => value.Name == Fixtures.UnknownVariable).DisplayName == Fixtures.UnknownVariableDisplayName
+                && variables.Single(value => value.Name == Fixtures.UnreadVariable).DisplayName == Fixtures.UnreadVariableDisplayName,
+                "变量的特殊显示名称没有与合法稳定标识分别保存。");
             var all = new TaskCondition { Kind = TaskConditionKind.All, Conditions = new List<TaskCondition> {
-                Fixtures.Compare(Fixtures.Variable("A;未知=1"), Fixtures.True()),
-                Fixtures.Compare(Fixtures.Variable("B=未读取;2"), Fixtures.True())
+                Fixtures.Compare(Fixtures.Variable(Fixtures.UnknownVariable), Fixtures.True()),
+                Fixtures.Compare(Fixtures.Variable(Fixtures.UnreadVariable), Fixtures.True())
             } };
             bool decision;
             string reason;
             var observations = new List<TaskObservedValue>();
             bool known = TaskConditionEvaluator.TryEvaluate(all, device.Catalog, device.ReadVariables(), out decision, out reason, observations);
-            Fixtures.Require(!known && observations.Any(value => value.ObjectId == "A;未知=1" && value.Quality == StationValueQuality.Unknown)
-                && observations.Any(value => value.ObjectId == "B=未读取;2" && value.Quality == StationValueQuality.NotProvided),
+            Fixtures.Require(!known && observations.Any(value => value.ObjectId == Fixtures.UnknownVariable && value.Quality == StationValueQuality.Unknown)
+                && observations.Any(value => value.ObjectId == Fixtures.UnreadVariable && value.Quality == StationValueQuality.NotProvided),
                 "组合条件的未知或尚未读取变量被遗漏，或后续变量被伪装成已采样。");
             observations.Clear();
-            known = TaskConditionEvaluator.TryEvaluate(Fixtures.Compare(Fixtures.True(), Fixtures.Variable("B=未读取;2")),
+            known = TaskConditionEvaluator.TryEvaluate(Fixtures.Compare(Fixtures.True(), Fixtures.Variable(Fixtures.UnreadVariable)),
                 device.Catalog, device.ReadVariables(), out decision, out reason, observations);
-            Fixtures.Require(!known && observations.Any(value => value.ObjectId == "B=未读取;2"
+            Fixtures.Require(!known && observations.Any(value => value.ObjectId == Fixtures.UnreadVariable
                 && value.ObjectKind == StationObjectKind.Variable && value.Quality == StationValueQuality.Unknown),
                 "常量左侧遮蔽了右侧未知变量的稳定对象引用。");
             IReadOnlyList<TaskObservedValue> interlockValues = TaskNodeExecutor.DescribeInterlockWaits(
                 new TaskInterlock { Condition = all },
-                Fixtures.Compare(Fixtures.True(), Fixtures.Variable("B=未读取;2")), false);
-            Fixtures.Require(interlockValues.Any(value => value.ObjectId == "A;未知=1")
-                && interlockValues.Any(value => value.ObjectId == "B=未读取;2")
+                Fixtures.Compare(Fixtures.True(), Fixtures.Variable(Fixtures.UnreadVariable)), false);
+            Fixtures.Require(interlockValues.Any(value => value.ObjectId == Fixtures.UnknownVariable)
+                && interlockValues.Any(value => value.ObjectId == Fixtures.UnreadVariable)
                 && interlockValues.All(value => value.Actual == null && value.Quality == StationValueQuality.NotProvided),
                 "互锁条件没有列出完整变量引用，或把设备的整组结论伪装成逐项采样。");
         }

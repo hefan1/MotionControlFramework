@@ -17,6 +17,7 @@ using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.Framework.Runtime.Machine;
 using MotionControl.Host.Wpf;
 using MotionControl.Host.Wpf.Operation;
+using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Editing;
 using MotionControl.TaskEngine.Wpf.Editing;
@@ -262,18 +263,23 @@ namespace MotionControl.OperatorPages.Checks
             bool rejected = false; try { view.SetPreview(new OperationSnapshot()); } catch (ArgumentException) { rejected = true; }
             Assert(rejected, "未标记的快照可伪装成预览。");
         }
-        /// <summary>验证顶部启动拦截和整机状态在总览卡片与流程状态页中保持一致。</summary>
+        /// <summary>验证跨页整机启动拦截一致，且不会覆盖工位自身的等待、暂停和未提供状态。</summary>
         private static void StartReadinessConsistency()
         {
             const string reason = "逻辑轴 'Unload_X' 尚未回零；工位 '下料工位' 启动前需要先完成回零。";
             var snapshot = FourWorkspacesPreviewWindow.CreateExampleSnapshot();
             snapshot.State = MachineRunState.Ready;
+            snapshot.Stations[0].IndependentState = StationOperationState.Waiting;
+            snapshot.Stations[1].IndependentState = StationOperationState.Paused;
             var overview = new EquipmentOverviewView();
             overview.SetPreview(snapshot);
             overview.SetAutomaticStartReadiness(reason, false);
             Assert(((TextBlock)overview.FindName("MachineStateText")).Text == "启动条件未满足", "总览状态没有显示启动拦截。");
             Assert(((TextBlock)overview.FindName("NextActionText")).Text == reason, "总览没有显示准确的启动拦截原因。");
-            Assert(FindControls<TextBlock>(overview).Any(text => text.Text.Contains("整机状态 · 启动条件未满足")), "工位卡片仍显示整机已就绪。");
+            var stationStates = ((ListView)overview.FindName("StationTable")).Items.OfType<ListViewItem>()
+                .Select(item => ((string[])item.Content)[1]).ToArray();
+            Assert(stationStates.SequenceEqual(new[] { "工位等待中", "工位已暂停", "工位状态未提供" }),
+                "整机启动拦截覆盖了独立工位状态，或把未提供的工位状态显示成已就绪。");
 
             var runtime = CreateRuntime(new GuardCard { IsConnected = true }, new MachineAlarmService());
             runtime.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
@@ -589,6 +595,9 @@ namespace MotionControl.OperatorPages.Checks
         {
             using (var test = new PreviewFiles())
             {
+                var catalog = new TaskResourceCatalogLoader(test.Configuration).Load("TaskEditorPreview");
+                Assert(catalog.TeachPoints.Count > 0 && catalog.TeachPoints.All(point => point.OwnershipConfirmed),
+                    "新建编辑预览示教点必须明确逻辑轴归属，不能以旧配置兼容警告干扰正常保存检查。");
                 var page = new TaskConfigurationView(test.Configuration, "TaskEditorPreview", () => null,
                     () => "等待复位", () => new[] { "正式上料定位工位", "正式压装工位" }, () => "逻辑轴 Load_X 尚未回零。");
                 string runtimeStations = ((TextBlock)page.FindName("RuntimeStationsText")).Text;

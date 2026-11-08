@@ -19,6 +19,14 @@ namespace MotionControl.StructuredDiagnostics.Checks
         internal const string FirstInput = "夹具;Ready=A";
         /// <summary>第二输入用于证明多等待不会只显示第一项。</summary>
         internal const string SecondInput = "安全门=Closed;B";
+        /// <summary>未知变量使用合法稳定名称；分号和等号放在独立显示名称中。</summary>
+        internal const string UnknownVariable = "A.未知_1";
+        /// <summary>尚未读取变量使用合法稳定名称，供条件和互锁引用。</summary>
+        internal const string UnreadVariable = "B.未读取_2";
+        /// <summary>显示名称保留分号和等号，不能被用作变量稳定标识。</summary>
+        internal const string UnknownVariableDisplayName = "A;未知=1";
+        /// <summary>第二变量的显示名称同样保留特殊标点。</summary>
+        internal const string UnreadVariableDisplayName = "B=未读取;2";
 
         /// <summary>断言关键行为；失败信息直接描述需要维护的业务约束。</summary>
         internal static void Require(bool condition, string message)
@@ -78,14 +86,20 @@ namespace MotionControl.StructuredDiagnostics.Checks
             return new StationTaskSnapshot(control);
         }
 
-        /// <summary>只登记本组检查所需的输入、变量和报警，不引入示例工艺。</summary>
+        /// <summary>用合法变量标识和独立显示名称登记检查目录，特殊标点仍保留在允许它们的显示字段和输入名中。</summary>
         internal static TaskResourceCatalog Catalog()
         {
             return new TaskResourceCatalog(new TaskAxisInfo[0], new[] { FirstInput, SecondInput },
                 new string[0], new Dictionary<string, DeviceVariableType> {
-                    { "A;未知=1", DeviceVariableType.Boolean }, { "B=未读取;2", DeviceVariableType.Boolean }
+                    { UnknownVariable, DeviceVariableType.Boolean }, { UnreadVariable, DeviceVariableType.Boolean }
                 }, new TaskTeachPoint[0], new[] { "区域;Camera=1", "区域=Move;2" },
-                alarmDefinitions: new[] { new TaskAlarmInfo("WAIT_TIMEOUT", "诊断等待超时", MachineAlarmKind.StopMachine) });
+                alarmDefinitions: new[] { new TaskAlarmInfo("WAIT_TIMEOUT", "诊断等待超时", MachineAlarmKind.StopMachine) },
+                variableDefinitions: new[] {
+                    new DeviceVariableDefinition { Name = UnknownVariable, DisplayName = UnknownVariableDisplayName,
+                        DataType = DeviceVariableType.Boolean.ToString() },
+                    new DeviceVariableDefinition { Name = UnreadVariable, DisplayName = UnreadVariableDisplayName,
+                        DataType = DeviceVariableType.Boolean.ToString() }
+                });
         }
 
         /// <summary>创建有明确故障绑定的等待节点。</summary>

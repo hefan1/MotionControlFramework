@@ -131,7 +131,7 @@ namespace MotionControl.Host.Wpf.Configuration
             finally { _busy = false; UpdateButtons(); }
         }
 
-        /// <summary>显示服务返回的设备信息、文件、变更和警告，不向文件写入内容。</summary>
+        /// <summary>显示服务返回的工程差异；选择未变化时也刷新文件说明语言，不向文件写入内容。</summary>
         private void RenderPreview()
         {
             if (_preview == null) return;
@@ -151,6 +151,7 @@ namespace MotionControl.Host.Wpf.Configuration
             PreviewFilePicker.ItemsSource = _preview.MergedFiles;
             if (selected != null && _preview.MergedFiles.Contains(selected, StringComparer.OrdinalIgnoreCase)) PreviewFilePicker.SelectedItem = selected;
             else if (_preview.MergedFiles.Count > 0) PreviewFilePicker.SelectedIndex = 0;
+            RefreshSelectedFilePreview();
         }
 
         /// <summary>只展示本机代码声明的能力；离线预检通过不代表连接、回零或现场条件已满足。</summary>
@@ -170,8 +171,14 @@ namespace MotionControl.Host.Wpf.Configuration
                     ". This describes code capabilities only. Connection, homing and site conditions still require verification.");
         }
 
-        /// <summary>选择文件时对照预览时冻结的现有配置与工程包内容，不读取或写入运行状态。</summary>
+        /// <summary>选择文件后刷新只读对照内容，不读取或写入运行状态。</summary>
         private void PreviewFile_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            RefreshSelectedFilePreview();
+        }
+
+        /// <summary>用预览时冻结的内容刷新对照和本地化说明；切换语言不要求人员重新选择文件。</summary>
+        private void RefreshSelectedFilePreview()
         {
             if (_preview == null || !(PreviewFilePicker.SelectedItem is string path)) return;
             try

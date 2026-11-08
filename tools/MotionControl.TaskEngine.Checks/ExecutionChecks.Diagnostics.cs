@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.Variables;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Execution;
@@ -46,18 +47,36 @@ namespace MotionControl.TaskEngine.Checks
                 && diagnostic.Values[0].Actual == "True", "本次分支被后续变量改变。");
         }
 
-        /// <summary>相对运动诊断保存接受的绝对终点，后续变量变化不影响目标。</summary>
+        /// <summary>等到明确的轴采样后再修改变量，检查已接受的绝对终点和到位证据保持一致。</summary>
         private static async Task DiagnosticAcceptedTarget()
         {
-            var device = Device(); device.ConfigureAxis("X", 5, true, true); device.SetVariable("Vision.OffsetX", "3");
+            var device = Device();
+            device.ConfigureAxis("X", 5, true, true);
+            device.SetVariable("Vision.OffsetX", "3");
             var run = Start(TaskFixtures.Task(new MoveAxisNode { Id = "move", Name = "相对定位", AxisName = "X", Mode = TaskMoveMode.Relative,
                 Target = new TaskValueBinding { Source = TaskValueSource.Variable, VariableName = "Vision.OffsetX" },
                 Profile = new TaskMotionProfile { Speed = 10, Acceleration = 20, Deceleration = 20 } }), device);
-            await Until(() => run.GetSnapshot().Nodes.Any(node => node.NodeId == "move" && node.Diagnostics != null), "没有运动采样。");
+
+            // 资源申请也会先发布诊断；只有轴采样才能证明相对目标已经被设备接受。
+            await Until(() => run.GetSnapshot().Nodes.Any(node => node.NodeId == "move"
+                && node.Diagnostics != null && node.Diagnostics.WaitKind == StationWaitKind.Axis
+                && node.Diagnostics.Values.Any(value => value.ObjectKind == StationObjectKind.Axis && value.ObjectId == "X")),
+                "没有取得相对运动接受后的轴采样。");
+            var accepted = run.GetSnapshot().Nodes.Single(node => node.NodeId == "move").Diagnostics.Values
+                .Single(value => value.ObjectKind == StationObjectKind.Axis && value.ObjectId == "X");
+            CheckAssert.True(device.ReadAxis("X").AcceptedCommands == 1 && accepted.Expected == "8",
+                "首个轴采样没有记录设备接受的绝对终点 8。");
+
             device.SetVariable("Vision.OffsetX", "30");
-            var complete = await Complete(run); Success(complete);
-            var value = complete.Nodes.Single(node => node.NodeId == "move").Diagnostics.Values[0];
-            CheckAssert.True(value.Expected == "8" && value.Actual == "8" && value.Unit == "mm" && value.Satisfied == true, "诊断错误重读了相对目标。");
+            var complete = await Complete(run);
+            Success(complete);
+            var completed = complete.Nodes.Single(node => node.NodeId == "move").Diagnostics.Values
+                .Single(value => value.ObjectKind == StationObjectKind.Axis && value.ObjectId == "X");
+            CheckAssert.True(accepted.Expected == "8" && completed.Expected == "8",
+                "后续变量变化改写了已接受的相对运动终点。");
+            CheckAssert.True(completed.Actual == "8" && completed.Satisfied == true && device.ReadAxis("X").Position == 8,
+                "完成诊断没有保留真实位置与已接受终点一致的到位证据。");
+            CheckAssert.True(completed.Unit == "mm", "轴采样没有保留目录明确配置的工程单位。");
         }
 
         /// <summary>延时剩余量在暂停期间冻结，恢复完成后归零。</summary>

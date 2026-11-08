@@ -13,6 +13,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Configuration;
+using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.Variables;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Wpf.Configuration;
@@ -854,7 +855,7 @@ namespace MotionControl.TaskMonitor.Checks
             }
         }
 
-        /// <summary>由真实工位执行快照验证等待提示、未知采样和工程诊断可追溯。</summary>
+        /// <summary>由真实快照核对完整等待集合、交接原因及采样质量，并保留操作员提示和原始工程诊断。</summary>
         private static void ExerciseOperatorWaitDescriptions(Application application)
         {
             var catalog = new TaskResourceCatalog(new TaskAxisInfo[0], new string[0], new string[0],
@@ -880,34 +881,86 @@ namespace MotionControl.TaskMonitor.Checks
             try
             {
                 session.Machine.Reset(); session.Machine.Start();
-                WaitWithDispatcher(() => session.Machine.GetSnapshot().Stations.Any(station => station.StationId == "press" && station.State == StationTaskState.WaitingRequest)
-                    && session.Machine.GetSnapshot().Stations.Any(station => station.StationId == "load" && station.Run?.Nodes.Any(node => node.NodeId == "wait" && node.Diagnostics != null) == true),
-                    5000, "工位未进入等待状态。");
+                WaitWithDispatcher(() =>
+                {
+                    var snapshot = session.Machine.GetSnapshot();
+                    return snapshot.Stations.Any(station => station.StationId == "press"
+                        && station.State == StationTaskState.WaitingRequest && station.Diagnostics?.ReasonCode == "handshake.wait_request")
+                        && snapshot.Stations.Any(station => station.StationId == "load"
+                            && station.Run?.Nodes.Any(node => node.NodeId == "wait" && node.State == TaskNodeState.Waiting
+                                && node.Diagnostics?.WaitKind == StationWaitKind.Condition) == true);
+                }, 5000, "工位未进入等待状态。");
                 view.Refresh();
                 var grid = (DataGrid)view.FindName("StationsGrid");
                 var pressRow = grid.Items.OfType<TaskStationRow>().Single(row => row.Id == "press");
                 var loadRow = grid.Items.OfType<TaskStationRow>().Single(row => row.Id == "load");
-                Assert(pressRow.Detail == "等待请求信号" && pressRow.EngineeringDetail.Contains("Press.Request=False"),
-                    "工位请求提示没有简化，或原始采样丢失。");
-                Assert(loadRow.Detail == "等待条件满足" && loadRow.EngineeringDetail.Contains("Load.Ready Equal"),
-                    "条件提示没有简化，或原始比较诊断丢失。");
+                var handshake = pressRow.Snapshot.Diagnostics;
+                Assert(handshake.WaitKind == StationWaitKind.Handshake && handshake.HasWaitInformation
+                    && handshake.ReasonCode == "handshake.wait_request" && handshake.WaitItems.Count == 2,
+                    "请求等待没有提供完整的双信号交接诊断。");
+                var request = handshake.WaitItems.Single(item => item.ObjectId == "Press.Request");
+                var completed = handshake.WaitItems.Single(item => item.ObjectId == "Press.Complete");
+                Assert(request.Kind == StationWaitKind.Handshake && request.ObjectKind == StationObjectKind.Variable
+                    && request.Expected == "True" && request.Actual == "False" && request.Quality == StationValueQuality.Good && request.Satisfied == false
+                    && completed.Kind == StationWaitKind.Handshake && completed.ObjectKind == StationObjectKind.Variable
+                    && completed.Expected == "False" && completed.Actual == "False" && completed.Quality == StationValueQuality.Good && completed.Satisfied == true,
+                    "请求与完成信号的期望、实际值或质量不匹配。");
+                Assert(pressRow.Detail.StartsWith("等待请求信号；", StringComparison.Ordinal)
+                    && pressRow.Detail.Contains("Press.Request：期望 有效；实际 无效")
+                    && pressRow.Detail.Contains("Press.Complete：期望 无效；实际 无效")
+                    && pressRow.EngineeringDetail == pressRow.Snapshot.Detail
+                    && pressRow.EngineeringDetail.Contains("Press.Request=False") && pressRow.EngineeringDetail.Contains("Press.Complete=False"),
+                    "工位请求提示没有保留完整等待对象，或原始双信号采样丢失。");
+                var conditionNode = loadRow.Snapshot.Run.Nodes.Single(node => node.NodeId == "wait");
+                var condition = conditionNode.Diagnostics;
+                Assert(condition.WaitKind == StationWaitKind.Condition && condition.HasWaitInformation
+                    && condition.ReasonCode == "condition.evaluate" && condition.Decision == false && condition.WaitItems.Count == 1,
+                    "条件等待的结构化类别、结论或完整性错误。");
+                var conditionItem = condition.WaitItems.Single();
+                Assert(conditionItem.ObjectKind == StationObjectKind.Variable && conditionItem.ObjectId == "Load.Ready"
+                    && conditionItem.Expected == "Equal True" && conditionItem.Actual == "False"
+                    && conditionItem.Quality == StationValueQuality.Good && conditionItem.Satisfied == false,
+                    "条件等待没有保留原变量、比较目标和已采样值。");
+                Assert(loadRow.Detail.StartsWith("等待条件；", StringComparison.Ordinal) && loadRow.Detail.Contains("Load.Ready")
+                    && loadRow.EngineeringDetail == conditionNode.Detail && loadRow.EngineeringDetail.Contains("Load.Ready Equal"),
+                    "条件提示没有显示等待对象，或原始比较诊断丢失。");
                 grid.SelectedItem = loadRow; view.Refresh();
-                Assert(((TextBlock)view.FindName("DetailSummary")).Text == "等待条件满足"
+                Assert(((TextBlock)view.FindName("DetailSummary")).Text == loadRow.Detail
+                    && ((TextBlock)view.FindName("DetailSummary")).Text.Contains("Load.Ready")
                     && ((DataGrid)view.FindName("ObservationTable")).Items.Count > 0,
-                    "步骤详情未给出简洁提示，或维护采样表丢失。");
+                    "步骤详情未同步完整等待提示，或维护采样表丢失。");
                 device.SetVariable("Press.Request", null); device.SetVariable("Load.Ready", null);
-                WaitWithDispatcher(() => session.Machine.GetSnapshot().Stations.Single(station => station.StationId == "press").Detail.Contains("=未知")
-                    && session.Machine.GetSnapshot().Stations.Single(station => station.StationId == "load").Run.Nodes.Single(node => node.NodeId == "wait").Diagnostics.Decision == null,
-                    5000, "未知信号没有反映到运行快照。");
+                WaitWithDispatcher(() =>
+                {
+                    var snapshot = session.Machine.GetSnapshot();
+                    var pressDiagnostic = snapshot.Stations.Single(station => station.StationId == "press").Diagnostics;
+                    var loadDiagnostic = snapshot.Stations.Single(station => station.StationId == "load").Run.Nodes.Single(node => node.NodeId == "wait").Diagnostics;
+                    return pressDiagnostic.ReasonCode == "handshake.unknown"
+                        && pressDiagnostic.WaitItems.Single(item => item.ObjectId == "Press.Request").Quality == StationValueQuality.Unknown
+                        && loadDiagnostic.Decision == null && loadDiagnostic.WaitItems.Single().Quality == StationValueQuality.Unknown;
+                }, 5000, "未知信号没有反映到运行快照。");
                 view.Refresh();
-                Assert(pressRow.Detail.Contains("未知") && loadRow.Detail.Contains("未知"), "未知信号被误显示为普通等待或有效信号。");
+                Assert(pressRow.Snapshot.Diagnostics.WaitItems.Single(item => item.ObjectId == "Press.Request").Actual == null
+                    && pressRow.Snapshot.Diagnostics.WaitItems.Single(item => item.ObjectId == "Press.Complete").Quality == StationValueQuality.Good,
+                    "请求未知时补造了实际值，或同时丢弃了已知的完成信号。");
+                Assert(pressRow.Detail.Contains("Press.Request") && pressRow.Detail.Contains("Press.Complete")
+                    && pressRow.Detail.Contains("未知") && loadRow.Detail.Contains("Load.Ready") && loadRow.Detail.Contains("未知")
+                    && pressRow.EngineeringDetail.Contains("Press.Request=未知"), "未知信号被误显示为有效信号，或等待对象及原始采样丢失。");
                 view.SetLanguage("en-US"); view.Refresh();
                 Assert(pressRow.Detail.Contains("unknown") && loadRow.Detail.Contains("unknown"), "未知状态没有随语言切换。");
                 view.SetLanguage("zh-CN"); device.SetVariable("Press.Request", "true");
-                WaitWithDispatcher(() => session.Machine.GetSnapshot().Stations.Single(station => station.StationId == "press").Detail.StartsWith("已完成，等待请求方清除 "),
+                WaitWithDispatcher(() => session.Machine.GetSnapshot().Stations.Single(station => station.StationId == "press")
+                    .Diagnostics?.ReasonCode == "handshake.wait_request_reset_after_completion",
                     5000, "工位完成后没有进入等待请求复位阶段。");
                 view.Refresh();
-                Assert(pressRow.Detail == "本工位已完成，等待请求方复位信号"
+                var completionWait = pressRow.Snapshot.Diagnostics;
+                Assert(completionWait.HasWaitInformation && completionWait.WaitKind == StationWaitKind.Handshake
+                    && completionWait.WaitItems.Count == 2
+                    && completionWait.WaitItems.All(item => item.Actual == null && item.Quality == StationValueQuality.NotProvided && item.Satisfied == null),
+                    "完成后没有重新采样的交接阶段补造了有效值，或丢失等待对象。");
+                Assert(pressRow.Detail.StartsWith("本工位已完成，等待请求方复位信号；", StringComparison.Ordinal)
+                    && pressRow.Detail.Contains("Press.Request") && pressRow.Detail.Contains("Press.Complete")
+                    && pressRow.Detail.Contains("未提供") && pressRow.EngineeringDetail == pressRow.Snapshot.Detail
                     && pressRow.EngineeringDetail.Contains("Press.Request"), "完成后的交接提示不准确或原始信号丢失。");
             }
             finally { session.Machine.CloseAsync().GetAwaiter().GetResult(); }

@@ -39,7 +39,7 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
         /// <summary>关闭前保留人员对草稿的决定。</summary>
         private void PreviewClosing(object sender, CancelEventArgs e) { e.Cancel = !_page.ConfirmClose(); }
 
-        /// <summary>为独立预览和离线检查建立一致示例文件，已存在的任务不会被覆盖。</summary>
+        /// <summary>为新建独立预览生成带明确示教点逻辑归属的示例；已存在的任务不会被覆盖或迁移。</summary>
         public static MachineConfigurationStore CreatePreviewStore(string root)
         {
             const string machineId = "TaskEditorPreview";
@@ -60,7 +60,12 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
                     alarms = catalog.AlarmDefinitions.Select(alarm => new { code = alarm.Code, message = alarm.Message,
                         kind = alarm.Kind.ToString(), checkGuidance = alarm.CheckGuidance, recoveryGuidance = alarm.RecoveryGuidance }).ToArray() });
                 store.SaveJson(machineId, "Parameters/ManualAxisPositions.json", new { schemaVersion = 1,
-                    axes = axes.Select((axis, number) => new { axisKey = "Memory.Axis" + number, positions = catalog.TeachPoints.Where(point => point.AxisName == axis.Name).Select(point => new { id = point.PointId, name = point.Name, position = point.Position }).ToArray() }).ToArray() });
+                    axes = axes.Select((axis, number) => new {
+                        axisKey = "Memory.Axis" + number,
+                        logicalAxisName = axis.Name,
+                        positions = catalog.TeachPoints.Where(point => point.AxisName == axis.Name)
+                            .Select(point => new { id = point.PointId, name = point.Name, position = point.Position }).ToArray()
+                    }).ToArray() });
                 var definitions = session.Library.Values.ToList();
                 foreach (var definition in definitions) new TaskDefinitionStore(store).Save(machineId, definition.TaskId + ".json", definition, catalog, definitions.Where(item => !ReferenceEquals(item, definition)));
                 var config = new TaskMachineConfiguration { MachineId = machineId, Name = "任务编辑独立预览", NamedResources = new List<string> { "拍照区域" },

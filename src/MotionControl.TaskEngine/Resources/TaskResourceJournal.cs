@@ -20,6 +20,8 @@ namespace MotionControl.TaskEngine.Resources
         private readonly string _machineId;
         /// <summary>序列化磁盘写入和安全清理，不持有资源队列锁。</summary>
         private readonly object _sync = new object();
+        /// <summary>本实例成功写入或核对一致的完整记录路径，清理时不接受外部放入的同后缀文件。</summary>
+        private readonly HashSet<string> _savedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>绑定设备配置目录，但不在构造时访问磁盘。</summary>
         public TaskResourceJournal(string machineDirectory, string machineId)
@@ -53,6 +55,7 @@ namespace MotionControl.TaskEngine.Resources
                     // 只有已有文件与本次完整内容一致才能复用，半写文件一律报错。
                     if (!File.Exists(path) || !File.ReadAllBytes(path).SequenceEqual(bytes)) throw;
                 }
+                _savedPaths.Add(Path.GetFullPath(path));
             }
         }
 
@@ -91,15 +94,29 @@ namespace MotionControl.TaskEngine.Resources
             }
         }
 
-        /// <summary>设备确认全部任务及动作退出后才清理当前会话记录；失败时保留控制权。</summary>
+        /// <summary>设备确认全部任务及动作退出后，先核对会话目录再清理已知记录；失败时由调用方保留控制权。</summary>
         internal void ClearSafeSession()
         {
             lock (_sync)
             {
-                try { File.GetAttributes(_session); }
+                FileAttributes sessionAttributes;
+                try { sessionAttributes = File.GetAttributes(_session); }
                 catch (FileNotFoundException) { return; }
                 catch (DirectoryNotFoundException) { return; }
-                foreach (string path in Directory.GetFiles(_session)) File.Delete(path);
+                if ((sessionAttributes & FileAttributes.Directory) == 0
+                    || (sessionAttributes & FileAttributes.ReparsePoint) != 0)
+                    throw new IOException("资源记录会话不是普通目录或已被重定向，保留当前记录，不能安全清理。");
+                // 在删除任何记录前先核对整个目录，未知内容可能是恢复证据，不能顺手清理。
+                string[] entries = Directory.GetFileSystemEntries(_session);
+                foreach (string path in entries)
+                {
+                    FileAttributes attributes = File.GetAttributes(path);
+                    if ((attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0
+                        || !_savedPaths.Contains(Path.GetFullPath(path)))
+                        throw new IOException("资源记录会话包含未知文件、子目录或重定向，保留当前记录，不能安全清理：" + Path.GetFileName(path));
+                }
+                // 目录预检不锁定外部文件系统；后续真实磁盘错误继续上抛，不能伪装为清理成功。
+                foreach (string path in entries) File.Delete(path);
                 Directory.Delete(_session, false);
             }
         }

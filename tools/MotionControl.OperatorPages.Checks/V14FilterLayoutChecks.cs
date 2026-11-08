@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using MotionControl.Framework.Contracts.Configuration;
@@ -17,7 +18,7 @@ namespace MotionControl.OperatorPages.Checks
     /// <summary>筛选内容区内部离屏预览，不创建窗口、不连接设备，不等同Sandbox验收。</summary>
     internal static class V14FilterLayoutChecks
     {
-        /// <summary>在现有STA应用中输出两页两种尺寸中英文共8张PNG，并检查主要控件边界。</summary>
+        /// <summary>在现有STA应用中核对绑定列的中英文表头，输出8张PNG并检查主要控件边界。</summary>
         internal static void Run()
         {
             string output = Path.GetFullPath(Path.Combine(".artifacts", "ui-filter-layout"));
@@ -42,8 +43,14 @@ namespace MotionControl.OperatorPages.Checks
                     var variables = new DeviceVariableView(new DeviceVariableStore(definitions), new MachineConfigurationStore(Path.Combine(output, "unused-config")), "Machine01");
                     SetLanguage(variables, language); variables.RefreshLocalizedText(); variables.FocusVariableByName("Variable_0");
                     var variableGrid = (DataGrid)variables.FindName("VariablesGrid");
-                    if (!Equals(variableGrid.Columns[5].Header, variables.TryFindResource("变量人工可写")))
+                    var writeColumn = variableGrid.Columns.OfType<DataGridCheckBoxColumn>()
+                        .Single(column => ((Binding)column.Binding).Path.Path == "AllowOperatorWrite");
+                    if (!Equals(writeColumn.Header, variables.TryFindResource("变量人工可写")))
                         throw new InvalidOperationException("变量人工可写列未随页面语言刷新：" + language);
+                    var unitColumn = variableGrid.Columns.OfType<DataGridTextColumn>()
+                        .Single(column => ((Binding)column.Binding).Path.Path == "EngineeringUnitDisplay");
+                    if (!Equals(unitColumn.Header, variables.TryFindResource("变量工程单位")))
+                        throw new InvalidOperationException("变量工程单位列未随页面语言刷新：" + language);
                     ((TextBox)variables.FindName("VariableSearchBox")).Text = "Variable";
                     Render(variables, output, "variable-filter", language, width, height,
                         new[] { "VariableSearchBox", "ClearVariableSearchButton", "VariableSearchCountText", "VariablesGrid", "ManualValueTextBox", "WriteValueButton" });

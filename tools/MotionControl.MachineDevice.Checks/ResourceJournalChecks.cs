@@ -95,7 +95,7 @@ namespace MotionControl.MachineDevice.Checks
             finally { Directory.Delete(root, true); }
         }
 
-        /// <summary>关闭时实际设备按顺序核对资源和清理失败，并允许故障排除后重试。</summary>
+        /// <summary>用临时记录和替身设备检查关闭顺序、清理失败后的控制权与证据保留，以及排除障碍后的重试。</summary>
         private static void ResourceJournalCloseChecks()
         {
             string root = Path.Combine(Path.GetTempPath(), "mcf-guard-close-" + Guid.NewGuid().ToString("N"));
@@ -115,11 +115,31 @@ namespace MotionControl.MachineDevice.Checks
                 Ensure(runtime.IsTaskEngineControlClaimed && TaskResourceJournal.Inspect(root, "M1") != null, "占用时错误清理或归还控制权。");
                 device.Resources.Release(request);
                 string session = Directory.GetDirectories(Path.Combine(root, "Runtime", "ResourceGuards")).Single();
-                string obstacle = Path.Combine(session, "obstacle");
-                Directory.CreateDirectory(obstacle);
-                ExpectMessage(() => controller.CloseAsync().GetAwaiter().GetResult(), "不是空");
-                Ensure(runtime.IsTaskEngineControlClaimed, "清理失败时错误归还控制权。");
-                Directory.Delete(obstacle);
+                // 先保存已落盘的原始记录，确认清理失败不会丢失后续恢复需要的证据。
+                string recordPath = Directory.GetFiles(session, "*.guard").Single();
+                byte[] recordBytes = File.ReadAllBytes(recordPath);
+                // 未知子目录、普通文件和伪装成 .guard 的文件都必须先拒绝清理并保留原始证据。
+                foreach (string obstacleName in new[] { "obstacle-directory", "unknown.txt", "unknown.guard" })
+                {
+                    string obstacle = Path.Combine(session, obstacleName);
+                    bool obstacleIsDirectory = obstacleName == "obstacle-directory";
+                    if (obstacleIsDirectory) Directory.CreateDirectory(obstacle);
+                    else File.WriteAllText(obstacle, "未知文件原始内容");
+                    // Windows 的磁盘异常信息随系统语言变化；检查异常类型和真实状态，不匹配翻译文案。
+                    IOException cleanupError = null;
+                    try { controller.CloseAsync().GetAwaiter().GetResult(); }
+                    catch (IOException error) { cleanupError = error; }
+                    Ensure(cleanupError != null, "存在清理障碍时没有报告磁盘异常。");
+                    Ensure(runtime.IsTaskEngineControlClaimed, "清理失败时错误归还控制权。");
+                    Ensure(obstacleIsDirectory ? Directory.Exists(obstacle)
+                        : File.Exists(obstacle) && File.ReadAllText(obstacle) == "未知文件原始内容",
+                        "清理失败时删除或改写了未知内容。");
+                    Ensure(File.Exists(recordPath) && File.ReadAllBytes(recordPath).SequenceEqual(recordBytes),
+                        "清理失败时删除或改写了原始资源记录。");
+                    if (obstacleIsDirectory) Directory.Delete(obstacle);
+                    else File.Delete(obstacle);
+                    Ensure(TaskResourceJournal.Inspect(root, "M1") != null, "清理失败后没有保留可读取的资源恢复证据。");
+                }
                 Task closed = controller.CloseAsync();
                 closed.GetAwaiter().GetResult();
                 // 已归还所有权后只能复用成功结果，不能重新调用退出交接。

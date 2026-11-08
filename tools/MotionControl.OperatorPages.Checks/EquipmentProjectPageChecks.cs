@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using System.Windows;
@@ -15,7 +16,7 @@ namespace MotionControl.OperatorPages.Checks
     /// <summary>设备工程页的只读初始状态及导入后重启界面检查。</summary>
     internal static class EquipmentProjectPageChecks
     {
-        /// <summary>检查中文、英文、页面控件和重启门禁，不创建或连接控制器。</summary>
+        /// <summary>检查导入与保留文件的中英文预览、页面控件和重启门禁，不创建或连接控制器。</summary>
         internal static void Run()
         {
             string root = Path.Combine(Path.GetTempPath(), "MotionControlProjectUiCheck-" + Guid.NewGuid().ToString("N"));
@@ -42,15 +43,29 @@ namespace MotionControl.OperatorPages.Checks
             SetPreview(preview, "ExecutionOwner", "TaskEngine");
             SetPreview(preview, "ControllerBackend", "Virtual");
             SetPreview(preview, "SourceMachineId", "Source01");
+            SetPreview(preview, "TargetMachineId", "Machine01");
             SetPreview(preview, "Files", new List<string> { "HardwareConfig/AxisParameters.json" }.AsReadOnly());
+            SetPreview(preview, "MergedFiles", new List<string> { "HardwareConfig/AxisParameters.json", "Parameters/AlarmCatalog.json" }.AsReadOnly());
+            SetPreview(preview, "RetainedFiles", new List<string> { "Parameters/AlarmCatalog.json" }.AsReadOnly());
             SetPreview(preview, "Changes", new List<string> { "修改：轴参数" }.AsReadOnly());
             SetPreview(preview, "Warnings", new List<string> { "核对安全参数" }.AsReadOnly());
             SetPreview(preview, "Contents", new Dictionary<string, string> { ["HardwareConfig/AxisParameters.json"] = "新轴配置" });
-            SetPreview(preview, "CurrentContents", new Dictionary<string, string> { ["HardwareConfig/AxisParameters.json"] = "旧轴配置" });
+            SetPreview(preview, "CurrentContents", new Dictionary<string, string> {
+                ["HardwareConfig/AxisParameters.json"] = "旧轴配置", ["Parameters/AlarmCatalog.json"] = "保留的报警目录" });
             typeof(EquipmentProjectView).GetField("_preview", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(page, preview);
             typeof(EquipmentProjectView).GetMethod("RenderPreview", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(page, null);
             Assert(((TextBox)page.FindName("CurrentFileText")).Text == "旧轴配置"
                 && ((TextBox)page.FindName("IncomingFileText")).Text == "新轴配置", "未展示当前及导入的具体配置内容。");
+            Assert(((TextBlock)page.FindName("PreviewSummary")).Text.Contains("包的导出来源：Source01")
+                && ((TextBlock)page.FindName("PreviewSummary")).Text.Contains("应用目标：Machine01"),
+                "工程来源与本机应用目标没有分别显示。");
+            var files = (ComboBox)page.FindName("PreviewFilePicker");
+            Assert(files.Items.Cast<string>().SequenceEqual(new[] { "HardwareConfig/AxisParameters.json", "Parameters/AlarmCatalog.json" }),
+                "工程预览没有保留合并后的完整文件清单。");
+            files.SelectedItem = "Parameters/AlarmCatalog.json";
+            Assert(((TextBox)page.FindName("CurrentFileText")).Text == "保留的报警目录"
+                && ((TextBox)page.FindName("IncomingFileText")).Text.Contains("工程包未提供此文件；应用后保留左侧现有配置"),
+                "保留文件被显示成工程包导入内容，或没有展示原配置。");
             string detail = "未登记参数：\n" + new string('参', 300) + "参数末尾.json";
             typeof(EquipmentProjectView).GetMethod("ShowStatus", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(page, new object[] { detail, true });
             Assert(((Expander)page.FindName("StatusDetails")).Visibility == Visibility.Visible
@@ -58,6 +73,8 @@ namespace MotionControl.OperatorPages.Checks
             var language = typeof(EquipmentProjectView).GetMethod("SetLanguage", BindingFlags.Instance | BindingFlags.NonPublic);
             language.Invoke(page, new object[] { "en-US" });
             Assert(((Button)page.FindName("ImportButton")).Content.ToString() == "Select and review project", "英文入口未更新。");
+            Assert(((TextBox)page.FindName("IncomingFileText")).Text.Contains("The package does not supply this file")
+                && ((TextBox)page.FindName("CurrentFileText")).Text == "保留的报警目录", "保留文件说明未切换为英文或改变了原配置内容。");
             Assert(((TextBlock)page.FindName("ChangeHistoryMessage")).Text.Contains("not connected")
                 && ((TabItem)page.FindName("ChangeHistoryTab")).Header.ToString() == "Configuration history",
                 "配置历史的未接入说明未随语言切换。");
