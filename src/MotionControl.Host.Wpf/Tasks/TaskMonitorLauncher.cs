@@ -215,12 +215,12 @@ namespace MotionControl.Host.Wpf.Tasks
             var toolbar = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
             StyleToolbar(toolbar);
             var engineeringToolbar = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
-            _loadButton = AddCommandButton(toolbar, "任务执行读取任务", LoadTask_Click);
+            _loadButton = AddButton(toolbar, "任务执行读取任务", LoadTask_Click);
             // 日常启停使用外壳顶部统一入口；任务会话的直接命令保留在工程区供维护。
-            _resetButton = AddCommandButton(engineeringToolbar, "任务执行复位", ResetTask_Click);
-            _startButton = AddCommandButton(engineeringToolbar, "任务执行启动", StartTask_Click);
-            _pauseButton = AddCommandButton(engineeringToolbar, "任务执行暂停", PauseTask_Click);
-            _stopButton = AddCommandButton(engineeringToolbar, "任务执行停止", StopTask_Click);
+            _resetButton = AddButton(engineeringToolbar, "任务执行复位", ResetTask_Click);
+            _startButton = AddButton(engineeringToolbar, "任务执行启动", StartTask_Click);
+            _pauseButton = AddButton(engineeringToolbar, "任务执行暂停", PauseTask_Click);
+            _stopButton = AddButton(engineeringToolbar, "任务执行停止", StopTask_Click);
             _recoverResourcesButton = new Button { Padding = new Thickness(12, 7, 12, 7), Margin = new Thickness(0, 0, 8, 0),
                 Background = Brush("#FFFFFF"), BorderBrush = Brush("#C9D5E3"), BorderThickness = new Thickness(1), Visibility = Visibility.Collapsed };
             _recoverResourcesButton.Click += RecoverResources_Click; toolbar.Children.Add(_recoverResourcesButton);
@@ -284,21 +284,13 @@ namespace MotionControl.Host.Wpf.Tasks
             RefreshPageText();
         }
 
-        /// <summary>创建任务运行命令按钮并接入 Host 当前语言资源。</summary>
-        private static Button AddCommandButton(Panel panel, string key, RoutedEventHandler handler)
+        /// <summary>创建任务页面按钮并接入 Host 当前语言资源，返回按钮以便更新命令状态。</summary>
+        private static Button AddButton(Panel panel, string key, RoutedEventHandler handler)
         {
             var button = new Button { Padding = new Thickness(12, 7, 12, 7), Margin = new Thickness(0, 0, 8, 0),
                 Background = Brush("#FFFFFF"), BorderBrush = Brush("#C9D5E3"), BorderThickness = new Thickness(1) };
             button.SetResourceReference(ContentControl.ContentProperty, key);
             button.Click += handler; panel.Children.Add(button); return button;
-        }
-
-        /// <summary>用中文资源键创建导航按钮，语言切换自动刷新。</summary>
-        private void AddButton(Panel panel, string key, RoutedEventHandler handler)
-        {
-            var button = new Button { Padding = new Thickness(12, 7, 12, 7), Margin = new Thickness(0, 0, 8, 0),
-                Background = Brush("#FFFFFF"), BorderBrush = Brush("#C9D5E3"), BorderThickness = new Thickness(1) };
-            button.SetResourceReference(ContentControl.ContentProperty, key); button.Click += handler; panel.Children.Add(button);
         }
 
         /// <summary>设置与 Host 其他任务页一致的浅色工具栏。</summary>
