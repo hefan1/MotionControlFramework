@@ -289,6 +289,7 @@ namespace MotionControl.Host.Wpf.Operation
                 bool task = owner == MachineControlOwner.TaskEngine;
                 long preparationVersion = runtime.PreparationConfigurationVersion;
                 long observationVersion = runtime.SafetyObservationVersion;
+                if (observationVersion < 0) return null;
                 if (task && (!IsTaskSessionIdentityCurrent(owner, taskIdentityKnown, taskIdentity)
                     || _taskPreparationScopeProvider?.Invoke(runtime, session) != true)) return null;
                 bool preparing = runtime.IsPreparing || runtime.IsClearing;
@@ -490,9 +491,9 @@ namespace MotionControl.Host.Wpf.Operation
             bool clearing = _preview == null && (_runtime?.IsClearing ?? false);
             bool activeOperation = displayState == MachineRunState.Running || displayState == MachineRunState.Preparing || displayState == MachineRunState.Pausing || (_runtime?.IsPreparing ?? false) || (_runtime?.IsClearing ?? false);
             bool recoveryHeadline = recoveryBlocked && !connectionLost && !activeOperation && displayState != MachineRunState.Alarmed && snapshot.HasRuntime;
-            bool startBlocked = displayState == MachineRunState.Ready
-                && !string.IsNullOrWhiteSpace(_automaticStartBlockReason);
             bool startChecking = displayState == MachineRunState.Ready && _automaticStartReadinessChecking;
+            bool startBlocked = displayState == MachineRunState.Ready && !startChecking
+                && !string.IsNullOrWhiteSpace(_automaticStartBlockReason);
             MachineStateText.Text = T(snapshotFailed ? "状态读取失败" : clearing && !connectionLost && displayState != MachineRunState.Alarmed ? "设备清料中" : recoveryHeadline ? "恢复信息未确认" : startBlocked ? "启动条件未满足"
                 : startChecking ? "正在检查启动条件" : OperationUi.StateKey(displayState));
             Brush stateBrush = recoveryHeadline || startBlocked
@@ -526,7 +527,8 @@ namespace MotionControl.Host.Wpf.Operation
                 && !startBlocked && !startChecking && string.IsNullOrWhiteSpace(safetySummary)
                 && (displayState == MachineRunState.ResetRequired || displayState == MachineRunState.Ready))
                 NextActionText.Text = T(displayState == MachineRunState.ResetRequired ? "复位并完成设备准备后核对启动条件" : "完成设备准备后核对启动条件");
-            else if (!preparationNeeded.HasValue && taskOwner && taskIdentityKnown && !activeOperation && !noNamedAxes
+            else if (!preparationNeeded.HasValue && (snapshot.ControlOwner == MachineControlOwner.StationFlows || (taskOwner && taskIdentityKnown))
+                && !activeOperation && !noNamedAxes
                 && !startBlocked && !startChecking && string.IsNullOrWhiteSpace(safetySummary)
                 && (displayState == MachineRunState.ResetRequired || displayState == MachineRunState.Ready))
                 NextActionText.Text = T("准备范围待确认请先核对");
@@ -541,6 +543,7 @@ namespace MotionControl.Host.Wpf.Operation
                 && _automaticStartBlockReason.IndexOf("逻辑轴", StringComparison.OrdinalIgnoreCase) >= 0;
             bool preparationActionAvailable = preparationRequired && !noNamedAxes;
             AutomaticStartActionButton.Content = T(preparationActionAvailable ? "设备准备" : "打开轴手动");
+            AutomaticStartActionButton.Tag = preparationActionAvailable ? "设备准备" : "轴手动";
             AutomaticStartActionButton.Visibility = string.IsNullOrWhiteSpace(safetySummary)
                 && !activeOperation && displayState != MachineRunState.Alarmed && (preparationActionAvailable || axisActionRequired)
                 ? Visibility.Visible : Visibility.Collapsed;
@@ -797,10 +800,16 @@ namespace MotionControl.Host.Wpf.Operation
             !string.IsNullOrWhiteSpace(_runtime?.RecoveryBlockReason) ? "设备准备" : "工位运行")); }
         private void OpenTaskRun_Click(object sender, RoutedEventArgs e)
         { NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("工位运行")); }
-        /// <summary>从启动拦截提示进入设备准备；其他轴问题仍使用原有轴手动页面。</summary>
+        /// <summary>按当前快捷入口的实际目标导航；点击时重新确认提示和目标未发生变化。</summary>
         private void OpenAxisManual_Click(object sender, RoutedEventArgs e)
-        { NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs(
-            _runtime != null && !_runtime.IsPrepared ? "设备准备" : "轴手动")); }
+        {
+            var button = sender as Button;
+            string requestedPage = button?.Tag as string;
+            if (button == null || button.Visibility != Visibility.Visible || string.IsNullOrWhiteSpace(requestedPage)) return;
+            RefreshDisplay();
+            if (button.Visibility != Visibility.Visible || !Equals(button.Tag, requestedPage)) return;
+            NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs(requestedPage));
+        }
         /// <summary>跳转到轴映射页查看控制卡连接参数和失败原因，不执行连接或运动。</summary>
         private void ConnectionSettings_Click(object sender, RoutedEventArgs e)
         { NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("轴映射配置")); }

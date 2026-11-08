@@ -60,6 +60,13 @@ namespace MotionControl.OperatorPages.Checks
             Require(((Button)liveOverview.FindName("AutomaticStartActionButton")).Visibility == Visibility.Collapsed,
                 "缺少轴映射时仍显示设备准备快捷入口。");
             liveOverview.SetAxisMappingStatus(13, 13);
+            var safetyChanging = typeof(MachineRuntime).GetField("_onlineSafetyInputsChanging", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            safetyChanging.SetValue(runtime, true);
+            liveOverview.RefreshDisplay();
+            Require(((Button)liveOverview.FindName("AutomaticStartActionButton")).Visibility == Visibility.Collapsed
+                && ((TextBlock)liveOverview.FindName("NextActionText")).Text.Contains("准备范围待确认"),
+                "C# 入口的安全输入变更期间仍把准备范围当作已确认。");
+            safetyChanging.SetValue(runtime, false);
             var clearing = typeof(MachineRuntime).GetField("_clearing", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
             clearing.SetValue(runtime, true);
             liveOverview.RefreshDisplay();
@@ -91,6 +98,12 @@ namespace MotionControl.OperatorPages.Checks
             taskOverview.SetTaskPreparationScopeProvider((current, session) => published);
             Require(((Button)taskOverview.FindName("AutomaticStartActionButton")).Visibility == Visibility.Visible,
                 "确认当前任务会话后没有恢复设备准备快捷入口。");
+            safetyChanging.SetValue(taskRuntime, true);
+            taskOverview.RefreshDisplay();
+            Require(((Button)taskOverview.FindName("AutomaticStartActionButton")).Visibility == Visibility.Collapsed
+                && ((TextBlock)taskOverview.FindName("NextActionText")).Text.Contains("准备范围待确认"),
+                "任务入口的安全输入变更期间仍把准备范围当作已确认。");
+            safetyChanging.SetValue(taskRuntime, false);
             published = false;
             taskOverview.RefreshDisplay();
             Require(((Button)taskOverview.FindName("AutomaticStartActionButton")).Visibility == Visibility.Collapsed
@@ -100,6 +113,30 @@ namespace MotionControl.OperatorPages.Checks
             var taskReason = (string)reasonMethod.Invoke(taskOverview, new object[] { taskReadySnapshot });
             Require(taskReason.Contains("准备范围待确认") && !taskReason.Contains("已满足启动检查"),
                 "任务准备范围失效后，查看原因仍声称启动检查通过。");
+            var stateField = typeof(MachineRuntime).GetField("_state", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            var originalState = taskRuntime.State;
+            stateField.SetValue(taskRuntime, MachineRunState.Ready);
+            taskOverview.SetAutomaticStartReadiness("旧逻辑轴 X 尚未使能", true);
+            Require(((TextBlock)taskOverview.FindName("MachineStateText")).Text.Contains("正在检查")
+                && ((TextBlock)taskOverview.FindName("NextActionText")).Text.Contains("正在检查")
+                && ((Button)taskOverview.FindName("AutomaticStartActionButton")).Visibility == Visibility.Collapsed,
+                "启动条件检查中仍显示旧阻断原因或旧轴快捷入口。");
+            taskOverview.SetAutomaticStartReadiness("逻辑轴 X 尚未使能", false);
+            var shortcut = (Button)taskOverview.FindName("AutomaticStartActionButton");
+            OperatorNavigationEventArgs destination = null;
+            taskOverview.NavigationRequested += (sender, args) => destination = args;
+            Require(shortcut.Visibility == Visibility.Visible && shortcut.Content.ToString() == "打开轴手动",
+                "已确认轴拦截时没有显示轴手动入口。");
+            shortcut.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Require(destination?.Page == "轴手动", "快捷按钮文案为轴手动时却跳到了其他页面。");
+            published = true;
+            taskOverview.SetAutomaticStartReadiness(null, false);
+            Require(shortcut.Content.ToString() == "设备准备", "已确认准备范围时没有显示准备入口。");
+            destination = null;
+            published = false;
+            shortcut.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Require(destination == null, "点击前准备范围失效时仍沿旧快捷入口导航。");
+            stateField.SetValue(taskRuntime, originalState);
             int scopeReads = 0;
             taskOverview.SetTaskPreparationScopeProvider((current, session) => ++scopeReads == 1);
             Require(((Button)taskOverview.FindName("AutomaticStartActionButton")).Visibility == Visibility.Collapsed
