@@ -5,6 +5,7 @@
  <sys:String x:Key="任务监控.当前动作">当前动作</sys:String>
  <sys:String x:Key="任务监控.等待或异常说明">等待或异常说明</sys:String>
  <sys:String x:Key="任务监控.完成次数">完成次数</sys:String>
+ <sys:String x:Key="任务监控.工位列表">工位 / 状态</sys:String>
  <sys:String x:Key="任务监控.定位当前原因">定位当前原因</sys:String>
  <sys:String x:Key="任务监控.定位当前原因说明">有停机故障时跳转到故障步骤；没有故障时跳到当前等待步骤并显示等待条件。</sys:String>
  <sys:String x:Key="任务监控.跟随执行">跟随执行</sys:String>
@@ -27,6 +28,10 @@
  <sys:String x:Key="任务监控.步骤参数">步骤参数</sys:String>
  <sys:String x:Key="任务监控.关联配置">关联配置</sys:String>
  <sys:String x:Key="任务监控.流程数据来源格式">流程数据来源：{0}</sys:String>
+ <sys:String x:Key="任务监控.任务来源摘要">执行来源：任务列表 · 已读取当前任务；工程版本及会话标识未提供。</sys:String>
+ <sys:String x:Key="任务监控.期望条件（定义）">期望条件（定义）</sys:String>
+ <sys:String x:Key="任务监控.判断条件（定义）">判断条件（定义）</sys:String>
+ <sys:String x:Key="任务监控.工程范围投影诊断详情">工程投影诊断（非当前步骤）</sys:String>
  <sys:String x:Key="任务监控.内置示例来源">内置示例（未读取现场映射）</sys:String>
  <sys:String x:Key="任务监控.刷新失败，以下为旧数据">刷新失败，以下为旧数据</sys:String>
  <sys:String x:Key="任务监控.当前无等待或停机故障">当前没有等待步骤或停机故障</sys:String>

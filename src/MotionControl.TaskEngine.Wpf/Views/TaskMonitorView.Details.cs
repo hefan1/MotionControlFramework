@@ -16,6 +16,8 @@ namespace MotionControl.TaskEngine.Wpf.Views
     {
         /// <summary>会话引用不可变，只缓存当前选择与语言对应的有界显示字段。</summary>
         private readonly TaskProjectionDetailCache _projectionDetailCache = new TaskProjectionDetailCache();
+        /// <summary>保留同一投影字段的诊断列表，刷新时不打断展开和滚动。</summary>
+        private IReadOnlyList<TaskDetailField> _projectionDiagnosticsSource;
 
         /// <summary>只有选择变化时重建关联按钮；刷新数值不会打断键盘焦点。</summary>
         private TaskStepRow _referenceRow;
@@ -35,6 +37,9 @@ namespace MotionControl.TaskEngine.Wpf.Views
                 ObservationTable.ItemsSource = null;
                 ObservationTable.Visibility = Visibility.Collapsed;
                 FlowDetails.ItemsSource = null;
+                GlobalProjectionDiagnostics.ItemsSource = null;
+                GlobalProjectionDiagnosticsExpander.Visibility = Visibility.Collapsed;
+                _projectionDiagnosticsSource = null;
                 ParametersList.ItemsSource = null;
                 DetailNotice.Text = T("请选择步骤");
                 ReferencesPanel.Children.Clear();
@@ -69,9 +74,18 @@ namespace MotionControl.TaskEngine.Wpf.Views
             AddFlowDetails(row, fields, parameters, references);
             AddWaitDiagnostics(row.Snapshot, fields, references);
             var selectedStation = StationsGrid.SelectedItem as MotionControl.TaskEngine.Wpf.Monitoring.TaskStationRow;
-            fields.AddRange(_projectionDetailCache.Read(_session.Projection, _session.ProjectionError,
-                selectedStation?.Id, row.TaskId, node.Id, _guidanceEnglish));
+            var projectionFields = _projectionDetailCache.Read(_session.Projection, _session.ProjectionError,
+                selectedStation?.Id, row.TaskId, node.Id, _guidanceEnglish);
+            string diagnosticName = _guidanceEnglish ? "Diagnostic" : "诊断";
+            fields.AddRange(projectionFields.Where(item => item.Name != diagnosticName));
             FlowDetails.ItemsSource = fields;
+            if (!ReferenceEquals(_projectionDiagnosticsSource, projectionFields))
+            {
+                var projectDiagnostics = projectionFields.Where(item => item.Name == diagnosticName).ToList();
+                GlobalProjectionDiagnostics.ItemsSource = projectDiagnostics;
+                GlobalProjectionDiagnosticsExpander.Visibility = projectDiagnostics.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+                _projectionDiagnosticsSource = projectionFields;
+            }
             ParametersList.ItemsSource = parameters;
             DetailNotice.Text = row.Snapshot?.State == TaskNodeState.Failed ? T("故障恢复提示")
                 : T("监控只读说明");

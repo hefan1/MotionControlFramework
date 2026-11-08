@@ -91,10 +91,10 @@ namespace MotionControl.TaskEngine.Wpf.Views
                 references.Add(new TaskReferenceEventArgs("设备变量", assignment.VariableName));
             }
             else if (node is WaitConditionNode wait)
-                fields.Add(Field("等待条件", ConditionText(wait.Condition, references)));
+                fields.Add(Field("期望条件（定义）", ConditionText(wait.Condition, references)));
             else if (node is ConditionBranchNode branch)
             {
-                fields.Add(Field("判断条件", ConditionText(branch.Condition, references)));
+                fields.Add(Field("判断条件（定义）", ConditionText(branch.Condition, references)));
                 fields.Add(Field("本次选择", diagnostic?.Decision == null ? T("尚未判断")
                     : diagnostic.Decision.Value ? branch.WhenTrue.Name : branch.WhenFalse?.Name ?? T("不执行分支")));
                 fields.Add(Field("记录说明", T("使用判断当时的数据，后续变量改变不改写本次选择")));

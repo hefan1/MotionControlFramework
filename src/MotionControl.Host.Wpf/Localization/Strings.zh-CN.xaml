@@ -81,6 +81,7 @@
     <sys:String x:Key="流程页.待启动步骤">待启动步骤</sys:String>
     <sys:String x:Key="流程页.正在执行步骤">正在执行步骤</sys:String>
     <sys:String x:Key="流程页.暂停保留步骤">暂停保留步骤</sys:String>
+    <sys:String x:Key="流程页.停止保留步骤">停止保留步骤</sys:String>
     <sys:String x:Key="流程页.报警停留步骤">报警时工位步骤</sys:String>
     <sys:String x:Key="流程页.当前步骤">当前步骤</sys:String>
     <sys:String x:Key="流程页.查看轴监控">查看轴监控</sys:String>
@@ -789,6 +790,8 @@
  <sys:String x:Key="状态准备中">设备准备中</sys:String>
     <sys:String x:Key="流程页.报警状态未知">报警状态未知，请查看当前报警并核查连接。</sys:String>
     <sys:String x:Key="流程页.CSharp来源">来源：当前 Runtime 的 C# 设备工位；选择仅查看，不执行。</sys:String>
+    <sys:String x:Key="流程页.工位列表">工位 / 状态</sys:String>
+    <sys:String x:Key="流程页.CSharp步骤范围说明">代码流程未提供完整步骤列表；这里显示项目提供的当前步骤。</sys:String>
     <sys:String x:Key="流程页.选中工位">选中工位 / 现场核对</sys:String>
     <sys:String x:Key="流程页.独立状态未提供">独立工位状态：未提供；整机状态见页首。</sys:String>
     <sys:String x:Key="流程页.步骤未提供">未提供当前步骤</sys:String>
@@ -797,7 +800,7 @@
     <sys:String x:Key="流程页.断连未知">连接已丢失，当前步骤未知；不沿用旧步骤。</sys:String>
     <sys:String x:Key="流程页.输入未提供">当前未提供有效的等待输入名称，不能定向定位。</sys:String>
     <sys:String x:Key="流程页.数据有效">已读取项目提供的步骤；数据质量、采样时间与版本未提供。</sys:String>
-    <sys:String x:Key="流程页.等待输入">当前等待输入：{0}</sys:String>
+    <sys:String x:Key="流程页.等待输入">工位提供的等待输入：{0}</sys:String>
     <sys:String x:Key="安全联锁暂停语义说明">现场“停止按钮”请求暂停并保留步骤；顶部“停止”结束本次自动生产。软件配置不替代硬件安全回路。</sys:String>
     <sys:String x:Key="安全联锁映射未知">映射读取失败：物理地址未提供；不表示输入无效。</sys:String>
     <sys:String x:Key="安全联锁绑定为空">未配置；不默认绑定输入。</sys:String>

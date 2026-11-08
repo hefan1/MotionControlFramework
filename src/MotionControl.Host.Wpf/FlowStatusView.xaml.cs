@@ -69,13 +69,15 @@ namespace MotionControl.Host.Wpf
             InitializeComponent();
             foreach (IStationFlow flow in _runtime.StationFlows)
             {
-                var text = new TextBlock { FontSize = 14, TextWrapping = TextWrapping.Wrap };
+                var text = new TextBlock { FontSize = 14, TextWrapping = TextWrapping.Wrap,
+                    TextTrimming = TextTrimming.CharacterEllipsis, MaxHeight = 64 };
                 var item = new ListBoxItem { Content = text, Tag = flow, MinHeight = 44, Padding = new Thickness(8) };
                 StationList.Items.Add(item);
                 _stepTextByFlow.Add(flow, text);
                 _itemByFlow.Add(flow, item);
             }
             StationList.SelectionChanged += StationList_SelectionChanged;
+            NarrowCSharpStationPicker.ItemsSource = _runtime.StationFlows;
             if (StationList.Items.Count > 0) StationList.SelectedIndex = 0;
 
             _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
@@ -118,6 +120,28 @@ namespace MotionControl.Host.Wpf
         private void RefreshTimer_Tick(object sender, EventArgs e)
         {
             RefreshDisplay();
+        }
+
+        /// <summary>宽屏按工位、步骤和详情排列；窄屏改用工位选择栏并纵向显示。</summary>
+        private void CSharpStationWorkspace_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            bool narrow = e.NewSize.Width < 900;
+            if ((Grid.GetColumn(CSharpStepsCard) == 0) == narrow) return;
+            CSharpStationColumn.Width = new GridLength(narrow ? 1 : 1.1, GridUnitType.Star);
+            CSharpFirstGapColumn.Width = new GridLength(narrow ? 0 : 10);
+            CSharpStepsColumn.Width = narrow ? new GridLength(0) : new GridLength(2.4, GridUnitType.Star);
+            CSharpSecondGapColumn.Width = new GridLength(narrow ? 0 : 10);
+            CSharpDetailsColumn.Width = narrow ? new GridLength(0) : new GridLength(1.8, GridUnitType.Star);
+            CSharpFirstGapRow.Height = new GridLength(narrow ? 8 : 0);
+            CSharpStepsRow.Height = narrow ? GridLength.Auto : new GridLength(0);
+            CSharpSecondGapRow.Height = new GridLength(narrow ? 8 : 0);
+            CSharpDetailsRow.Height = narrow ? GridLength.Auto : new GridLength(0);
+            Grid.SetColumn(CSharpStepsCard, narrow ? 0 : 2);
+            Grid.SetRow(CSharpStepsCard, narrow ? 2 : 0);
+            Grid.SetColumn(CSharpStationDetailsCard, narrow ? 0 : 4);
+            Grid.SetRow(CSharpStationDetailsCard, narrow ? 4 : 0);
+            StationList.Visibility = narrow ? Visibility.Collapsed : Visibility.Visible;
+            NarrowCSharpStationPicker.Visibility = narrow ? Visibility.Visible : Visibility.Collapsed;
         }
 
         /// <summary>语言切换后重新读取代码生成的状态和报警文字。</summary>
@@ -169,7 +193,17 @@ namespace MotionControl.Host.Wpf
         private void StationList_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             _selectedFlow = (StationList.SelectedItem as ListBoxItem)?.Tag as IStationFlow;
+            if (!ReferenceEquals(NarrowCSharpStationPicker.SelectedItem, _selectedFlow))
+                NarrowCSharpStationPicker.SelectedItem = _selectedFlow;
             RefreshDisplay();
+        }
+
+        /// <summary>窄屏选择栏只切换同一个工位对象，不发送设备命令。</summary>
+        private void NarrowCSharpStationPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (NarrowCSharpStationPicker.SelectedItem is IStationFlow flow
+                && _itemByFlow.TryGetValue(flow, out var item) && !ReferenceEquals(StationList.SelectedItem, item))
+                StationList.SelectedItem = item;
         }
 
         /// <summary>读取当前选中工位的等待输入后沿原逻辑名路由导航，不猜测输入。</summary>
@@ -208,10 +242,11 @@ namespace MotionControl.Host.Wpf
         }
 
         /// <summary>采集单个工位的项目步骤及输入；失败清除旧值，缺接口不推断独立状态。</summary>
-        private string ReadStation(IStationFlow flow, out string inputName, out bool valid)
+        private string ReadStation(IStationFlow flow, out string inputName, out bool valid, out StationOperationState stationState)
         {
             inputName = null;
             valid = false;
+            stationState = StationOperationState.NotProvided;
             if (!HasCurrentSession()) return (string)FindResource("流程页.断连未知");
             try
             {
@@ -220,6 +255,7 @@ namespace MotionControl.Host.Wpf
                     return (string)FindResource("流程页.读取失败") + "：" + status.StatusReadError.GetBaseException().Message;
                 inputName = status.WaitingInputName;
                 valid = true;
+                stationState = status.IndependentState;
                 string step = string.IsNullOrWhiteSpace(status.CurrentStep)
                     ? (string)FindResource("流程页.步骤未提供") : status.CurrentStep;
                 string independentState = status.IndependentState == StationOperationState.NotProvided
@@ -263,7 +299,9 @@ namespace MotionControl.Host.Wpf
             if (showTasks)
                 TaskRunStatusText.Text = (string)FindResource(_isTaskSessionLoaded == null ? "流程页.任务状态待查看"
                     : _isTaskSessionLoaded() ? "流程页.任务已读取" : "流程页.任务未读取");
-            StationStepHeadingText.Text = (string)FindResource("流程页." + OperationUi.StepLabelKey(_runtime.State));
+            // 整机运行不等于每一个工位都在执行；独立状态未知时也不能作此推断。
+            string stepHeading = _runtime.State == MachineRunState.Running ? "当前步骤" : OperationUi.StepLabelKey(_runtime.State);
+            StationStepHeadingText.Text = (string)FindResource("流程页." + stepHeading);
             string stateResourceKey = disconnected ? "状态未连接" : !string.IsNullOrWhiteSpace(_automaticStartBlockReason)
                 ? "状态启动条件未满足"
                 : _automaticStartReadinessChecking
@@ -289,12 +327,26 @@ namespace MotionControl.Host.Wpf
             {
                 string input;
                 bool valid;
+                StationOperationState stationState;
                 input = null;
                 valid = false;
-                string step = disconnected ? (string)FindResource("流程页.断连未知") : ReadStation(row.Key, out input, out valid);
+                stationState = StationOperationState.NotProvided;
+                string step = disconnected ? (string)FindResource("流程页.断连未知") : ReadStation(row.Key, out input, out valid, out stationState);
                 row.Value.Text = row.Key.StationName + " — " + step;
+                row.Value.ToolTip = row.Value.Text;
                 if (ReferenceEquals(row.Key, _selectedFlow))
                 {
+                    if (!valid || stationState != StationOperationState.NotProvided)
+                    {
+                        string selectedStepLabel = !valid ? "当前步骤"
+                            : stationState == StationOperationState.Paused ? "暂停保留步骤"
+                            : stationState == StationOperationState.Stopped ? "停止保留步骤"
+                            : stationState == StationOperationState.Running && _runtime.State == MachineRunState.Running ? "正在执行步骤"
+                            : "当前步骤";
+                        StationStepHeadingText.Text = (string)FindResource("流程页." + selectedStepLabel);
+                    }
+                    int lineEnd = step.IndexOf('\n');
+                    CSharpCurrentStepText.Text = lineEnd < 0 ? step : step.Substring(0, lineEnd).TrimEnd('\r');
                     StationDetailText.Text = row.Key.StationName + "\n" + (string)FindResource("流程页.CSharp来源") + "\n" + step
                         + "\n" + (string.IsNullOrWhiteSpace(input) ? (string)FindResource("流程页.输入未提供") : string.Format((string)FindResource("流程页.等待输入"), input));
                     StationInputButton.IsEnabled = valid && !string.IsNullOrWhiteSpace(input);
@@ -303,6 +355,7 @@ namespace MotionControl.Host.Wpf
             }
             if (_selectedFlow == null)
             {
+                CSharpCurrentStepText.Text = (string)FindResource("未配置自动工位");
                 StationDetailText.Text = (string)FindResource("未配置自动工位");
                 StationInputButton.IsEnabled = false;
             }

@@ -74,6 +74,7 @@
     <sys:String x:Key="流程页.待启动步骤">Next steps before Start</sys:String>
     <sys:String x:Key="流程页.正在执行步骤">Steps in progress</sys:String>
     <sys:String x:Key="流程页.暂停保留步骤">Steps retained during pause</sys:String>
+    <sys:String x:Key="流程页.停止保留步骤">Steps retained after stop</sys:String>
     <sys:String x:Key="流程页.报警停留步骤">Station steps during alarm</sys:String>
     <sys:String x:Key="流程页.当前步骤">Current steps</sys:String>
     <sys:String x:Key="流程页.查看轴监控">View Axis Monitor</sys:String>
@@ -779,6 +780,8 @@
  <sys:String x:Key="状态准备中">Preparing</sys:String>
     <sys:String x:Key="流程页.报警状态未知">Alarm status unknown. View current alarms and check the connection.</sys:String>
     <sys:String x:Key="流程页.CSharp来源">Source: C# station objects in the current Runtime. Selection is read-only.</sys:String>
+    <sys:String x:Key="流程页.工位列表">Stations / status</sys:String>
+    <sys:String x:Key="流程页.CSharp步骤范围说明">The C# flow does not provide a complete step list; the current step comes from the equipment project.</sys:String>
     <sys:String x:Key="流程页.选中工位">Selected station / inspection</sys:String>
     <sys:String x:Key="流程页.独立状态未提供">Independent station state: not provided. Machine state is shown above.</sys:String>
     <sys:String x:Key="流程页.步骤未提供">Current step not provided</sys:String>
@@ -787,7 +790,7 @@
     <sys:String x:Key="流程页.断连未知">Connection lost. Current step unknown; previous step is not current.</sys:String>
     <sys:String x:Key="流程页.输入未提供">No valid waiting input name is available for targeted navigation.</sys:String>
     <sys:String x:Key="流程页.数据有效">The project-provided step was read. Data quality, sample time and version are not provided.</sys:String>
-    <sys:String x:Key="流程页.等待输入">Current waiting input: {0}</sys:String>
+    <sys:String x:Key="流程页.等待输入">Input reported by station: {0}</sys:String>
     <sys:String x:Key="安全联锁暂停语义说明">The field Stop input requests pause and retains the step. The top Stop ends automatic production. Software configuration does not replace hardware safety circuits.</sys:String>
     <sys:String x:Key="安全联锁映射未知">Mapping read failed: physical address not provided. This is not an inactive input.</sys:String>
     <sys:String x:Key="安全联锁绑定为空">Not configured; no input selected by default.</sys:String>

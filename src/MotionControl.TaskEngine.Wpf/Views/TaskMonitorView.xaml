@@ -1,6 +1,6 @@
 <UserControl x:Class="MotionControl.TaskEngine.Wpf.Views.TaskMonitorView"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- xmlns:rows="clr-namespace:MotionControl.TaskEngine.Wpf.Monitoring" Background="#F3F6FA">
+ xmlns:rows="clr-namespace:MotionControl.TaskEngine.Wpf.Monitoring" xmlns:sys="clr-namespace:System;assembly=mscorlib" Background="#F3F6FA">
  <UserControl.Resources>
   <ResourceDictionary><ResourceDictionary.MergedDictionaries>
    <ResourceDictionary Source="../Styles/TaskMonitorStyles.xaml"/>
@@ -8,11 +8,10 @@
   </ResourceDictionary.MergedDictionaries>
   <HierarchicalDataTemplate DataType="{x:Type rows:TaskStepRow}" ItemsSource="{Binding Children}">
    <Grid Margin="0,5" ToolTip="{Binding EngineeringDetail}">
-    <Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition Width="*" MinWidth="150"/><ColumnDefinition Width="74"/><ColumnDefinition Width="1.1*" MinWidth="110"/></Grid.ColumnDefinitions>
+    <Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition Width="*"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
     <TextBlock Text="{Binding Number}" VerticalAlignment="Center"/>
-    <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-    <TextBlock Grid.Column="2" Text="{Binding StateText}" Foreground="{Binding StateColor}" VerticalAlignment="Center"/>
-    <TextBlock Grid.Column="3" Text="{Binding Detail}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+    <TextBlock x:Name="StepNameText" Grid.Column="1" Text="{Binding Name}" ToolTip="{Binding Name}" Margin="0,0,10,0" ClipToBounds="True" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+    <TextBlock x:Name="StepStateText" Grid.Column="2" Text="{Binding StateText}" ToolTip="{Binding Detail}" Foreground="{Binding StateColor}" ClipToBounds="True" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
    </Grid>
   </HierarchicalDataTemplate>
   <Style TargetType="TreeViewItem">
@@ -20,34 +19,87 @@
    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
    <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
    <Setter Property="Padding" Value="2"/><Setter Property="BorderBrush" Value="#E1E7EF"/><Setter Property="BorderThickness" Value="0,0,0,1"/>
+   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TreeViewItem">
+    <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+     <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+     <ToggleButton x:Name="Expand" IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" Focusable="False" Width="18" Height="30" VerticalAlignment="Top">
+      <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="Transparent"><TextBlock x:Name="Arrow" Text="›" FontSize="18" Foreground="#596B7D" HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5"/></Border>
+       <ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="Arrow" Property="RenderTransform"><Setter.Value><RotateTransform Angle="90"/></Setter.Value></Setter></Trigger></ControlTemplate.Triggers>
+      </ControlTemplate></ToggleButton.Template>
+     </ToggleButton>
+     <Border x:Name="RowBorder" Grid.Column="1" Background="Transparent" BorderThickness="2,0,0,1" BorderBrush="#E1E7EF" Padding="{TemplateBinding Padding}"><ContentPresenter ContentSource="Header" HorizontalAlignment="Stretch"/></Border>
+     <ItemsPresenter x:Name="Children" Grid.Row="1" Grid.ColumnSpan="2" Margin="18,0,0,0"/>
+    </Grid>
+    <ControlTemplate.Triggers>
+     <Trigger Property="HasItems" Value="False"><Setter TargetName="Expand" Property="Visibility" Value="Hidden"/></Trigger>
+     <Trigger Property="IsExpanded" Value="False"><Setter TargetName="Children" Property="Visibility" Value="Collapsed"/></Trigger>
+     <Trigger Property="IsSelected" Value="True"><Setter TargetName="RowBorder" Property="Background" Value="#E6F1FF"/><Setter TargetName="RowBorder" Property="BorderBrush" Value="#2375D1"/></Trigger>
+     <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="RowBorder" Property="BorderBrush" Value="#2375D1"/></Trigger>
+    </ControlTemplate.Triggers>
+   </ControlTemplate></Setter.Value></Setter>
   </Style>
  </ResourceDictionary>
  </UserControl.Resources>
  <Grid Margin="14,8,14,12">
-  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="3*" MinHeight="190"/><RowDefinition Height="8"/><RowDefinition Height="4*" MinHeight="160"/></Grid.RowDefinitions>
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
   <Border Background="#EAF2FC" BorderBrush="#D8E2EE" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,0,0,8">
    <DockPanel><TextBlock x:Name="RefreshStatus" DockPanel.Dock="Right" Foreground="#596B7D" Margin="15,0,0,0"/>
-    <TextBlock x:Name="SourceText" TextWrapping="Wrap" MaxHeight="72" TextTrimming="CharacterEllipsis" Foreground="#40536A"/></DockPanel>
+    <ScrollViewer x:Name="WarningScroll" MaxHeight="96" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+     <TextBlock x:Name="SourceText" TextWrapping="Wrap" Foreground="#40536A"/>
+    </ScrollViewer></DockPanel>
   </Border>
-  <DataGrid x:Name="StationsGrid" Grid.Row="1" SelectionChanged="Station_Selected" IsReadOnly="True" AutoGenerateColumns="False" HeadersVisibility="Column" ColumnHeaderHeight="34" RowHeight="30">
-   <DataGrid.Columns>
-    <DataGridTextColumn Header="{DynamicResource 任务监控.工位名称}" Binding="{Binding Name}" Width="1.1*"/>
-    <DataGridTextColumn Header="{DynamicResource 任务监控.方式}" Binding="{Binding Mode}" Width="80"/>
-    <DataGridTextColumn Header="{DynamicResource 任务监控.状态}" Binding="{Binding State}" Width="88">
-     <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{Binding Color}"/><Setter Property="VerticalAlignment" Value="Center"/></Style></DataGridTextColumn.ElementStyle>
-    </DataGridTextColumn>
-    <DataGridTextColumn Header="{DynamicResource 任务监控.当前动作}" Binding="{Binding Action}" Width="1.6*">
-     <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextTrimming" Value="CharacterEllipsis"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="ToolTip" Value="{Binding Action}"/></Style></DataGridTextColumn.ElementStyle>
-    </DataGridTextColumn>
-    <DataGridTextColumn Header="{DynamicResource 任务监控.等待或异常说明}" Binding="{Binding Detail}" Width="2*">
-     <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextTrimming" Value="CharacterEllipsis"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="ToolTip" Value="{Binding EngineeringDetail}"/></Style></DataGridTextColumn.ElementStyle>
-    </DataGridTextColumn>
-   </DataGrid.Columns>
-  </DataGrid>
-  <GridSplitter Grid.Row="2" HorizontalAlignment="Stretch" VerticalAlignment="Center" Height="4" Background="#D8E2EE"/>
-  <Grid Grid.Row="3">
-   <Grid.ColumnDefinitions><ColumnDefinition Width="*" MinWidth="400"/><ColumnDefinition Width="8"/><ColumnDefinition Width="390" MinWidth="320"/></Grid.ColumnDefinitions>
-   <Border Style="{StaticResource 内容边框}">
+  <ScrollViewer x:Name="TaskWorkspaceScroll" Grid.Row="1" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Disabled">
+  <Grid x:Name="TaskRunWorkspace" SizeChanged="TaskRunWorkspace_SizeChanged">
+   <Grid.ColumnDefinitions><ColumnDefinition x:Name="TaskStationColumn" Width="1.1*"/><ColumnDefinition x:Name="TaskFirstGapColumn" Width="10"/><ColumnDefinition x:Name="TaskStepsColumn" Width="2.4*"/><ColumnDefinition x:Name="TaskSecondGapColumn" Width="10"/><ColumnDefinition x:Name="TaskDetailsColumn" Width="1.8*"/></Grid.ColumnDefinitions>
+   <Grid.RowDefinitions><RowDefinition x:Name="TaskStationRow" Height="*"/><RowDefinition x:Name="TaskFirstGapRow" Height="0"/><RowDefinition x:Name="TaskStepsRow" Height="0"/><RowDefinition x:Name="TaskSecondGapRow" Height="0"/><RowDefinition x:Name="TaskDetailsRow" Height="0"/></Grid.RowDefinitions>
+   <Border x:Name="TaskStationListCard" Style="{StaticResource 内容边框}">
+    <Grid Margin="10"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+     <TextBlock Text="{DynamicResource 任务监控.工位列表}" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8"/>
+     <Grid Grid.Row="1">
+      <DataGrid x:Name="StationsGrid" SelectionChanged="Station_Selected" IsReadOnly="True" AutoGenerateColumns="False" HeadersVisibility="None" CanUserAddRows="False" CanUserDeleteRows="False" SelectionMode="Single" RowHeight="{x:Static sys:Double.NaN}" MinRowHeight="54" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
+       <DataGrid.Columns><DataGridTemplateColumn Width="*"><DataGridTemplateColumn.CellTemplate><DataTemplate>
+        <StackPanel Margin="4,3" ToolTip="{Binding EngineeringDetail}">
+         <TextBlock Text="{Binding Name}" ToolTip="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+         <StackPanel Orientation="Horizontal" Margin="0,3,0,0"><TextBlock Text="{Binding State}" Foreground="{Binding Color}"/><TextBlock Text=" · " Foreground="#596B7D"/><TextBlock Text="{Binding Mode}" Foreground="#596B7D"/></StackPanel>
+         <TextBlock x:Name="StationActionText" Text="{Binding Action}" ToolTip="{Binding Action}" TextTrimming="CharacterEllipsis" Margin="0,3,0,0">
+          <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers>
+           <DataTrigger Binding="{Binding Action}" Value="—"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+           <DataTrigger Binding="{Binding Action}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+           <DataTrigger Binding="{Binding Action}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+          </Style.Triggers></Style></TextBlock.Style>
+         </TextBlock>
+         <TextBlock x:Name="StationDetailText" Text="{Binding Detail}" ToolTip="{Binding Detail}" Foreground="#596B7D" TextTrimming="CharacterEllipsis" Margin="0,3,0,0">
+          <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers>
+           <DataTrigger Binding="{Binding Detail}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+           <DataTrigger Binding="{Binding Detail}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+          </Style.Triggers></Style></TextBlock.Style>
+         </TextBlock>
+        </StackPanel>
+       </DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn></DataGrid.Columns>
+      </DataGrid>
+      <ComboBox x:Name="NarrowTaskStationPicker" ItemsSource="{Binding ItemsSource, ElementName=StationsGrid}" SelectedItem="{Binding SelectedItem, ElementName=StationsGrid, Mode=TwoWay}" Visibility="Collapsed" VerticalAlignment="Top" MinHeight="34">
+       <ComboBox.ItemTemplate><DataTemplate><StackPanel Margin="2,2">
+        <DockPanel><TextBlock x:Name="NarrowStationState" DockPanel.Dock="Right" Text="{Binding State}" Foreground="{Binding Color}" Margin="8,0,0,0"/>
+         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/></DockPanel>
+        <TextBlock x:Name="NarrowStationAction" Text="{Binding Action}" ToolTip="{Binding Action}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0">
+         <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers>
+          <DataTrigger Binding="{Binding Action}" Value="—"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+          <DataTrigger Binding="{Binding Action}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+          <DataTrigger Binding="{Binding Action}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+         </Style.Triggers></Style></TextBlock.Style>
+        </TextBlock>
+        <TextBlock x:Name="NarrowStationDetail" Text="{Binding Detail}" ToolTip="{Binding Detail}" Foreground="#596B7D" TextTrimming="CharacterEllipsis" Margin="0,2,0,0">
+         <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers>
+          <DataTrigger Binding="{Binding Detail}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+          <DataTrigger Binding="{Binding Detail}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+         </Style.Triggers></Style></TextBlock.Style>
+        </TextBlock>
+       </StackPanel></DataTemplate></ComboBox.ItemTemplate>
+      </ComboBox>
+     </Grid>
+    </Grid>
+   </Border>
+   <Border x:Name="TaskStepsCard" Grid.Column="2" Style="{StaticResource 内容边框}">
     <Grid Margin="10"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
      <DockPanel Margin="0,0,0,8">
       <Button x:Name="LocateCurrentCauseButton" DockPanel.Dock="Right" Content="{DynamicResource 任务监控.定位当前原因}"
@@ -56,15 +108,14 @@
       <TextBlock x:Name="StepsTitle" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
      </DockPanel>
      <Border Grid.Row="1" Background="#F7F9FC" BorderBrush="#D9E0E8" BorderThickness="1" Padding="20,6,4,6">
-      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition Width="*"/><ColumnDefinition Width="74"/><ColumnDefinition Width="1.1*"/></Grid.ColumnDefinitions>
-       <TextBlock Text="{DynamicResource 任务监控.步序}"/><TextBlock Grid.Column="1" Text="{DynamicResource 任务监控.动作说明}"/><TextBlock Grid.Column="2" Text="{DynamicResource 任务监控.状态}"/><TextBlock Grid.Column="3" Text="{DynamicResource 任务监控.执行说明}"/>
+      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition Width="*"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
+       <TextBlock Text="{DynamicResource 任务监控.步序}"/><TextBlock Grid.Column="1" Text="{DynamicResource 任务监控.动作说明}"/><TextBlock Grid.Column="2" Text="{DynamicResource 任务监控.状态}"/>
       </Grid>
      </Border>
-     <TreeView x:Name="StepsTree" Grid.Row="2" BorderBrush="#D9E0E8" BorderThickness="1,0,1,1" SelectedItemChanged="Step_Selected" PreviewMouseDown="StepsTree_PreviewMouseDown" PreviewKeyDown="StepsTree_PreviewKeyDown" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+     <TreeView x:Name="StepsTree" Grid.Row="2" BorderBrush="#D9E0E8" BorderThickness="1,0,1,1" HorizontalContentAlignment="Stretch" SelectedItemChanged="Step_Selected" PreviewMouseDown="StepsTree_PreviewMouseDown" PreviewKeyDown="StepsTree_PreviewKeyDown" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
     </Grid>
    </Border>
-   <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="#D8E2EE"/>
-   <Border Grid.Column="2" Style="{StaticResource 内容边框}">
+   <Border x:Name="TaskStepDetailsCard" Grid.Column="4" Style="{StaticResource 内容边框}">
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
      <StackPanel Margin="14">
      <Grid Margin="0,0,0,8">
@@ -95,6 +146,13 @@
       <ItemsControl x:Name="FlowDetails" Margin="0,8"><ItemsControl.ItemTemplate><DataTemplate>
        <StackPanel Margin="0,0,0,7"><TextBlock Text="{Binding Name}" Foreground="#596B7D"/><TextBlock Text="{Binding Value}" TextWrapping="Wrap"/></StackPanel>
       </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+      <Expander x:Name="GlobalProjectionDiagnosticsExpander" Header="{DynamicResource 任务监控.工程范围投影诊断详情}" Visibility="Collapsed" Margin="0,0,0,8" Padding="4" BorderBrush="#D8E2EE" BorderThickness="1">
+       <ScrollViewer MaxHeight="180" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ItemsControl x:Name="GlobalProjectionDiagnostics"><ItemsControl.ItemTemplate><DataTemplate>
+         <TextBlock Text="{Binding Value}" TextWrapping="Wrap" Margin="4,3"/>
+        </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+       </ScrollViewer>
+      </Expander>
       <Expander Header="{DynamicResource 任务监控.步骤参数}" Margin="0,8" Padding="4" BorderBrush="#D8E2EE" BorderThickness="1">
        <ItemsControl x:Name="ParametersList"><ItemsControl.ItemTemplate><DataTemplate>
         <Grid Margin="5"><Grid.ColumnDefinitions><ColumnDefinition Width="100"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
@@ -108,5 +166,6 @@
     </ScrollViewer>
    </Border>
   </Grid>
+  </ScrollViewer>
  </Grid>
 </UserControl>

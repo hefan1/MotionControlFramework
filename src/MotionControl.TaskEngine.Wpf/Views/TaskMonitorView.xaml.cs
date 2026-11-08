@@ -19,6 +19,8 @@ namespace MotionControl.TaskEngine.Wpf.Views
     {
         /// <summary>本页处理提示跟随主窗口语言。</summary>
         private bool _guidanceEnglish;
+        /// <summary>正式 Host 隐藏内部路径，但仍显示故障与资源状态提示。</summary>
+        private bool _hideSourcePath;
         /// <summary>提供当前任务定义、设备端口和整机状态的监控会话。</summary>
         private readonly TaskMonitorSession _session;
         /// <summary>稳定的工位行集合。</summary>
@@ -51,7 +53,6 @@ namespace MotionControl.TaskEngine.Wpf.Views
         {
             _session = session ?? throw new ArgumentNullException(nameof(session));
             InitializeComponent();
-            RefreshStationColumnHeaders();
             StationsGrid.ItemsSource = _stations;
             _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
             _timer.Tick += RefreshTick;
@@ -62,7 +63,34 @@ namespace MotionControl.TaskEngine.Wpf.Views
         /// <summary>由正式 Host 将来源路径收纳到诊断区，保留监控刷新时间。</summary>
         public void HideSourcePath()
         {
-            SourceText.Visibility = Visibility.Collapsed;
+            _hideSourcePath = true;
+            Refresh();
+        }
+
+        /// <summary>宽屏依次显示工位、步骤和详情；窄屏使用工位选择栏并上下排列内容。</summary>
+        private void TaskRunWorkspace_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            bool narrow = e.NewSize.Width < 900;
+            if ((Grid.GetColumn(TaskStepsCard) == 0) == narrow) return;
+            TaskWorkspaceScroll.VerticalScrollBarVisibility = narrow ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled;
+            // 限定窄屏工作区高度，避免长步骤树把详情推到很远的页面底部。
+            TaskRunWorkspace.Height = narrow ? 560 : double.NaN;
+            TaskStationColumn.Width = new GridLength(narrow ? 1 : 1.1, GridUnitType.Star);
+            TaskFirstGapColumn.Width = new GridLength(narrow ? 0 : 10);
+            TaskStepsColumn.Width = narrow ? new GridLength(0) : new GridLength(2.4, GridUnitType.Star);
+            TaskSecondGapColumn.Width = new GridLength(narrow ? 0 : 10);
+            TaskDetailsColumn.Width = narrow ? new GridLength(0) : new GridLength(1.8, GridUnitType.Star);
+            TaskStationRow.Height = narrow ? GridLength.Auto : new GridLength(1, GridUnitType.Star);
+            TaskFirstGapRow.Height = new GridLength(narrow ? 8 : 0);
+            TaskStepsRow.Height = narrow ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+            TaskSecondGapRow.Height = new GridLength(narrow ? 8 : 0);
+            TaskDetailsRow.Height = narrow ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+            Grid.SetColumn(TaskStepsCard, narrow ? 0 : 2);
+            Grid.SetRow(TaskStepsCard, narrow ? 2 : 0);
+            Grid.SetColumn(TaskStepDetailsCard, narrow ? 0 : 4);
+            Grid.SetRow(TaskStepDetailsCard, narrow ? 4 : 0);
+            StationsGrid.Visibility = narrow ? Visibility.Collapsed : Visibility.Visible;
+            NarrowTaskStationPicker.Visibility = narrow ? Visibility.Visible : Visibility.Collapsed;
         }
 
         /// <summary>按唯一工位标识或名称定位实际工位，并显示该工位的故障或当前活动步骤。</summary>
@@ -150,18 +178,19 @@ namespace MotionControl.TaskEngine.Wpf.Views
                 }
                 if (StationsGrid.SelectedItem == null && _stations.Count > 0) StationsGrid.SelectedIndex = 0;
                 var source = _session.IsExample ? T("内置示例来源") : _session.Source;
-                SourceText.Text = string.Format(T("流程数据来源格式"), source);
+                SourceText.Text = _hideSourcePath ? T("任务来源摘要") : string.Format(T("流程数据来源格式"), source);
                 if (_snapshot.State == TaskMachineState.Stopped)
-                    SourceText.Text += "\n" + (_guidanceEnglish ? "Task session terminated. Review the retained steps; this session cannot restart. Termination alone does not confirm stopped axes or safe fixtures." : "任务会话已终止：保留步骤供核查，本会话不能再次启动。任务终止不等于轴已停稳或夹具安全。");
+                    SourceText.Text += (SourceText.Text.Length == 0 ? string.Empty : "\n") + (_guidanceEnglish ? "Task session terminated. Review the retained steps; this session cannot restart. Termination alone does not confirm stopped axes or safe fixtures." : "任务会话已终止：保留步骤供核查，本会话不能再次启动。任务终止不等于轴已停稳或夹具安全。");
                 if (_snapshot.State == TaskMachineState.Faulted)
-                    SourceText.Text += "\n" + (_guidanceEnglish ? "Fault latched: locate the cause and inspect the site. Maintenance must resolve stop failures or unknown feedback before recovery." : "故障已锁存：先定位当前原因并核查现场；停止失败或反馈未知时，由设备维护人员处理后再恢复。");
+                    SourceText.Text += (SourceText.Text.Length == 0 ? string.Empty : "\n") + (_guidanceEnglish ? "Fault latched: locate the cause and inspect the site. Maintenance must resolve stop failures or unknown feedback before recovery." : "故障已锁存：先定位当前原因并核查现场；停止失败或反馈未知时，由设备维护人员处理后再恢复。");
                 var blockedResources = _snapshot.Resources.Where(item => item.State == MotionControl.TaskEngine.Resources.TaskResourceState.Blocked).ToList();
                 if (blockedResources.Count > 0)
-                    SourceText.Text += "\n" + (_guidanceEnglish ? "Resources awaiting confirmation: " : "资源待确认：")
+                    SourceText.Text += (SourceText.Text.Length == 0 ? string.Empty : "\n") + (_guidanceEnglish ? "Resources awaiting confirmation: " : "资源待确认：")
                         + blockedResources.Count + (_guidanceEnglish ? " total · " : " 项 · ") + string.Join("；", blockedResources.Take(2).Select(item => item.TaskName + " · " + item.NodeName))
                         + (blockedResources.Count > 2 ? (_guidanceEnglish ? "; additional items: " : "；其余待确认：") + (blockedResources.Count - 2) : string.Empty)
                         + (_guidanceEnglish ? ". Next: inspect each resource using the session resource-inspection entry. Isolation remains until confirmed." : "。下一步：从任务会话的资源核查入口逐项核查；未确认前继续保留隔离。");
                 SourceText.ToolTip = SourceText.Text;
+                SourceText.Visibility = string.IsNullOrWhiteSpace(SourceText.Text) ? Visibility.Collapsed : Visibility.Visible;
                 RefreshStatus.Text = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
                 _refreshFailed = false;
                 if (_followAfterFaultRecovery && _snapshot.State == TaskMachineState.Running)
@@ -400,14 +429,6 @@ namespace MotionControl.TaskEngine.Wpf.Views
         /// <summary>按中文资源键读取文字，方便开发者从页面搜索到代码。</summary>
         public string T(string key) { return TryFindResource("任务监控." + key) as string ?? key; }
 
-        /// <summary>显式写入本地化工位表头，确保 DataGridColumn 脱离可视树时仍显示资源文字。</summary>
-        private void RefreshStationColumnHeaders()
-        {
-            string[] keys = { "工位名称", "方式", "状态", "当前动作", "等待或异常说明" };
-            for (int index = 0; index < keys.Length && index < StationsGrid.Columns.Count; index++)
-                StationsGrid.Columns[index].Header = T(keys[index]);
-        }
-
         /// <summary>切换静态标签与动态状态文字；设备自定义名称保留原文。</summary>
         public void SetLanguage(string language)
         {
@@ -415,7 +436,6 @@ namespace MotionControl.TaskEngine.Wpf.Views
             var dictionaries = Resources.MergedDictionaries;
             dictionaries[1] = new ResourceDictionary { Source = new Uri("/MotionControl.TaskEngine.Wpf;component/Localization/Strings."
                 + (language == "en-US" ? "en-US" : "zh-CN") + ".xaml", UriKind.Relative) };
-            RefreshStationColumnHeaders();
             if (StationsGrid.SelectedItem is TaskStationRow station)
                 StepsTitle.Text = station.Name + " · " + T("运行步骤");
             Refresh();

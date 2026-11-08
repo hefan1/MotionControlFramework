@@ -63,7 +63,7 @@ namespace MotionControl.TaskEngine.Wpf.Views
             if (total == 0 && available) fields.Add(new TaskDetailField(english ? "References" : "引用", english ? "No matches within projected items; completeness unknown." : "已投影项中无匹配；完整性未知。"));
             if (projection != null && projection.Diagnostics.Count > 0)
             {
-                fields.Add(new TaskDetailField(english ? "Projection diagnostics" : "投影诊断", english
+                fields.Add(new TaskDetailField(english ? "Project-wide projection diagnostics" : "工程范围投影诊断", english
                     ? $"Showing {Math.Min(20, projection.Diagnostics.Count)} of {projection.Diagnostics.Count}."
                     : $"显示 {Math.Min(20, projection.Diagnostics.Count)} / 共 {projection.Diagnostics.Count} 条诊断。"));
                 foreach (var diagnostic in projection.Diagnostics.Take(20)) fields.Add(new TaskDetailField(english ? "Diagnostic" : "诊断", diagnostic));

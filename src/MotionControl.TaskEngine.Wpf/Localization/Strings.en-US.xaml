@@ -5,6 +5,7 @@
  <sys:String x:Key="任务监控.当前动作">Current actions</sys:String>
  <sys:String x:Key="任务监控.等待或异常说明">Waiting / fault details</sys:String>
  <sys:String x:Key="任务监控.完成次数">Cycles</sys:String>
+ <sys:String x:Key="任务监控.工位列表">Stations / status</sys:String>
  <sys:String x:Key="任务监控.定位当前原因">Locate current cause</sys:String>
  <sys:String x:Key="任务监控.定位当前原因说明">With a stop fault, open its step. Otherwise, open a waiting step and show its wait condition.</sys:String>
  <sys:String x:Key="任务监控.跟随执行">Follow execution</sys:String>
@@ -27,6 +28,10 @@
  <sys:String x:Key="任务监控.步骤参数">Step parameters</sys:String>
  <sys:String x:Key="任务监控.关联配置">Related configuration</sys:String>
  <sys:String x:Key="任务监控.流程数据来源格式">Flow data source: {0}</sys:String>
+ <sys:String x:Key="任务监控.任务来源摘要">Execution source: task list · Current tasks loaded; project version and session ID not provided.</sys:String>
+ <sys:String x:Key="任务监控.期望条件（定义）">Expected condition (definition)</sys:String>
+ <sys:String x:Key="任务监控.判断条件（定义）">Decision condition (definition)</sys:String>
+ <sys:String x:Key="任务监控.工程范围投影诊断详情">Project diagnostics (not specific to this step)</sys:String>
  <sys:String x:Key="任务监控.内置示例来源">Built-in example (field mappings not loaded)</sys:String>
  <sys:String x:Key="任务监控.刷新失败，以下为旧数据">Refresh failed: displayed data is stale</sys:String>
  <sys:String x:Key="任务监控.当前无等待或停机故障">There are no waiting steps or stop faults.</sys:String>
