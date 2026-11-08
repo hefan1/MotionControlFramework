@@ -8,7 +8,7 @@ namespace MotionControl.TaskEngine.Configuration
     {
         /// <summary>创建只能由工程包服务填充的只读预览。</summary>
         internal MachineProjectPreview() { }
-        /// <summary>设备名称，来自工程任务清单或设备定义。</summary>
+        /// <summary>候选工程的设备名称，来自包内任务清单或设备定义，不代表当前已装载设备。</summary>
         public string EquipmentName { get; internal set; }
         /// <summary>执行方式：任务列表、C# 工位或手动。</summary>
         public string ExecutionOwner { get; internal set; }
@@ -16,9 +16,15 @@ namespace MotionControl.TaskEngine.Configuration
         public string ControllerBackend { get; internal set; }
         /// <summary>导出设备标识；导入时任务清单可绑定当前设备标识。</summary>
         public string SourceMachineId { get; internal set; }
+        /// <summary>实际将接收导入的本机设备标识，与包的导出来源分别展示。</summary>
+        public string TargetMachineId { get; internal set; }
         /// <summary>待导入的配置文件。</summary>
         public IReadOnlyList<string> Files { get; internal set; }
-        /// <summary>相对当前设备的新增、修改及移除说明。</summary>
+        /// <summary>包内文件与已读取现有配置的并集；仅用于预览，不表示这些文件都来自工程包。</summary>
+        public IReadOnlyList<string> MergedFiles { get; internal set; }
+        /// <summary>包中未包含、应用后继续保留的已读取现有配置文件。</summary>
+        public IReadOnlyList<string> RetainedFiles { get; internal set; }
+        /// <summary>相对当前设备的新增、修改及保留说明；导入不会删除包外文件。</summary>
         public IReadOnlyList<string> Changes { get; internal set; }
         /// <summary>供工程师核查的不可自动判定事项。</summary>
         public IReadOnlyList<string> Warnings { get; internal set; }

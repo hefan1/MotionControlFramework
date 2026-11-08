@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using MotionControl.Framework.Contracts.Variables;
+using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Definitions;
 
 namespace MotionControl.TaskEngine.Wpf.Editing
@@ -38,12 +39,19 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             }
             else if (_selected is WaitAxisPositionNode axisWait)
             {
-                AddField("Axis", "逻辑轴", TaskEditingUi.Names(_catalog.Axes.Keys, axisWait.AxisName));
+                ComboBox axisChoice = TaskEditingUi.Names(_catalog.Axes.Keys, axisWait.AxisName);
+                axisChoice.Tag = axisWait.AxisName;
+                AddField("Axis", "逻辑轴", axisChoice);
+                AddField("AxisUnit", "工程单位", new TextBlock());
                 AddField("Position", "期望位置", TaskEditingUi.Text(axisWait.Position.ToString(CultureInfo.InvariantCulture)));
                 AddField("Tolerance", "位置容差", TaskEditingUi.Text(axisWait.Tolerance.ToString(CultureInfo.InvariantCulture)));
+                UpdateWaitAxisUnit();
+                axisChoice.SelectionChanged += WaitAxisSelectionChanged;
                 AddField("TimeoutAlarms", "等待超时关联报警（可多选）", new TaskAlarmSelector(_catalog.AlarmDefinitions, axisWait.TimeoutAlarmCodes,
                     code => T("报警库不存在") + code, T("当前设备报警库为空，请先维护报警代码"), T("已关联 {0} 条报警"), T("停机报警"), T("非停机报警"), T("检查："), T("恢复：")));
                 Details.Children.Add(TaskEditingUi.Label(this, "需轴已使能、回零、停止且无报警；不代替安全联锁"));
+                AddReference("轴映射配置", "@Axis");
+                AddReference("轴手动", "@Axis");
             }
             else if (_selected is WriteRecordNode record)
             {
@@ -106,6 +114,39 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             }
             else if (_selected is DelayNode delay) AddField("Milliseconds", "延时(ms)", TaskEditingUi.Text(delay.Milliseconds.ToString()));
         }
+
+        /// <summary>切换到不同单位的轴时清除旧坐标输入，避免给原数值静默贴上另一种单位。</summary>
+        private void WaitAxisSelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            var choice = (ComboBox)sender;
+            string previousName = choice.Tag as string;
+            string currentName = choice.SelectedItem as string;
+            TaskAxisInfo previousAxis = null;
+            TaskAxisInfo currentAxis = null;
+            bool hadPrevious = previousName != null && _catalog.Axes.TryGetValue(previousName, out previousAxis);
+            bool hasCurrent = currentName != null && _catalog.Axes.TryGetValue(currentName, out currentAxis);
+            if (!string.Equals(previousName, currentName, StringComparison.OrdinalIgnoreCase)
+                && (!hadPrevious || !hasCurrent || string.IsNullOrWhiteSpace(previousAxis.EngineeringUnit)
+                    || string.IsNullOrWhiteSpace(currentAxis.EngineeringUnit)
+                    || !string.Equals(NumericValueMetadata.NormalizeUnit(previousAxis.EngineeringUnit),
+                        NumericValueMetadata.NormalizeUnit(currentAxis.EngineeringUnit), StringComparison.Ordinal)))
+            {
+                ((TextBox)_fields["Position"]).Clear();
+                ((TextBox)_fields["Tolerance"]).Clear();
+            }
+            choice.Tag = currentName;
+            UpdateWaitAxisUnit();
+        }
+
+        /// <summary>期望位置和容差使用所选逻辑轴同一份工程单位，未知单位明确显示未配置。</summary>
+        private void UpdateWaitAxisUnit()
+        {
+            string name = ((ComboBox)_fields["Axis"]).SelectedItem as string;
+            TaskAxisInfo axis;
+            string unit = name != null && _catalog.Axes.TryGetValue(name, out axis) ? axis.EngineeringUnit : null;
+            ((TextBlock)_fields["AxisUnit"]).Text = string.IsNullOrWhiteSpace(unit) ? T("单位未配置")
+                : unit + " · " + T("期望位置") + " / " + T("位置容差");
+        }
         /// <summary>显式切换变量后显示类型并同步常量类型。</summary>
         private void VariableChanged(object sender, SelectionChangedEventArgs e) { UpdateVariableType(true); }
         /// <summary>类型来自共享变量目录，不在任务中重新定义变量。</summary>
@@ -134,9 +175,11 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             }
             else if (_selected is WaitAxisPositionNode axisWait)
             {
+                double position = TaskEditingUi.Number((TextBox)_fields["Position"], "期望位置");
+                double tolerance = TaskEditingUi.Number((TextBox)_fields["Tolerance"], "位置容差");
                 axisWait.AxisName = ((ComboBox)_fields["Axis"]).SelectedItem as string ?? "";
-                axisWait.Position = TaskEditingUi.Number((TextBox)_fields["Position"], "期望位置");
-                axisWait.Tolerance = TaskEditingUi.Number((TextBox)_fields["Tolerance"], "位置容差");
+                axisWait.Position = position;
+                axisWait.Tolerance = tolerance;
                 axisWait.TimeoutAlarmCodes = ((TaskAlarmSelector)_fields["TimeoutAlarms"]).SelectedCodes.ToList();
             }
             else if (_selected is WriteRecordNode record)

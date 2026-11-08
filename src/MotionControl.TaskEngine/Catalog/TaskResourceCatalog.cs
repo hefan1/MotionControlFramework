@@ -16,6 +16,8 @@ namespace MotionControl.TaskEngine.Catalog
         public IReadOnlyCollection<string> Outputs { get; private set; }
         /// <summary>设备变量及现有数据类型。</summary>
         public IReadOnlyDictionary<string, DeviceVariableType> Variables { get; private set; }
+        /// <summary>同一批变量定义的只读元数据；旧目录未提供时保留未定义字段。</summary>
+        public IReadOnlyDictionary<string, TaskVariableInfo> VariableDefinitions { get; private set; }
         /// <summary>设备变量初始值；未设置初值的变量对应 null。</summary>
         public IReadOnlyDictionary<string, string> VariableInitialValues { get; private set; }
         /// <summary>现有示教点；用逻辑轴和点位 ID 联合定位。</summary>
@@ -34,7 +36,8 @@ namespace MotionControl.TaskEngine.Catalog
             IEnumerable<string> outputs, IDictionary<string, DeviceVariableType> variables,
             IEnumerable<TaskTeachPoint> teachPoints, IEnumerable<string> namedResources = null,
             IEnumerable<string> notices = null, IDictionary<string, string> variableInitialValues = null,
-            IEnumerable<string> alarmCodes = null, IEnumerable<TaskAlarmInfo> alarmDefinitions = null)
+            IEnumerable<string> alarmCodes = null, IEnumerable<TaskAlarmInfo> alarmDefinitions = null,
+            IEnumerable<DeviceVariableDefinition> variableDefinitions = null)
         {
             if (axes == null || inputs == null || outputs == null || variables == null || teachPoints == null)
                 throw new ArgumentNullException("目录中的轴、IO、变量和示教点集合均不能为空。");
@@ -69,6 +72,26 @@ namespace MotionControl.TaskEngine.Catalog
                 variableMap.Add(variable.Key, variable.Value);
             }
             Variables = new ReadOnlyDictionary<string, DeviceVariableType>(variableMap);
+
+            var variableDefinitionsByName = new Dictionary<string, TaskVariableInfo>(StringComparer.OrdinalIgnoreCase);
+            if (variableDefinitions != null)
+            {
+                // 复用运行时定义检查，避免目录接受了运行时会拒绝的单位、范围或初值。
+                var definitions = MotionControl.Framework.Runtime.Variables.DeviceVariableStore.ValidateDefinitions(variableDefinitions);
+                foreach (DeviceVariableDefinition definition in definitions)
+                {
+                    var info = new TaskVariableInfo(definition);
+                    DeviceVariableType expectedType;
+                    if (!variableMap.TryGetValue(info.Name, out expectedType) || info.DataType != expectedType)
+                        throw new ArgumentException("变量元数据与目录名称或类型不一致：" + info.Name);
+                    variableDefinitionsByName.Add(info.Name, info);
+                }
+            }
+            foreach (var variable in variableMap)
+                if (!variableDefinitionsByName.ContainsKey(variable.Key))
+                    variableDefinitionsByName.Add(variable.Key, new TaskVariableInfo(new DeviceVariableDefinition
+                    { Name = variable.Key, DataType = variable.Value.ToString() }));
+            VariableDefinitions = new ReadOnlyDictionary<string, TaskVariableInfo>(variableDefinitionsByName);
 
             var initialValueMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             if (variableInitialValues != null)

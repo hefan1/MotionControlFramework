@@ -6,6 +6,7 @@ using System.Text;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Definitions;
+using MotionControl.TaskEngine.Editing;
 using MotionControl.TaskEngine.Validation;
 using Newtonsoft.Json.Linq;
 
@@ -43,8 +44,7 @@ namespace MotionControl.TaskEngine.Configuration
             IEnumerable<TaskDefinition> dependencies = null)
         {
             // 应用中断时仅允许编辑恢复入口读取原始形状，正常加载不能接受半套运行文件。
-            if (File.Exists(Path.Combine(_store.GetMachineDirectory(machineId), "Drafts/TaskApplyPending.json")))
-                throw new InvalidOperationException("任务应用尚未完成，请先在任务配置页恢复上次应用。");
+            new TaskWorkspaceStore(_store).RequireNoPendingApply(machineId);
             TaskDefinition definition = LoadForEditing(machineId, fileName);
             EnsureDefinitionValid(definition, catalog, dependencies);
             return definition;

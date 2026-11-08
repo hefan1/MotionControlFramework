@@ -62,6 +62,8 @@ namespace MotionControl.TaskEngine.Machine
         public long CompletedCycles { get; }
         /// <summary>等待的信号或阶段说明。</summary>
         public string Detail { get; }
+        /// <summary>当前交接等待或交接故障的结构化证据；没有提供时为空。</summary>
+        public TaskStepDiagnostics Diagnostics { get; }
         /// <summary>当前或最近一个周期的节点进度，尚未运行时为空。</summary>
         public TaskRunSnapshot Run { get; }
 
@@ -72,6 +74,8 @@ namespace MotionControl.TaskEngine.Machine
             TaskId = station.Configuration.TaskId; Mode = station.Configuration.Mode;
             State = station.State; CompletedCycles = station.CompletedCycles; Detail = station.Detail;
             Run = station.CurrentRun?.GetSnapshot() ?? station.LastRun;
+            Diagnostics = State == StationTaskState.WaitingRequest || State == StationTaskState.WaitingReset
+                ? station.Diagnostics : null;
         }
     }
 

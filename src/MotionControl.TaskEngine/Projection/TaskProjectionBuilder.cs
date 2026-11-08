@@ -149,13 +149,15 @@ namespace MotionControl.TaskEngine.Projection
         }
 
         /// <summary>保留空引用及其定位，解析失败不能转换为成功。</summary>
-        private void Row(string station, TaskDefinition task, TaskNode node, string path, string kind, string target,
+        private TaskProjectReference Row(string station, TaskDefinition task, TaskNode node, string path, string kind, string target,
             string status, string displayName = null, string axis = null)
         {
-            if (!Visit(path)) return;
-            rows.Add(new TaskProjectReference { StationId = station, TaskId = task?.TaskId, TaskRevision = task?.Revision > 0 ? task.Revision : (int?)null,
-                NodeId = node?.Id, Path = path, Kind = kind, Target = target, AxisName = axis, Status = status, DisplayName = displayName });
+            if (!Visit(path)) return null;
+            var reference = new TaskProjectReference { StationId = station, TaskId = task?.TaskId, TaskRevision = task?.Revision > 0 ? task.Revision : (int?)null,
+                NodeId = node?.Id, Path = path, Kind = kind, Target = target, AxisName = axis, Status = status, DisplayName = displayName };
+            rows.Add(reference);
             if (status != "已定位") issues.Add(path + "：" + kind + " [" + target + "] " + status);
+            return reference;
         }
 
         /// <summary>按目录核对显式对象引用；同名 DI/DO 或不同轴的同名点位分别匹配。</summary>
@@ -176,7 +178,26 @@ namespace MotionControl.TaskEngine.Projection
                     default: throw new ArgumentException("未支持的引用类型：" + kind);
                 }
             }
-            Row(station, task, node, path, kind, target, exists ? "已定位" : catalog == null ? "目录未提供" : "引用失效", axis: axis);
+            TaskProjectReference reference = Row(station, task, node, path, kind, target,
+                exists ? "已定位" : catalog == null ? "目录未提供" : "引用失效", axis: axis);
+            if (!exists || reference == null) return;
+            if (kind == "Variable")
+            {
+                TaskVariableInfo variable = catalog.VariableDefinitions[target];
+                reference.DisplayName = variable.DisplayName;
+                reference.EngineeringUnit = variable.EngineeringUnit;
+                reference.Dimension = variable.Dimension;
+                reference.SourceId = variable.SourceId;
+                reference.IsNumericValue = NumericValueMetadata.IsNumeric(variable.DataType);
+            }
+            else if (kind == "Axis" || kind == "TeachPoint")
+            {
+                TaskAxisInfo sourceAxis = catalog.Axes[kind == "Axis" ? target : axis];
+                reference.EngineeringUnit = sourceAxis.EngineeringUnit;
+                reference.IsNumericValue = true;
+                reference.Dimension = NumericValueMetadata.KnownDimension(sourceAxis.EngineeringUnit);
+                if (kind == "TeachPoint") reference.DisplayName = catalog.FindTeachPoint(axis, target).Name;
+            }
         }
 
         /// <summary>分别展开每次调用，在当前路径栈中拒绝递归、歧义和无来源定义。</summary>

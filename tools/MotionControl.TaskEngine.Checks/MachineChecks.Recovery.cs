@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Variables;
@@ -179,8 +179,13 @@ namespace MotionControl.TaskEngine.Checks
             machine = Machine(Device(), definitions, Station("large", "Expand0", StationTaskMode.Once));
             machine.Reset(); machine.Start();
             await Until(() => machine.GetSnapshot().State == TaskMachineState.Faulted, "规模超限没有终止工位。");
+            // 故障先锁存并停止其他工位，随后本运行才退出 finally 并发布终态；分别核对这两个阶段。
+            await Until(() => State(machine, "large").Run.State == TaskRunState.Failed,
+                "规模超限锁存后，本次运行没有完成失败收尾。");
             var run = State(machine, "large").Run;
             CheckAssert.True(run.State == TaskRunState.Failed && run.Nodes.Count == 10000
+                && run.Error.FailureKind == TaskExecutionFailureKind.ExpansionLimit
+                && run.Error.ReasonCode == "execution.expansion_limit"
                 && run.Error.Message.Contains("10000"), "规模错误被当作可重试步骤隐藏。");
             CheckAssert.Throws(machine.Reset, "规模超限后仍允许复位重放父任务。");
         }

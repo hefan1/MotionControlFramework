@@ -163,6 +163,8 @@ namespace MotionControl.TaskEngine.Validation
                     bool numberToDouble = targetType == DeviceVariableType.Number && TaskLiteral.IsNumeric(sourceType.Value);
                     if (!numberToDouble) Error(node, path + ".value", "赋值类型不一致；不隐式截断数字或转换字符串。");
                 }
+                if (sourceType.HasValue && TaskLiteral.IsNumeric(sourceType.Value) && TaskLiteral.IsNumeric(targetType))
+                    CheckNumericAssignment(assignment, number, path + ".value");
             }
             else Error(node, path + ".kind", "当前阶段不支持此节点：" + node.GetType().Name);
         }
@@ -189,7 +191,7 @@ namespace MotionControl.TaskEngine.Validation
                 if (controller == null) controller = axis.ControllerId;
                 else if (!string.Equals(controller, axis.ControllerId, StringComparison.OrdinalIgnoreCase))
                     Error(node, targetPath, "首期只定义同卡协调运动，不能混用不同控制卡。");
-                if (!string.Equals(axis.EngineeringUnit, "mm", StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(axis.EngineeringUnit, "mm", StringComparison.Ordinal))
                     Error(node, targetPath, "首期协调运动仅定义统一 mm 单位的直线轴；未知或混合单位不能直接使用路径速度。");
             }
             Warning(node, path, "卡型/固件的插补、最大轴数、组完成和组停止能力尚待核实；定义有效不代表可执行。");
@@ -211,6 +213,7 @@ namespace MotionControl.TaskEngine.Validation
             }
             if (axis != null)
             {
+                CheckAxisTargetMetadata(axis, target, node, path + ".target");
                 if (!axis.MinimumPosition.HasValue || !axis.MaximumPosition.HasValue)
                     Error(node, path + ".target", "轴配置缺少行程上下限，无法确认目标范围。");
                 else if (!relative && position.HasValue && (position < axis.MinimumPosition || position > axis.MaximumPosition))

@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System;
 using MotionControl.TaskEngine.Definitions;
@@ -30,7 +30,7 @@ namespace MotionControl.TaskEngine.Wpf.Monitoring
         /// <summary>等待或异常说明。</summary>
         public string Detail { get; private set; }
         /// <summary>步骤原始诊断信息，供维护人员悬停查看。</summary>
-        public string EngineeringDetail => Snapshot?.Detail?.StartsWith("等待条件：", StringComparison.Ordinal) == true ? Snapshot.Detail : Detail;
+        public string EngineeringDetail => Snapshot?.Detail ?? Detail;
         /// <summary>有文字对应的状态色。</summary>
         public string StateColor { get; private set; } = "#596B7D";
         /// <summary>该定义在本次条件选择中未被选中。</summary>

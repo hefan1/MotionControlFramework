@@ -1,5 +1,7 @@
 using System;
 using System.Globalization;
+using System.Collections.Generic;
+using MotionControl.Framework.Contracts.Flow;
 using System.Threading.Tasks;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Device;
@@ -52,13 +54,24 @@ namespace MotionControl.TaskEngine.Execution
                         if (readError != null)
                         {
                             scope.WaitDetail = "等待读取锁存数据：" + readError;
+                            var waits = new List<TaskObservedValue>();
+                            foreach (string input in node.InputNames)
+                                waits.Add(new TaskObservedValue(input, "参与非零稳定字采样", null, null,
+                                    StationObjectKind.Input, input, StationValueQuality.Unknown));
+                            waits.Add(new TaskObservedValue(node.ValidInputName, true.ToString(), null, null,
+                                StationObjectKind.Input, node.ValidInputName, StationValueQuality.Unknown));
+                            waits.Add(new TaskObservedValue(node.SuccessInputName, true.ToString(), null, null,
+                                StationObjectKind.Input, node.SuccessInputName, StationValueQuality.Unknown));
+                            // 设备采样未被接受时，没有逐项值可发布；保留全部配置对象和原始原因。
+                            RecordWait(scope, StationWaitKind.Sampling, "sampling.not_accepted", scope.WaitDetail, waits);
                             _run.Report(scope, TaskNodeState.Waiting, scope.WaitDetail);
                             return;
                         }
                         string result = node.Prefix + number.ToString("D5", CultureInfo.InvariantCulture);
                         _device.WriteVariable(node.TargetVariable, result);
                         scope.Diagnostics = new TaskStepDiagnostics("已读取锁存数据并写入变量", new[] {
-                            new TaskObservedValue(node.TargetVariable, "非零且稳定", result, true) });
+                            new TaskObservedValue(node.TargetVariable, "非零且稳定", result, true,
+                                StationObjectKind.Variable, node.TargetVariable, StationValueQuality.Good) });
                         committed = true;
                     })).ConfigureAwait(false);
                 }
@@ -138,7 +151,16 @@ namespace MotionControl.TaskEngine.Execution
                         scope.WaitDetail = "等待轴 " + node.AxisName + " 停在 " + node.Position + " ± " + node.Tolerance
                             + "；当前=" + (state == null ? "未知" : state.Position.ToString(CultureInfo.InvariantCulture))
                             + (readError == null ? "" : "；读取失败：" + readError);
-                        scope.Diagnostics = new TaskStepDiagnostics(scope.WaitDetail);
+                        bool knownPosition = state != null && !double.IsNaN(state.Position) && !double.IsInfinity(state.Position);
+                        StationValueQuality quality = readError != null ? StationValueQuality.ReadFailed
+                            : knownPosition ? StationValueQuality.Good : StationValueQuality.Unknown;
+                        RecordWait(scope, StationWaitKind.Axis, "axis.position_settled", scope.WaitDetail, new[] {
+                            new TaskObservedValue(node.AxisName,
+                                node.Position.ToString(CultureInfo.InvariantCulture) + " ± " + node.Tolerance.ToString(CultureInfo.InvariantCulture),
+                                knownPosition ? state.Position.ToString(CultureInfo.InvariantCulture) : null,
+                                quality == StationValueQuality.Good ? (bool?)complete : null,
+                                StationObjectKind.Axis, node.AxisName, quality) },
+                            quality == StationValueQuality.Good ? (bool?)complete : null);
                         _run.Report(scope, TaskNodeState.Waiting, scope.WaitDetail);
                     })).ConfigureAwait(false);
                 }

@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Variables;
@@ -57,7 +57,7 @@ namespace MotionControl.TaskEngine.Checks
             device.SetVariable("Vision.OffsetX", "30");
             var complete = await Complete(run); Success(complete);
             var value = complete.Nodes.Single(node => node.NodeId == "move").Diagnostics.Values[0];
-            CheckAssert.True(value.Expected == "8 mm" && value.Actual == "8 mm" && value.Satisfied == true, "诊断错误重读了相对目标。");
+            CheckAssert.True(value.Expected == "8" && value.Actual == "8" && value.Unit == "mm" && value.Satisfied == true, "诊断错误重读了相对目标。");
         }
 
         /// <summary>延时剩余量在暂停期间冻结，恢复完成后归零。</summary>

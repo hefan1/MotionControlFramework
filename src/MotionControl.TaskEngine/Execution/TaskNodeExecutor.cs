@@ -1,8 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Alarms;
+using MotionControl.Framework.Contracts.Flow;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Device;
 using MotionControl.TaskEngine.Machine;
@@ -69,6 +70,7 @@ namespace MotionControl.TaskEngine.Execution
                     {
                         registered = true;
                     }
+                    scope.Diagnostics = (scope.Diagnostics ?? new TaskStepDiagnostics(null)).WithFailure(failure);
                     if (registered) _run.Report(scope, TaskNodeState.Failed, failure.Message);
                     if (_station == null)
                     {
@@ -121,8 +123,10 @@ namespace MotionControl.TaskEngine.Execution
                     if (!value.HasValue) throw new InvalidOperationException("逻辑输入 '" + sample.InputName + "' 当前没有有效数据，未写入变量 '" + sample.VariableName + "'。");
                     _device.WriteVariable(sample.VariableName, value.Value);
                     scope.Diagnostics = new TaskStepDiagnostics("本次读取逻辑输入并写入设备变量", new[] {
-                        new TaskObservedValue(sample.InputName, "有效采样", value.Value.ToString(), true),
-                        new TaskObservedValue(sample.VariableName, "本次采样值", value.Value.ToString(), true) });
+                        new TaskObservedValue(sample.InputName, "有效采样", value.Value.ToString(), true,
+                            StationObjectKind.Input, sample.InputName, StationValueQuality.Good),
+                        new TaskObservedValue(sample.VariableName, "本次采样值", value.Value.ToString(), true,
+                            StationObjectKind.Variable, sample.VariableName, StationValueQuality.Good) });
                 }).ConfigureAwait(false);
             else if (node is WaitConditionNode condition) await WaitConditionAsync(scope, condition).ConfigureAwait(false);
             else if (node is SetOutputNode output)
@@ -134,7 +138,8 @@ namespace MotionControl.TaskEngine.Execution
                     _device.WriteVariable(assignment.VariableName, value);
                     string text = Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture);
                     scope.Diagnostics = new TaskStepDiagnostics("本次写入设备变量", new[] {
-                        new TaskObservedValue(assignment.VariableName, TaskRuntimeValues.Describe(assignment.Value), text, true) });
+                        new TaskObservedValue(assignment.VariableName, TaskRuntimeValues.Describe(assignment.Value), text, true,
+                            StationObjectKind.Variable, assignment.VariableName, StationValueQuality.Good) });
                 }).ConfigureAwait(false);
             else if (node is MoveAxisNode move) await MoveAsync(scope, move).ConfigureAwait(false);
             else if (node is MoveAxisGroupNode group) await MoveAxisGroupAsync(scope, group).ConfigureAwait(false);

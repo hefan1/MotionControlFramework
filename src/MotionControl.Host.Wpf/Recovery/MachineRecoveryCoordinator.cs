@@ -219,7 +219,15 @@ namespace MotionControl.Host.Wpf.Recovery
                     checkpoint.HasValue,
                     checkpoint.LastUpdated,
                     string.Empty,
-                    false))
+                    false,
+                    checkpoint.DisplayName,
+                    checkpoint.EngineeringUnit,
+                    checkpoint.Dimension,
+                    checkpoint.MinimumValue,
+                    checkpoint.MaximumValue,
+                    checkpoint.DecimalPlaces,
+                    checkpoint.SourceId,
+                    checkpoint.SourceDescription))
                 .ToList();
             IReadOnlyList<string> variableWarnings = _variableStore.RestoreCurrentValues(savedVariables);
             var missingNames = _variableStore.GetSnapshot()
@@ -540,7 +548,7 @@ namespace MotionControl.Host.Wpf.Recovery
             }
         }
 
-        /// <summary>创建包含当前全部设备变量状态的新恢复文档。</summary>
+        /// <summary>保存当前变量值及当时的单位/量纲/来源，重启后不能把旧值贴上新的物理含义。</summary>
         private MachineRecoveryDocument CreateDocumentWithCurrentVariables(MachineRuntime runtime)
         {
             var document = new MachineRecoveryDocument
@@ -552,10 +560,18 @@ namespace MotionControl.Host.Wpf.Recovery
                     .Select(snapshot => new DeviceVariableCheckpoint
                     {
                         Name = snapshot.Name,
+                        DisplayName = snapshot.DisplayName,
                         DataType = snapshot.DataType,
                         CurrentValue = snapshot.CurrentValue,
                         HasValue = snapshot.HasValue,
-                        LastUpdated = snapshot.LastUpdated
+                        LastUpdated = snapshot.LastUpdated,
+                        EngineeringUnit = snapshot.EngineeringUnit,
+                        Dimension = snapshot.Dimension,
+                        MinimumValue = snapshot.MinimumValue,
+                        MaximumValue = snapshot.MaximumValue,
+                        DecimalPlaces = snapshot.DecimalPlaces,
+                        SourceId = snapshot.SourceId,
+                        SourceDescription = snapshot.SourceDescription
                     })
                     .ToList()
             };

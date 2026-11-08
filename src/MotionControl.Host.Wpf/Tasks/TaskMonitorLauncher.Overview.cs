@@ -1,10 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Host.Wpf.Operation;
-using MotionControl.TaskEngine.Definitions;
-using MotionControl.TaskEngine.Execution;
 using MotionControl.TaskEngine.Machine;
 using MotionControl.TaskEngine.Resources;
 using MotionControl.TaskEngine.Wpf.Monitoring;
@@ -45,24 +43,24 @@ namespace MotionControl.Host.Wpf.Tasks
             {
                 var row = new TaskStationRow(station.StationId);
                 row.Update(station, snapshot.State, _monitor.T);
-                bool retainedStep = station.State == StationTaskState.Executing
-                    || station.State == StationTaskState.WaitingReset;
+                StationOperationStatus status = TaskStationOperationProjection.Read(station);
                 result.Add(new StationOverviewData
                 {
-                    Id = station.StationId,
-                    Name = station.Name,
-                    StateText = row.State,
+                    Id = status.StationId,
+                    Name = status.StationName,
+                    IndependentState = status.State,
+                    StateText = _monitor.T(StationOperatorPresentation.StateKey(status.State)),
                     StateColor = row.Color,
-                    // 请求等待、初始化和已完成阶段不把 LastRun 的活动节点当作当前动作。
-                    CurrentStep = retainedStep ? row.Action
-                        : station.State == StationTaskState.Completed ? PageText("本次动作已完成", "Current operation completed")
-                        : station.State == StationTaskState.WaitingRequest ? PageText("等待启动条件", "Waiting for start conditions")
-                        : station.State == StationTaskState.Disabled ? PageText("未参与自动运行", "Not participating in automatic operation")
-                        : station.State == StationTaskState.Stopped ? PageText("工位已停止", "Station stopped")
-                        : PageText("尚未开始执行", "Not started"),
-                    Detail = retainedStep ? row.Detail : station.Detail,
-                    WaitingInputName = retainedStep && snapshot.State != TaskMachineState.Ready
-                        ? FindWaitingInput(station) : null
+                    CurrentStepId = status.StepId,
+                    CurrentStep = status.StepName,
+                    Detail = status.Description,
+                    WaitItems = status.WaitItems,
+                    HasWaitInformation = status.HasWaitInformation,
+                    NextAction = status.NextAction,
+                    CompletionCondition = status.CompletionCondition,
+                    StatusCapturedAtUtc = status.CapturedAtUtc,
+                    WaitingInputName = OperationSnapshot.FindSingleWaitingInput(status.WaitItems, status.HasWaitInformation),
+                    CompletedCycles = station.CompletedCycles
                 });
             }
             return result.AsReadOnly();
@@ -75,37 +73,5 @@ namespace MotionControl.Host.Wpf.Tasks
                 && _session != null && _monitor != null && _monitor.FocusStationByName(name);
         }
 
-        /// <summary>仅从当前等待或故障的 WaitInput 定义取得唯一输入，不解析动作说明猜测信号。</summary>
-        private string FindWaitingInput(StationTaskSnapshot station)
-        {
-            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (TaskNodeSnapshot node in station.Run?.Nodes ?? new TaskNodeSnapshot[0])
-            {
-                if (node.State != TaskNodeState.Waiting && node.State != TaskNodeState.Failed) continue;
-                if (!_session.Library.TryGetValue(node.TaskId, out TaskDefinition definition)) continue;
-                WaitInputNode input = FindWaitInputDefinition(definition.Root, node.NodeId);
-                if (!string.IsNullOrWhiteSpace(input?.InputName)) names.Add(input.InputName);
-            }
-            return names.Count == 1 ? names.Single() : null;
-        }
-
-        /// <summary>在一个任务定义内查找对应等待输入节点；子任务按快照的 TaskId 单独查找。</summary>
-        private static WaitInputNode FindWaitInputDefinition(TaskNode node, string nodeId)
-        {
-            if (node == null) return null;
-            if (string.Equals(node.Id, nodeId, StringComparison.OrdinalIgnoreCase)) return node as WaitInputNode;
-            IEnumerable<TaskNode> children = null;
-            if (node is SequenceNode sequence) children = sequence.Children;
-            else if (node is ParallelGroupNode parallel) children = parallel.Branches;
-            else if (node is ResourceScopeNode resource) children = new[] { resource.Body };
-            else if (node is ConditionBranchNode branch) children = new[] { branch.WhenTrue, branch.WhenFalse };
-            if (children == null) return null;
-            foreach (TaskNode child in children)
-            {
-                WaitInputNode found = FindWaitInputDefinition(child, nodeId);
-                if (found != null) return found;
-            }
-            return null;
-        }
     }
 }

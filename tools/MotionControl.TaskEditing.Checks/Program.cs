@@ -43,7 +43,15 @@ namespace MotionControl.TaskEditing.Checks
             Check("任务检查字段显示为易读名称", ReadableIssueFields, ref failed);
             Check("任务库筛选及引用保护", V14TaskLibrarySearchChecks.Run, ref failed);
             Check("任务草稿、文件与会话来源", V14TaskSourceSummaryChecks.Run, ref failed);
-            Console.WriteLine("任务编辑内部检查：17 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
+            Check("V1.8 准备专用任务引用与删除保护", V18PreparationReferences, ref failed);
+            Check("V1.8 外部准备变更使来源和检查失效", V18PreparationSourceChanges, ref failed);
+            Check("V1.8 准备任务、依赖和资源纯校验", V18PreparationValidation, ref failed);
+            Check("V1.8 任务应用原字节、新增和删除恢复", V18TaskApplyRecoveryContents, ref failed);
+            Check("V1.8 任务恢复先全量检查冲突与备份", V18TaskApplyRecoveryConflicts, ref failed);
+            Check("V1.8 部分恢复失败保留标记并可重试", V18TaskApplyPartialRecovery, ref failed);
+            Check("V1.8 工作区定义与后端能力准入分开", V18WorkspaceCapabilityPreflight, ref failed);
+            Check("V1.8 异常恢复标记路径阻断装载与应用", V18TaskPendingMarkerDirectory, ref failed);
+            Console.WriteLine("任务编辑内部检查：25 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
             return failed == 0 ? 0 : 1;
         }
         /// <summary>逐项执行并保留异常堆栈。</summary>
@@ -82,16 +90,18 @@ namespace MotionControl.TaskEditing.Checks
                 Throws(() => test.Store.Apply(unchanged, out warning));
             }
         }
-        /// <summary>制造第二个任务目标路径冲突，验证第一个已写文件也被回滚。</summary>
+        /// <summary>占用稍后写入的任务文件，验证先前已写的清单与任务也按原字节回滚。</summary>
         private static void FailedApplyRollback()
         {
             using (var test = new Workspace())
             {
-                var draft = test.Store.Load(Workspace.Id); string before = test.ActiveBytes(); draft.Tasks[0].Definition.Name += " changed";
-                draft.Tasks.Add(new TaskWorkspaceTask { FileName = "Blocked.json", Definition = TaskDefinitionJson.Deserialize(TaskDefinitionJson.Serialize(draft.Tasks[0].Definition)) });
-                draft.Tasks.Last().Definition.TaskId = "Blocked";
-                Directory.CreateDirectory(Path.Combine(test.Root, Workspace.Id, "Tasks/Blocked.json"));
-                string warning; Throws(() => test.Store.Apply(draft, out warning));
+                var draft = test.Store.Load(Workspace.Id); string before = test.ActiveBytes();
+                draft.Machine.Name += " changed";
+                foreach (TaskWorkspaceTask item in draft.Tasks.Take(2)) item.Definition.Name += " changed";
+                string blocked = Path.Combine(test.Root, Workspace.Id, "Tasks", draft.Tasks[1].FileName);
+                string warning;
+                using (var locked = new FileStream(blocked, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    ExpectTaskRecoveryFailure(() => test.Store.Apply(draft, out warning), "运行文件已恢复");
                 Assert(before == test.ActiveBytes(), "应用失败后没有恢复全部原字节。");
                 Assert(!test.Store.HasPendingApply(Workspace.Id), "正常回滚后残留恢复标记。");
             }
@@ -101,16 +111,13 @@ namespace MotionControl.TaskEditing.Checks
         {
             using (var test = new Workspace())
             {
-                string root = Path.Combine(test.Root, Workspace.Id), id = Guid.NewGuid().ToString("N");
                 var initial = test.Store.Load(Workspace.Id); var catalog = test.Store.LoadCatalog(initial);
-                string relative = "Tasks/Load.json", source = Path.Combine(root, relative), before = File.ReadAllText(source);
-                string backup = Path.Combine(root, "Backups/TaskApply-" + id, relative); Directory.CreateDirectory(Path.GetDirectoryName(backup)); File.Copy(source, backup);
-                File.WriteAllText(source, "incomplete");
-                test.Configuration.SaveJson(Workspace.Id, "Drafts/TaskApplyPending.json", new { machineId = Workspace.Id, backupId = id, files = new[] { new { relativePath = relative, existed = true } } });
+                string before = test.ActiveBytes();
+                CreateInterruptedTaskApply(test);
                 Throws(() => test.Store.Load(Workspace.Id)); Throws(() => TaskMonitorSession.LoadMachine(test.Configuration, Workspace.Id));
                 Throws(() => new TaskMachineConfigurationStore(test.Configuration).Load(Workspace.Id, initial.Tasks.Select(item => item.Definition), catalog));
                 Throws(() => new TaskDefinitionStore(test.Configuration).Load(Workspace.Id, "Camera.json", catalog));
-                test.Store.RecoverPendingApply(Workspace.Id); Assert(File.ReadAllText(source) == before && !test.Store.HasPendingApply(Workspace.Id), "意外退出恢复失败。");
+                test.Store.RecoverPendingApply(Workspace.Id); Assert(test.ActiveBytes() == before && !test.Store.HasPendingApply(Workspace.Id), "意外退出恢复失败。");
             }
         }
         /// <summary>草稿与恢复标记均不能越出指定任务目录。</summary>

@@ -94,8 +94,16 @@ namespace MotionControl.TaskEngine.Projection
         public string Target { get; internal set; }
         /// <summary>示教点复合键的轴名称，其余类型为空。</summary>
         public string AxisName { get; internal set; }
-        /// <summary>节点、工位或任务的源显示名称。</summary>
+        /// <summary>节点、工位、任务或变量的源显示名称；Target 始终保留稳定引用键。</summary>
         public string DisplayName { get; internal set; }
+        /// <summary>轴、示教点或数值变量的源工程单位；为空表示未定义。</summary>
+        public string EngineeringUnit { get; internal set; }
+        /// <summary>数值来源的量纲；为空表示未定义，不按显示名称推断。</summary>
+        public string Dimension { get; internal set; }
+        /// <summary>变量的稳定来源标识；不是本次硬件采样成功的证明。</summary>
+        public string SourceId { get; internal set; }
+        /// <summary>轴、示教点或数值变量才需要单位；布尔等非数值对象不显示成缺单位。</summary>
+        public bool IsNumericValue { get; internal set; }
         /// <summary>仅说明引用解析状态，不能证明设备可运行。</summary>
         public string Status { get; internal set; }
     }

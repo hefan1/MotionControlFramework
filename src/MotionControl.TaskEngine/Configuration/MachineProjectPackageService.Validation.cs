@@ -6,6 +6,7 @@ using System.Text;
 using MotionControl.Framework.Contracts.Configuration;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.TaskEngine.Editing;
+using MotionControl.TaskEngine.Preparation;
 using MotionControl.TaskEngine.Validation;
 using Newtonsoft.Json.Linq;
 
@@ -114,14 +115,17 @@ namespace MotionControl.TaskEngine.Configuration
                 if (contents.ContainsKey(IoFeedbackAssociationStore.RelativePath)) new IoFeedbackAssociationStore(tempStore, machineId).Load();
                 bool hasManifest = contents.ContainsKey("Parameters/TaskMachine.json");
                 bool hasTasks = contents.Keys.Any(path => path.StartsWith("Tasks/", StringComparison.OrdinalIgnoreCase));
+                bool hasPreparation = contents.ContainsKey(TaskStationPreparationStore.RelativePath);
                 if (string.Equals(owner, "TaskEngine", StringComparison.OrdinalIgnoreCase) && (!hasManifest || !hasTasks))
                     throw new InvalidDataException("任务列表方式需要任务清单和任务文件。 ");
-                if (hasManifest || hasTasks)
+                if (hasManifest || hasTasks || hasPreparation)
                 {
-                    if (!hasManifest || !hasTasks) throw new InvalidDataException("任务清单与任务文件必须同时提供。 ");
-                    var workspace = new TaskWorkspaceStore(tempStore);
+                    if (!hasManifest || !hasTasks)
+                        throw new InvalidDataException(hasPreparation ? "准备配置需要完整的任务清单和任务文件。" : "任务清单与任务文件必须同时提供。");
+                    var workspace = new TaskWorkspaceStore(tempStore, _taskCapabilities);
                     TaskWorkspaceDocument draft = workspace.Load(machineId, false);
                     if (draft.Machine.MachineId != machineId) throw new InvalidDataException("任务清单设备标识不一致。");
+                    // 工作区检查复用准备纯校验，缺准备任务、错误资源和依赖环必须在覆盖现场文件之前拒绝。
                     var errors = workspace.Check(draft).Where(issue => issue.Severity == TaskIssueSeverity.Error).Select(issue => issue.ToString()).ToList();
                     if (errors.Count != 0) throw new InvalidDataException("任务引用检查失败：\n" + string.Join("\n", errors));
                     if (!string.IsNullOrWhiteSpace(draft.Machine.Name)) name = draft.Machine.Name;

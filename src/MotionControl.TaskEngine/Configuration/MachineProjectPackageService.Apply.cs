@@ -63,6 +63,7 @@ namespace MotionControl.TaskEngine.Configuration
                 var merged = new Dictionary<string, string>(current, StringComparer.OrdinalIgnoreCase);
                 foreach (var item in preview.Contents) merged[item.Key] = item.Value;
                 ValidateContents(merged, _machineId, out string mergedDefinition, out string mergedOwner, out string mergedBackend, out string mergedName, true);
+                ValidateTeachPointMigration(current, merged, preview.Contents, null);
                 RequireCanApply(canApply);
                 ProjectApplyJournal journal = CreateBackup(preview.CurrentBytes, preview.CurrentContents, preview.Contents);
                 ReadCurrentFiles(out Dictionary<string, byte[]> afterBackupBytes, true);

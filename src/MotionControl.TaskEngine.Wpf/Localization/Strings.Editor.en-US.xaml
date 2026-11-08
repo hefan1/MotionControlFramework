@@ -95,6 +95,9 @@
  <sys:String x:Key="任务编辑.复制任务">Copy task</sys:String>
  <sys:String x:Key="任务编辑.副本">Copy</sys:String>
  <sys:String x:Key="任务编辑.工程单位">Engineering units</sys:String>
+ <sys:String x:Key="任务编辑.单位未配置">Unit not configured</sys:String>
+ <sys:String x:Key="任务编辑.量纲未定义">Dimension undefined</sys:String>
+ <sys:String x:Key="任务编辑.尚未示教">Not taught</sys:String>
  <sys:String x:Key="任务编辑.工位">Station</sys:String>
  <sys:String x:Key="任务编辑.工位安排">Station assignment</sys:String>
  <sys:String x:Key="任务编辑.工位标识">Station ID</sys:String>
@@ -331,4 +334,9 @@
  <sys:String x:Key="任务编辑.任务筛选数量格式">Matches {0} / {1} tasks</sys:String>
  <sys:String x:Key="任务编辑.任务库为空">Task library is empty</sys:String>
  <sys:String x:Key="任务编辑.没有匹配任务">No matching tasks</sys:String>
+ <sys:String x:Key="任务编辑.准备配置">Preparation configuration</sys:String>
+ <sys:String x:Key="任务编辑.子任务引用">Subtask reference</sys:String>
+ <sys:String x:Key="任务编辑.准备配置已变化，旧检查结论失效，请重新检查或装载">Preparation configuration changed. Previous checks are no longer valid; check or reload the definitions.</sys:String>
+ <sys:String x:Key="任务编辑.准备配置读取失败，旧检查结论失效">Preparation configuration could not be read. Previous checks are no longer valid.</sys:String>
+ <sys:String x:Key="任务编辑.无法确认任务引用，不能删除">Task references could not be verified. Deletion is blocked.</sys:String>
 </ResourceDictionary>

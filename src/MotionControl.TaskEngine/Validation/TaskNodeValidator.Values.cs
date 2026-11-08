@@ -34,6 +34,12 @@ namespace MotionControl.TaskEngine.Validation
                         return null;
                     }
                     Warning(node, path, "变量的当前有效值、采集周期和动态范围仍须在执行前检查。");
+                    if (TaskLiteral.IsNumeric(type))
+                    {
+                        var metadata = _catalog.VariableDefinitions[value.VariableName];
+                        if (string.IsNullOrWhiteSpace(metadata.EngineeringUnit) || string.IsNullOrWhiteSpace(metadata.Dimension))
+                            Warning(node, path, "变量的工程单位或量纲未定义；保留旧配置兼容，不能据此确认物理含义一致：" + value.VariableName);
+                    }
                     return type;
                 case TaskValueSource.TeachPoint:
                     if (value.Constant != null || value.DataType.HasValue || value.VariableName != null)
@@ -46,6 +52,9 @@ namespace MotionControl.TaskEngine.Validation
                         return null;
                     }
                     number = point.Position;
+                    if (!point.OwnershipConfirmed)
+                        Warning(node, path, "示教点逻辑归属未声明：" + point.PhysicalAxisKey + " → " + point.AxisName
+                            + "；旧配置暂按当前映射兼容，映射变更前须显式迁移。");
                     return DeviceVariableType.Number;
                 default:
                     Error(node, path + ".source", "不支持的数据来源。");
@@ -77,6 +86,7 @@ namespace MotionControl.TaskEngine.Validation
                 {
                     bool bothNumeric = TaskLiteral.IsNumeric(left.Value) && TaskLiteral.IsNumeric(right.Value);
                     if (left != right && !bothNumeric) Error(node, path, "比较两侧的数据类型不兼容。");
+                    if (bothNumeric) CheckNumericComparison(condition.Left, condition.Right, node, path);
                     bool equality = condition.Comparison == TaskComparison.Equal || condition.Comparison == TaskComparison.NotEqual;
                     if (!equality && !bothNumeric
                         && !(left == DeviceVariableType.DateTime && right == DeviceVariableType.DateTime))

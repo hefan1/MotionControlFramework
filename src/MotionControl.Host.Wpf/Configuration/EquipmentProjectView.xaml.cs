@@ -135,19 +135,39 @@ namespace MotionControl.Host.Wpf.Configuration
         private void RenderPreview()
         {
             if (_preview == null) return;
-            PreviewSummary.Text = T("设备：", "Equipment: ") + _preview.EquipmentName
+            PreviewSummary.Text = T("候选工程（尚未应用）：", "Candidate project (not applied): ") + _preview.EquipmentName
                 + T("   运行方式：", "   Execution: ") + ExecutionName(_preview.ExecutionOwner)
                 + T("   控制器：", "   Controller: ") + ControllerName(_preview.ControllerBackend)
-                + T("   来源设备：", "   Source: ") + _preview.SourceMachineId;
+                + T("   包的导出来源：", "   Package source: ") + _preview.SourceMachineId
+                + T("   应用目标：", "   Apply target: ") + _preview.TargetMachineId;
             var text = new StringBuilder();
-            AppendList(text, T("配置文件", "Configuration files"), _preview.Files);
+            text.AppendLine(TaskCapabilitySummary()).AppendLine();
+            AppendList(text, T("工程包提供的文件", "Files supplied by the package"), _preview.Files);
+            AppendList(text, T("应用后保留的现有文件（未由工程包提供）", "Existing files retained after apply (not supplied by the package)"), _preview.RetainedFiles);
             AppendList(text, T("与当前配置的差异", "Changes to current configuration"), _preview.Changes);
             AppendList(text, T("需要核对", "Items to review"), _preview.Warnings);
             PreviewText.Text = text.ToString();
             string selected = PreviewFilePicker.SelectedItem as string;
-            PreviewFilePicker.ItemsSource = _preview.Files;
-            if (selected != null && _preview.Files.Contains(selected)) PreviewFilePicker.SelectedItem = selected;
-            else if (_preview.Files.Count > 0) PreviewFilePicker.SelectedIndex = 0;
+            PreviewFilePicker.ItemsSource = _preview.MergedFiles;
+            if (selected != null && _preview.MergedFiles.Contains(selected, StringComparer.OrdinalIgnoreCase)) PreviewFilePicker.SelectedItem = selected;
+            else if (_preview.MergedFiles.Count > 0) PreviewFilePicker.SelectedIndex = 0;
+        }
+
+        /// <summary>只展示本机代码声明的能力；离线预检通过不代表连接、回零或现场条件已满足。</summary>
+        private string TaskCapabilitySummary()
+        {
+            var capabilities = _service.TaskCapabilities;
+            if (capabilities == null)
+                return T("检查范围：已检查配置定义，未提供当前后端的任务能力，不能确认可执行。",
+                    "Validation scope: configuration definitions checked; task backend capabilities were not provided, so executability is unverified.");
+            string supported = T("已接入", "available");
+            string unsupported = T("未接入", "unavailable");
+            return T("本机任务执行能力：多轴分别定位", "Installed task capabilities: independent axis group positioning ")
+                + (capabilities.SupportsAxisGroupMove ? supported : unsupported)
+                + T("；资源范围进入/退出条件", "; resource entry/exit conditions ")
+                + (capabilities.SupportsInterlockConditions ? supported : unsupported)
+                + T("。该结果仅说明代码能力，设备连接、回零和现场条件仍须重新核查。",
+                    ". This describes code capabilities only. Connection, homing and site conditions still require verification.");
         }
 
         /// <summary>选择文件时对照预览时冻结的现有配置与工程包内容，不读取或写入运行状态。</summary>
@@ -157,7 +177,10 @@ namespace MotionControl.Host.Wpf.Configuration
             try
             {
                 CurrentFileText.Text = DisplayFile(_preview.GetCurrentFileContent(path));
-                IncomingFileText.Text = DisplayFile(_preview.GetFileContent(path));
+                IncomingFileText.Text = _preview.Files.Contains(path, StringComparer.OrdinalIgnoreCase)
+                    ? DisplayFile(_preview.GetFileContent(path))
+                    : T("工程包未提供此文件；应用后保留左侧现有配置。它不属于本次导入的新配置。",
+                        "The package does not supply this file. The existing configuration on the left will be retained; it is not newly imported configuration.");
             }
             catch (Exception error) { ShowStatus(T("无法显示配置预览：", "Cannot display configuration preview: ") + error.Message, true); }
         }

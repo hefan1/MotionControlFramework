@@ -387,12 +387,16 @@ namespace MotionControl.Host.Wpf.Tasks
             if (_commandInProgress || _session == null || _runtime == null || !IsControllerConnected()) return;
             var session = _session;
             var runtime = _runtime;
+            // 固定本次连接身份，即使断开后很快重连也不能复用原窗口的核查结果。
+            Guid? connectionSession = runtime.ConnectionSessionId;
             if (session.Machine.GetSnapshot().State != TaskMachineState.Stopped || runtime.IsPreparing) return;
             _commandInProgress = true; UpdateCommandAvailability();
             try
             {
                 var dialog = new ResourceRecoveryDialog(session.TaskDevice,
                     () => ReferenceEquals(_session, session) && ReferenceEquals(_runtime, runtime)
+                        && runtime.IsConnectionSessionCurrent(connectionSession)
+                        && HasPublishedPreparationSession(runtime, connectionSession)
                         && IsControllerConnected() && !runtime.IsPreparing
                         && runtime.State != MachineRunState.Running && runtime.State != MachineRunState.Pausing
                         && session.Machine.GetSnapshot().State == TaskMachineState.Stopped,

@@ -1,8 +1,10 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Alarms;
+using MotionControl.Framework.Contracts.Flow;
 using MotionControl.TaskEngine.Definitions;
 
 namespace MotionControl.TaskEngine.Execution
@@ -35,6 +37,11 @@ namespace MotionControl.TaskEngine.Execution
 
                 await scope.StepAsync(() =>
                 {
+                    var waits = new List<TaskObservedValue>();
+                    foreach (TaskNode branch in parallel.Branches)
+                        waits.Add(new TaskObservedValue(branch.Name, "完成", null, null,
+                            StationObjectKind.Step, branch.Id, StationValueQuality.NotProvided));
+                    RecordWait(scope, StationWaitKind.Parallel, "parallel.children", "等待全部并行分支完成。", waits);
                     _run.Report(scope, TaskNodeState.Waiting, "等待 " + parallel.Branches.Count + " 个并行分支全部完成。");
                     foreach (TaskNode branch in parallel.Branches)
                         branches.Add(Task.Run(() => RunBranchAsync(branch)));
@@ -79,7 +86,11 @@ namespace MotionControl.TaskEngine.Execution
                 await scope.StepAsync(() =>
                 {
                     complete = _run.ActiveMilliseconds >= end;
-                    scope.Diagnostics = new TaskStepDiagnostics("工艺延时", remainingDelayMilliseconds: Math.Max(0, end - _run.ActiveMilliseconds));
+                    double remaining = Math.Max(0, end - _run.ActiveMilliseconds);
+                    RecordWait(scope, StationWaitKind.Delay, "delay.active_time", "工艺延时", new[] {
+                        new TaskObservedValue(scope.Node.Name, milliseconds.ToString(CultureInfo.InvariantCulture),
+                            Math.Max(0, milliseconds - remaining).ToString("0.###", CultureInfo.InvariantCulture), complete,
+                            StationObjectKind.Step, scope.Node.Id, StationValueQuality.Good, "ms") }, complete, remaining);
                     _run.Report(scope, TaskNodeState.Waiting, "等待工艺延时 " + milliseconds + " ms。");
                 }).ConfigureAwait(false);
                 if (!complete) await scope.NextPollAsync().ConfigureAwait(false);
@@ -101,8 +112,11 @@ namespace MotionControl.TaskEngine.Execution
                         complete = actual.HasValue && actual.Value == node.Expected;
                         string current = actual.HasValue ? actual.Value.ToString() : "未知";
                         scope.WaitDetail = "等待 DI " + node.InputName + "=" + node.Expected + "；当前=" + current;
-                        scope.Diagnostics = new TaskStepDiagnostics("等待输入：" + node.InputName, new[] {
-                            new TaskObservedValue(node.InputName, node.Expected.ToString(), actual?.ToString(), actual.HasValue ? (bool?)complete : null) });
+                        RecordWait(scope, StationWaitKind.Input, "input.expected_state", scope.WaitDetail, new[] {
+                            new TaskObservedValue(node.InputName, node.Expected.ToString(), actual?.ToString(),
+                                actual.HasValue ? (bool?)complete : null, StationObjectKind.Input, node.InputName,
+                                actual.HasValue ? StationValueQuality.Good : StationValueQuality.Unknown) },
+                            actual.HasValue ? (bool?)complete : null);
                         _run.Report(scope, TaskNodeState.Waiting, scope.WaitDetail);
                     }).ConfigureAwait(false);
                 }
@@ -146,8 +160,13 @@ namespace MotionControl.TaskEngine.Execution
                         complete = readError == null && actual.HasValue && actual.Value == node.Expected;
                         scope.WaitDetail = "等待 DO " + node.OutputName + "=" + node.Expected
                             + "；当前=" + (actual?.ToString() ?? "未知") + (readError == null ? "" : "；读取失败：" + readError);
-                        scope.Diagnostics = new TaskStepDiagnostics("等待输出读回：" + node.OutputName, new[] {
-                            new TaskObservedValue(node.OutputName, node.Expected.ToString(), actual?.ToString(), actual.HasValue ? (bool?)complete : null) });
+                        StationValueQuality quality = readError != null ? StationValueQuality.ReadFailed
+                            : actual.HasValue ? StationValueQuality.Good : StationValueQuality.Unknown;
+                        RecordWait(scope, StationWaitKind.Output, "output.expected_state", scope.WaitDetail, new[] {
+                            new TaskObservedValue(node.OutputName, node.Expected.ToString(), actual?.ToString(),
+                                quality == StationValueQuality.Good ? (bool?)complete : null,
+                                StationObjectKind.Output, node.OutputName, quality) },
+                            quality == StationValueQuality.Good ? (bool?)complete : null);
                         _run.Report(scope, TaskNodeState.Waiting, scope.WaitDetail);
                     }).ConfigureAwait(false);
                 }
@@ -202,9 +221,14 @@ namespace MotionControl.TaskEngine.Execution
                             + "；当前=" + (first?.ToString() ?? "未知") + " / " + (second?.ToString() ?? "未知")
                             + (node.RequiredFirstValue.HasValue ? "；要求第一路=" + node.RequiredFirstValue.Value : "；任一路有效")
                             + (readError == null ? (stable ? "" : "；采样未知或变化") : "；读取失败：" + readError);
-                        scope.Diagnostics = new TaskStepDiagnostics("两路锁存输入须恰好一路有效", new[] {
-                            new TaskObservedValue(node.FirstInputName, "互斥且稳定", first?.ToString(), stable ? (bool?)matched : null),
-                            new TaskObservedValue(node.SecondInputName, "互斥且稳定", second?.ToString(), stable ? (bool?)matched : null) });
+                        StationValueQuality quality = readError != null ? StationValueQuality.ReadFailed
+                            : !first.HasValue || !second.HasValue || !firstAgain.HasValue || !secondAgain.HasValue
+                                ? StationValueQuality.Unknown : stable ? StationValueQuality.Good : StationValueQuality.Unstable;
+                        RecordWait(scope, StationWaitKind.Input, "input.exclusive_pair", scope.WaitDetail, new[] {
+                            new TaskObservedValue(node.FirstInputName, "互斥且稳定", first?.ToString(), stable ? (bool?)matched : null,
+                                StationObjectKind.Input, node.FirstInputName, quality),
+                            new TaskObservedValue(node.SecondInputName, "互斥且稳定", second?.ToString(), stable ? (bool?)matched : null,
+                                StationObjectKind.Input, node.SecondInputName, quality) }, stable ? (bool?)matched : null);
                         _run.Report(scope, TaskNodeState.Waiting, scope.WaitDetail);
                         if (matched)
                         {
@@ -249,7 +273,8 @@ namespace MotionControl.TaskEngine.Execution
                         string reason;
                         var values = new List<TaskObservedValue>();
                         bool known = TaskConditionEvaluator.TryEvaluate(node.Condition, _device.Catalog, _device.ReadVariables(), out result, out reason, values);
-                        scope.Diagnostics = new TaskStepDiagnostics(reason, values, known ? (bool?)result : null);
+                        RecordWait(scope, StationWaitKind.Condition, "condition.evaluate", reason, values,
+                            known ? (bool?)result : null);
                         complete = known && result;
                         scope.WaitDetail = "等待条件：" + reason;
                         _run.Report(scope, TaskNodeState.Waiting, scope.WaitDetail);

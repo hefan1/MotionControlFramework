@@ -95,6 +95,9 @@
  <sys:String x:Key="任务编辑.复制任务">复制任务</sys:String>
  <sys:String x:Key="任务编辑.副本">副本</sys:String>
  <sys:String x:Key="任务编辑.工程单位">工程单位</sys:String>
+ <sys:String x:Key="任务编辑.单位未配置">单位未配置</sys:String>
+ <sys:String x:Key="任务编辑.量纲未定义">量纲未定义</sys:String>
+ <sys:String x:Key="任务编辑.尚未示教">尚未示教</sys:String>
  <sys:String x:Key="任务编辑.工位">工位</sys:String>
  <sys:String x:Key="任务编辑.工位安排">工位安排</sys:String>
  <sys:String x:Key="任务编辑.工位标识">工位标识</sys:String>
@@ -318,4 +321,9 @@
  <sys:String x:Key="任务编辑.任务筛选数量格式">匹配 {0} / 共 {1} 个任务</sys:String>
  <sys:String x:Key="任务编辑.任务库为空">任务库为空</sys:String>
  <sys:String x:Key="任务编辑.没有匹配任务">没有匹配任务</sys:String>
+ <sys:String x:Key="任务编辑.准备配置">准备配置</sys:String>
+ <sys:String x:Key="任务编辑.子任务引用">子任务引用</sys:String>
+ <sys:String x:Key="任务编辑.准备配置已变化，旧检查结论失效，请重新检查或装载">准备配置已变化，旧检查结论失效，请重新检查或装载</sys:String>
+ <sys:String x:Key="任务编辑.准备配置读取失败，旧检查结论失效">准备配置读取失败，旧检查结论失效</sys:String>
+ <sys:String x:Key="任务编辑.无法确认任务引用，不能删除">无法确认任务引用，不能删除</sys:String>
 </ResourceDictionary>

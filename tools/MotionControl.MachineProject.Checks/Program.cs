@@ -12,7 +12,7 @@ using Newtonsoft.Json.Linq;
 namespace MotionControl.MachineProject.Checks
 {
     /// <summary>使用独立临时目录检查设备工程包，不访问控制器和用户配置。</summary>
-    internal static class Program
+    internal static partial class Program
     {
         /// <summary>执行导出、预检、应用、失败回滚和中断恢复检查。</summary>
         private static int Main(string[] args)
@@ -185,6 +185,8 @@ namespace MotionControl.MachineProject.Checks
                 Require(File.ReadAllText(Path.Combine(targetRoot, "Runtime/RecoverySnapshot.json")).Contains("现场证据")
                     && File.ReadAllText(Path.Combine(targetRoot, "Drafts/TaskWorkspace.json")).Contains("任务草稿"), "中断恢复覆盖了运行数据。 ");
                 CheckInterruptedProcess(root, package, targetRoot, originalConnection);
+                CheckPreparationImport(temporary);
+                CheckProjectCapabilityAndSources(temporary);
                 if (args.Length == 1) CheckExistingSample(args[0], temporary);
                 Console.WriteLine("设备工程包：跨设备导入、引用、保护记录、回滚、变更及损坏检查通过。");
                 return 0;

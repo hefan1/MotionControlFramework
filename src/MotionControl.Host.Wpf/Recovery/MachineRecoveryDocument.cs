@@ -52,6 +52,9 @@ namespace MotionControl.Host.Wpf.Recovery
         /// <summary>设备流程引用变量时使用的稳定名称。</summary>
         public string Name { get; set; }
 
+        /// <summary>保存时的显示名称，只用于追溯，不作为恢复匹配键。</summary>
+        public string DisplayName { get; set; }
+
         /// <summary>设备变量的 .NET 数据类型名称。</summary>
         public string DataType { get; set; }
 
@@ -63,6 +66,27 @@ namespace MotionControl.Host.Wpf.Recovery
 
         /// <summary>运行值最后一次更新的本机时间。</summary>
         public DateTime LastUpdated { get; set; }
+
+        /// <summary>保存时的工程单位；旧恢复文件缺失时保留未知。</summary>
+        public string EngineeringUnit { get; set; }
+
+        /// <summary>保存时的数值量纲，恢复时与当前定义核对。</summary>
+        public string Dimension { get; set; }
+
+        /// <summary>保存时声明的数值下限，仅用于追溯；恢复仍按当前定义检查。</summary>
+        public double? MinimumValue { get; set; }
+
+        /// <summary>保存时声明的数值上限。</summary>
+        public double? MaximumValue { get; set; }
+
+        /// <summary>保存时的显示精度，原始数值文本不会被舍入。</summary>
+        public int? DecimalPlaces { get; set; }
+
+        /// <summary>保存时的稳定采集来源标识，来源改变不能恢复旧值。</summary>
+        public string SourceId { get; set; }
+
+        /// <summary>保存时的来源说明，不用于推断控制器或实时采样质量。</summary>
+        public string SourceDescription { get; set; }
     }
 
     /// <summary>保存一个可恢复工位的最近步骤编号。</summary>

@@ -29,6 +29,9 @@ namespace MotionControl.Framework.Wpf.Variables
         /// <summary>当前设备已连接时的整机运行状态。</summary>
         private MachineRuntime _machineRuntime;
 
+        /// <summary>Host 查询已加载任务或正在装载、关闭的命令，覆盖后台读取目录但尚未接管控制权的阶段。</summary>
+        public Func<bool> HasTaskSessionOrCommand { get; set; }
+
         /// <summary>代码生成的选中行属性变化后通知 WPF 重新读取。</summary>
         private DeviceVariableRow _selectedVariable;
 
@@ -63,6 +66,7 @@ namespace MotionControl.Framework.Wpf.Variables
             Variables = new ObservableCollection<DeviceVariableRow>();
             DataContext = this;
             _variableStore.VariablesChanged += VariableStore_VariablesChanged;
+            Loaded += DeviceVariableView_Loaded;
             RefreshRows();
             RefreshLocalizedText();
             UpdateActionAvailability();
@@ -138,12 +142,14 @@ namespace MotionControl.Framework.Wpf.Variables
             if (_machineRuntime != null)
             {
                 _machineRuntime.StatusChanged -= MachineRuntime_StatusChanged;
+                _machineRuntime.PreparationChanged -= MachineRuntime_StatusChanged;
             }
 
             _machineRuntime = machineRuntime;
             if (_machineRuntime != null)
             {
                 _machineRuntime.StatusChanged += MachineRuntime_StatusChanged;
+                _machineRuntime.PreparationChanged += MachineRuntime_StatusChanged;
             }
 
             UpdateActionAvailability();
@@ -158,6 +164,7 @@ namespace MotionControl.Framework.Wpf.Variables
                 "变量类型",
                 "当前值",
                 "最后更新时间",
+                "变量工程单位",
                 "变量说明",
                 "变量人工可写"
             };
@@ -173,7 +180,7 @@ namespace MotionControl.Framework.Wpf.Variables
             foreach (DeviceVariableRow row in Variables)
             {
                 row.UpdateTypeDisplay(GetTypeDisplayName(row.DataType));
-                row.UpdateValueDisplay(noValueText);
+                row.UpdateValueDisplay(noValueText, GetLocalizedText("变量元数据未定义"), GetLocalizedText("变量单位不适用"));
             }
 
             UpdateActionAvailability();
@@ -191,7 +198,13 @@ namespace MotionControl.Framework.Wpf.Variables
             Dispatcher.BeginInvoke(new Action(RefreshRows), DispatcherPriority.DataBind);
         }
 
-        /// <summary>整机运行状态变化后在 UI 线程更新人工操作的锁定状态。</summary>
+        /// <summary>重新进入页面时读取最新任务会话状态，不沿用离开页面前的按钮许可。</summary>
+        private void DeviceVariableView_Loaded(object sender, RoutedEventArgs e)
+        {
+            UpdateActionAvailability();
+        }
+
+        /// <summary>整机状态或准备状态变化后，在 UI 线程更新定义维护与人工写值的独立许可。</summary>
         private void MachineRuntime_StatusChanged(object sender, EventArgs e)
         {
             if (Dispatcher.CheckAccess())
@@ -221,11 +234,16 @@ namespace MotionControl.Framework.Wpf.Variables
                 }
                 else
                 {
+                    if (!HasSameInputMeaning(row, snapshot))
+                    {
+                        _pendingInputByName.Remove(row.Name);
+                        if (ReferenceEquals(SelectedVariable, row)) ManualValueTextBox.Clear();
+                    }
                     row.Update(snapshot);
                 }
 
                 row.UpdateTypeDisplay(GetTypeDisplayName(row.DataType));
-                row.UpdateValueDisplay(GetLocalizedText("变量无有效数据"));
+                row.UpdateValueDisplay(GetLocalizedText("变量无有效数据"), GetLocalizedText("变量元数据未定义"), GetLocalizedText("变量单位不适用"));
             }
 
             foreach (DeviceVariableRow row in Variables.ToArray())
@@ -283,16 +301,18 @@ namespace MotionControl.Framework.Wpf.Variables
         /// <summary>根据设备运行状态和变量权限锁定工具栏操作。</summary>
         private void UpdateActionAvailability()
         {
-            bool canEdit = CanEditDefinitions();
+            string definitionBlock = GetDefinitionEditBlockResourceKey();
+            bool canEdit = definitionBlock == null;
             bool visibleTarget = SelectedVariable != null && SelectedVariable.IsSearchMatch;
-            bool canWrite = canEdit && visibleTarget && SelectedVariable.AllowOperatorWrite;
+            bool canWrite = CanWriteCurrentValue() && visibleTarget && SelectedVariable.AllowOperatorWrite;
             AddVariableButton.IsEnabled = canEdit;
             EditVariableButton.IsEnabled = canEdit && visibleTarget;
             DeleteVariableButton.IsEnabled = canEdit && visibleTarget;
             ManualValueTextBox.IsEnabled = canWrite;
             WriteValueButton.IsEnabled = canWrite;
             UpdateSelectedVariableContext();
-            SetStatusResource(SelectedVariable != null && !SelectedVariable.IsSearchMatch ? "变量筛选目标隐藏" : canEdit ? "变量状态可编辑" : "变量状态运行时锁定");
+            SetStatusResource(SelectedVariable != null && !SelectedVariable.IsSearchMatch
+                ? "变量筛选目标隐藏" : definitionBlock ?? "变量状态可编辑");
         }
 
         /// <summary>显示当前选中变量的名称、类型、值和人工写入权限。</summary>
@@ -327,28 +347,48 @@ namespace MotionControl.Framework.Wpf.Variables
                 SelectedDefinitionSummaryText.Text = GetLocalizedText("变量摘要未选择");
                 return;
             }
-            var definition = _variableStore.GetDefinitions().FirstOrDefault(item => string.Equals(item.Name, SelectedVariable.Name, StringComparison.OrdinalIgnoreCase));
             string missing = GetLocalizedText("变量摘要未提供");
-            string initial = definition == null || definition.InitialValue == null
-                ? missing : definition.InitialValue.Length == 0 && !string.Equals(definition.DataType, "String", StringComparison.OrdinalIgnoreCase)
-                    ? missing : GetConfirmationValue(definition.DataType, definition.InitialValue);
-            string description = string.IsNullOrWhiteSpace(definition?.Description) ? missing : definition.Description;
+            string initial = SelectedVariable.InitialValue == null
+                ? missing : SelectedVariable.InitialValue.Length == 0 && !string.Equals(SelectedVariable.DataType, "String", StringComparison.OrdinalIgnoreCase)
+                    ? missing : GetConfirmationValue(SelectedVariable.DataType, SelectedVariable.InitialValue);
+            string description = string.IsNullOrWhiteSpace(SelectedVariable.Description) ? missing : SelectedVariable.Description;
             string current = SelectedVariable.HasValue ? GetConfirmationValue(SelectedVariable.DataType, SelectedVariable.CurrentValue) : GetLocalizedText("变量无有效数据");
-            SelectedDefinitionSummaryText.Text = string.Format(GetLocalizedText("变量定义运行摘要格式"), SelectedVariable.Name, SelectedVariable.DataTypeDisplay, initial, description, current);
+            string undefined = GetLocalizedText("变量元数据未定义");
+            SelectedDefinitionSummaryText.Text = string.Format(GetLocalizedText("变量定义运行摘要格式"), SelectedVariable.NameDisplay, SelectedVariable.DataTypeDisplay, initial, description, current)
+                + Environment.NewLine + string.Format(GetLocalizedText("变量元数据摘要格式"), SelectedVariable.EngineeringUnitDisplay,
+                    string.IsNullOrWhiteSpace(SelectedVariable.Dimension) ? undefined : SelectedVariable.Dimension,
+                    SelectedVariable.MinimumValue?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? undefined,
+                    SelectedVariable.MaximumValue?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? undefined,
+                    string.IsNullOrWhiteSpace(SelectedVariable.SourceId) ? undefined : SelectedVariable.SourceId,
+                    string.IsNullOrWhiteSpace(SelectedVariable.SourceDescription) ? undefined : SelectedVariable.SourceDescription)
+                + (string.IsNullOrWhiteSpace(SelectedVariable.ValueNotice) ? string.Empty : Environment.NewLine + SelectedVariable.ValueNotice);
         }
 
-        /// <summary>运行时只在停机、待复位或就绪状态允许现场调整变量。</summary>
-        private bool CanEditDefinitions()
+        /// <summary>输入框内容属于原变量含义；单位、类型、来源或范围改变后不能复用旧的待写文本。</summary>
+        private static bool HasSameInputMeaning(DeviceVariableRow row, DeviceVariableSnapshot snapshot)
         {
-            if (_machineRuntime == null)
-            {
-                return true;
-            }
+            return string.Equals(row.DataType, snapshot.DataType, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(NumericValueMetadata.NormalizeUnit(row.EngineeringUnit), NumericValueMetadata.NormalizeUnit(snapshot.EngineeringUnit), StringComparison.Ordinal)
+                && string.Equals(NumericValueMetadata.NormalizeText(row.Dimension), NumericValueMetadata.NormalizeText(snapshot.Dimension), StringComparison.OrdinalIgnoreCase)
+                && string.Equals(row.SourceId ?? string.Empty, snapshot.SourceId ?? string.Empty, StringComparison.Ordinal)
+                && row.MinimumValue == snapshot.MinimumValue && row.MaximumValue == snapshot.MaximumValue;
+        }
 
-            MachineRunState state = _machineRuntime.State;
-            return state == MachineRunState.Disconnected
-                || state == MachineRunState.ResetRequired
-                || state == MachineRunState.Ready;
+        /// <summary>当前值仍使用原整机状态许可；定义被任务目录锁定时，不额外禁止合法的现场写值。</summary>
+        private bool CanWriteCurrentValue()
+        {
+            return DeviceVariableEditAccess.CanWriteCurrentValue(_machineRuntime?.State);
+        }
+
+        /// <summary>任务会话使用冻结目录；关闭会话并完成设备操作后，才允许更改定义并重新读取任务。</summary>
+        private string GetDefinitionEditBlockResourceKey()
+        {
+            bool taskContextActive = (HasTaskSessionOrCommand != null && HasTaskSessionOrCommand())
+                || (_machineRuntime != null && _machineRuntime.IsTaskEngineControlClaimed);
+            bool deviceOperationActive = _machineRuntime != null && (_machineRuntime.IsPreparing
+                || _machineRuntime.IsClearing || _machineRuntime.IsShutdownInProgress);
+            return DeviceVariableEditAccess.DefinitionBlockResourceKey(_machineRuntime?.State,
+                taskContextActive, deviceOperationActive);
         }
 
         /// <summary>新增一条变量定义，并立即保存到当前设备的 JSON 文件。</summary>
@@ -371,7 +411,7 @@ namespace MotionControl.Framework.Wpf.Variables
             }
         }
 
-        /// <summary>编辑所选变量的名称、类型、初值、说明和现场写入权限。</summary>
+        /// <summary>编辑显示元数据、类型、初值和权限；既有稳定名称不能在此绕过引用迁移。</summary>
         private void EditVariableButton_Click(object sender, RoutedEventArgs e)
         {
             if (!EnsureVisibleVariableTarget() || !EnsureEditingAllowed() || SelectedVariable == null)
@@ -437,7 +477,7 @@ namespace MotionControl.Framework.Wpf.Variables
         private void WriteValueButton_Click(object sender, RoutedEventArgs e)
         {
             if (!EnsureVisibleVariableTarget()) return;
-            if (!CanEditDefinitions())
+            if (!CanWriteCurrentValue())
             {
                 SetStatusResource("变量状态运行时锁定");
                 return;
@@ -455,12 +495,24 @@ namespace MotionControl.Framework.Wpf.Variables
                 return;
             }
 
-            DeviceVariableDefinition inputDefinition = new DeviceVariableDefinition
+            string targetName = SelectedVariable.Name;
+            DeviceVariableDefinition expectedDefinition = _variableStore.GetDefinitions().FirstOrDefault(
+                item => string.Equals(item.Name, targetName, StringComparison.OrdinalIgnoreCase));
+            if (expectedDefinition == null)
             {
-                Name = SelectedVariable.Name,
-                DataType = SelectedVariable.DataType,
-                InitialValue = ManualValueTextBox.Text
-            };
+                StatusText.Text = GetLocalizedText("变量写入定义已变化");
+                return;
+            }
+            if (!MatchesWriteDefinition(SelectedVariable, expectedDefinition))
+            {
+                ManualValueTextBox.Clear();
+                _pendingInputByName.Remove(targetName);
+                RefreshRows();
+                StatusText.Text = GetLocalizedText("变量写入定义已变化");
+                return;
+            }
+            DeviceVariableDefinition inputDefinition = expectedDefinition.Copy();
+            inputDefinition.InitialValue = ManualValueTextBox.Text;
             string normalizedValue;
             try
             {
@@ -477,10 +529,15 @@ namespace MotionControl.Framework.Wpf.Variables
                 ? GetConfirmationValue(SelectedVariable.DataType, SelectedVariable.CurrentValue)
                 : GetLocalizedText("变量无有效数据");
             string nextValue = GetConfirmationValue(SelectedVariable.DataType, normalizedValue);
+            if (!string.IsNullOrWhiteSpace(expectedDefinition.EngineeringUnit))
+            {
+                previousValue += " " + expectedDefinition.EngineeringUnit;
+                nextValue += " " + expectedDefinition.EngineeringUnit;
+            }
             string confirmationText = string.Format(
                 System.Globalization.CultureInfo.CurrentCulture,
                 GetLocalizedText("变量写入确认格式"),
-                SelectedVariable.Name,
+                targetName,
                 SelectedVariable.DataTypeDisplay,
                 previousValue,
                 nextValue);
@@ -496,11 +553,20 @@ namespace MotionControl.Framework.Wpf.Variables
                 return;
             }
 
+            if (!CanWriteCurrentValue() || SelectedVariable == null
+                || !string.Equals(SelectedVariable.Name, targetName, StringComparison.OrdinalIgnoreCase)
+                || !SelectedVariable.IsSearchMatch)
+            {
+                StatusText.Text = GetLocalizedText("变量写入定义已变化");
+                return;
+            }
+
             string errorMessage;
             if (!_variableStore.TrySetOperatorValue(
-                SelectedVariable.Name,
+                targetName,
                 normalizedValue,
-                out errorMessage))
+                out errorMessage,
+                expectedDefinition))
             {
                 StatusText.Text = errorMessage;
                 return;
@@ -508,6 +574,17 @@ namespace MotionControl.Framework.Wpf.Variables
 
             ManualValueTextBox.Clear();
             SetStatusResource("变量写入成功");
+        }
+
+        /// <summary>点击时核对表格显示的含义与服务当前定义一致，不能用尚未刷新的旧输入提交到新来源。</summary>
+        private static bool MatchesWriteDefinition(DeviceVariableRow row, DeviceVariableDefinition definition)
+        {
+            return string.Equals(row.DataType, definition.DataType, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(NumericValueMetadata.NormalizeUnit(row.EngineeringUnit), NumericValueMetadata.NormalizeUnit(definition.EngineeringUnit), StringComparison.Ordinal)
+                && string.Equals(NumericValueMetadata.NormalizeText(row.Dimension), NumericValueMetadata.NormalizeText(definition.Dimension), StringComparison.OrdinalIgnoreCase)
+                && string.Equals(row.SourceId ?? string.Empty, definition.SourceId ?? string.Empty, StringComparison.Ordinal)
+                && row.MinimumValue == definition.MinimumValue && row.MaximumValue == definition.MaximumValue
+                && row.AllowOperatorWrite == definition.AllowOperatorWrite;
         }
 
         /// <summary>在确认内容中明确显示空字符串，并保留其他类型的原始格式。</summary>
@@ -538,11 +615,12 @@ namespace MotionControl.Framework.Wpf.Variables
             }
         }
 
-        /// <summary>校验定义列表、保存配置文件，再把新定义应用到本机运行时变量表。</summary>
+        /// <summary>弹窗返回后重新核对定义维护许可，再保存文件并应用；不自动替换已加载任务的冻结目录。</summary>
         private void SaveDefinitions(
             System.Collections.Generic.IEnumerable<DeviceVariableDefinition> definitions,
             string successResourceKey)
         {
+            if (!EnsureEditingAllowed()) return;
             try
             {
                 var checkedDefinitions = DeviceVariableStore.ValidateDefinitions(definitions);
@@ -566,15 +644,16 @@ namespace MotionControl.Framework.Wpf.Variables
             }
         }
 
-        /// <summary>在打开变量编辑窗口前再次确认设备处于允许维护的状态。</summary>
+        /// <summary>打开编辑窗口和最终保存都核对任务会话与设备状态，禁止把旧任务目录配上新变量含义。</summary>
         private bool EnsureEditingAllowed()
         {
-            if (CanEditDefinitions())
+            string block = GetDefinitionEditBlockResourceKey();
+            if (block == null)
             {
                 return true;
             }
 
-            SetStatusResource("变量状态运行时锁定");
+            SetStatusResource(block);
             return false;
         }
 

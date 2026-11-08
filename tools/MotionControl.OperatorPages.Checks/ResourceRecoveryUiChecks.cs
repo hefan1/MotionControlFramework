@@ -38,6 +38,8 @@ namespace MotionControl.OperatorPages.Checks
             var sample = ResourceRecoverySample.Capture(device, id);
             Require(sample.Description.Contains("Axis:X") && sample.Description.Contains("Sensor") && sample.Description.Contains("Clamp"), "资源或轴 IO 采样没有展示。");
             VerifyDialogGate(device, sample);
+            VerifyContextInvalidation(device, sample);
+            VerifyContextInvalidation(device, sample, true);
             string reason;
             Require(!sample.TryConfirm(device, false, "已检查", () => true, out reason), "未勾选确认却解除隔离。");
             Require(!sample.TryConfirm(device, true, " ", () => true, out reason), "未填写检查说明却解除隔离。");
@@ -92,6 +94,48 @@ namespace MotionControl.OperatorPages.Checks
             confirm.IsChecked = true; note.Text = " "; Require(!button.IsEnabled, "未填写说明即允许提交。");
             note.Text = "现场已核查"; Require(button.IsEnabled, "完整核查后未允许提交。");
             resources.SelectedIndex = -1; Require(!button.IsEnabled, "切换资源后仍保留确认权限。");
+            dialog.Close();
+        }
+
+        /// <summary>断开后主动清除旧采样和确认；即使重新连接，也不能继续使用旧窗口放行。</summary>
+        private static void VerifyContextInvalidation(InMemoryTaskDevice device, ResourceRecoverySample sample, bool recoveryPending = false)
+        {
+            bool currentSession = true;
+            var dialog = new ResourceRecoveryDialog(device, () => currentSession, false);
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            var resources = (ComboBox)typeof(ResourceRecoveryDialog).GetField("_resources", flags).GetValue(dialog);
+            var read = (Button)typeof(ResourceRecoveryDialog).GetField("_readButton", flags).GetValue(dialog);
+            var release = (Button)typeof(ResourceRecoveryDialog).GetField("_recoverButton", flags).GetValue(dialog);
+            var confirmed = (CheckBox)typeof(ResourceRecoveryDialog).GetField("_confirmed", flags).GetValue(dialog);
+            var confirmation = (TextBox)typeof(ResourceRecoveryDialog).GetField("_confirmation", flags).GetValue(dialog);
+            var text = (TextBox)typeof(ResourceRecoveryDialog).GetField("_sampleText", flags).GetValue(dialog);
+            resources.SelectedIndex = 0;
+            typeof(ResourceRecoveryDialog).GetField("_sample", flags).SetValue(dialog, sample);
+            text.Text = sample.Description;
+            confirmed.IsChecked = true;
+            confirmation.Text = "已到现场核查";
+            Require(release.IsEnabled, "会话有效且核查完整时未允许确认。");
+
+            typeof(ResourceRecoveryDialog).GetField("_recoverInProgress", flags).SetValue(dialog, recoveryPending);
+            currentSession = false;
+            dialog.RefreshContext();
+            Require(typeof(ResourceRecoveryDialog).GetField("_sample", flags).GetValue(dialog) == null,
+                "会话失效后仍持有原采样。");
+            Require(!read.IsEnabled && !release.IsEnabled && confirmed.IsChecked == false
+                && confirmation.Text.Length == 0 && text.Text.Contains("已失效"),
+                "会话失效未清除确认或仍将旧采样作为当前值展示。");
+            if (recoveryPending)
+            {
+                var status = (TextBlock)typeof(ResourceRecoveryDialog).GetField("_status", flags).GetValue(dialog);
+                Require(status.Text.Contains("最终结果不能在当前窗口确认"),
+                    "解除请求未返回时，窗口失效后错误承诺了资源的最终状态。");
+            }
+            currentSession = true;
+            dialog.RefreshContext();
+            Require(!read.IsEnabled && !release.IsEnabled && text.Text.Contains("已失效"),
+                "旧窗口在新连接中自动恢复可用。");
+            Require(device.ReadResources().Single().State == TaskResourceState.Blocked,
+                "窗口失效意外解除原资源隔离。");
             dialog.Close();
         }
 

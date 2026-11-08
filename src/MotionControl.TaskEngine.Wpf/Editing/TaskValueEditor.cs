@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -25,6 +26,8 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         private readonly ComboBox _axis;
         /// <summary>稳定示教点编号选择。</summary>
         private readonly ComboBox _point;
+        /// <summary>当前引用的只读单位和来源提示，不读取运行值。</summary>
+        private readonly TextBlock _metadata;
         /// <summary>运动目标的所属轴已由外层行选择，不重复显示第二个轴下拉。</summary>
         private bool _fixedAxis;
         /// <summary>目标表只读显示当前来源名称，不触发解析或写入。</summary>
@@ -55,9 +58,12 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             _variable = TaskEditingUi.Names(catalog.Variables.Where(item => !numeric || IsNumeric(item.Value)).Select(item => item.Key), binding.VariableName);
             _axis = TaskEditingUi.Names(catalog.Axes.Keys, binding.Source == TaskValueSource.TeachPoint ? binding.AxisName : axisName);
             _point = new ComboBox { MinHeight = 30, SelectedValuePath = "Tag" };
+            _metadata = TaskEditingUi.Label(this, string.Empty);
             Children.Add(_source); Children.Add(_type); Children.Add(_constant); Children.Add(_variable); Children.Add(_axis); Children.Add(_point);
+            Children.Add(_metadata);
             FillPoints(binding.PointId);
             _source.SelectionChanged += SourceChanged; _axis.SelectionChanged += AxisChanged;
+            _variable.SelectionChanged += VariableSelectionChanged;
             if (missing) _source.SelectedIndex = -1;
             ShowSource();
         }
@@ -87,16 +93,23 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         internal void SelectConstantType(DeviceVariableType type) { _type.SelectedValue = type; }
 
         /// <summary>用户明确切换轴时清空原点位，不把另一根轴的同号点位静默套用。</summary>
-        private void AxisChanged(object sender, SelectionChangedEventArgs e) { FillPoints(null); }
+        private void AxisChanged(object sender, SelectionChangedEventArgs e) { FillPoints(null); UpdateMetadata(); }
+        /// <summary>引用变化时更新同一变量定义中的单位和稳定来源，不使用显示名称定位。</summary>
+        private void VariableSelectionChanged(object sender, SelectionChangedEventArgs e) { UpdateMetadata(); }
         /// <summary>切换来源只改变可见字段，其他输入暂时保留。</summary>
         private void SourceChanged(object sender, SelectionChangedEventArgs e) { ShowSource(); }
         /// <summary>示教点保存编号，显示名称与位置，空引用保持未选择。</summary>
         private void FillPoints(string selected)
         {
             _point.Items.Clear(); _point.Items.Add(new ComboBoxItem { Tag = string.Empty, Content = string.Empty });
+            TaskAxisInfo axis;
+            string unit = _catalog.Axes.TryGetValue(_axis.SelectedItem as string ?? string.Empty, out axis) ? axis.EngineeringUnit : null;
+            string unitText = string.IsNullOrWhiteSpace(unit) ? TaskEditingUi.T(this, "单位未配置") : unit;
             foreach (var point in _catalog.TeachPoints.Where(item => string.Equals(item.AxisName, _axis.SelectedItem as string, StringComparison.OrdinalIgnoreCase)))
                 _point.Items.Add(new ComboBoxItem { Tag = string.Equals(point.PointId, selected, StringComparison.OrdinalIgnoreCase) ? selected : point.PointId,
-                    Content = point.Name + " [" + point.PointId + "] = " + point.Position });
+                    Content = point.Name + " [" + point.PointId + "] = "
+                        + (point.Position.HasValue ? point.Position.Value.ToString(CultureInfo.InvariantCulture) + " " + unitText
+                            : TaskEditingUi.T(this, "尚未示教")) });
             ComboBoxItem existing = _point.Items.Cast<ComboBoxItem>().FirstOrDefault(item => string.Equals((string)item.Tag, selected ?? string.Empty, StringComparison.OrdinalIgnoreCase));
             if (!string.IsNullOrEmpty(selected) && existing == null)
                 _point.Items.Add(new ComboBoxItem { Tag = selected, Content = selected + " (?)" });
@@ -110,6 +123,36 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             _variable.Visibility = source == TaskValueSource.Variable ? Visibility.Visible : Visibility.Collapsed;
             _point.Visibility = source == TaskValueSource.TeachPoint ? Visibility.Visible : Visibility.Collapsed;
             _axis.Visibility = source == TaskValueSource.TeachPoint && !_fixedAxis ? Visibility.Visible : Visibility.Collapsed;
+            UpdateMetadata();
+        }
+
+        /// <summary>展示当前绑定的定义元数据；缺失数据说明未定义，不根据变量名称推断。</summary>
+        private void UpdateMetadata()
+        {
+            _metadata.Text = string.Empty;
+            var source = _source.SelectedValue as TaskValueSource?;
+            if (source == TaskValueSource.Variable)
+            {
+                TaskVariableInfo variable;
+                if (!_catalog.VariableDefinitions.TryGetValue(_variable.SelectedItem as string ?? string.Empty, out variable))
+                {
+                    _metadata.Text = TaskEditingUi.T(this, "未选择或引用失效");
+                    return;
+                }
+                string text = string.IsNullOrWhiteSpace(variable.DisplayName) ? variable.Name : variable.DisplayName + " [" + variable.Name + "]";
+                if (NumericValueMetadata.IsNumeric(variable.DataType))
+                    text += " · " + (string.IsNullOrWhiteSpace(variable.EngineeringUnit) ? TaskEditingUi.T(this, "单位未配置") : variable.EngineeringUnit)
+                        + " / " + (string.IsNullOrWhiteSpace(variable.Dimension) ? TaskEditingUi.T(this, "量纲未定义") : variable.Dimension);
+                _metadata.Text = text;
+            }
+            else if (source == TaskValueSource.TeachPoint)
+            {
+                TaskAxisInfo axis;
+                string name = _axis.SelectedItem as string ?? string.Empty;
+                _metadata.Text = _catalog.Axes.TryGetValue(name, out axis)
+                    ? name + " · " + (string.IsNullOrWhiteSpace(axis.EngineeringUnit) ? TaskEditingUi.T(this, "单位未配置") : axis.EngineeringUnit)
+                    : TaskEditingUi.T(this, "未选择或引用失效");
+            }
         }
         /// <summary>显示熟悉的 C# 类型名，存储仍使用兼容枚举。</summary>
         internal static string TypeName(DeviceVariableType type)

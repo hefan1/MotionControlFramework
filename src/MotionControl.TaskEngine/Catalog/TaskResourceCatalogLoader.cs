@@ -56,6 +56,7 @@ namespace MotionControl.TaskEngine.Catalog
             List<string> outputs = ReadIoNames(ioDocument, "digitalOutputs");
             var variables = new Dictionary<string, DeviceVariableType>(StringComparer.OrdinalIgnoreCase);
             var variableInitialValues = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var variableDefinitions = new List<DeviceVariableDefinition>();
             JObject variableDocument = ReadDocument(machineId, "Parameters/DeviceVariables.json", true, notices);
             if (variableDocument != null)
             {
@@ -69,6 +70,7 @@ namespace MotionControl.TaskEngine.Catalog
                         throw new InvalidDataException("变量类型不受支持：" + definition.Name);
                     variables.Add(definition.Name, type);
                     variableInitialValues.Add(definition.Name, definition.InitialValue);
+                    variableDefinitions.Add(definition.Copy());
                 }
             }
 
@@ -76,6 +78,7 @@ namespace MotionControl.TaskEngine.Catalog
             JObject pointDocument = ReadDocument(machineId, "Parameters/ManualAxisPositions.json", true, notices);
             if (pointDocument != null)
             {
+                TaskTeachPointOwnershipValidator.ValidateCurrent(axisDocument, pointDocument, notices);
                 foreach (JObject group in ReadObjects(pointDocument, "axes"))
                 {
                     string axisName;
@@ -92,7 +95,8 @@ namespace MotionControl.TaskEngine.Catalog
                         double? position = (double?)point["position"];
                         if (position.HasValue && !IsFinite(position.Value))
                             throw new InvalidDataException("示教值不是有限数：" + key + "/" + point["id"]);
-                        points.Add(new TaskTeachPoint(axisName, (string)point["id"], (string)point["name"], position));
+                        points.Add(new TaskTeachPoint(axisName, (string)point["id"], (string)point["name"], position,
+                            !string.IsNullOrWhiteSpace((string)group["logicalAxisName"]), key));
                     }
                 }
             }
@@ -116,7 +120,7 @@ namespace MotionControl.TaskEngine.Catalog
                 notices.Add("报警库尚未建立：" + MachineAlarmCatalogStore.RelativeFilePath);
             }
             return new TaskResourceCatalog(axes, inputs, outputs, variables, points,
-                namedResources, notices, variableInitialValues, alarmCodes, alarmDefinitions);
+                namedResources, notices, variableInitialValues, alarmCodes, alarmDefinitions, variableDefinitions);
         }
 
         /// <summary>读取已知格式文件；只允许可选文件不存在，不忽略损坏文件。</summary>

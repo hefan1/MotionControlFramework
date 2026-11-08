@@ -7,6 +7,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Runtime.Machine;
+using MotionControl.TaskEngine.Wpf.Monitoring;
 
 namespace MotionControl.Host.Wpf.Operation
 {
@@ -108,10 +109,12 @@ namespace MotionControl.Host.Wpf.Operation
                 var station = snapshot.Stations[index];
                 object key = index < flows.Length ? (object)flows[index]
                     : !string.IsNullOrWhiteSpace(station.Id) && snapshot.Stations.Count(s => s.Id == station.Id) == 1 ? station.Id : null;
-                string state = connectionLost ? T("总览数据未知") : string.IsNullOrWhiteSpace(station.StateText)
-                    ? T("整机状态") + " · " + T(!string.IsNullOrWhiteSpace(_automaticStartBlockReason) ? "启动条件未满足" : OperationUi.StateKey(snapshot.State)) : station.StateText;
+                string state = connectionLost || station.StatusReadError != null ? T("总览数据未知")
+                    : string.IsNullOrWhiteSpace(station.StateText)
+                        ? T(StationOperatorPresentation.StateKey(station.IndependentState)) : station.StateText;
                 string step = connectionLost ? T("总览数据未知") : string.IsNullOrWhiteSpace(station.CurrentStep) ? T("总览未提供") : station.CurrentStep;
-                string wait = connectionLost ? T("总览数据未知") : station.WaitingInputName ?? T("总览未提供");
+                string wait = connectionLost ? T("总览数据未知")
+                    : StationOperatorPresentation.DescribeWaitItems(station.WaitItems, station.HasWaitInformation, T);
                 string description = station.Name + "\n" + state + "\n" + T(OperationUi.StepLabelKey(snapshot.State, station)) + "\n" + step + "\n" + wait + "\n" + T("总览采样缺省");
                 var item = key == null ? null : StationTable.Items.OfType<ListBoxItem>().FirstOrDefault(existing => Equals(existing.Tag, key));
                 if (item == null)
@@ -126,7 +129,7 @@ namespace MotionControl.Host.Wpf.Operation
                 }
                 item.Tag = key;
                 item.DataContext = station;
-                item.ToolTip = description;
+                item.ToolTip = description + "\n\n" + DescribeStationEvidence(station);
                 item.Content = new[] { station.Name, state, T(OperationUi.StepLabelKey(snapshot.State, station)) + "：" + step, wait, T("总览采样缺省") };
                 if (key != null && Equals(key, _selectedStationKey)) StationTable.SelectedItem = item;
             }
@@ -358,22 +361,7 @@ namespace MotionControl.Host.Wpf.Operation
                     result.HasRuntime = false;
                     result.LastError = error.ToString() + "\n" + alarmError.ToString();
                 }
-                foreach (var flow in runtime.StationFlows)
-                {
-                    var row = new StationOverviewData { Name = flow.StationName, Id = flow.StationName };
-                    try
-                    {
-                        row.CurrentStep = flow.CurrentStepName;
-                        row.WaitingInputName = (flow as IStationInputWaitState)?.WaitingInputName;
-                    }
-                    catch (Exception readError)
-                    {
-                        row.StateText = T("总览数据未知");
-                        row.CurrentStep = T("总览数据未知");
-                        row.Detail = readError.GetBaseException().Message;
-                    }
-                    result.Stations.Add(row);
-                }
+                foreach (var flow in runtime.StationFlows) result.Stations.Add(OperationSnapshot.ReadStation(flow));
                 return result;
             }
         }
@@ -434,13 +422,25 @@ namespace MotionControl.Host.Wpf.Operation
             if (station == null) return;
             string reason = snapshot.IsPreview && !string.IsNullOrEmpty(station.PreviewReason)
                 ? station.PreviewReason
-                : string.IsNullOrWhiteSpace(station.Detail) ? BuildStationReason(snapshot)
-                    : station.Detail + "\n\n" + BuildStationReason(snapshot);
+                : DescribeStationEvidence(station) + "\n\n" + T("整机状态") + "：\n" + BuildStationReason(snapshot);
             string alarmSection = string.Empty; // 未提供明确报警归属接口，不按同名推断。
             MessageBox.Show(station.Name + "\n" + T(OperationUi.StepLabelKey(snapshot.State, station)) + "：" + station.CurrentStep
                 + "\n\n" + reason + alarmSection,
                 T("工位状态与处理建议"), MessageBoxButton.OK, MessageBoxImage.Information);
         }
+        /// <summary>集中显示工位结构化等待和原始说明；没有来源的建议、完成判据保持未提供。</summary>
+        private string DescribeStationEvidence(StationOverviewData station)
+        {
+            string result = StationOperatorPresentation.DescribeWaitItems(station.WaitItems, station.HasWaitInformation, T);
+            if (!string.IsNullOrWhiteSpace(station.Detail)) result += "\n" + station.Detail;
+            result += "\n" + T("工位下一步建议") + "：" + (station.NextAction ?? T("未提供"));
+            result += "\n" + T("工位完成判据") + "：" + (station.CompletionCondition ?? T("未提供"));
+            if (station.StatusCapturedAtUtc.HasValue)
+                result += "\n" + T("工位状态记录时间") + "：" + station.StatusCapturedAtUtc.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+            if (station.StatusReadError != null) result += "\n" + station.StatusReadError.ToString();
+            return result;
+        }
+
         /// <summary>把整机状态、启动拦截和报警整理成该工位可执行的现场处理建议。</summary>
         private string BuildStationReason(OperationSnapshot snapshot)
         {

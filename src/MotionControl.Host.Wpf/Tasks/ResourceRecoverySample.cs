@@ -23,6 +23,8 @@ namespace MotionControl.Host.Wpf.Tasks
         internal string ResourceDescription { get; private set; }
         /// <summary>供操作者核对的完整采样说明。</summary>
         internal string Description { get; private set; }
+        /// <summary>本次顺序读取结束的 UTC 时间；它不是所有轴和 IO 的共同采样时刻。</summary>
+        internal DateTime CapturedAtUtc { get; private set; }
         /// <summary>采样中当前有效的逻辑输出；有有效输出时仍不得解除资源隔离。</summary>
         internal IReadOnlyList<string> ActiveOutputs { get { return _outputs.Where(item => item.Value).Select(item => item.Key).OrderBy(item => item, StringComparer.OrdinalIgnoreCase).ToList().AsReadOnly(); } }
 
@@ -70,12 +72,13 @@ namespace MotionControl.Host.Wpf.Tasks
             }
             if (sample._outputs.Count == 0) text.AppendLine("未配置逻辑输出。");
             FindBlocked(device, requestId);
-            sample.Description = "采样完成时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
+            sample.CapturedAtUtc = DateTime.UtcNow;
+            sample.Description = "采样完成时间：" + sample.CapturedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
                 + "（轴与 IO 依次读取，并非同时采样）\n" + text;
             return sample;
         }
 
-        /// <summary>确认前重新采样；任何轴位置、使能、回零或 IO 变化均要求重新现场核实。</summary>
+        /// <summary>确认前重新采样；轴位置按该轴工程单位允许 0.001 的差值，使能、回零及 IO 必须一致。</summary>
         internal bool SameAs(ResourceRecoverySample current)
         {
             if (current == null || !string.Equals(RequestId, current.RequestId, StringComparison.Ordinal)

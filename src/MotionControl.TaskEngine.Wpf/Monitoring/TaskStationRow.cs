@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Linq;
 using System;
 using MotionControl.TaskEngine.Execution;
@@ -44,23 +44,18 @@ namespace MotionControl.TaskEngine.Wpf.Monitoring
             var leaves = active?.Where(node => !active.Any(child => child.ParentExecutionId == node.ExecutionId)).ToList();
             var failed = snapshot.State == StationTaskState.WaitingReset
                 ? snapshot.Run?.Nodes.Where(node => node.State == TaskNodeState.Failed).ToList() : null;
+            if (failed != null)
+                failed = failed.Where(node => !failed.Any(child => child.ParentExecutionId == node.ExecutionId)).ToList();
             Action = failed != null && failed.Count > 0 ? string.Join(" / ", failed.Select(node => node.Name))
                 : leaves != null && leaves.Count > 0 ? string.Join(" / ", leaves.Select(node => node.Name)) : "—";
             EngineeringDetail = failed != null && failed.Count > 0
                 ? string.Join("；", failed.Select(node => node.Detail)) : snapshot.Detail;
             Detail = failed != null && failed.Count > 0
-                ? string.Join("；", failed.Select(node => TaskOperatorText.Detail(node, text))) : TaskOperatorText.StationDetail(snapshot.Detail, text);
+                ? string.Join("；", failed.Select(node => TaskOperatorText.Detail(node, text))) : TaskOperatorText.StationDetail(snapshot, text);
             if ((failed == null || failed.Count == 0) && leaves != null && leaves.Count > 0)
             {
                 EngineeringDetail = string.Join("；", leaves.Select(node => node.Detail));
                 Detail = string.Join("；", leaves.Select(node => TaskOperatorText.Detail(node, text)));
-            }
-            if (machineState != TaskMachineState.Running && !string.IsNullOrEmpty(Detail))
-            {
-                Detail = Detail.Replace("（运动中）", "（设备未运行，目标未到位）")
-                    .Replace("运动中：", "设备未运行，目标未到位：");
-                EngineeringDetail = EngineeringDetail?.Replace("（运动中）", "（设备未运行，目标未到位）")
-                    .Replace("运动中：", "设备未运行，目标未到位：");
             }
             string state = "等待"; Color = "#596B7D";
             if (snapshot.State == StationTaskState.Disabled) state = "未启用";
@@ -85,7 +80,7 @@ namespace MotionControl.TaskEngine.Wpf.Monitoring
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
         }
 
-        /// <summary>多个并行步骤同时等待时，优先显示需要现场人员关注的等待类别。</summary>
+        /// <summary>多个并行步骤同时等待时保留多项含义，不把某类等待冒充唯一原因。</summary>
         private static string WaitingState(System.Collections.Generic.IEnumerable<TaskNodeSnapshot> leaves,
             Func<string, string> text)
         {
@@ -93,10 +88,7 @@ namespace MotionControl.TaskEngine.Wpf.Monitoring
                 .Select(TaskOperatorText.WaitingStateKey).Distinct().ToList();
             if (keys == null || keys.Count == 0) return text("等待");
 
-            string[] priority = { "等待输入", "等待条件", "等待互锁", "等待资源", "工艺延时", "等待并行步骤" };
-            string selected = priority.FirstOrDefault(keys.Contains);
-            if (selected == null) selected = keys.Count > 1 ? "等待多项" : keys[0];
-            return text(selected);
+            return text(keys.Count > 1 ? "等待多项" : keys[0]);
         }
     }
 }

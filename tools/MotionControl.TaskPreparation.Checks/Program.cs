@@ -62,6 +62,7 @@ namespace MotionControl.TaskPreparation.Checks
                 var configuration = new TaskMachineConfiguration { MachineId = "Machine01", Name = "准备检查", Revision = 1,
                     Stations = new List<StationTaskConfiguration> { new StationTaskConfiguration { StationId = "Production", Name = "生产工位", TaskId = "Production", Mode = StationTaskMode.Cyclic } } };
                 machine = new TaskMachineController(configuration, definitions, device);
+                V18PreparationLoaderChecks.Run(new MachineConfigurationStore(root), machine, device, library);
                 var preparation = TaskStationPreparationLoader.Load(new MachineConfigurationStore(root), "Machine01", machine, device, library);
                 Ensure(preparation.Count == 2 && preparation[1].Dependencies.Single() == preparation[0].StationId, "工位依赖没有正确加载。");
                 machine.Reset();

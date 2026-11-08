@@ -1,13 +1,13 @@
 # MotionControlFramework
 
-通用运动控制上位机框架的第一期工程骨架。
+面向不同非标设备的运动控制上位机框架，提供 WPF 操作界面、C# 工位流程和任务列表两种流程入口。
 
 ## 当前范围
 
 - 目标运行时：.NET Framework 4.8。
 - 桌面界面：WPF。
 - 流程方式：支持设备项目编写 C# 工位流程，也提供任务列表配置和执行入口；同一时刻只允许一个入口持有设备控制权。
-- 任务模块：提供任务定义、配置引用、保存读取、校验、步骤执行和设备级工位调度。正式 Host 已装配设备任务入口；设备任务的互锁节点和轴组插补尚不支持，必须明确报错。
+- 任务模块：提供任务定义、配置引用、保存读取、校验、步骤执行和设备级工位调度。正式 Host 已装配设备任务入口；`MoveAxisGroup` 多轴分别定位、有进入/退出条件的资源范围、`CoordinatedMove` 插补尚未接入正式任务设备，必须在前序动作及控制权接管前拒绝。普通并行单轴与多轴分别定位、插补分别判断。
 - 任务运行监控：按工位显示步骤与详情；正式 Host 可加载已应用的任务，关联设备运行时、轴、IO、变量和报警。当前端到端设备循环及任务暂停停轴仍需验证。
 - 任务配置与编辑初版：设置 → 任务配置，支持工位安排、任务库、分类步骤编辑、设备草稿、检查与带回滚的运行文件应用。独立预览参数为 `--task-editing-preview`，不创建控制卡服务。操作和文件说明见 [`Editing/README.md`](src/MotionControl.TaskEngine.Wpf/Editing/README.md)。
 - 设备总览、任务配置、列表编辑和当前报警页面已接入；使用 `--ui-workspace-preview` 查看独立四页示例，说明见 [`Operation/README.md`](src/MotionControl.Host.Wpf/Operation/README.md)。
@@ -51,6 +51,12 @@
 开发时遵循根目录的 [`AGENTS.md`](AGENTS.md) 项目规则，尤其是“直白优先，默认不抽象”。详细依赖和模块边界见 [`docs/architecture.md`](docs/architecture.md)；厂商 API 来源及部署依赖见 [`docs/vendor-motion-card-apis.md`](docs/vendor-motion-card-apis.md)。
 
 任务模块的阅读顺序、使用示例和本阶段边界见 [`src/MotionControl.TaskEngine/README.md`](src/MotionControl.TaskEngine/README.md)。
+
+## V1.8 手册对应改动
+
+按《运动控制框架·现场交互与配置应用手册 V1.8》中的源码对照项，完善任务能力准入、准备任务引用、结构化等待诊断、数值单位与来源、示教点归属和任务应用恢复。每项修改的原因、代码入口、兼容行为和验证范围记录在 [V1.8 改动与验证说明](docs/verification/2026-11-08-v18-implementation.md)。
+
+新增或维护任务步骤时，按 [任务节点支持矩阵与修改清单](docs/task-node-support.md) 同时核对定义、校验、执行、编辑和监控。能编辑或通过定义校验，均不能单独证明当前设备后端可执行；内存设备的检查结果也不能证明正式 Host 或实物控制器已经验收。
 
 ## 两条流程路径和维护入口
 
@@ -104,6 +110,14 @@ Host 为 .NET Framework 4.8、WPF 项目，默认目标为 x64。Windows 开发�
 ```powershell
 dotnet build src/MotionControl.Host.Wpf/MotionControl.Host.Wpf.csproj -c Release
 ```
+
+在 Windows 上统一构建正式 Host 并运行本次涉及的独立检查：
+
+```powershell
+./tools/Verify-V18.ps1
+```
+
+同一脚本已接入仓库的 Windows 自动检查。各项目独立输出，构建失败的项目不会运行旧程序；任意一项失败，整体检查仍标记失败并汇总原因。
 
 目标为 `src/MotionControl.Host.Wpf/bin/Release/net48/MotionControl.Host.Wpf.exe`。若文件被运行中的 Host 占用，先确认窗口和进程路径，再按项目规则安全退出该实例。不要通过改写用户的 Machine01 配置来解决构建问题。
 

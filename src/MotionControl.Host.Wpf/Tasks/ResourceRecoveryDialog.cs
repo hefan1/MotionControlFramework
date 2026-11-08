@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using MotionControl.TaskEngine.Device;
 using MotionControl.TaskEngine.Resources;
 
@@ -36,6 +37,12 @@ namespace MotionControl.Host.Wpf.Tasks
         private ResourceRecoverySample _sample;
         /// <summary>异步采样期间阻止关闭和重复提交。</summary>
         private bool _busy;
+        /// <summary>只检查会话是否仍有效，不在定时器中读取控制器或切换输出。</summary>
+        private readonly DispatcherTimer _contextTimer;
+        /// <summary>会话一旦失效，本窗口不能重新绑定到后来连接的设备。</summary>
+        private volatile bool _contextInvalidated;
+        /// <summary>已提交的解除请求尚未返回；会话失效时只能报告结果待核查，不能承诺仍被隔离。</summary>
+        private bool _recoverInProgress;
 
         /// <summary>创建独立对话框，只读取本会话的待确认资源。</summary>
         internal ResourceRecoveryDialog(ITaskDevice device, Func<bool> contextValid, bool english)
@@ -71,9 +78,60 @@ namespace MotionControl.Host.Wpf.Tasks
             _sampleText = new TextBox { Margin = new Thickness(0, 10, 0, 0), IsReadOnly = true, TextWrapping = TextWrapping.NoWrap,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto };
             root.Children.Add(_sampleText);
+            _contextTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+            _contextTimer.Tick += ContextTimer_Tick;
+            Loaded += Dialog_Loaded;
+            Closed += Dialog_Closed;
             Closing += Dialog_Closing;
             LoadResources(); UpdateControls();
         }
+
+        /// <summary>窗口显示后持续核对原会话，断开连接时不必等待操作者点击按钮。</summary>
+        private void Dialog_Loaded(object sender, RoutedEventArgs e)
+        {
+            RefreshContext();
+            if (!_contextInvalidated) _contextTimer.Start();
+        }
+
+        /// <summary>关闭窗口后停止定时器，防止旧窗口继续持有设备会话。</summary>
+        private void Dialog_Closed(object sender, EventArgs e)
+        {
+            _contextTimer.Stop();
+            _contextInvalidated = true;
+        }
+
+        /// <summary>定时使旧会话的采样和人工确认失效，不主动重读现场 IO。</summary>
+        private void ContextTimer_Tick(object sender, EventArgs e) { RefreshContext(); }
+
+        /// <summary>会话、连接或停止条件改变后清空旧采样；必须重新打开窗口才能核查新会话。</summary>
+        internal void RefreshContext()
+        {
+            if (_contextInvalidated) return;
+            bool valid;
+            string failure = string.Empty;
+            try { valid = _contextValid(); }
+            catch (Exception error) { valid = false; failure = error.Message; }
+            if (valid) return;
+
+            _contextInvalidated = true;
+            _contextTimer.Stop();
+            _sample = null;
+            _confirmed.IsChecked = false;
+            _confirmation.Text = string.Empty;
+            _sampleText.Text = T("原会话的采样已失效。请返回任务页，在有效且已停止的会话中重新打开现场核查。",
+                "Samples from the previous session have expired. Return to the task page and reopen inspection in a valid stopped session.");
+            string message = _recoverInProgress
+                ? T("原会话已失效，采样与确认已清除。本次解除请求的最终结果不能在当前窗口确认，请在有效会话中重新核对资源记录。",
+                    "The previous session has expired and its samples and confirmation were cleared. The release result cannot be confirmed in this window. Inspect the resource records in a valid session.")
+                : T("连接、任务会话或停止状态已变化；原采样与人工确认已清除，本窗口不会自动解除资源。",
+                    "Connection, task session or stopped state has changed. Samples and confirmation were cleared; this window will not automatically release resources.");
+            ShowFailure(message
+                + (string.IsNullOrWhiteSpace(failure) ? string.Empty : " " + failure));
+            UpdateControls();
+        }
+
+        /// <summary>后台复核也要同时满足原窗口未失效与调用方的实时会话条件。</summary>
+        private bool IsContextCurrent() { return !_contextInvalidated && _contextValid(); }
 
         /// <summary>只列出当前会话仍待确认的资源，不自动选择或释放。</summary>
         private void LoadResources()
@@ -86,6 +144,7 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>选中另一条资源时废弃之前的采样与人工确认。</summary>
         private void Resource_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (_contextInvalidated) return;
             _sample = null;
             if (_sampleText != null) _sampleText.Text = string.Empty;
             if (_confirmed != null) _confirmed.IsChecked = false;
@@ -97,15 +156,18 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>仅在同一已停止会话中读取完整状态；后台读取不阻塞界面。</summary>
         private async void Read_Click(object sender, RoutedEventArgs e)
         {
+            RefreshContext();
             var selected = _resources.SelectedItem as ResourceChoice;
-            if (_busy || selected == null) return;
+            if (_contextInvalidated || _busy || selected == null) return;
             _sample = null; _confirmed.IsChecked = false; _confirmation.Text = string.Empty;
             _status.Text = string.Empty; _sampleText.Text = string.Empty; _busy = true; UpdateControls();
             try
             {
-                if (!_contextValid()) throw new InvalidOperationException("设备未连接、任务尚未终止或会话已变化；保留隔离。");
+                if (!IsContextCurrent()) throw new InvalidOperationException("设备未连接、任务尚未终止或会话已变化；保留隔离。");
                 var sample = await Task.Run(() => ResourceRecoverySample.Capture(_device, selected.Id, _english));
-                if (!_contextValid()) throw new InvalidOperationException("读取期间设备或会话状态发生变化；保留隔离。");
+                RefreshContext();
+                if (_contextInvalidated) return;
+                if (!ReferenceEquals(selected, _resources.SelectedItem)) return;
                 _sample = sample; _sampleText.Text = sample.Description;
                 if (sample.ActiveOutputs.Count != 0)
                 {
@@ -119,36 +181,53 @@ namespace MotionControl.Host.Wpf.Tasks
                     _status.Text = T("请核对采样并检查实际现场；命名区域的安全状态不能由采样自动判断。", "Review the samples and the physical area; named-area safety cannot be inferred automatically.");
                 }
             }
-            catch (Exception error) { ShowFailure(error.Message); }
+            catch (Exception error)
+            {
+                RefreshContext();
+                if (!_contextInvalidated) ShowFailure(error.Message);
+            }
             finally { _busy = false; UpdateControls(); }
         }
 
         /// <summary>采样后必须明确勾选并填写真实核查说明。</summary>
         private void Confirmation_Changed(object sender, RoutedEventArgs e) { UpdateControls(); }
 
-        /// <summary>再次读取并比较全部采样，再调用设备既有的双次退出核查；失败始终保留隔离。</summary>
+        /// <summary>再次比较采样后调用设备退出核查；会话失效时不发布旧结果，提示重新核对实际资源记录。</summary>
         private async void Recover_Click(object sender, RoutedEventArgs e)
         {
+            RefreshContext();
             var selected = _resources.SelectedItem as ResourceChoice;
-            if (_busy || selected == null || _sample == null || _sample.ActiveOutputs.Count != 0 || _confirmed.IsChecked != true || string.IsNullOrWhiteSpace(_confirmation.Text)) return;
+            if (_contextInvalidated || _busy || selected == null || _sample == null || _sample.ActiveOutputs.Count != 0 || _confirmed.IsChecked != true || string.IsNullOrWhiteSpace(_confirmation.Text)) return;
             var previous = _sample;
             string confirmation = _confirmation.Text.Trim();
-            _busy = true; UpdateControls();
+            _busy = true; _recoverInProgress = true; UpdateControls();
             try
             {
-                if (!_contextValid()) throw new InvalidOperationException("设备未连接、任务尚未终止或会话已变化；保留隔离。");
+                if (!IsContextCurrent()) throw new InvalidOperationException("设备未连接、任务尚未终止或会话已变化；保留隔离。");
                 string result = await Task.Run(() =>
                 {
                     string reason;
-                    if (!previous.TryConfirm(_device, true, confirmation, _contextValid, out reason)) throw new InvalidOperationException(reason);
+                    if (!previous.TryConfirm(_device, true, confirmation, IsContextCurrent, out reason)) throw new InvalidOperationException(reason);
                     return reason;
                 });
+                RefreshContext();
+                if (_contextInvalidated) return;
                 _sample = null; _sampleText.Text = string.Empty; _confirmed.IsChecked = false; _confirmation.Text = string.Empty;
                 LoadResources(); _status.Foreground = Brushes.DarkGreen;
                 _status.Text = result + T(" 请逐项核对剩余资源；全部处理后返回任务页重试关闭。", " Inspect remaining resources. Retry closing from the task page after all are handled.");
             }
-            catch (Exception error) { _sample = null; _sampleText.Text = string.Empty; _confirmed.IsChecked = false; ShowFailure(error.Message); }
-            finally { _busy = false; UpdateControls(); }
+            catch (Exception error)
+            {
+                RefreshContext();
+                if (!_contextInvalidated)
+                {
+                    _sample = null;
+                    _sampleText.Text = string.Empty;
+                    _confirmed.IsChecked = false;
+                    ShowFailure(error.Message);
+                }
+            }
+            finally { _busy = false; _recoverInProgress = false; UpdateControls(); }
         }
 
         /// <summary>失败显示具体原因，保留原资源及任务控制权。</summary>
@@ -157,9 +236,10 @@ namespace MotionControl.Host.Wpf.Tasks
         private void UpdateControls()
         {
             if (_readButton == null || _recoverButton == null) return;
-            _resources.IsEnabled = !_busy; _readButton.IsEnabled = !_busy && _resources.SelectedItem != null;
-            _confirmed.IsEnabled = !_busy; _confirmation.IsEnabled = !_busy;
-            _recoverButton.IsEnabled = !_busy && _resources.SelectedItem != null && _sample != null
+            bool editable = !_busy && !_contextInvalidated;
+            _resources.IsEnabled = editable; _readButton.IsEnabled = editable && _resources.SelectedItem != null;
+            _confirmed.IsEnabled = editable; _confirmation.IsEnabled = editable;
+            _recoverButton.IsEnabled = editable && _resources.SelectedItem != null && _sample != null
                 && _sample.ActiveOutputs.Count == 0 && _confirmed.IsChecked == true && !string.IsNullOrWhiteSpace(_confirmation.Text);
         }
         /// <summary>完成后台操作前不能关闭，避免不确定的确认结果。</summary>

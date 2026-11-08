@@ -15,7 +15,7 @@ namespace MotionControl.Framework.Contracts.Variables
         /// <summary>返回当前变量值快照，供监控页面显示。</summary>
         IReadOnlyList<DeviceVariableSnapshot> GetSnapshot();
 
-        /// <summary>恢复名称和类型匹配的已保存值；不匹配或格式无效的项会返回说明并跳过。</summary>
+        /// <summary>恢复名称、类型、单位/量纲及来源匹配的旧值；不匹配或超出当前范围时返回说明并跳过。</summary>
         IReadOnlyList<string> RestoreCurrentValues(IEnumerable<DeviceVariableSnapshot> snapshots);
 
         /// <summary>读取布尔类型变量；变量不存在或类型不匹配时抛出可读异常。</summary>
@@ -72,10 +72,14 @@ namespace MotionControl.Framework.Contracts.Variables
         /// <summary>由设备流程更新 32 位无符号整数类型变量。</summary>
         void SetUInt32(string name, uint value);
 
-        /// <summary>按名称、类型和值替换设备变量定义；相同名称和类型会保留当前运行值。</summary>
+        /// <summary>替换定义；仅同名、同类型、同物理含义/来源且符合新范围时保留当前值。</summary>
         void ReplaceDefinitions(IEnumerable<DeviceVariableDefinition> definitions);
 
-        /// <summary>按类型校验并写入现场人员输入的当前值。</summary>
+        /// <summary>按当前类型、范围和权限写值，保留原有调用入口。</summary>
         bool TrySetOperatorValue(string name, string valueText, out string errorMessage);
+
+        /// <summary>按当前类型和范围写值；在同一写入锁内拒绝确认时定义或来源已经变化。</summary>
+        bool TrySetOperatorValue(string name, string valueText, out string errorMessage,
+            DeviceVariableDefinition expectedDefinition);
     }
 }

@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using MotionControl.Framework.Contracts.Flow;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Device;
 namespace MotionControl.TaskEngine.Execution
@@ -33,7 +34,7 @@ namespace MotionControl.TaskEngine.Execution
             // 已持久化的记录允许暂停期间完成；恢复后才放行后续动作。
             await scope.StepAsync(() =>
                 scope.Diagnostics = new TaskStepDiagnostics("已保存本次记录", scope.RecordFields.Select(item =>
-                    new TaskObservedValue(item.Key, "记录值", item.Value, true)))).ConfigureAwait(false);
+                    new TaskObservedValue(item.Key, "记录值", item.Value, true, quality: StationValueQuality.Good)))).ConfigureAwait(false);
         }
     }
 }

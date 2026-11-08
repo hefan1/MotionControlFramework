@@ -6,6 +6,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using MotionControl.Framework.Runtime.Configuration;
+using MotionControl.TaskEngine.Device;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -30,11 +31,16 @@ namespace MotionControl.TaskEngine.Configuration
         private readonly HashSet<string> _parameterPaths;
         /// <summary>Host 对实际后端、卡型、轴数和卡数的安装能力检查。</summary>
         private readonly Func<MachineProjectCardSelection, string> _validateCard;
+        /// <summary>当前 Host 正式任务设备的执行能力；工程文件不能自行声明获得这些能力。</summary>
+        private readonly TaskDeviceCapabilities _taskCapabilities;
+        /// <summary>本机代码实际声明的任务能力；为空表示本服务没有完成后端执行能力核对。</summary>
+        public TaskDeviceCapabilities TaskCapabilities { get { return _taskCapabilities; } }
 
         /// <summary>绑定目标设备及当前 Host 明确支持的设备定义和控制器后端。</summary>
         public MachineProjectPackageService(MachineConfigurationStore store, string machineId,
             IEnumerable<string> supportedEquipmentDefinitions, IEnumerable<string> supportedBackends,
-            IEnumerable<string> additionalConfigurationPaths = null, Func<MachineProjectCardSelection, string> validateCard = null)
+            IEnumerable<string> additionalConfigurationPaths = null, Func<MachineProjectCardSelection, string> validateCard = null,
+            TaskDeviceCapabilities taskCapabilities = null)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _machineId = machineId ?? throw new ArgumentNullException(nameof(machineId));
@@ -42,6 +48,7 @@ namespace MotionControl.TaskEngine.Configuration
             _definitions = new HashSet<string>(supportedEquipmentDefinitions ?? throw new ArgumentNullException(nameof(supportedEquipmentDefinitions)), StringComparer.OrdinalIgnoreCase);
             _backends = new HashSet<string>(supportedBackends ?? throw new ArgumentNullException(nameof(supportedBackends)), StringComparer.OrdinalIgnoreCase);
             _validateCard = validateCard;
+            _taskCapabilities = taskCapabilities;
             _parameterPaths = new HashSet<string>(new[] { "Parameters/Equipment.json", "Parameters/ControllerBackend.json", "Parameters/DemoStation.json",
                 "Parameters/DemoStations.json", "Parameters/StationPreparation.json", "Parameters/TaskMachine.json", "Parameters/DeviceVariables.json",
                 "Parameters/ManualAxisPositions.json", "Parameters/ManualAxisIoAssociations.json", "Parameters/AlarmCatalog.json", "Parameters/IoFeedbackAssociations.json" },
@@ -128,14 +135,17 @@ namespace MotionControl.TaskEngine.Configuration
                     else if (!string.Equals(oldText, newText, StringComparison.Ordinal)) changes.Add("修改：" + path);
                 }
                 var warnings = new List<string> { "导入后必须核对现场轴、IO、行程及安全参数，并重新连接和准备设备。", "运行记录、恢复证据和任务草稿不会随工程包覆盖。" };
+                ValidateTeachPointMigration(current, merged, contents, warnings);
                 if (current.Keys.Any(path => !contents.ContainsKey(path))) warnings.Add("工程包未包含的现有配置文件将保留；请逐项核对设备代码是否读取这些文件。 ");
                 foreach (string path in ListUnregisteredParameterFiles())
                 { changes.Add("保留（未登记的配置文件）：" + path); warnings.Add("未登记的参数文件不会导入或覆盖，请核对设备是否依赖：" + path); }
                 if (!string.Equals(sourceId, _machineId, StringComparison.Ordinal)) warnings.Add("任务清单的设备标识将绑定当前设备：" + _machineId);
                 if (string.Equals(owner, "StationFlows", StringComparison.OrdinalIgnoreCase)) warnings.Add("C# 工位代码必须已由当前上位机提供；工程包不包含可执行代码。");
                 return new MachineProjectPreview { Owner = this, Contents = contents, CurrentContents = current, CurrentBytes = currentBytes, TargetSignature = ComputeSignature(currentBytes),
-                    SourceMachineId = sourceId, EquipmentName = name, ExecutionOwner = owner, ControllerBackend = backend,
+                    SourceMachineId = sourceId, TargetMachineId = _machineId, EquipmentName = name, ExecutionOwner = owner, ControllerBackend = backend,
                     Files = contents.Keys.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToList().AsReadOnly(),
+                    MergedFiles = merged.Keys.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToList().AsReadOnly(),
+                    RetainedFiles = current.Keys.Where(value => !contents.ContainsKey(value)).OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToList().AsReadOnly(),
                     Changes = changes.AsReadOnly(), Warnings = warnings.AsReadOnly() };
             }
         }

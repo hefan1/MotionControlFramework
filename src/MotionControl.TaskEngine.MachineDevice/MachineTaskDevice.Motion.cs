@@ -201,23 +201,23 @@ namespace MotionControl.TaskEngine.MachineDevice
             }
         }
 
-        /// <summary>轴组插补尚未接入；明确拒绝，不退化成逐轴顺序移动。</summary>
+        /// <summary>多轴分别定位尚未接入；它与插补不同，同样不能退化成逐轴顺序移动。</summary>
         public IReadOnlyList<ITaskAxisGroupMove> BeginGroupMove(IReadOnlyList<TaskAxisGroupTarget> targets)
         {
             throw new NotSupportedException(
-                "真机任务暂不支持轴组插补：当前适配器未提供轴组运动能力，拒绝执行以免改变工艺时序。");
+                "正式任务设备暂不支持多轴分别定位（MoveAxisGroup）；该动作不是插补，也不能改成逐轴顺序执行。");
         }
 
-        /// <summary>轴组插补尚未接入，任何推进请求都按错误处理。</summary>
+        /// <summary>多轴分别定位尚未接入，任何推进请求都按错误处理。</summary>
         public bool AdvanceGroupMove(IReadOnlyList<ITaskAxisGroupMove> moves, double elapsedMilliseconds, out string detail)
         {
-            throw new NotSupportedException("真机任务暂不支持轴组插补。");
+            throw new NotSupportedException("正式任务设备暂不支持多轴分别定位（MoveAxisGroup）。");
         }
 
-        /// <summary>轴组插补尚未接入，任何收尾请求都按错误处理。</summary>
+        /// <summary>多轴分别定位尚未接入，任何收尾请求都按错误处理。</summary>
         public Task EndGroupMoveAsync(IReadOnlyList<ITaskAxisGroupMove> moves, CancellationToken cancellationToken)
         {
-            throw new NotSupportedException("真机任务暂不支持轴组插补。");
+            throw new NotSupportedException("正式任务设备暂不支持多轴分别定位（MoveAxisGroup）。");
         }
 
         /// <summary>检查目标位置是否落在该轴配置行程内，越界时拒绝动作。</summary>

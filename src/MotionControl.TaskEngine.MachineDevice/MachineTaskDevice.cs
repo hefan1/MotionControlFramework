@@ -19,10 +19,19 @@ namespace MotionControl.TaskEngine.MachineDevice
     /// <summary>
     /// 用真实运动控制卡驱动任务执行的设备实现：轴动作走 IAxis、DI/DO 走 ILogicalIo、
     /// 变量走 IDeviceVariableStore，整机控制权通过 MachineRuntime 统一仲裁。
-    /// 轴组插补和有条件的资源范围互锁尚未接入，调用时明确报错，不退化执行。
+    /// 多轴分别定位、轴组插补和有条件的资源范围互锁尚未接入，任务准入时明确拒绝，不退化执行。
     /// </summary>
-    public sealed partial class MachineTaskDevice : ITaskDevice, ITaskInterlockSupport, ITaskResourceRecoveryState, ITaskResourceJournalCleanup, ITaskRecordSink, ITaskShutdownHandoff, IAutomaticProductionPause
+    public sealed partial class MachineTaskDevice : ITaskDevice, ITaskInterlockSupport, ITaskAxisGroupSupport, ITaskResourceRecoveryState, ITaskResourceJournalCleanup, ITaskRecordSink, ITaskShutdownHandoff, IAutomaticProductionPause
     {
+        /// <summary>正式设备尚未实现组定位的完整接受和收尾，装载前必须拒绝相关步骤。</summary>
+        public bool SupportsAxisGroupMove { get { return false; } }
+
+        /// <summary>Host 离线编辑和工程预检沿用正式任务设备的能力边界，不由工程配置改变。</summary>
+        public static TaskDeviceCapabilities ExecutionCapabilities
+        {
+            get { return new TaskDeviceCapabilities(nameof(MachineTaskDevice), false, false); }
+        }
+
         /// <summary>未指定所有者时使用的匿名所有权标记，保证同一实例内的所有权比对稳定。</summary>
         private static readonly object AnonymousOwner = new object();
 

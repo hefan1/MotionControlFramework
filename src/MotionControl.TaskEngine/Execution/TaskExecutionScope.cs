@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -66,6 +66,15 @@ namespace MotionControl.TaskEngine.Execution
             _deadline = run.ActiveMilliseconds + node.TimeoutMs;
         }
 
+        /// <summary>返回当前调用链中最早的活动时限；忽略本步时限后仍保留父级边界。</summary>
+        internal TaskExecutionScope FindTimeoutOwner()
+        {
+            TaskExecutionScope owner = this;
+            for (TaskExecutionScope parent = _parent; parent != null; parent = parent._parent)
+                if (parent._deadline <= owner._deadline) owner = parent;
+            return double.IsPositiveInfinity(owner._deadline) ? null : owner;
+        }
+
         /// <summary>每次内存动作前检查取消和父子时限；暂停时异步等待恢复。</summary>
         internal Task StepAsync(Action action)
         {
@@ -74,12 +83,10 @@ namespace MotionControl.TaskEngine.Execution
                 IDisposable handoff = Run.RegisterInFlightOperation();
                 try
                 {
-                    TaskExecutionScope owner = this;
-                    for (TaskExecutionScope parent = _parent; parent != null; parent = parent._parent)
-                        if (parent._deadline <= owner._deadline) owner = parent;
-                    if (Run.ActiveMilliseconds >= owner._deadline)
+                    TaskExecutionScope owner = FindTimeoutOwner();
+                    if (owner != null && Run.ActiveMilliseconds >= owner._deadline)
                         throw owner.Error("执行超时，活动时限 " + owner.Node.TimeoutMs + " ms。" + WaitDetail,
-                            new TimeoutException("节点及其子动作未在活动时限内完成。"));
+                            new TimeoutException("节点及其子动作未在活动时限内完成。"), owner.Node.TimeoutMs, TaskExecutionFailureKind.Timeout);
                     action();
                 }
                 catch
@@ -130,9 +137,10 @@ namespace MotionControl.TaskEngine.Execution
         }
 
         /// <summary>创建保留具体节点位置的异常。</summary>
-        internal TaskExecutionException Error(string message, Exception inner = null)
+        internal TaskExecutionException Error(string message, Exception inner = null, int? timeoutMilliseconds = null,
+            TaskExecutionFailureKind failureKind = TaskExecutionFailureKind.ExecutionFailed)
         {
-            return new TaskExecutionException(TaskId, Node.Id, ExecutionId, message, inner);
+            return new TaskExecutionException(TaskId, Node.Id, ExecutionId, message, inner, timeoutMilliseconds, failureKind);
         }
     }
 }

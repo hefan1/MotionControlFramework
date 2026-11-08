@@ -7,6 +7,7 @@ using MotionControl.Framework.Contracts.Preparation;
 using MotionControl.TaskEngine.Device;
 using MotionControl.TaskEngine.Execution;
 using MotionControl.TaskEngine.Machine;
+using MotionControl.TaskEngine.Preparation;
 
 namespace MotionControl.TaskEngine.MachineDevice.Preparation
 {

@@ -110,23 +110,10 @@ namespace MotionControl.TaskEngine.Execution
         /// <summary>检查所有分支而非只检查本次选中路径；未实现能力不能静默跳过。</summary>
         internal static void RequireSupported(string taskId, TaskNode node, ITaskDevice device)
         {
-            if (node is CoordinatedMoveNode)
-                throw new NotSupportedException("任务 " + taskId + " / 节点 " + node.Id + "：当前尚不执行 " + node.Kind + "，请等待后续能力接入。");
-            if (node is SequenceNode sequence)
-                foreach (TaskNode child in sequence.Children) RequireSupported(taskId, child, device);
-            else if (node is ParallelGroupNode parallel)
-                foreach (TaskNode branch in parallel.Branches) RequireSupported(taskId, branch, device);
-            else if (node is ConditionBranchNode condition)
-            {
-                RequireSupported(taskId, condition.WhenTrue, device);
-                if (condition.WhenFalse != null) RequireSupported(taskId, condition.WhenFalse, device);
-            }
-            else if (node is ResourceScopeNode scope)
-            {
-                if (!SupportsInterlockConditions(device) && (scope.EntryInterlock != null || scope.ExitInterlock != null || scope.ExitCondition != null))
-                    throw new NotSupportedException("任务 " + taskId + " / 节点 " + node.Id + "：设备暂不支持配置进入或退出互锁，不能运行。");
-                RequireSupported(taskId, scope.Body, device);
-            }
+            IReadOnlyList<TaskValidationIssue> issues = new TaskDeviceCapabilityValidator()
+                .ValidateNode(taskId, node, TaskDeviceCapabilities.FromDevice(device));
+            if (issues.Count != 0)
+                throw new NotSupportedException(string.Join(Environment.NewLine, issues.Select(issue => issue.ToString())));
         }
 
         /// <summary>旧设备没有声明可选能力时按不支持处理，不要求修改原设备接口。</summary>

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -389,12 +389,21 @@ namespace MotionControl.TaskEngine.Execution
                     if (_nodes.Count >= 10000)
                     {
                         _expansionLimitHit = true;
-                        throw scope.Error("本次运行已达到 10000 个节点调用上限。");
+                        throw scope.Error("本次运行已达到 10000 个节点调用上限。",
+                            failureKind: TaskExecutionFailureKind.ExpansionLimit);
                     }
                     _nodeOrder.Add(scope.ExecutionId);
                 }
                 if (state == TaskNodeState.Failed && _nodes.ContainsKey(scope.ExecutionId))
                     detail = "失败前：" + _nodes[scope.ExecutionId].Detail + "；" + detail;
+                // 时限来自运行作用域，不再让页面从错误说明里的数字猜测。
+                if (scope.Diagnostics != null && !scope.Diagnostics.IsTimeout)
+                {
+                    TaskExecutionScope timeoutOwner = scope.FindTimeoutOwner();
+                    scope.Diagnostics = scope.Diagnostics.WithTiming(
+                        timeoutOwner == null ? (int?)null : timeoutOwner.Node.TimeoutMs,
+                        timeoutOwner == null ? null : timeoutOwner.Node.Id);
+                }
                 _nodes[scope.ExecutionId] = new TaskNodeSnapshot(scope.ExecutionId, scope.ParentId,
                     scope.TaskId, scope.Node.Id, scope.Node.Name, state, detail, scope.Diagnostics);
             }

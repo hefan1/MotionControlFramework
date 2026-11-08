@@ -48,9 +48,6 @@ namespace MotionControl.TaskEngine.Wpf.Views
             string detail = (row.Snapshot?.State == TaskNodeState.Failed
                 || (node is WaitConditionNode && row.Snapshot?.State == TaskNodeState.Waiting)
                 ? row.Detail : diagnostic?.Summary ?? row.Detail) ?? string.Empty;
-            if (_snapshot != null && _snapshot.State != TaskMachineState.Running)
-                detail = detail.Replace("（运动中）", "（设备未运行，目标未到位）")
-                    .Replace("运动中：", "设备未运行，目标未到位：");
             DetailSummary.Text = row.StateText == T("已暂停") ? T("已暂停") + " · " + detail : detail;
             RecordNote.Text = diagnostic == null ? T("尚无执行采样") : T("最后执行采样") + " "
                 + diagnostic.CapturedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
@@ -61,10 +58,7 @@ namespace MotionControl.TaskEngine.Wpf.Views
             ActualColumn.Header = T(motion ? "采样位置" : "采样值");
             var values = new List<ObservationRow>();
             if (diagnostic != null)
-                foreach (var value in diagnostic.Values) values.Add(new ObservationRow(value.Name,
-                    node is SetVariableNode || node is WaitConditionNode || node is ConditionBranchNode ? value.Expected : TranslateValue(value.Expected),
-                    value.Actual == null ? T("未知") : node is SetVariableNode || node is WaitConditionNode || node is ConditionBranchNode ? value.Actual : TranslateValue(value.Actual),
-                    T(!value.Satisfied.HasValue ? "未知" : value.Satisfied.Value ? "满足" : "未满足")));
+                foreach (var value in diagnostic.Values) values.Add(CreateObservationRow(node, value));
             ObservationTable.ItemsSource = values;
             ObservationTable.Visibility = values.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
             var fields = new List<TaskDetailField>();
@@ -73,6 +67,7 @@ namespace MotionControl.TaskEngine.Wpf.Views
             AddMotionDetails(node, fields, parameters, references);
             AddSignalDetails(node, diagnostic, fields, parameters, references);
             AddFlowDetails(row, fields, parameters, references);
+            AddWaitDiagnostics(row.Snapshot, fields, references);
             var selectedStation = StationsGrid.SelectedItem as MotionControl.TaskEngine.Wpf.Monitoring.TaskStationRow;
             fields.AddRange(_projectionDetailCache.Read(_session.Projection, _session.ProjectionError,
                 selectedStation?.Id, row.TaskId, node.Id, _guidanceEnglish));

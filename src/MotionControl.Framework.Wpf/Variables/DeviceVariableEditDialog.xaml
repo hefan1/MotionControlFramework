@@ -3,11 +3,11 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="{DynamicResource 变量定义窗口标题}"
         Width="560"
-        Height="525"
+        Height="690"
         MinWidth="540"
         MinHeight="505"
         WindowStartupLocation="CenterOwner"
-        ResizeMode="NoResize"
+        ResizeMode="CanResize"
         Background="#F3F6FA">
     <Window.Resources>
         <Style x:Key="DialogInput" TargetType="TextBox">
@@ -120,6 +120,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="135" />
@@ -171,14 +172,38 @@
                       VerticalAlignment="Center"
                       Content="{DynamicResource 变量允许现场写入}" />
 
+            <Expander Grid.Row="8" Grid.ColumnSpan="2" Header="{DynamicResource 变量元数据标题}" Margin="0,0,0,8">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="230">
+                    <StackPanel Margin="0,8,8,0">
+                        <TextBlock Text="{DynamicResource 变量元数据说明}" TextWrapping="Wrap" Foreground="#596B7D" Margin="0,0,0,8" />
+                        <TextBlock Text="{DynamicResource 变量显示名称}" Foreground="#40536A" />
+                        <TextBox x:Name="DisplayNameTextBox" Style="{StaticResource DialogInput}" Margin="0,4,0,8" />
+                        <TextBlock Text="{DynamicResource 变量工程单位}" Foreground="#40536A" />
+                        <TextBox x:Name="EngineeringUnitTextBox" Style="{StaticResource DialogInput}" Margin="0,4,0,8" />
+                        <TextBlock Text="{DynamicResource 变量量纲}" Foreground="#40536A" />
+                        <TextBox x:Name="DimensionTextBox" Style="{StaticResource DialogInput}" Margin="0,4,0,8" />
+                        <TextBlock Text="{DynamicResource 变量数值下限}" Foreground="#40536A" />
+                        <TextBox x:Name="MinimumValueTextBox" Style="{StaticResource DialogInput}" Margin="0,4,0,8" />
+                        <TextBlock Text="{DynamicResource 变量数值上限}" Foreground="#40536A" />
+                        <TextBox x:Name="MaximumValueTextBox" Style="{StaticResource DialogInput}" Margin="0,4,0,8" />
+                        <TextBlock Text="{DynamicResource 变量显示小数位}" Foreground="#40536A" />
+                        <TextBox x:Name="DecimalPlacesTextBox" Style="{StaticResource DialogInput}" Margin="0,4,0,8" />
+                        <TextBlock Text="{DynamicResource 变量来源标识}" Foreground="#40536A" />
+                        <TextBox x:Name="SourceIdTextBox" Style="{StaticResource DialogInput}" Margin="0,4,0,8" />
+                        <TextBlock Text="{DynamicResource 变量来源说明}" Foreground="#40536A" />
+                        <TextBox x:Name="SourceDescriptionTextBox" Style="{StaticResource DialogInput}" Margin="0,4,0,8" />
+                    </StackPanel>
+                </ScrollViewer>
+            </Expander>
+
             <TextBlock x:Name="ErrorText"
-                       Grid.Row="8"
+                       Grid.Row="9"
                        Grid.ColumnSpan="2"
                        Margin="0,8"
                        Foreground="#B42318"
                        TextWrapping="Wrap" />
 
-            <StackPanel Grid.Row="9" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right">
+            <StackPanel Grid.Row="10" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Content="{DynamicResource 取消}"
                         IsCancel="True"
                         Style="{StaticResource DialogButton}" />

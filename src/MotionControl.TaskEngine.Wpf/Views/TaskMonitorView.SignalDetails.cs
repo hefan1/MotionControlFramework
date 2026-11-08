@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Execution;
 using MotionControl.TaskEngine.Wpf.Monitoring;
@@ -29,8 +31,13 @@ namespace MotionControl.TaskEngine.Wpf.Views
             }
             else if (node is WaitAxisPositionNode axisWait)
             {
+                TaskAxisInfo axis;
+                bool hasAxis = _session.TaskDevice.Catalog.Axes.TryGetValue(axisWait.AxisName, out axis);
+                string unit = hasAxis && !string.IsNullOrWhiteSpace(axis.EngineeringUnit) ? axis.EngineeringUnit : T("单位未配置");
                 parameters.Add(Field("逻辑轴", axisWait.AxisName));
-                parameters.Add(Field("期望位置", axisWait.Position + " ± " + axisWait.Tolerance));
+                parameters.Add(Field("期望位置", axisWait.Position.ToString(CultureInfo.InvariantCulture) + " " + unit));
+                parameters.Add(Field("位置容差", axisWait.Tolerance.ToString(CultureInfo.InvariantCulture) + " " + unit));
+                if (hasAxis) AxisReferences(axisWait.AxisName, references);
             }
             else if (node is WriteRecordNode record)
             {
@@ -77,6 +84,9 @@ namespace MotionControl.TaskEngine.Wpf.Views
             else if (node is SetVariableNode assignment)
             {
                 parameters.Add(Field("变量", assignment.VariableName + " (" + VariableTypeName(_session.TaskDevice.Catalog.Variables[assignment.VariableName].ToString()) + ")"));
+                TaskVariableInfo variable = _session.TaskDevice.Catalog.VariableDefinitions[assignment.VariableName];
+                if (MotionControl.Framework.Contracts.Variables.NumericValueMetadata.IsNumeric(variable.DataType))
+                    parameters.Add(Field("工程单位", string.IsNullOrWhiteSpace(variable.EngineeringUnit) ? T("单位未配置") : variable.EngineeringUnit));
                 parameters.Add(Field("值来源", BindingText(assignment.Value, references)));
                 references.Add(new TaskReferenceEventArgs("设备变量", assignment.VariableName));
             }

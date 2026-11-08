@@ -253,6 +253,9 @@ namespace MotionControl.Host.Wpf
             _mainWindow.SetDeviceVariablePage(_deviceVariablePage);
             _taskMonitorLauncher = new Tasks.TaskMonitorLauncher(_configurationStore, MachineId, _mainWindow,
                 () => _machineRecoveryCoordinator.GetAutomaticStartBlockReason(_machineRuntime));
+            // 任务在后台读取目录时还未接管 Runtime；此查询也锁住这段时间里的变量定义保存。
+            _deviceVariablePage.HasTaskSessionOrCommand = () => _taskMonitorLauncher.HasTaskSession
+                || _taskMonitorLauncher.IsCommandInProgress;
             _machineRecoveryCoordinator.SetTaskSessionSettlementQueries(
                 () => _taskMonitorLauncher.CurrentTaskSession,
                 session => _taskMonitorLauncher.IsTaskSessionSettled(session));
@@ -264,7 +267,8 @@ namespace MotionControl.Host.Wpf
                 GetTaskRuntimeStateText,
                 GetTaskRuntimeStationNames,
                 GetTaskRuntimeReadinessReason,
-                IsTaskEngineOwner);
+                IsTaskEngineOwner,
+                MotionControl.TaskEngine.MachineDevice.MachineTaskDevice.ExecutionCapabilities);
             _taskConfigurationPage.ReferenceRequested += TaskEditorReferenceRequested;
             _taskConfigurationPage.CurrentFlowRequested += (sender, args) =>
             {

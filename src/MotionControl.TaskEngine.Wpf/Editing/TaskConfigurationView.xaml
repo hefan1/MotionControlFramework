@@ -44,7 +44,7 @@
     </Grid>
    </Grid></TabItem>
    <TabItem Header="{DynamicResource 任务编辑.任务库}"><DockPanel Margin="8"><WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-    <Button Content="{DynamicResource 任务编辑.新增任务}" Click="NewTask_Click"/><Button Content="{DynamicResource 任务编辑.复制任务}" Click="CopyTask_Click"/><Button Content="{DynamicResource 任务编辑.导入任务}" Click="ImportTask_Click"/><Button Content="{DynamicResource 任务编辑.编辑任务}" Click="EditTask_Click"/><Button Content="{DynamicResource 任务编辑.查看引用}" Click="References_Click"/><Button Content="{DynamicResource 任务编辑.删除任务}" Click="RemoveTask_Click"/>
+    <Button Content="{DynamicResource 任务编辑.新增任务}" Click="NewTask_Click"/><Button Content="{DynamicResource 任务编辑.复制任务}" Click="CopyTask_Click"/><Button Content="{DynamicResource 任务编辑.导入任务}" Click="ImportTask_Click"/><Button Content="{DynamicResource 任务编辑.编辑任务}" Click="EditTask_Click"/><Button Content="{DynamicResource 任务编辑.查看引用}" Click="References_Click"/><Button x:Name="RemoveTaskButton" Content="{DynamicResource 任务编辑.删除任务}" Click="RemoveTask_Click" ToolTipService.ShowOnDisabled="True"/>
    </WrapPanel><WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
     <TextBlock Text="{DynamicResource 任务编辑.任务搜索标签}" VerticalAlignment="Center"/>
     <TextBox x:Name="LibrarySearchBox" Width="240" Margin="8,0" TextChanged="LibrarySearchChanged" ToolTip="{DynamicResource 任务编辑.任务搜索标签}"/>

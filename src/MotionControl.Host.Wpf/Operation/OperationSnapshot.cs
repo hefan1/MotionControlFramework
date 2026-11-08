@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using MotionControl.Framework.Contracts.Alarms;
@@ -53,20 +53,7 @@ namespace MotionControl.Host.Wpf.Operation
                 return result;
             }
             if (result.ControlOwner != MachineControlOwner.StationFlows) return result;
-            foreach (var flow in runtime.StationFlows)
-            {
-                var statistics = flow as IStationCycleStatistics;
-                var inputWait = flow as IStationInputWaitState;
-                result.Stations.Add(new StationOverviewData
-                {
-                    Id = flow.StationName,
-                    Name = flow.StationName,
-                    CurrentStep = flow.CurrentStepName,
-                    WaitingInputName = inputWait?.WaitingInputName,
-                    CompletedCycles = statistics?.CompletedCycles,
-                    LastCycleSeconds = statistics?.LastCycleDuration?.TotalSeconds
-                });
-            }
+            foreach (var flow in runtime.StationFlows) result.Stations.Add(ReadStation(flow));
 
             if (result.Stations.Count == 1)
             {
@@ -76,6 +63,69 @@ namespace MotionControl.Host.Wpf.Operation
 
             return result;
         }
+        /// <summary>只读取一个 C# 工位主动保存的状态；不反射代码，也不借用整机状态填充工位状态。</summary>
+        public static StationOverviewData ReadStation(IStationFlow flow)
+        {
+            if (flow == null) throw new ArgumentNullException(nameof(flow));
+            var result = new StationOverviewData { Id = flow.StationName, Name = flow.StationName };
+            try
+            {
+                result.CurrentStep = flow.CurrentStepName;
+                var statistics = flow as IStationCycleStatistics;
+                result.CompletedCycles = statistics?.CompletedCycles;
+                result.LastCycleSeconds = statistics?.LastCycleDuration?.TotalSeconds;
+                var provider = flow as IStationOperationStatusProvider;
+                StationOperationStatus status = provider?.ReadOperationStatus();
+                if (status != null)
+                {
+                    if (!string.IsNullOrWhiteSpace(status.StationId)) result.Id = status.StationId;
+                    if (!string.IsNullOrWhiteSpace(status.StationName)) result.Name = status.StationName;
+                    result.CurrentStepId = status.StepId;
+                    result.CurrentStep = status.StepName;
+                    result.IndependentState = status.State;
+                    result.WaitItems = status.WaitItems;
+                    result.HasWaitInformation = status.HasWaitInformation;
+                    result.Detail = status.Description;
+                    result.NextAction = status.NextAction;
+                    result.CompletionCondition = status.CompletionCondition;
+                    result.StatusCapturedAtUtc = status.CapturedAtUtc;
+                }
+                else
+                {
+                    // 旧接口只证明正在等哪个 DI；它不提供期望、实际、质量或独立工位状态。
+                    var inputWait = flow as IStationInputWaitState;
+                    string inputName = inputWait?.WaitingInputName;
+                    if (!string.IsNullOrWhiteSpace(inputName))
+                    {
+                        result.WaitItems = new[] { new StationWaitItem(StationWaitKind.Input,
+                            "legacy.input_wait", StationObjectKind.Input, inputName, inputName,
+                            null, null, StationValueQuality.NotProvided) };
+                        result.HasWaitInformation = true;
+                    }
+                }
+                result.WaitingInputName = FindSingleWaitingInput(result.WaitItems, result.HasWaitInformation);
+            }
+            catch (Exception error)
+            {
+                // 读取失败保留证据，不能用上次的正常状态掩盖失败。
+                result.StatusReadError = error;
+                result.IndependentState = StationOperationState.NotProvided;
+                result.WaitItems = new StationWaitItem[0];
+                result.HasWaitInformation = false;
+                result.WaitingInputName = null;
+            }
+            return result;
+        }
+
+        /// <summary>只有完整集合恰好包含一个未满足的输入等待时，才允许直接定位该输入。</summary>
+        public static string FindSingleWaitingInput(IReadOnlyList<StationWaitItem> items, bool provided)
+        {
+            if (!provided || items == null || items.Count != 1) return null;
+            StationWaitItem item = items[0];
+            if (item == null || item.ObjectKind != StationObjectKind.Input || item.Satisfied == true) return null;
+            return string.IsNullOrWhiteSpace(item.ObjectId) ? null : item.ObjectId;
+        }
+
     }
 
     /// <summary>一个工位卡片的数据；不把整机状态冒充独立工位状态。</summary>
@@ -85,6 +135,22 @@ namespace MotionControl.Host.Wpf.Operation
         public string Id { get; set; }
         /// <summary>设备定义的工位名称。</summary>
         public string Name { get; set; }
+        /// <summary>工位来源明确报告的状态枚举，默认未提供；不能取整机状态代替。</summary>
+        public StationOperationState IndependentState { get; set; }
+        /// <summary>当前真实步骤标识；没有明确来源时为空。</summary>
+        public string CurrentStepId { get; set; }
+        /// <summary>工位报告的全部等待项，包含对象引用、期望、实际、质量和活动时限。</summary>
+        public IReadOnlyList<StationWaitItem> WaitItems { get; set; } = new StationWaitItem[0];
+        /// <summary>等待集合是否完整提供；false 时仍保留已经取得的部分项。</summary>
+        public bool HasWaitInformation { get; set; }
+        /// <summary>设备来源提供的下一步建议；未提供时为空，不授予动作许可。</summary>
+        public string NextAction { get; set; }
+        /// <summary>设备来源提供的完成判据；未提供时为空。</summary>
+        public string CompletionCondition { get; set; }
+        /// <summary>工位状态记录的 UTC 时间；不等同于硬件采集时间。</summary>
+        public DateTime? StatusCapturedAtUtc { get; set; }
+        /// <summary>该工位读取状态失败的原始异常。</summary>
+        public Exception StatusReadError { get; set; }
         /// <summary>执行入口明确报告并本地化的独立工位状态；为空时不能猜测。</summary>
         public string StateText { get; set; }
         /// <summary>独立工位状态使用的颜色，格式为六位 RGB 十六进制值。</summary>

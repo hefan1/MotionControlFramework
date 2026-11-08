@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>MotionControl.Metadata.Checks</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/MotionControl.TaskEngine/MotionControl.TaskEngine.csproj" />
+    <!-- 直接检查正式页面使用的纯数据类；不实例化 WPF，也不把此检查当成屏幕验收。 -->
+    <Compile Include="../../src/MotionControl.Framework.Wpf/Variables/DeviceVariableRow.cs" Link="Production/DeviceVariableRow.cs" />
+    <Compile Include="../../src/MotionControl.Framework.Wpf/Variables/DeviceVariableEditAccess.cs" Link="Production/DeviceVariableEditAccess.cs" />
+    <Compile Include="../../src/MotionControl.Framework.Wpf/ManualDebug/ManualAxisPositionConfiguration.cs" Link="Production/ManualAxisPositionConfiguration.cs" />
+  </ItemGroup>
+</Project>

@@ -21,6 +21,8 @@ namespace MotionControl.TaskEngine.Machine
         internal StationTaskState State { get; set; }
         /// <summary>当前等待或阶段说明。</summary>
         internal string Detail { get; set; }
+        /// <summary>交接等待的结构化证据；开始新周期时清空，避免显示上一周期信号。</summary>
+        internal TaskStepDiagnostics Diagnostics { get; set; }
         /// <summary>故障步骤等待下一次复位后启动的许可，整机锁内替换。</summary>
         internal TaskCompletionSource<bool> RecoveryPermit { get; set; }
         /// <summary>执行器已异常结束，无法保证当前节点进度时禁止直接复位续跑。</summary>

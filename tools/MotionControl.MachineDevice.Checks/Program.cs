@@ -40,7 +40,9 @@ namespace MotionControl.MachineDevice.Checks
             Run("确认停止必须有有效停稳速度反馈", ConfirmStoppedRequiresValidVelocity, ref failures);
             Run("轴动作前必须确认停稳且位置有效", MotionStartRequiresValidFeedback, ref failures);
             Run("回零完成必须确认原点状态", HomeCompletionRequiresHomedFeedback, ref failures);
-            Run("轴组插补明确拒绝", GroupMoveIsRejected, ref failures);
+            Run("未实现的多轴分别定位明确拒绝", GroupMoveIsRejected, ref failures);
+            Run("多轴分别定位在前序输出及接管前拒绝", GroupCapabilityRejectedBeforeActions, ref failures);
+            Run("能力检查覆盖嵌套分支和全部子任务", GroupCapabilityTraversesWholeLibrary, ref failures);
             Run("IO 读取失败向上抛出", IoFailureIsReported, ref failures);
             Run("变量按目录类型写入", VariablesAreWrittenByType, ref failures);
             Run("真实设备握手保持完成直到请求复归", HandshakeWaitsForRequestClear, ref failures);
@@ -382,7 +384,7 @@ namespace MotionControl.MachineDevice.Checks
             {
                 new TaskAxisGroupTarget("X", 5, false, 10)
             };
-            ExpectMessage(() => device.BeginGroupMove(targets), "轴组插补");
+            ExpectMessage(() => device.BeginGroupMove(targets), "多轴分别定位");
         }
 
         /// <summary>确认 IO 读取失败不会被吞掉成 false。</summary>

@@ -1,17 +1,17 @@
 using System.Collections.Generic;
 
-namespace MotionControl.TaskEngine.MachineDevice.Preparation
+namespace MotionControl.TaskEngine.Preparation
 {
     /// <summary>独立的设备准备清单；任务编辑器保存生产清单时不会覆盖本文件。</summary>
     public sealed class TaskStationPreparationConfiguration
     {
         /// <summary>当前支持版本 1。</summary>
         public int SchemaVersion { get; set; }
-        /// <summary>本设备参与准备的工位，未列出的工位不伪造已准备状态。</summary>
+        /// <summary>本设备参与准备的项目；其标识不要求与生产工位一一对应。</summary>
         public List<TaskStationPreparationDefinition> Stations { get; set; } = new List<TaskStationPreparationDefinition>();
     }
 
-    /// <summary>一个工位的准备任务及必须通过的现场验收条件；全部名称引用已有配置。</summary>
+    /// <summary>一个准备项目的任务及现场验收条件；全部名称引用已有配置，不按名称绑定生产工位。</summary>
     public sealed class TaskStationPreparationDefinition
     {
         /// <summary>准备工位的稳定标识。</summary>

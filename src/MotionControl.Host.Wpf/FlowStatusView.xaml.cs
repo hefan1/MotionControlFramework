@@ -9,6 +9,7 @@ using MotionControl.Host.Wpf.Operation;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Runtime.Machine;
+using MotionControl.TaskEngine.Wpf.Monitoring;
 
 namespace MotionControl.Host.Wpf
 {
@@ -181,8 +182,8 @@ namespace MotionControl.Host.Wpf
             }
             try
             {
-                var input = _selectedFlow as IStationInputWaitState;
-                string name = input?.WaitingInputName;
+                StationOverviewData status = OperationSnapshot.ReadStation(_selectedFlow);
+                string name = status.WaitingInputName;
                 if (HasCurrentSession() && _runtime.ControlOwner == MachineControlOwner.StationFlows && !string.IsNullOrWhiteSpace(name))
                     NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs("IO监控", _selectedFlow.StationName, name));
                 else RefreshDisplay();
@@ -214,15 +215,33 @@ namespace MotionControl.Host.Wpf
             if (!HasCurrentSession()) return (string)FindResource("流程页.断连未知");
             try
             {
-                string step = flow.CurrentStepName;
-                inputName = (flow as IStationInputWaitState)?.WaitingInputName;
+                StationOverviewData status = OperationSnapshot.ReadStation(flow);
+                if (status.StatusReadError != null)
+                    return (string)FindResource("流程页.读取失败") + "：" + status.StatusReadError.GetBaseException().Message;
+                inputName = status.WaitingInputName;
                 valid = true;
-                return (string.IsNullOrWhiteSpace(step) ? (string)FindResource("流程页.步骤未提供") : step) + "\n" + (string)FindResource("流程页.数据有效");
+                string step = string.IsNullOrWhiteSpace(status.CurrentStep)
+                    ? (string)FindResource("流程页.步骤未提供") : status.CurrentStep;
+                string independentState = status.IndependentState == StationOperationState.NotProvided
+                    ? (string)FindResource("流程页.独立状态未提供")
+                    : StationText(StationOperatorPresentation.StateKey(status.IndependentState));
+                string details = step + "\n" + independentState + "\n"
+                    + StationOperatorPresentation.DescribeWaitItems(status.WaitItems, status.HasWaitInformation, StationText);
+                if (!string.IsNullOrWhiteSpace(status.Detail)) details += "\n" + status.Detail;
+                details += "\n" + StationText("工位下一步建议") + "：" + (status.NextAction ?? StationText("未提供"));
+                details += "\n" + StationText("工位完成判据") + "：" + (status.CompletionCondition ?? StationText("未提供"));
+                return details;
             }
             catch (Exception error)
             {
                 return (string)FindResource("流程页.读取失败") + "：" + error.GetBaseException().Message;
             }
+        }
+
+        /// <summary>复用设备总览的工位词条，使 C# 页面与任务列表使用同一组状态和质量用语。</summary>
+        private string StationText(string key)
+        {
+            return TryFindResource("操作页." + key) as string ?? key;
         }
 
         /// <summary>刷新当前状态、步骤、报警及最近故障文字。</summary>
@@ -273,11 +292,10 @@ namespace MotionControl.Host.Wpf
                 input = null;
                 valid = false;
                 string step = disconnected ? (string)FindResource("流程页.断连未知") : ReadStation(row.Key, out input, out valid);
-                row.Value.Text = row.Key.StationName + " — " + step + "\n" + (string)FindResource(valid ? "流程页.独立状态未提供" : "流程页.数据未知");
+                row.Value.Text = row.Key.StationName + " — " + step;
                 if (ReferenceEquals(row.Key, _selectedFlow))
                 {
                     StationDetailText.Text = row.Key.StationName + "\n" + (string)FindResource("流程页.CSharp来源") + "\n" + step
-                        + "\n" + (string)FindResource(valid ? "流程页.独立状态未提供" : "流程页.数据未知")
                         + "\n" + (string.IsNullOrWhiteSpace(input) ? (string)FindResource("流程页.输入未提供") : string.Format((string)FindResource("流程页.等待输入"), input));
                     StationInputButton.IsEnabled = valid && !string.IsNullOrWhiteSpace(input);
                     StationInputButton.ToolTip = StationInputButton.IsEnabled ? input : (string)FindResource("流程页.输入未提供");

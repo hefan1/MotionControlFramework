@@ -7,7 +7,7 @@ using MotionControl.Framework.Contracts.Variables;
 namespace MotionControl.Framework.Runtime.Variables
 {
     /// <summary>在本机内存中保存一台设备的变量定义、当前值和更新时间。</summary>
-    public sealed class DeviceVariableStore : IDeviceVariableStore
+    public sealed partial class DeviceVariableStore : IDeviceVariableStore
     {
         /// <summary>保护变量定义和运行值，供流程线程与 WPF 监控线程共同访问。</summary>
         private readonly object _sync = new object();
@@ -51,14 +51,24 @@ namespace MotionControl.Framework.Runtime.Variables
                         variable.HasValue,
                         variable.LastUpdated,
                         variable.Definition.Description,
-                        variable.Definition.AllowOperatorWrite))
+                        variable.Definition.AllowOperatorWrite,
+                        variable.Definition.DisplayName,
+                        variable.Definition.EngineeringUnit,
+                        variable.Definition.Dimension,
+                        variable.Definition.MinimumValue,
+                        variable.Definition.MaximumValue,
+                        variable.Definition.DecimalPlaces,
+                        variable.Definition.SourceId,
+                        variable.Definition.SourceDescription,
+                        variable.ValueNotice,
+                        variable.Definition.InitialValue))
                     .OrderBy(snapshot => snapshot.Name, StringComparer.OrdinalIgnoreCase)
                     .ToList()
                     .AsReadOnly();
             }
         }
 
-        /// <summary>按名称和数据类型恢复已保存运行值，保留新变量的配置初值。</summary>
+        /// <summary>按稳定名称、类型及数值来源语义恢复旧值；不兼容记录保留新定义初值并返回原因。</summary>
         public IReadOnlyList<string> RestoreCurrentValues(IEnumerable<DeviceVariableSnapshot> snapshots)
         {
             if (snapshots == null)
@@ -100,6 +110,12 @@ namespace MotionControl.Framework.Runtime.Variables
                         continue;
                     }
 
+                    if (!SameValueMeaning(variable.Definition, snapshot.EngineeringUnit, snapshot.Dimension, snapshot.SourceId))
+                    {
+                        warnings.Add("变量单位、量纲或采集来源已变化，未恢复旧值：" + snapshot.Name + "。");
+                        continue;
+                    }
+
                     if (!snapshot.HasValue)
                     {
                         variable.CurrentValue = string.Empty;
@@ -120,9 +136,16 @@ namespace MotionControl.Framework.Runtime.Variables
                         continue;
                     }
 
+                    if (!TryCheckRange(variable.Definition, normalizedValue, out errorMessage))
+                    {
+                        warnings.Add("变量恢复值不符合当前范围，未恢复 " + snapshot.Name + "：" + errorMessage);
+                        continue;
+                    }
+
                     variable.CurrentValue = normalizedValue;
                     variable.HasValue = true;
                     variable.LastUpdated = snapshot.LastUpdated;
+                    variable.ValueNotice = "已按当前变量定义核对并恢复历史值；更新时间属于原记录。";
                 }
             }
 
@@ -198,6 +221,8 @@ namespace MotionControl.Framework.Runtime.Variables
                 DateTime timestamp = DateTime.Now;
                 first.CurrentValue = firstValue.ToString(); first.HasValue = true; first.LastUpdated = timestamp;
                 second.CurrentValue = secondValue.ToString(); second.HasValue = true; second.LastUpdated = timestamp;
+                first.ValueNotice = null;
+                second.ValueNotice = null;
             }
             RaiseVariablesChanged();
         }
@@ -223,6 +248,7 @@ namespace MotionControl.Framework.Runtime.Variables
 
                 completed.CurrentValue = newCompleted.ToString();
                 completed.LastUpdated = DateTime.Now;
+                completed.ValueNotice = null;
             }
 
             RaiseVariablesChanged();
@@ -276,7 +302,7 @@ namespace MotionControl.Framework.Runtime.Variables
             SetRuntimeValue(name, DeviceVariableType.UInt32, value.ToString(CultureInfo.InvariantCulture));
         }
 
-        /// <summary>替换变量定义；相同名称且类型未变时保留现值，新增或改类型时使用初值。</summary>
+        /// <summary>替换定义；仅同名、同类型、同单位/量纲/来源且仍符合范围时保留现值，显示改名不改引用。</summary>
         public void ReplaceDefinitions(IEnumerable<DeviceVariableDefinition> definitions)
         {
             List<DeviceVariableDefinition> checkedDefinitions = ValidateDefinitions(definitions);
@@ -293,13 +319,17 @@ namespace MotionControl.Framework.Runtime.Variables
                         && string.Equals(
                             previousVariable.Definition.DataType,
                             definition.DataType,
-                            StringComparison.OrdinalIgnoreCase))
+                            StringComparison.OrdinalIgnoreCase)
+                        && SameValueMeaning(definition, previousVariable.Definition.EngineeringUnit,
+                            previousVariable.Definition.Dimension, previousVariable.Definition.SourceId)
+                        && (!previousVariable.HasValue || TryCheckRange(definition, previousVariable.CurrentValue, out _)))
                     {
                         _variables.Add(definition.Name, new RuntimeVariable(
                             definition,
                             previousVariable.CurrentValue,
                             previousVariable.HasValue,
-                            previousVariable.LastUpdated));
+                            previousVariable.LastUpdated,
+                            previousVariable.ValueNotice));
                     }
                     else
                     {
@@ -307,7 +337,9 @@ namespace MotionControl.Framework.Runtime.Variables
                             definition,
                             NormalizeInitialValue(definition),
                             definition.InitialValue != null,
-                            definition.InitialValue == null ? DateTime.MinValue : DateTime.Now));
+                            definition.InitialValue == null ? DateTime.MinValue : DateTime.Now,
+                            previousVariable == null ? null : "变量类型、单位、量纲、来源或允许范围已变化，未沿用旧值；"
+                                + (definition.InitialValue == null ? "当前未初始化。" : "已装入新定义初值，尚不是新的设备采样。")));
                     }
                 }
             }
@@ -315,8 +347,15 @@ namespace MotionControl.Framework.Runtime.Variables
             RaiseVariablesChanged();
         }
 
-        /// <summary>按变量定义检查类型和写入权限，再更新现场人员指定的当前值。</summary>
+        /// <summary>保留原三参数入口，仍执行当前定义的范围和权限检查。</summary>
         public bool TrySetOperatorValue(string name, string valueText, out string errorMessage)
+        {
+            return TrySetOperatorValue(name, valueText, out errorMessage, null);
+        }
+
+        /// <summary>在同一锁内复核确认时定义、类型、范围和写入权限，防止旧确认框写入新含义变量。</summary>
+        public bool TrySetOperatorValue(string name, string valueText, out string errorMessage,
+            DeviceVariableDefinition expectedDefinition)
         {
             errorMessage = string.Empty;
             RuntimeVariable variable;
@@ -335,7 +374,19 @@ namespace MotionControl.Framework.Runtime.Variables
                     return false;
                 }
 
+                if (expectedDefinition != null && !SameWriteDefinition(variable.Definition, expectedDefinition))
+                {
+                    errorMessage = "变量“" + name + "”的定义、单位、范围或来源已变化，请重新核对后写入。";
+                    return false;
+                }
+
                 if (!TryNormalizeValue(variable.Definition.DataType, valueText, out normalizedValue, out errorMessage))
+                {
+                    errorMessage = "变量“" + name + "”的输入值无效：" + errorMessage;
+                    return false;
+                }
+
+                if (!TryCheckRange(variable.Definition, normalizedValue, out errorMessage))
                 {
                     errorMessage = "变量“" + name + "”的输入值无效：" + errorMessage;
                     return false;
@@ -344,6 +395,7 @@ namespace MotionControl.Framework.Runtime.Variables
                 variable.CurrentValue = normalizedValue;
                 variable.HasValue = true;
                 variable.LastUpdated = DateTime.Now;
+                variable.ValueNotice = null;
             }
 
             RaiseVariablesChanged();
@@ -386,6 +438,8 @@ namespace MotionControl.Framework.Runtime.Variables
                     throw new InvalidOperationException("设备变量名称重复：" + definition.Name + "。");
                 }
 
+                ValidateMetadata(definition, definedType);
+
                 string normalizedInitialValue;
                 string valueError;
                 if (definition.InitialValue != null)
@@ -401,6 +455,8 @@ namespace MotionControl.Framework.Runtime.Variables
                     }
 
                     definition.InitialValue = normalizedInitialValue;
+                    if (!TryCheckRange(definition, normalizedInitialValue, out valueError))
+                        throw new InvalidOperationException("设备变量“" + definition.Name + "”的初始值无效：" + valueError);
                 }
                 definition.Description = definition.Description ?? string.Empty;
             }
@@ -434,7 +490,7 @@ namespace MotionControl.Framework.Runtime.Variables
             return value;
         }
 
-        /// <summary>检查变量定义类型后更新设备流程写入的运行值。</summary>
+        /// <summary>检查变量定义类型及显式范围后更新运行值；无效写入保留旧值。</summary>
         private void SetRuntimeValue(string name, DeviceVariableType expectedType, string valueText)
         {
             string normalizedValue;
@@ -448,9 +504,12 @@ namespace MotionControl.Framework.Runtime.Variables
             {
                 RuntimeVariable variable = GetVariable(name);
                 EnsureTypeMatches(variable.Definition, expectedType);
+                if (!TryCheckRange(variable.Definition, normalizedValue, out errorMessage))
+                    throw new ArgumentOutOfRangeException(nameof(valueText), "设备变量“" + name + "”的运行值无效：" + errorMessage);
                 variable.CurrentValue = normalizedValue;
                 variable.HasValue = true;
                 variable.LastUpdated = DateTime.Now;
+                variable.ValueNotice = null;
             }
 
             RaiseVariablesChanged();
@@ -730,17 +789,22 @@ namespace MotionControl.Framework.Runtime.Variables
             /// <summary>当前运行值最后更新的时间。</summary>
             public DateTime LastUpdated { get; set; }
 
+            /// <summary>保留定义变更或历史恢复的来源说明，新的明确写入后清除。</summary>
+            public string ValueNotice { get; set; }
+
             /// <summary>创建本机内存中的变量状态。</summary>
             public RuntimeVariable(
                 DeviceVariableDefinition definition,
                 string currentValue,
                 bool hasValue,
-                DateTime lastUpdated)
+                DateTime lastUpdated,
+                string valueNotice = null)
             {
                 Definition = definition.Copy();
                 CurrentValue = currentValue;
                 HasValue = hasValue;
                 LastUpdated = lastUpdated;
+                ValueNotice = valueNotice;
             }
         }
     }

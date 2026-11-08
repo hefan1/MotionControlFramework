@@ -11,8 +11,11 @@ using MotionControl.TaskEngine.Resources;
 namespace MotionControl.TaskEngine.Device.InMemory
 {
     /// <summary>任务引擎专用的独立内存设备；没有控制卡、网络或原生 DLL 入口。</summary>
-    public sealed partial class InMemoryTaskDevice : ITaskDevice, ITaskInterlockSupport, ITaskRecordSink
+    public sealed partial class InMemoryTaskDevice : ITaskDevice, ITaskInterlockSupport, ITaskAxisGroupSupport, ITaskRecordSink
     {
+        /// <summary>内存设备已实现多轴分别定位，仅用于内部逻辑检查，不代表正式设备或控制卡能力。</summary>
+        public bool SupportsAxisGroupMove { get { return true; } }
+
         private readonly ITaskRecordSink _recordOverride;
         private readonly Dictionary<string, Dictionary<string, string>> _records = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
         /// <summary>按执行编号保存首次记录时间，重试不得更改。</summary>
@@ -60,13 +63,8 @@ namespace MotionControl.TaskEngine.Device.InMemory
             foreach (TaskAxisInfo axis in catalog.Axes.Values) _axes.Add(axis.Name, new InMemoryAxis());
             foreach (string input in catalog.Inputs) _inputs.Add(input, null);
             foreach (string output in catalog.Outputs) _outputs.Add(output, null);
-            _variables = new DeviceVariableStore(catalog.Variables.Select(variable => new DeviceVariableDefinition
-            {
-                Name = variable.Key,
-                DataType = variable.Value.ToString(),
-                InitialValue = catalog.VariableInitialValues[variable.Key],
-                AllowOperatorWrite = false
-            }));
+            _variables = new DeviceVariableStore(catalog.VariableDefinitions.Values.Select(variable =>
+                variable.CreateDefinition(catalog.VariableInitialValues[variable.Name])));
         }
 
         /// <summary>注入逻辑 DI；null 表示当前没有有效输入数据。</summary>
@@ -96,8 +94,12 @@ namespace MotionControl.TaskEngine.Device.InMemory
                 if (!Catalog.Variables.TryGetValue(name, out type)) throw new ArgumentException("设备变量未配置：" + name);
                 if (value == null)
                 {
+                    TaskVariableInfo definition = Catalog.VariableDefinitions[name];
                     _variables.RestoreCurrentValues(new[] { new DeviceVariableSnapshot(name, type.ToString(),
-                        string.Empty, false, DateTime.Now, string.Empty, false) });
+                        string.Empty, false, DateTime.Now, string.Empty, false,
+                        definition.DisplayName, definition.EngineeringUnit, definition.Dimension,
+                        definition.MinimumValue, definition.MaximumValue, definition.DecimalPlaces,
+                        definition.SourceId, definition.SourceDescription) });
                     return;
                 }
                 TaskRuntimeValues.Write(_variables, name, type, TaskRuntimeValues.Parse(type, value));

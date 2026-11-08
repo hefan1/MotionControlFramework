@@ -18,7 +18,7 @@ namespace MotionControl.Framework.Wpf.ManualDebug
         /// <summary>位置配置文件格式版本；当前版本为 1。</summary>
         public int SchemaVersion { get; set; }
 
-        /// <summary>按逻辑轴名称保存的位置列表。</summary>
+        /// <summary>按物理轴组保存的位置列表；可选逻辑归属用于迁移检查。</summary>
         public List<ManualAxisPositionGroup> Axes { get; set; }
     }
 
@@ -34,6 +34,12 @@ namespace MotionControl.Framework.Wpf.ManualDebug
 
         /// <summary>稳定的控制卡和物理轴标识，不随设备轴显示名称修改。</summary>
         public string AxisKey { get; set; }
+
+        /// <summary>维护迁移时明确确认的逻辑轴稳定键；旧文件为空。原保存流程完整保留此声明。</summary>
+        public string LogicalAxisName { get; set; }
+
+        /// <summary>维护确认的示教坐标工程单位；旧文件为空，不能推断已经完成单位迁移。</summary>
+        public string EngineeringUnit { get; set; }
 
         /// <summary>下次添加位置时使用的编号；删除位置不会回收旧编号。</summary>
         public int NextPositionNumber { get; set; }

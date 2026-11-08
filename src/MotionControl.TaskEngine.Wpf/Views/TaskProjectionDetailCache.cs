@@ -37,7 +37,20 @@ namespace MotionControl.TaskEngine.Wpf.Views
                         && string.Equals(reference.TaskId, task, StringComparison.OrdinalIgnoreCase)
                         && string.Equals(reference.NodeId, node, StringComparison.OrdinalIgnoreCase))
                     {
-                        if (total < 100) fields.Add(new TaskDetailField(reference.Kind + " · " + reference.Target, reference.Path + " · " + reference.Status));
+                        if (total < 100)
+                        {
+                            string detail = reference.Path + " · " + reference.Status;
+                            if (reference.Kind == "Axis" || reference.Kind == "TeachPoint" || reference.Kind == "Variable")
+                            {
+                                string undefined = english ? "undefined" : "未定义";
+                                if (reference.IsNumericValue)
+                                    detail += (english ? " · unit: " : " · 单位：")
+                                        + (string.IsNullOrWhiteSpace(reference.EngineeringUnit) ? undefined : reference.EngineeringUnit);
+                                if (!string.IsNullOrWhiteSpace(reference.DisplayName))
+                                    detail += (english ? " · display name: " : " · 显示名：") + reference.DisplayName;
+                            }
+                            fields.Add(new TaskDetailField(reference.Kind + " · " + reference.Target, detail));
+                        }
                         total++;
                     }
             bool available = projection != null && error == null;

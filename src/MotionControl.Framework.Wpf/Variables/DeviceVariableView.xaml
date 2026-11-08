@@ -279,7 +279,7 @@
                 <DataGrid.Columns>
                     <DataGridTextColumn Width="2*" MinWidth="120"
                                         Header="{DynamicResource 变量名称}"
-                                        Binding="{Binding Name}"
+                                        Binding="{Binding NameDisplay}"
                                         ElementStyle="{StaticResource VariableCellText}" />
                     <DataGridTextColumn Width="*" MinWidth="80"
                                         Header="{DynamicResource 变量类型}"
@@ -292,6 +292,9 @@
                     <DataGridTextColumn Width="1.4*" MinWidth="140"
                                         Header="{DynamicResource 最后更新时间}"
                                         Binding="{Binding LastUpdatedDisplay}"
+                                        ElementStyle="{StaticResource VariableCellText}" />
+                    <DataGridTextColumn Width="90" Header="{DynamicResource 变量工程单位}"
+                                        Binding="{Binding EngineeringUnitDisplay}"
                                         ElementStyle="{StaticResource VariableCellText}" />
                     <DataGridTextColumn Width="2*" MinWidth="120"
                                         Header="{DynamicResource 变量说明}"

@@ -25,7 +25,8 @@ namespace MotionControl.Host.Wpf
             if (_equipmentProjectService == null)
                 _equipmentProjectService = new MachineProjectPackageService(_configurationStore, MachineId,
                     HostEquipmentSelection.SupportedDefinitions, HostMotionCardBackendSelection.SupportedBackends,
-                    null, selection => HostEquipmentProjectCardValidation.Validate(selection, _configurationStore, MachineId));
+                    null, selection => HostEquipmentProjectCardValidation.Validate(selection, _configurationStore, MachineId),
+                    MotionControl.TaskEngine.MachineDevice.MachineTaskDevice.ExecutionCapabilities);
             return _equipmentProjectService;
         }
 

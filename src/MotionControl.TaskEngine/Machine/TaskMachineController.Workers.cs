@@ -63,6 +63,7 @@ namespace MotionControl.TaskEngine.Machine
                     _library.Values.Where(task => task.TaskId != definition.TaskId), station, token, AlarmService);
                 station.CurrentRun = run;
                 station.State = StationTaskState.Executing;
+                station.Diagnostics = null;
                 station.Detail = "正在执行周期 " + (station.CompletedCycles + 1) + "。";
                 run.Resume();
             }, token).ConfigureAwait(false);

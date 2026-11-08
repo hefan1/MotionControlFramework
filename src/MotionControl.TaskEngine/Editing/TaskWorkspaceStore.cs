@@ -8,7 +8,9 @@ using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Configuration;
 using MotionControl.TaskEngine.Definitions;
+using MotionControl.TaskEngine.Device;
 using MotionControl.TaskEngine.Machine;
+using MotionControl.TaskEngine.Preparation;
 using MotionControl.TaskEngine.Validation;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -20,14 +22,19 @@ namespace MotionControl.TaskEngine.Editing
     {
         /// <summary>沿用现有设备目录与原子 JSON 保存。</summary>
         private readonly MachineConfigurationStore _store;
+        /// <summary>Host 声明的实际任务能力；为空时只能作定义检查，不代表可执行。</summary>
+        private readonly TaskDeviceCapabilities _executionCapabilities;
         /// <summary>一份草稿包保存完整编辑状态，避免多个草稿半保存。</summary>
         private const string DraftPath = "Drafts/TaskWorkspace.json";
         /// <summary>应用恢复标记；存在时禁止创建新的任务运行会话。</summary>
         private const string PendingPath = "Drafts/TaskApplyPending.json";
 
-        /// <summary>绑定已有设备存储。</summary>
-        public TaskWorkspaceStore(MachineConfigurationStore store)
-        { _store = store ?? throw new ArgumentNullException(nameof(store)); }
+        /// <summary>绑定已有设备存储；正式 Host 同时提供实际能力，使检查和应用提前拒绝不支持的动作。</summary>
+        public TaskWorkspaceStore(MachineConfigurationStore store, TaskDeviceCapabilities executionCapabilities = null)
+        {
+            _store = store ?? throw new ArgumentNullException(nameof(store));
+            _executionCapabilities = executionCapabilities;
+        }
 
         /// <summary>优先读取完整草稿；忽略草稿时只读运行文件，不自动删除草稿。</summary>
         public TaskWorkspaceDocument Load(string machineId, bool useDraft = true)
@@ -228,15 +235,26 @@ namespace MotionControl.TaskEngine.Editing
             }
         }
 
-        /// <summary>供界面决定是否显示恢复入口，不读取或猜测设备状态。</summary>
+        /// <summary>严格检查恢复路径；已存在的目录或链接也视为阻断，权限和读取错误不能当作没有标记。</summary>
         public bool HasPendingApply(string machineId)
-        { return File.Exists(Path.Combine(_store.GetMachineDirectory(machineId), PendingPath)); }
+        {
+            string root = _store.GetMachineDirectory(machineId);
+            RequirePlainTaskDirectory(root);
+            RequirePlainTaskDirectory(Path.Combine(root, "Drafts"));
+            try
+            {
+                File.GetAttributes(Path.Combine(root, PendingPath));
+                return true;
+            }
+            catch (FileNotFoundException) { return false; }
+            catch (DirectoryNotFoundException) { return false; }
+        }
 
         /// <summary>按当前草稿的命名资源和已保存硬件配置建立目录，不从任务文字猜资源。</summary>
         public TaskResourceCatalog LoadCatalog(TaskWorkspaceDocument draft)
         { return new TaskResourceCatalogLoader(_store).Load(draft.MachineId, draft.Machine.NamedResources); }
 
-        /// <summary>检查全部任务和工位；只返回可定位问题，不修改运行文件。</summary>
+        /// <summary>检查全部任务、生产清单和独立准备配置；只返回可定位问题，不修改运行文件。</summary>
         public IReadOnlyList<TaskValidationIssue> Check(TaskWorkspaceDocument draft)
         {
             RequireDraftShape(draft?.MachineId, draft);
@@ -245,9 +263,12 @@ namespace MotionControl.TaskEngine.Editing
             var definitions = draft.Tasks.Select(item => item.Definition).ToList();
             if (definitions.Count > 0)
                 issues.AddRange(new TaskDefinitionValidator().Validate(definitions[0], catalog, definitions.Skip(1)));
+            issues.AddRange(new TaskDeviceCapabilityValidator().Validate(definitions, _executionCapabilities));
             foreach (string error in TaskMachineConfigurationValidator.Validate(draft.Machine, definitions, catalog))
                 if (!issues.Any(issue => error.Contains(issue.ToString())))
                     issues.Add(new TaskValidationIssue(TaskIssueSeverity.Error, "设备清单", null, "stations", error));
+            foreach (TaskValidationIssue issue in CheckPreparation(draft, catalog, definitions))
+                if (!issues.Any(existing => existing.ToString() == issue.ToString())) issues.Add(issue);
             return issues.AsReadOnly();
         }
 
@@ -255,7 +276,7 @@ namespace MotionControl.TaskEngine.Editing
         public string ComputeSignature(string machineId)
         {
             string root = _store.GetMachineDirectory(machineId);
-            var paths = new List<string> { "Parameters/TaskMachine.json", "HardwareConfig/AxisParameters.json", "HardwareConfig/IoMapping.json",
+            var paths = new List<string> { "Parameters/TaskMachine.json", TaskStationPreparationStore.RelativePath, "HardwareConfig/AxisParameters.json", "HardwareConfig/IoMapping.json",
                 "Parameters/DeviceVariables.json", "Parameters/ManualAxisPositions.json", MachineAlarmCatalogStore.RelativeFilePath };
             string tasks = Path.Combine(root, "Tasks");
             if (Directory.Exists(tasks)) paths.AddRange(Directory.GetFiles(tasks, "*.json").Select(path => "Tasks/" + Path.GetFileName(path)));
@@ -319,7 +340,10 @@ namespace MotionControl.TaskEngine.Editing
         /// <summary>不同编辑窗口不能同时写同一设备的草稿或运行定义。</summary>
         private FileStream AcquireEditLock(string machineId)
         {
-            string directory = Path.Combine(_store.GetMachineDirectory(machineId), "Drafts");
+            string root = _store.GetMachineDirectory(machineId);
+            RequirePlainTaskDirectory(root);
+            string directory = Path.Combine(root, "Drafts");
+            RequirePlainTaskDirectory(directory);
             Directory.CreateDirectory(directory);
             return new FileStream(Path.Combine(directory, "TaskWorkspace.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         }
