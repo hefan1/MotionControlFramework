@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Alarms;
+using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Contracts.Preparation;
 
@@ -65,6 +66,8 @@ namespace MotionControl.Framework.Runtime.Machine
         private volatile bool _preparationStopRequested;
         /// <summary>当前准备操作及其受控停止收尾。</summary>
         private Task _preparationTask = Task.CompletedTask;
+        /// <summary>当前准备操作启动时的控制器连接周期，停止收尾不能换用后续连接。</summary>
+        private Guid? _preparationConnectionSession;
         /// <summary>最近一次停轴收尾；超时后仍保留引用，禁止与尚未结束的停轴命令交错。</summary>
         private Task _preparationStopTask = Task.CompletedTask;
         /// <summary>停稳尚未确认时保持准备占用，只允许重新执行停止确认。</summary>
@@ -167,12 +170,32 @@ namespace MotionControl.Framework.Runtime.Machine
         }
 
         /// <summary>准备只接受提交时的连接周期；排队或装载配置期间重连须重新发起。</summary>
-        public async Task PrepareAsync(string stationId, Guid? expectedSession, CancellationToken cancellationToken)
+        public Task PrepareAsync(string stationId, Guid? expectedSession, CancellationToken cancellationToken)
+        {
+            return PrepareCoreAsync(stationId, expectedSession, null, null, null, cancellationToken);
+        }
+
+        /// <summary>操作员提交的范围须与已确认的准备定义、入口及安全观察代次一致。</summary>
+        public Task PrepareAsync(string stationId, Guid? expectedSession, long expectedPreparationVersion,
+            MachineControlOwner expectedOwner, long expectedObservationVersion, CancellationToken cancellationToken)
+        {
+            return PrepareCoreAsync(stationId, expectedSession, expectedPreparationVersion, expectedOwner,
+                expectedObservationVersion, cancellationToken);
+        }
+
+        /// <summary>在命令锁内复核提交上下文，再执行原有完整准备门禁。</summary>
+        private async Task PrepareCoreAsync(string stationId, Guid? expectedSession, long? expectedPreparationVersion,
+            MachineControlOwner? expectedOwner, long? expectedObservationVersion, CancellationToken cancellationToken)
         {
             Task operation;
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                if ((expectedPreparationVersion.HasValue && PreparationConfigurationVersion != expectedPreparationVersion.Value)
+                    || (expectedOwner.HasValue && ControlOwner != expectedOwner.Value)
+                    || (expectedObservationVersion.HasValue && (expectedObservationVersion.Value < 0
+                        || SafetyObservationVersion != expectedObservationVersion.Value)))
+                    throw new InvalidOperationException("设备准备范围或会话已变化，请重新核对后提交回零。");
                 EnsureNoPreparationInProgress("启动另一项准备");
                 EnsureRecoveryTrusted();
                 lock (_preparationSync)
@@ -227,6 +250,7 @@ namespace MotionControl.Framework.Runtime.Machine
                         lock (_preparationSync)
                         {
                             _preparing = true;
+                            _preparationConnectionSession = expectedSession;
                             _preparationStopUnconfirmed = false;
                             _preparationProductionStarted = false;
                             _preparationCancellation = new CancellationTokenSource();
@@ -287,6 +311,7 @@ namespace MotionControl.Framework.Runtime.Machine
             Task operation;
             Task cancellationTask;
             bool recoveringStop;
+            Guid? preparationSession;
             await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
@@ -295,6 +320,7 @@ namespace MotionControl.Framework.Runtime.Machine
                     if (!_preparing) return;
                     if (expectedPreparation != null && !ReferenceEquals(expectedPreparation, _preparationCancellation)) return;
                     operation = _preparationTask;
+                    preparationSession = _preparationConnectionSession;
                     recoveringStop = _preparationStopUnconfirmed && operation.IsCompleted;
                     _preparationStopRequests++;
                 }
@@ -314,6 +340,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 try { await operation.ConfigureAwait(false); }
                 catch (OperationCanceledException) { /* 操作员停止已由准备快照记录，轴停稳确认在上方完成。 */ }
                 catch (Exception) when (recoveringStop) { /* 原准备失败仍保留为报警，此处仅重新确认停止结果。 */ }
+                EnsureConnectionSessionCurrent(preparationSession, "确认准备停止");
                 if (recoveringStop) lock (_preparationSync) _preparationStopUnconfirmed = false;
             }
             catch (Exception error)
@@ -338,8 +365,17 @@ namespace MotionControl.Framework.Runtime.Machine
                     }
                     if (lastStop && !operation.IsFaulted && !_alarmService.HasLatchedStopAlarm && State != MachineRunState.Alarmed)
                     {
-                        try { CompletePreparationRecord(); }
-                        catch (Exception error) { finishError = error; }
+                        try
+                        {
+                            EnsureConnectionSessionCurrent(preparationSession, "保存准备停止记录");
+                            CompletePreparationRecord();
+                        }
+                        catch (Exception error)
+                        {
+                            finishError = error;
+                            lock (_preparationSync) _preparationStopUnconfirmed = true;
+                            lastStop = false;
+                        }
                     }
                     lock (_preparationSync) if (lastStop)
                     {
@@ -351,13 +387,13 @@ namespace MotionControl.Framework.Runtime.Machine
                         _preparationStopRequested = false;
                     }
                     if (finishError != null) SetStatus(MachineRunState.Alarmed, finishError);
-                    else if (lastStop) TryConfirmPreparationRecordReuse();
+                    else if (lastStop) TryConfirmPreparationRecordReuse(preparationSession);
                 }
                 finally { _commandLock.Release(); }
                 if (completedCancellation != null) { completedRegistration.Dispose(); completedCancellation.Dispose(); }
                 RaisePreparationChanged();
                 RaiseStatusChanged();
-                if (finishError != null) throw new InvalidOperationException("准备安全结束记录保存失败，请联系维护人员。", finishError);
+                if (finishError != null) throw new InvalidOperationException("准备停止状态或安全结束记录未确认，请联系维护人员。", finishError);
             }
         }
 
@@ -548,7 +584,7 @@ namespace MotionControl.Framework.Runtime.Machine
                         InvalidatePreparationAndDependents(active.StationId, "准备完成确认期间出现报警。\n请检查现场后重新准备。");
                         SetPreparationSnapshot(active, StationPreparationState.Failed, "准备失败", failure.Message);
                     }
-                    if (failure == null) TryConfirmPreparationRecordReuse();
+                    if (failure == null) TryConfirmPreparationRecordReuse(session);
                 }
                 finally
                 {
@@ -571,22 +607,27 @@ namespace MotionControl.Framework.Runtime.Machine
         }
 
         /// <summary>记录保存且准备完全退出后，经报警门禁确认本进程可沿用仍保留的标记。</summary>
-        private void TryConfirmPreparationRecordReuse()
+        private void TryConfirmPreparationRecordReuse(Guid? session)
         {
-            lock (_statusLock)
+            if (!IsConnectionSessionCurrent(session)) { InvalidatePreparationRecordReuse(); return; }
+            lock (_readSessionLock)
             {
-                if (_state == MachineRunState.Alarmed || _preparationRecordPending || _beforePreparation == null) return;
-                var gate = _alarmService as IMachineAlarmStartGate;
-                if (gate == null) return;
-                try
+                if (_connectionSessionId != session) return;
+                lock (_statusLock)
                 {
-                    gate.ExecuteWhenNoStopAlarm(() =>
+                    if (_state == MachineRunState.Alarmed || _preparationRecordPending || _beforePreparation == null) return;
+                    var gate = _alarmService as IMachineAlarmStartGate;
+                    if (gate == null) return;
+                    try
                     {
-                        lock (_preparationSync)
-                            _preparationRecordReusable = !_preparing && !_preparationStopUnconfirmed && _preparationStopRequests == 0;
-                    });
+                        gate.ExecuteWhenNoStopAlarm(() =>
+                        {
+                            lock (_preparationSync)
+                                _preparationRecordReusable = !_preparing && !_preparationStopUnconfirmed && _preparationStopRequests == 0;
+                        });
+                    }
+                    catch (InvalidOperationException) { lock (_preparationSync) _preparationRecordReusable = false; }
                 }
-                catch (InvalidOperationException) { lock (_preparationSync) _preparationRecordReusable = false; }
             }
         }
 

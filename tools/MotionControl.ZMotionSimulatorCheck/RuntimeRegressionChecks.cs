@@ -70,7 +70,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("轴仍在运动时拒绝整机复位", ResetIsRejectedWhileAxisIsMovingAsync, failures);
             await RunCheckAsync("急停状态通过配置的逻辑 DI 读取", EmergencyStopStatusUsesConfiguredInputAsync, failures);
             await RunCheckAsync("现场按钮按上升沿执行复位、启动、暂停并在 DI 故障恢复后要求复位", PhysicalButtonInputsFollowSafeSequenceAsync, failures);
-            await RunCheckAsync("断卡失败后现场按钮监控恢复且不误触发", ControlInputsResumeAfterFailedDisconnectAsync, failures);
+            await RunCheckAsync("断卡失败后按钮不得跨失效连接复位，重连后恢复", ControlInputsResumeAfterFailedDisconnectAsync, failures);
             await RunCheckAsync("设备硬件配置关联和急停输入校验", HardwareConfigurationValidationAsync, failures);
             await RunCheckAsync("通用框架程序集不引用厂商适配器或原生 API", SharedFrameworkAssembliesDoNotReferenceVendorAdaptersAsync, failures);
             await RunCheckAsync("正运动轴号超出控制器范围时在连接前被拒绝", ZMotionAxisNumberOutsideControllerRangeIsRejectedAsync, failures);
@@ -1792,9 +1792,23 @@ namespace MotionControl.ZMotionSimulatorCheck
             {
                 await ExpectExceptionAsync<InvalidOperationException>(() => runtime.DisconnectAsync(CancellationToken.None)).ConfigureAwait(false);
                 Ensure(card.IsConnected && runtime.State == MachineRunState.Alarmed, "断卡失败后应保留连接并进入报警。");
+                Ensure(!runtime.ConnectionSessionId.HasValue, "断卡失败后仍把旧连接作为有效会话。");
                 axis.IsMoving = false;
+                int previousReads = io.ReadInputCount;
                 await Task.Delay(100).ConfigureAwait(false);
-                Ensure(runtime.State == MachineRunState.Alarmed, "监控恢复时不应把已有效的复位电平当作新按键。");
+                Ensure(io.ReadInputCount > previousReads && runtime.State == MachineRunState.Alarmed,
+                    "断卡失败后按钮监控没有恢复，或把已有效电平当作新按键。");
+                io.SetInput("现场复位", false);
+                await Task.Delay(80).ConfigureAwait(false);
+                io.SetInput("现场复位", true);
+                await Task.Delay(100).ConfigureAwait(false);
+                Ensure(runtime.State == MachineRunState.Alarmed, "失效连接上错误接受了复位按钮。");
+                await runtime.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+                await runtime.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+                Ensure(runtime.ConnectionSessionId.HasValue && runtime.State == MachineRunState.ResetRequired,
+                    "重新连接后没有建立等待复位的新会话。");
+                await Task.Delay(100).ConfigureAwait(false);
+                Ensure(runtime.State == MachineRunState.ResetRequired, "重连时有效的复位电平被误当成新按键。");
                 io.SetInput("现场复位", false);
                 await Task.Delay(80).ConfigureAwait(false);
                 io.SetInput("现场复位", true);
@@ -2465,8 +2479,11 @@ namespace MotionControl.ZMotionSimulatorCheck
             private readonly Dictionary<string, bool> _inputs = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             private readonly object _sync = new object();
             private Exception _readError;
+            private int _readInputCount;
 
             public string LastReadInputName { get; private set; }
+            /// <summary>统计监控读取，区分正常轮询与未恢复。</summary>
+            public int ReadInputCount { get { lock (_sync) return _readInputCount; } }
             /// <summary>注入输出读取故障，核对退出保护是否锁存。</summary>
             public Exception OutputReadError { get; set; }
 
@@ -2495,6 +2512,7 @@ namespace MotionControl.ZMotionSimulatorCheck
                 lock (_sync)
                 {
                     LastReadInputName = inputName;
+                    _readInputCount++;
                     readError = _readError;
                     inputValue = _inputs[inputName];
                 }

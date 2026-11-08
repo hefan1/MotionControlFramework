@@ -108,6 +108,15 @@ namespace MotionControl.OperatorPages.Checks
             taskTarget = null;
             taskFlow.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Require(taskTarget?.StationName == "S01" && taskCard.Calls == 0, "新会话的只读工位定位错误或调用了硬件。");
+            bool taskLoaded = true;
+            taskPage.SetTaskSessionStateProvider(() => taskLoaded);
+            taskLoaded = false; taskSessionIdentity = null; taskPage.RefreshDisplay();
+            Require(taskStations.Items.Count == 0 && !taskFlow.IsEnabled && taskStatus.Text.Contains("尚未读取")
+                && string.IsNullOrWhiteSpace(taskDetail.Text), "关闭任务后提示从空列表重新选择工位。");
+            taskLoaded = true; taskSessionIdentity = new object(); taskPage.RefreshDisplay();
+            Require(taskStations.SelectedIndex == -1 && !taskFlow.IsEnabled && taskDetail.Text.Contains("重新选择当前工位"),
+                "重新读取同 ID 工位后沿用了关闭前的选择。");
+            taskStations.SelectedIndex = 0;
             identityProvider.Invoke(taskPage, new object[] { null });
             Require(taskStations.Items.Count == 0 && taskStations.SelectedIndex == -1
                 && !taskFlow.IsEnabled && taskDetail.Text.Contains("身份未确认")

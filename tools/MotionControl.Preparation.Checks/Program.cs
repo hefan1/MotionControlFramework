@@ -719,6 +719,8 @@ namespace MotionControl.Preparation.Checks
             await success.Runtime.PrepareAsync(null, CancellationToken.None);
             Ensure(begins == 1 && ends == 1 && success.Runtime.IsPrepared && success.Runtime.IsPreparationRecordReusable,
                 "准备成功未提交安全结束记录或未授予本会话标记沿用资格");
+            success.Runtime.InvalidateConnectionSessionOnLoss();
+            Ensure(!success.Runtime.IsPreparationRecordReusable, "连接丢失后仍保留准备记录沿用资格。");
             await success.Runtime.DisconnectAsync(CancellationToken.None);
             Ensure(!success.Runtime.IsPreparationRecordReusable, "控制器断开后保留了旧准备标记沿用资格。");
             await success.ConnectAsync();
@@ -753,6 +755,29 @@ namespace MotionControl.Preparation.Checks
             await Task.WhenAll(stopOne, stopTwo);
             try { await concurrentRun; } catch (OperationCanceledException) { }
             Ensure(clearCount == 1 && !concurrent.Runtime.IsPreparing, "并发停止收尾后标记没有恰好清除一次。");
+
+            // 准备任务已取消，但停止的取消回调仍未退出时丢失连接，不能用后续反馈保存安全记录。
+            var lost = new Fixture();
+            var cancellationGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var lostPreparation = new Preparation("Slow", lost) { WaitUntilStopped = true, CancellationGate = cancellationGate };
+            lost.Runtime.ConfigurePreparations(new[] { lostPreparation });
+            bool lostMarked = false, lostCleared = false;
+            lost.Runtime.SetPreparationRecordCallbacks(() => lostMarked = true, () => lostCleared = true);
+            await lost.ConnectAsync();
+            Task lostRun = lost.Runtime.PrepareAsync(null, CancellationToken.None);
+            await WaitAsync(() => lost.Axis.Moving);
+            Task lostStop = lost.Runtime.StopPreparationAsync(CancellationToken.None);
+            try
+            {
+                await WaitAsync(() => lostRun.IsCompleted);
+                Ensure(lostMarked && !lostCleared, "停止收尾期间没有保留原准备标记。");
+                lost.Runtime.InvalidateConnectionSessionOnLoss();
+            }
+            finally { cancellationGate.TrySetResult(true); }
+            await RejectAsync(() => lostStop, "原连接丢失后仍把准备停止判为安全完成");
+            try { await lostRun; } catch (OperationCanceledException) { }
+            Ensure(!lostCleared && !lost.Runtime.IsPreparationRecordReusable && lost.Runtime.IsPreparing,
+                "连接丢失后覆盖了恢复记录或撤销了未确认的准备占用。");
 
             var failed = new Fixture();
             failed.Runtime.ConfigurePreparations(new[] { new Preparation("A", failed) { ReadyPose = false } });
@@ -1088,6 +1113,8 @@ namespace MotionControl.Preparation.Checks
             public IReadOnlyCollection<string> Dependencies { get; }
             /// <summary>为真时等待取消以检查停轴。</summary>
             internal bool WaitUntilStopped;
+            /// <summary>可挂起取消回调，模拟动作已退出但停止收尾仍在进行。</summary>
+            internal TaskCompletionSource<bool> CancellationGate;
             /// <summary>控制最终姿态检查。</summary>
             internal bool ReadyPose = true;
             /// <summary>指定第几次只读校验拒绝；零表示不拒绝。</summary>
@@ -1111,6 +1138,7 @@ namespace MotionControl.Preparation.Checks
                 _fixture.Log.Add(StationId); progress.Report(new StationPreparationProgress("测试准备"));
                 if (!WaitUntilStopped) return;
                 _fixture.Axis.Moving = true;
+                if (CancellationGate != null) token.Register(() => CancellationGate.Task.GetAwaiter().GetResult());
                 try { await Task.Delay(Timeout.Infinite, token); } finally { _fixture.Axis.Moving = false; }
             }
             /// <summary>根据测试安排接受或拒绝最终姿态。</summary>

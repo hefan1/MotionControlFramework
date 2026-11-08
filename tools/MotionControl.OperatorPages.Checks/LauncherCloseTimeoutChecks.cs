@@ -68,6 +68,8 @@ namespace MotionControl.OperatorPages.Checks
         {
             if (!ReferenceEquals(Field(type, "_session").GetValue(page), session) || !ReferenceEquals(content.Content, marker) || !timer.IsEnabled)
                 throw new InvalidOperationException("Timed-out or late close cleared Launcher session/UI or disabled recovery refresh.");
+            if (!(bool)Field(type, "_closingTaskSession").GetValue(page))
+                throw new InvalidOperationException("Timed-out or late close made the unconfirmed session available for preparation.");
         }
         /// <summary>持续处理界面续体直到任务结束，并设置检查自身的等待上限。</summary>
         private static void PumpUntil(Task task)

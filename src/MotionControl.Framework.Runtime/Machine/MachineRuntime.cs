@@ -117,6 +117,17 @@ namespace MotionControl.Framework.Runtime.Machine
         /// <summary>读取本次控制卡连接周期标识；同一 Runtime 对象重连也会改变。</summary>
         public Guid? ConnectionSessionId { get { lock (_readSessionLock) return _connectionSessionId; } }
 
+        /// <summary>控制器丢失后立即作废旧连接周期；不停止设备、不清除现场或恢复证据。</summary>
+        public void InvalidateConnectionSessionOnLoss()
+        {
+            lock (_readSessionLock)
+            {
+                _connectionSessionId = null;
+                _safetyObservationVersion++;
+                InvalidatePreparationRecordReuse();
+            }
+        }
+
         /// <summary>判断提交时的连接是否仍有效；这里只检查连接反馈，不采集轴或 IO。</summary>
         public bool IsConnectionSessionCurrent(Guid? session)
         {

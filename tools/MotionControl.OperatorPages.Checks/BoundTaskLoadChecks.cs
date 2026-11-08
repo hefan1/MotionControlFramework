@@ -89,6 +89,19 @@ namespace MotionControl.OperatorPages.Checks
                         && runtime.PreparationStations[0].StationId == (replace ? "replacement" : "old"),
                         "装载回滚覆盖了其他准备定义或遗漏归还设备。");
                 }
+                // 通知正常返回但替换了安装代次，也不能把另一份定义发布为任务准备。
+                EventHandler replaceWithoutError = null;
+                replaceWithoutError = (sender, args) =>
+                {
+                    runtime.PreparationChanged -= replaceWithoutError;
+                    runtime.ConfigurePreparations(new[] { replacement });
+                };
+                runtime.PreparationChanged += replaceWithoutError;
+                try { await Reject(Invoke("LoadTaskSessionAsync"), "准备"); }
+                finally { runtime.PreparationChanged -= replaceWithoutError; }
+                Require(Published() == null && !runtime.IsTaskEngineControlClaimed
+                    && runtime.PreparationStations[0].StationId == "replacement",
+                    "装载发布了不属于任务的准备定义，或回滚覆盖了新定义。");
                 // 同一 Runtime 在配置通知中失联。清理可操作该失败装载自身，不能发布已失效的任务。
                 EventHandler lost = null;
                 lost = (sender, args) => { runtime.PreparationChanged -= lost; card.Online = false; };
@@ -126,6 +139,67 @@ namespace MotionControl.OperatorPages.Checks
                 });
                 await Invoke("LoadTaskSessionAsync");
                 Require(Published() != null && runtime.IsTaskEngineControlClaimed, "当前连接没有正常发布任务。");
+
+                // 任务发布后若另有新安装，页面不能把它当作当前任务，关闭时也不能覆盖它。
+                var isPublished = type.GetMethod("HasPublishedPreparationSession", flags);
+                Require((bool)isPublished.Invoke(page, new object[] { runtime, runtime.ConnectionSessionId }),
+                    "已发布任务没有绑定实际安装的准备配置。");
+                Guid? lostSession = runtime.ConnectionSessionId;
+                long lostPreparationVersion = runtime.PreparationConfigurationVersion;
+                long lostSafetyVersion = runtime.SafetyObservationVersion;
+                type.GetMethod("MarkControllerConnectionLost", flags).Invoke(page, null);
+                Require(card.Online && !runtime.IsConnectionSessionCurrent(lostSession)
+                    && !(bool)isPublished.Invoke(page, new object[] { runtime, lostSession }),
+                    "连接丢失已锁存但底层反馈恢复时，旧任务范围仍被当成有效会话。");
+                await Reject(Invoke("EnsureTaskSessionAsync"), "连接");
+                await Reject(runtime.PrepareAsync(null, lostSession, lostPreparationVersion, runtime.ControlOwner,
+                    lostSafetyVersion, token), "变化");
+                await Invoke("CloseTaskSessionAsync", false);
+                await runtime.DisconnectAsync(token);
+                await runtime.ConnectAsync(token);
+                await Invoke("SetMachineContextAsync", runtime, cards, io, variables, new[] { oldPreparation });
+                await Invoke("LoadTaskSessionAsync");
+                Require((bool)isPublished.Invoke(page, new object[] { runtime, runtime.ConnectionSessionId }),
+                    "重新连接并读取任务后没有建立新的准备会话。");
+                // 两个关闭入口同时等待同一底层收尾时，只能恢复一次配置，两个调用均应得到一致结果。
+                object concurrentSession = Published();
+                object concurrentMachine = concurrentSession.GetType().GetProperty("Machine").GetValue(concurrentSession);
+                var concurrentCloseField = concurrentMachine.GetType().GetField("_closeTask", flags);
+                var delayedClose = new TaskCompletionSource<bool>();
+                concurrentCloseField.SetValue(concurrentMachine, delayedClose.Task);
+                Task closeFirst = Invoke("CloseTaskSessionAsync", false);
+                Task closeSecond = Invoke("CloseTaskSessionAsync", false);
+                concurrentCloseField.SetValue(concurrentMachine, null);
+                await (Task)concurrentMachine.GetType().GetMethod("CloseAsync").Invoke(concurrentMachine, null);
+                delayedClose.SetResult(true);
+                await Task.WhenAll(closeFirst, closeSecond);
+                Require(Published() == null && !runtime.IsTaskEngineControlClaimed,
+                    "并发关闭后会话或设备控制权没有安全释放。");
+                await Invoke("LoadTaskSessionAsync");
+                object closingSession = Published();
+                object closingMachine = closingSession.GetType().GetProperty("Machine").GetValue(closingSession);
+                var closeTaskField = closingMachine.GetType().GetField("_closeTask", flags);
+                var closeFailure = new TaskCompletionSource<bool>();
+                closeTaskField.SetValue(closingMachine, closeFailure.Task);
+                Task closing = Invoke("CloseTaskSessionAsync", false);
+                closeFailure.SetException(new IOException("simulated close failure"));
+                await Reject(closing, "simulated close failure");
+                Require(ReferenceEquals(Published(), closingSession)
+                    && !(bool)isPublished.Invoke(page, new object[] { runtime, runtime.ConnectionSessionId }),
+                    "关闭失败后仍将未确认会话作为可提交的准备范围。");
+                await Invoke("CloseTaskSessionAsync", false);
+                await Invoke("LoadTaskSessionAsync");
+                Require((bool)isPublished.Invoke(page, new object[] { runtime, runtime.ConnectionSessionId }),
+                    "安全关闭并重新读取后未恢复任务准备范围。");
+                runtime.ConfigurePreparations(new[] { replacement });
+                Require(!(bool)isPublished.Invoke(page, new object[] { runtime, runtime.ConnectionSessionId }),
+                    "已发布任务错误地认领了其他准备配置代次。");
+                await Reject(Invoke("CloseTaskSessionAsync", false), "设备准备配置未能恢复");
+                Require(Published() == null && !runtime.IsTaskEngineControlClaimed
+                    && runtime.PreparationStations[0].StationId == "replacement",
+                    "关闭任务时覆盖了其他准备配置或遗留了已关闭会话。");
+                await Invoke("LoadTaskSessionAsync");
+                Require(Published() != null && runtime.IsTaskEngineControlClaimed, "保留新定义后无法重新装载任务。");
 
                 object loadedSession = Published();
                 object loadedDevice = loadedSession.GetType().GetProperty("TaskDevice").GetValue(loadedSession);

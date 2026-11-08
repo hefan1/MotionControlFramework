@@ -101,6 +101,13 @@ namespace MotionControl.Host.Wpf.Tasks
         private DeviceVariableStore _variables;
         /// <summary>当前任务运行会话；创建时取得设备控制权。</summary>
         private TaskMonitorSession _session;
+        /// <summary>已发布任务实际安装的准备配置代次；变化后不能再当作该会话的准备范围。</summary>
+        private long _publishedPreparationVersion = -1;
+        /// <summary>任务关闭期间不再将其作为可提交准备的会话。</summary>
+        private bool _closingTaskSession;
+        /// <summary>同一会话的 Host 收尾任务，供并发关闭入口共同等待。</summary>
+        private Task _sessionCloseTask;
+        private bool _sessionClosePreservesBlocked;
         /// <summary>归还任务控制权后恢复设备原准备定义，防止跳过 C# 准备条件。</summary>
         private IReadOnlyList<IStationPreparation> _equipmentPreparations = new IStationPreparation[0];
         /// <summary>当前正式设备任务监控视图。</summary>
@@ -122,7 +129,10 @@ namespace MotionControl.Host.Wpf.Tasks
         internal bool HasPublishedPreparationSession(MachineRuntime runtime, Guid? session)
         {
             var device = _session?.TaskDevice as MotionControl.TaskEngine.MachineDevice.MachineTaskDevice;
-            return ReferenceEquals(runtime, _runtime) && session.HasValue && device?.BoundConnectionSessionId == session;
+            return !_closingTaskSession && IsControllerConnected() && runtime != null
+                && ReferenceEquals(runtime, _runtime) && runtime.IsConnectionSessionCurrent(session)
+                && device?.BoundConnectionSessionId == session
+                && runtime.PreparationConfigurationVersion == _publishedPreparationVersion;
         }
 
         /// <summary>返回当前会话身份，供恢复保护区分是否为同一次任务接管。</summary>
@@ -333,6 +343,7 @@ namespace MotionControl.Host.Wpf.Tasks
         {
             _machineContextVersion++;
             _controllerConnectionLost = true;
+            _runtime?.InvalidateConnectionSessionOnLoss();
             RefreshConnectionDisplay();
         }
         /// <summary>依据实际连接与会话状态刷新显示，不修改任务或设备。</summary>
@@ -427,6 +438,8 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>设备准备页复用当前正式任务会话，避免额外执行器争用控制卡。</summary>
         internal async Task EnsureTaskSessionAsync()
         {
+            if (!IsControllerConnected())
+                throw new InvalidOperationException("控制器连接未确认，请重新连接后读取设备准备配置。");
             if (_session != null) return;
             if (_commandInProgress) throw new InvalidOperationException("任务命令正在执行，请稍后再进入设备准备。");
             _commandInProgress = true;
@@ -471,6 +484,8 @@ namespace MotionControl.Host.Wpf.Tasks
                     CheckContext();
                     runtime.TryConfigurePreparations(preparations, null, out installedVersion);
                     CheckContext();
+                    if (runtime.PreparationConfigurationVersion != installedVersion)
+                        throw new InvalidOperationException("任务准备配置在读取期间发生变化，请核对当前配置后重新读取。");
                 }
                 catch (Exception loadError)
                 {
@@ -489,6 +504,7 @@ namespace MotionControl.Host.Wpf.Tasks
                     throw;
                 }
 
+                _publishedPreparationVersion = installedVersion;
                 _session = loaded;
                 _catalog = loaded.TaskDevice.Catalog;
                 _catalogFromLoadedSession = true;
@@ -694,7 +710,20 @@ namespace MotionControl.Host.Wpf.Tasks
         }
 
         /// <summary>检查会话未运行后关闭任务执行器；断卡和应用退出均复用此安全收尾。</summary>
-        internal async Task CloseTaskSessionAsync(bool preserveBlockedForShutdown = false)
+        internal Task CloseTaskSessionAsync(bool preserveBlockedForShutdown = false)
+        {
+            if (_sessionCloseTask != null && !_sessionCloseTask.IsCompleted)
+            {
+                if (_sessionClosePreservesBlocked != preserveBlockedForShutdown)
+                    throw new InvalidOperationException("另一种任务关闭交接正在执行，请等待完成后重试。");
+                return _sessionCloseTask;
+            }
+            _sessionClosePreservesBlocked = preserveBlockedForShutdown;
+            return _sessionCloseTask = CloseTaskSessionCoreAsync(preserveBlockedForShutdown);
+        }
+
+        /// <summary>一次关闭只恢复一次准备配置，并保留失败后的会话与诊断。</summary>
+        private async Task CloseTaskSessionCoreAsync(bool preserveBlockedForShutdown)
         {
             await RetryUnpublishedCleanupAsync();
             TaskMonitorSession session = _session;
@@ -705,6 +734,7 @@ namespace MotionControl.Host.Wpf.Tasks
                 throw new InvalidOperationException("任务仍在运行或等待停轴；先在任务运行页暂停或停止并确认安全状态。");
 
             _stateTimer.Stop();
+            _closingTaskSession = true;
             try
             {
                 Task close = preserveBlockedForShutdown ? session.Machine.CloseForShutdownAsync() : session.Machine.CloseAsync();
@@ -713,12 +743,24 @@ namespace MotionControl.Host.Wpf.Tasks
             }
             catch
             {
-                // 关闭失败仍须持续刷新资源待确认和报警状态，便于维护后重试。
+                // 关闭失败或超时后会话可能仍在收尾；保持准备范围不可提交，直至重试关闭成功。
                 _stateTimer.Start();
                 throw;
             }
-            if (_runtime != null && !_runtime.IsShutdownInProgress) _runtime.ConfigurePreparations(_equipmentPreparations);
+            if (!ReferenceEquals(_session, session))
+                throw new InvalidOperationException("任务会话在关闭期间发生变化，未清理当前会话。");
+            Exception restoreError = null;
+            try
+            {
+                // 关闭前若已有其他安装代次，保留它，不用旧设备定义覆盖。
+                if (_runtime != null && !_runtime.IsShutdownInProgress
+                    && !_runtime.TryConfigurePreparations(_equipmentPreparations, _publishedPreparationVersion, out _))
+                    throw new InvalidOperationException("准备配置已变化，未覆盖当前配置。");
+            }
+            catch (Exception error) { restoreError = error; }
             _session = null;
+            _publishedPreparationVersion = -1;
+            _closingTaskSession = false;
             _monitor = null;
             _monitorContent.Content = null;
             _taskSource = null;
@@ -728,6 +770,8 @@ namespace MotionControl.Host.Wpf.Tasks
             UpdateCommandAvailability();
             RefreshPageText();
             _host.RefreshMachineStateDisplay();
+            if (restoreError != null)
+                throw new InvalidOperationException("任务会话已关闭，但设备准备配置未能恢复；请核对当前配置。", restoreError);
         }
 
         /// <summary>读取当前会话冻结目录，或在没有会话时读取当前保存配置。</summary>

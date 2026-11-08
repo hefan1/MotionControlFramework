@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
@@ -10,6 +11,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
 using MotionControl.Framework.Contracts.Preparation;
+using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Runtime.Machine;
 
 namespace MotionControl.Host.Wpf.Operation
@@ -33,6 +35,15 @@ namespace MotionControl.Host.Wpf.Operation
         private readonly Action<string> _navigate;
         /// <summary>稳定的工位行，刷新时保持操作员选择。</summary>
         private readonly ObservableCollection<PreparationRow> _rows = new ObservableCollection<PreparationRow>();
+        /// <summary>当前行所属的连接、入口及准备配置；变化时必须重新选择。</summary>
+        private MachineRuntime _rowRuntime;
+        private Guid? _rowSession;
+        private MachineControlOwner _rowOwner;
+        private long _rowVersion = -1;
+        private long _rowObservationVersion = -1;
+        private bool _rowScopeTrusted;
+        /// <summary>清理失效选择会触发选择事件，避免刷新重入。</summary>
+        private bool _refreshing;
         /// <summary>只读采集准备进度的界面定时器。</summary>
         private readonly DispatcherTimer _timer;
         /// <summary>当前页面是否正在装载或发起准备，阻止重复点击。</summary>
@@ -109,6 +120,15 @@ namespace MotionControl.Host.Wpf.Operation
         /// <summary>将 Runtime 快照转换为简单的工位、状态和动作显示。</summary>
         private void Refresh()
         {
+            if (_refreshing) return;
+            _refreshing = true;
+            try { RefreshCore(); }
+            finally { _refreshing = false; }
+        }
+
+        /// <summary>只展示同一连接和已确认入口中的准备快照。</summary>
+        private void RefreshCore()
+        {
             if (SummaryText == null) return;
             StartConditionsButton.Content = PageText("启动条件", "Start conditions");
             ReturnToPreparationButton.Content = PageText("返回设备准备", "Back to preparation");
@@ -117,14 +137,46 @@ namespace MotionControl.Host.Wpf.Operation
             StartConditionsTitle.Text = PageText("启动条件摘要 / 只读", "Start conditions / read only");
             RefreshStartConditionsSnapshot();
             StationColumn.Header = T("工位"); StateColumn.Header = T("准备状态"); ActionColumn.Header = T("当前动作");
-            var session = _runtime?.ConnectionSessionId;
-            bool connected = _runtime != null && _runtime.IsConnectionSessionCurrent(session);
-            long stationListVersion = connected ? _runtime.PreparationConfigurationVersion : -1;
-            var snapshots = connected ? _runtime.PreparationStations : null;
-            if (connected && !_runtime.IsConnectionSessionCurrent(session))
+            var observedRuntime = _runtime;
+            var session = observedRuntime?.ConnectionSessionId;
+            bool connected = observedRuntime != null && observedRuntime.IsConnectionSessionCurrent(session);
+            var owner = connected ? observedRuntime.ControlOwner : MachineControlOwner.None;
+            long stationListVersion = connected ? observedRuntime.PreparationConfigurationVersion : -1;
+            long observationVersion = connected ? observedRuntime.SafetyObservationVersion : -1;
+            IReadOnlyList<StationPreparationSnapshot> snapshots = null;
+            Exception scopeError = null;
+            bool task = owner == MachineControlOwner.TaskEngine;
+            if (connected)
             {
-                connected = false;
-                snapshots = null;
+                try
+                {
+                    bool published = !task || _hasPublishedTaskSession?.Invoke(observedRuntime, session) == true;
+                    if (published) snapshots = observedRuntime.PreparationStations;
+                    if ((task && _hasPublishedTaskSession?.Invoke(observedRuntime, session) != true)
+                        || !ReferenceEquals(observedRuntime, _runtime) || !observedRuntime.IsConnectionSessionCurrent(session)
+                        || observedRuntime.ControlOwner != owner || observationVersion < 0
+                        || observedRuntime.SafetyObservationVersion != observationVersion
+                        || observedRuntime.PreparationConfigurationVersion != stationListVersion)
+                        snapshots = null;
+                }
+                catch (Exception error) { scopeError = error; snapshots = null; }
+                if (!ReferenceEquals(observedRuntime, _runtime) || !observedRuntime.IsConnectionSessionCurrent(session))
+                    connected = false;
+            }
+            bool scopeTrusted = connected && snapshots != null;
+            bool scopeChanged = !_rowScopeTrusted || !scopeTrusted || !ReferenceEquals(_rowRuntime, observedRuntime)
+                || _rowSession != session || _rowOwner != owner || _rowVersion != stationListVersion
+                || _rowObservationVersion != observationVersion;
+            _rowRuntime = observedRuntime;
+            _rowSession = session;
+            _rowOwner = owner;
+            _rowVersion = stationListVersion;
+            _rowObservationVersion = observationVersion;
+            _rowScopeTrusted = scopeTrusted;
+            if (scopeChanged)
+            {
+                StationsGrid.SelectedItem = null;
+                _rows.Clear();
             }
             if (snapshots != null)
             {
@@ -146,6 +198,7 @@ namespace MotionControl.Host.Wpf.Operation
                 : clearing ? T("清料中或等待停止确认")
                 : preparing ? T("正在准备设备")
                 : recoveryBlocked ? T("设备恢复信息未确认")
+                : !scopeTrusted ? PageText("准备范围待确认，请查看生产流程。", "Preparation scope is unconfirmed. Check the production page.")
                 : _rows.Count == 0 ? T("当前未配置工位回零")
                 : completed == _rows.Count ? T("配置工位已准备完成")
                 : string.Format(T("已准备 {0} / {1} 个工位"), completed, _rows.Count);
@@ -164,13 +217,16 @@ namespace MotionControl.Host.Wpf.Operation
             ErrorText.Text = errorText.Length > 240 ? errorText.Substring(0, 240) + "…" : errorText;
             string recoveryDiagnostic = recoveryBlocked ? BuildRecoveryDiagnostic() : null;
             DiagnosticText.Text = recoveryDiagnostic ?? _diagnostic ?? string.Empty;
+            if (scopeError != null)
+                DiagnosticText.Text += (DiagnosticText.Text.Length == 0 ? string.Empty : "\n\n") + scopeError;
             DiagnosticExpander.Visibility = string.IsNullOrWhiteSpace(DiagnosticText.Text) ? Visibility.Collapsed : Visibility.Visible;
             ReadOnlyChecksText.Text = BuildReadOnlyChecks(connected);
             bool canPrepare = connected && !preparing && !recoveryBlocked && !_commandInProgress
                 && (_runtime.State == MachineRunState.Ready || _runtime.State == MachineRunState.ResetRequired || _runtime.State == MachineRunState.Paused);
-            PrepareAllButton.IsEnabled = canPrepare && (_rows.Count > 0 || _runtime.ControlOwner == MotionControl.Framework.Contracts.Flow.MachineControlOwner.TaskEngine);
+            PrepareAllButton.IsEnabled = canPrepare && scopeError == null
+                && (_rows.Count > 0 || _runtime.ControlOwner == MotionControl.Framework.Contracts.Flow.MachineControlOwner.TaskEngine);
             PrepareAllButton.Opacity = PrepareAllButton.IsEnabled ? 1.0 : 0.5;
-            PrepareSelectedButton.IsEnabled = canPrepare && StationsGrid.SelectedItem != null;
+            PrepareSelectedButton.IsEnabled = canPrepare && scopeTrusted && StationsGrid.SelectedItem != null;
             StopPreparationButton.IsEnabled = preparing;
             StopPreparationButton.Content = T(clearing ? "停止清料" : "停止回零");
             var selected = StationsGrid.SelectedItem as PreparationRow;
@@ -178,7 +234,12 @@ namespace MotionControl.Host.Wpf.Operation
                 : selected.Name + " · " + selected.StateText + "\n" + selected.Action
                     + (string.IsNullOrWhiteSpace(selected.Detail) ? string.Empty : "\n" + SimplifyError(selected.Detail));
             var previewRuntime = _runtime;
-            string previewText = BuildDependencyPreview(selected, session, stationListVersion);
+            string previewText = !scopeTrusted && connected
+                ? task ? PageText("所选回零范围待确认。当前配置的任务准备会话尚未确认。",
+                    "Selected homing scope is unknown. No task preparation session is confirmed for the current configuration.")
+                    : PageText("所选回零范围待确认，请重新核对当前准备配置。",
+                        "Selected homing scope is unknown. Review the current preparation configuration.")
+                : BuildDependencyPreview(selected, session, stationListVersion);
             if (ReferenceEquals(previewRuntime, _runtime) && ReferenceEquals(selected, StationsGrid.SelectedItem))
                 DependencyPreviewText.Text = previewText;
         }
@@ -317,19 +378,38 @@ namespace MotionControl.Host.Wpf.Operation
         private async Task PrepareAsync(string stationId)
         {
             if (_runtime == null || _commandInProgress) return;
+            var commandRuntime = _runtime;
+            var commandSession = commandRuntime.ConnectionSessionId;
+            var commandOwner = commandRuntime.ControlOwner;
+            long selectedVersion = _rowVersion;
+            long selectedObservationVersion = _rowObservationVersion;
+            bool displayedScopeBound = _rowScopeTrusted && ReferenceEquals(commandRuntime, _rowRuntime)
+                && commandSession == _rowSession && commandOwner == _rowOwner;
+            bool selectedScopeValid = stationId == null ? displayedScopeBound || (!_rowScopeTrusted && commandOwner == MachineControlOwner.TaskEngine)
+                : displayedScopeBound && (StationsGrid.SelectedItem as PreparationRow)?.Id == stationId;
             _commandInProgress = true; _error = null; _diagnostic = null; DiagnosticExpander.IsExpanded = false; Refresh();
             try
             {
-                var commandRuntime = _runtime;
-                var session = commandRuntime.ConnectionSessionId;
-                if (!commandRuntime.IsConnectionSessionCurrent(session))
+                if (!selectedScopeValid)
+                    throw new InvalidOperationException(PageText("所选准备范围已变化，请重新选择工位。", "The selected preparation scope changed. Select the station again."));
+                if (!commandRuntime.IsConnectionSessionCurrent(commandSession))
                     throw new InvalidOperationException(PageText("控制器连接会话未确认，请重新连接后提交回零。",
                         "Controller session unconfirmed. Reconnect before requesting homing."));
                 if (_ensureConfiguration != null) await _ensureConfiguration();
                 if (!ReferenceEquals(commandRuntime, _runtime))
                     throw new InvalidOperationException(PageText("设备连接已变化，请重新核对后提交回零。",
                         "The device connection changed. Review the current device before requesting homing again."));
-                await commandRuntime.PrepareAsync(stationId, session, CancellationToken.None);
+                // 已展示范围的全部/所选命令都绑定点击时的代次；只有尚未读取任务的全部回零允许装载后取代次。
+                long preparationVersion = displayedScopeBound ? selectedVersion : commandRuntime.PreparationConfigurationVersion;
+                long safetyVersion = displayedScopeBound ? selectedObservationVersion : commandRuntime.SafetyObservationVersion;
+                if (!commandRuntime.IsConnectionSessionCurrent(commandSession) || commandRuntime.ControlOwner != commandOwner
+                    || (commandOwner == MachineControlOwner.TaskEngine && _hasPublishedTaskSession?.Invoke(commandRuntime, commandSession) != true)
+                    || commandRuntime.PreparationConfigurationVersion != preparationVersion || safetyVersion < 0
+                    || commandRuntime.SafetyObservationVersion != safetyVersion)
+                    throw new InvalidOperationException(PageText("设备准备范围或会话已变化，请重新核对后提交回零。",
+                        "The preparation scope or session changed. Review it before requesting homing."));
+                await commandRuntime.PrepareAsync(stationId, commandSession, preparationVersion, commandOwner,
+                    safetyVersion, CancellationToken.None);
             }
             catch (OperationCanceledException) { _error = T("回零已停止，请检查当前机构状态后重新回零。"); }
             catch (Exception error) { SetError(error); }

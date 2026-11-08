@@ -85,11 +85,12 @@ namespace MotionControl.OperatorPages.Checks
             Check("启动条件摘要的只读导航", PreparationStartConditionsChecks.Run, ref failures);
             Check("启动条件部分观察与上下文隔离", StartConditionsObservationChecks.Run, ref failures);
             Check("设备准备依赖顺序预览", PreparationDependencyPreviewChecks.Run, ref failures);
+            Check("准备提交期间配置变化与按需装载", () => RunUiAsync(PreparationDependencyPreviewChecks.RunSubmissionAsync), ref failures);
             Check("资源确认先核查现场并拒绝 IO 异常和变化", ResourceRecoveryUiChecks.Run, ref failures);
             Check("产品记录只读显示两种来源及错误", ProductRecordChecks.Run, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：54 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：55 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }
@@ -348,7 +349,7 @@ namespace MotionControl.OperatorPages.Checks
                 controlOwner: MachineControlOwner.TaskEngine);
             runtime.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
             bool loaded = false;
-            object taskSessionIdentity = new object();
+            object taskSessionIdentity = null;
             var snapshot = OperationSnapshot.Read(runtime);
             Assert(snapshot.ControlOwner == MachineControlOwner.TaskEngine && snapshot.Stations.Count == 0,
                 "任务入口快照包含未运行的 C# 工位。");
@@ -361,6 +362,12 @@ namespace MotionControl.OperatorPages.Checks
                 && ((ItemsControl)overview.FindName("StationTable")).Items.Count == 0
                 && ((FrameworkElement)overview.FindName("AggregateMetrics")).Visibility == Visibility.Collapsed,
                 "总览未正确显示任务未读取，或显示了其他入口工位及统计。");
+            Assert(!((TextBlock)overview.FindName("SelectedStationText")).Text.Contains("身份"),
+                "确认任务尚未读取时，总览错误显示会话身份待确认。");
+            taskSessionIdentity = new object(); overview.RefreshDisplay();
+            Assert(!((TextBlock)overview.FindName("TaskRunStatusText")).Text.Contains("尚未读取"),
+                "任务状态与会话身份冲突时错误地断言任务尚未读取。");
+            taskSessionIdentity = null; overview.RefreshDisplay();
             OperatorNavigationEventArgs navigation = null;
             overview.NavigationRequested += (sender, e) => navigation = e;
             FindButton(overview, "查看工位运行").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -373,7 +380,7 @@ namespace MotionControl.OperatorPages.Checks
             navigation = null; flow.NavigationRequested += (sender, e) => navigation = e;
             FindButton(flow, "查看任务运行").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert(navigation != null && navigation.Page == "任务接入状态", "流程状态没有导航到任务运行页。");
-            loaded = true; overview.RefreshDisplay(); flow.RefreshLocalizedText();
+            loaded = true; taskSessionIdentity = new object(); overview.RefreshDisplay(); flow.RefreshLocalizedText();
             Assert(((TextBlock)overview.FindName("TaskRunStatusText")).Text.Contains("已读取")
                 && ((TextBlock)flow.FindName("TaskRunStatusText")).Text.Contains("已读取"), "已读取会话状态未更新。");
             overview.SetConnectionStatus(false, "连接中断"); flow.MarkControllerConnectionLost();

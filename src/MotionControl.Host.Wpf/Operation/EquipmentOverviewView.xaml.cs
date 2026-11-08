@@ -86,6 +86,8 @@ namespace MotionControl.Host.Wpf.Operation
         private bool _stationTableTaskIdentityKnown;
         /// <summary>当前工位表所属任务运行会话对象。</summary>
         private object _stationTableTaskIdentity;
+        /// <summary>本次采样已同时确认任务未读取且会话身份为空。</summary>
+        private bool _stationTableTaskNotLoaded;
         private Guid? _stationTableSession;
 
         /// <summary>Host 的失联提示和 Runtime 的真实会话均可使当前观察失效。</summary>
@@ -113,9 +115,9 @@ namespace MotionControl.Host.Wpf.Operation
             string key = station == null ? null : string.IsNullOrEmpty(station.Id) ? station.Name : station.Id;
             if (item == null)
             {
-                bool taskIdentityMissing = snapshot?.ControlOwner == MachineControlOwner.TaskEngine
+                bool taskIdentityMissing = !_stationTableTaskNotLoaded && snapshot?.ControlOwner == MachineControlOwner.TaskEngine
                     && (!_stationTableTaskIdentityKnown || _stationTableTaskIdentity == null);
-                SelectedStationText.Text = taskIdentityMissing ? T("任务会话身份待确认")
+                SelectedStationText.Text = _stationTableTaskNotLoaded ? string.Empty : taskIdentityMissing ? T("任务会话身份待确认")
                     : _selectionNeedsUserChoice ? T("总览上下文已变化请重新选择") : string.Empty;
                 SelectedFlowButton.Tag = SelectedReasonButton.Tag = SelectedInputButton.Tag = null;
                 SelectedFlowButton.IsEnabled = SelectedReasonButton.IsEnabled = SelectedInputButton.IsEnabled = false;
@@ -154,7 +156,8 @@ namespace MotionControl.Host.Wpf.Operation
         }
         /// <summary>按当前真实来源生成可滚动工位表；没有稳定身份不跨刷新猜测选择。</summary>
         private void UpdateStationTable(OperationSnapshot snapshot, bool connectionLost,
-            MachineRuntime runtime, Guid? connectionSession, bool taskIdentityKnown, object taskSessionIdentity)
+            MachineRuntime runtime, Guid? connectionSession, bool taskIdentityKnown, object taskSessionIdentity,
+            bool taskNotLoaded)
         {
             _updatingStationTable = true;
             bool contextChanged = _hasStationTableContext
@@ -180,6 +183,7 @@ namespace MotionControl.Host.Wpf.Operation
             _stationTableSnapshot = snapshot;
             _stationTableTaskIdentityKnown = taskIdentityKnown;
             _stationTableTaskIdentity = taskSessionIdentity;
+            _stationTableTaskNotLoaded = taskNotLoaded;
             bool taskIdentityUsable = snapshot.ControlOwner != MachineControlOwner.TaskEngine
                 || (taskIdentityKnown && taskSessionIdentity != null);
             if (!taskIdentityUsable)
@@ -326,6 +330,7 @@ namespace MotionControl.Host.Wpf.Operation
             bool taskIdentityBeforeKnown = false;
             bool taskOwnerBeforeSample = false;
             bool taskIdentitySamplingChanged = false;
+            bool taskIdentityAfterKnown = false;
             Exception taskIdentityReadError = null;
             if (!connectionLost && _preview == null && runtime != null)
             {
@@ -356,7 +361,6 @@ namespace MotionControl.Host.Wpf.Operation
                 }
                 if (_preview == null && snapshot.ControlOwner == MachineControlOwner.TaskEngine)
                 {
-                    bool taskIdentityAfterKnown = false;
                     if (_taskSessionIdentityProvider != null)
                     {
                         try
@@ -367,11 +371,10 @@ namespace MotionControl.Host.Wpf.Operation
                         catch (Exception error) { taskIdentityReadError = taskIdentityReadError ?? error; }
                     }
                     taskIdentitySamplingChanged = taskOwnerBeforeSample && taskIdentityBeforeKnown
-                        && taskIdentityBeforeSample != null && taskIdentityAfterKnown
-                        && taskSessionIdentity != null && !ReferenceEquals(taskIdentityBeforeSample, taskSessionIdentity);
+                        && taskIdentityAfterKnown && !ReferenceEquals(taskIdentityBeforeSample, taskSessionIdentity);
                     taskIdentityKnown = taskOwnerBeforeSample && taskIdentityBeforeKnown && taskIdentityAfterKnown
                         && taskIdentityBeforeSample != null && taskSessionIdentity != null
-                        && ReferenceEquals(taskIdentityBeforeSample, taskSessionIdentity);
+                        && ReferenceEquals(taskIdentityBeforeSample, taskSessionIdentity) && taskLoaded != false;
                     if (!taskIdentityKnown)
                     {
                         snapshot.Stations.Clear();
@@ -414,6 +417,10 @@ namespace MotionControl.Host.Wpf.Operation
             MachineRunState? displayState = connectionLost ? MachineRunState.Disconnected : snapshot.State;
             string recoveryReason = _preview == null ? _runtime?.RecoveryBlockReason : null;
             bool recoveryBlocked = !string.IsNullOrWhiteSpace(recoveryReason);
+            bool taskNotLoaded = taskOwner && !connectionLost && !recoveryBlocked && taskLoaded == false
+                && taskOwnerBeforeSample && taskIdentityBeforeKnown && taskIdentityAfterKnown
+                && taskIdentityBeforeSample == null && taskSessionIdentity == null
+                && taskIdentityReadError == null && snapshot.StationReadError == null;
             bool clearing = _preview == null && (_runtime?.IsClearing ?? false);
             bool activeOperation = displayState == MachineRunState.Running || displayState == MachineRunState.Preparing || displayState == MachineRunState.Pausing || (_runtime?.IsPreparing ?? false) || (_runtime?.IsClearing ?? false);
             bool recoveryHeadline = recoveryBlocked && !connectionLost && !activeOperation && displayState != MachineRunState.Alarmed && snapshot.HasRuntime;
@@ -477,7 +484,7 @@ namespace MotionControl.Host.Wpf.Operation
                 : taskOwner && !taskIdentityKnown && (taskIdentityReadError != null || snapshot.StationReadError != null)
                     ? T("工位状态读取失败") + "：" + (taskIdentityReadError ?? snapshot.StationReadError).Message
                 : recoveryBlocked ? T("恢复未确认工位数据未知")
-                : taskOwner && taskLoaded == false ? T("任务未读取请先读取")
+                : taskNotLoaded ? T("任务未读取请先读取")
                 : taskOwner && !taskIdentityKnown ? T("任务会话身份待确认")
                 : snapshot.StationReadError != null ? T("工位状态读取失败") + "：" + snapshot.StationReadError.Message
                 : T(!taskLoaded.HasValue ? "任务会话状态待查看"
@@ -490,7 +497,7 @@ namespace MotionControl.Host.Wpf.Operation
             EmptyText.Visibility = snapshot.Stations.Count == 0 && !taskOwner ? Visibility.Visible : Visibility.Collapsed;
             StationTable.Visibility = connectionLost ? Visibility.Collapsed : Visibility.Visible;
             UpdateStationTable(snapshot, connectionLost, runtime, connectionLost ? null : session,
-                taskIdentityKnown, taskSessionIdentity);
+                taskIdentityKnown, taskSessionIdentity, taskNotLoaded);
             if (connectionLost) SelectedStationText.Text = T("总览工位步骤与输入未知");
             if (!snapshot.HasRuntime || (connectionLost && snapshot.Alarms.Count == 0))
             {
