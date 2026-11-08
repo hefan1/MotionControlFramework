@@ -30,6 +30,14 @@ namespace MotionControl.Host.Wpf.Operation
         private string _selectedKey;
         /// <summary>替换列表期间不把临时空选择当作人员操作。</summary>
         private bool _refreshing;
+        /// <summary>当前列表是否为断连后的留存记录。</summary>
+        private bool _rowsRetained;
+        /// <summary>本次显示所依据的连接周期；点击导航时重新核对。</summary>
+        private Guid? _displaySession;
+        /// <summary>有 Runtime 但连接周期无法确认时，不能把软件记录当成现场状态。</summary>
+        private bool _connectionUnconfirmed;
+        /// <summary>记录最近布局，避免轮询时反复改变工作区。</summary>
+        private bool? _layoutNarrow, _layoutHasDetails;
         /// <summary>只在可见时刷新报警软件状态。</summary>
         private readonly DispatcherTimer _timer;
         /// <summary>初始化空状态与只读列表。</summary>
@@ -66,6 +74,32 @@ namespace MotionControl.Host.Wpf.Operation
         private void ViewLoaded(object sender, RoutedEventArgs e) { RefreshDisplay(); _timer.Start(); }
         /// <summary>离开后停止轮询，选择和筛选内容继续保留。</summary>
         private void ViewUnloaded(object sender, RoutedEventArgs e) { _timer.Stop(); }
+        /// <summary>根据窗口宽度和选中报警调整列表与指导的位置。</summary>
+        private void AlarmWorkspace_SizeChanged(object sender, SizeChangedEventArgs e) { UpdateAlarmLayout(); }
+        /// <summary>宽屏并列、窄屏上下；没有报警详情时列表使用完整工作区。</summary>
+        private void UpdateAlarmLayout()
+        {
+            bool narrow = AlarmWorkspace.ActualWidth < 1100;
+            bool hasDetails = DetailsPanel.Visibility == Visibility.Visible;
+            if (_layoutNarrow == narrow && _layoutHasDetails == hasDetails) return;
+            _layoutNarrow = narrow; _layoutHasDetails = hasDetails;
+            AlarmListColumn.Width = new GridLength(hasDetails && !narrow ? 1.2 : 1, GridUnitType.Star);
+            AlarmGapColumn.Width = new GridLength(hasDetails && !narrow ? 10 : 0);
+            AlarmDetailsColumn.Width = hasDetails && !narrow ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+            AlarmListRow.Height = hasDetails && narrow ? new GridLength(130) : new GridLength(1, GridUnitType.Star);
+            AlarmListRow.MinHeight = hasDetails && narrow ? 100 : 0;
+            AlarmGapRow.Height = new GridLength(hasDetails && narrow ? 8 : 0);
+            AlarmDetailsRow.Height = hasDetails && narrow ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+            AlarmDetailsRow.MinHeight = hasDetails && narrow ? 160 : 0;
+            Grid.SetColumn(DetailsPanel, hasDetails && !narrow ? 2 : 0);
+            Grid.SetRow(DetailsPanel, hasDetails && narrow ? 2 : 0);
+        }
+        /// <summary>处理指导超出视口时明确提示可以滚动，查看入口始终保留在底部。</summary>
+        private void AlarmDetailsScroll_Changed(object sender, ScrollChangedEventArgs e)
+        {
+            if (AlarmScrollHint != null)
+                AlarmScrollHint.Visibility = e.ExtentHeight > e.ViewportHeight + 0.5 ? Visibility.Visible : Visibility.Collapsed;
+        }
         /// <summary>轮询只读报警服务，不读取硬件。</summary>
         private void TimerTick(object sender, EventArgs e) { RefreshDisplay(); }
         /// <summary>刷新按钮不复位或清除报警。</summary>
@@ -77,7 +111,15 @@ namespace MotionControl.Host.Wpf.Operation
         /// <summary>按当前快照更新列表，未变化时保持已有行和滚动位置。</summary>
         public void RefreshDisplay(bool force = false)
         {
-            try { _snapshot = _preview ?? OperationSnapshot.Read(_runtime, _taskStationProvider); }
+            try
+            {
+                Guid? session = _runtime?.ConnectionSessionId;
+                _snapshot = _preview ?? OperationSnapshot.Read(_runtime, _taskStationProvider);
+                bool current = _preview != null ? _snapshot.State != MachineRunState.Disconnected
+                    : _runtime != null && _runtime.IsConnectionSessionCurrent(session);
+                _connectionUnconfirmed = _snapshot.HasRuntime && !current;
+                _displaySession = _preview == null && current ? session : null;
+            }
             catch (Exception error)
             {
                 // 读取失败不能显示零报警，保留完整诊断并禁用旧记录导航。
@@ -92,7 +134,10 @@ namespace MotionControl.Host.Wpf.Operation
                 EmptyText.Visibility = Visibility.Visible;
                 AlarmGrid.ItemsSource = null;
                 _rows.Clear();
+                _displaySession = null;
+                _connectionUnconfirmed = true;
                 DetailsPanel.Visibility = Visibility.Collapsed;
+                UpdateAlarmLayout();
                 FlowButton.IsEnabled = IoButton.IsEnabled = AxisButton.IsEnabled = false;
                 return;
             }
@@ -100,44 +145,48 @@ namespace MotionControl.Host.Wpf.Operation
             string query = SearchBox.Text.Trim();
             ClearFilterButton.IsEnabled = SearchBox.Text.Length > 0;
             var alarms = _snapshot.Alarms.Where(alarm => Matches(alarm, query)).OrderBy(alarm => alarm.Definition.Kind == MachineAlarmKind.StopMachine ? 0 : 1).ThenByDescending(alarm => alarm.FirstRaisedAtUtc).ToList();
-            SourceText.Text = T(_snapshot.IsPreview ? "离线页面示例" : "状态来源：设备运行数据") + " · " + T("软件状态采样") + " " + _snapshot.SampledAt.ToString("yyyy-MM-dd HH:mm:ss");
-            if (_snapshot.StationReadError != null)
+            SourceText.Text = !_snapshot.HasRuntime && !_snapshot.IsPreview ? T("报警来源未提供")
+                : T(_snapshot.IsPreview ? "离线页面示例" : "状态来源：设备运行数据") + " · " + T("软件状态采样") + " "
+                    + _snapshot.SampledAt.ToString("yyyy-MM-dd HH:mm:ss") + " · " + T("报警为软件记录，不代表实时输入");
+            if (!_connectionUnconfirmed && _snapshot.StationReadError != null)
                 SourceText.Text += " · " + T("工位状态读取失败") + "：" + _snapshot.StationReadError.Message;
             if (!_snapshot.HasRuntime)
             {
                 CountText.Text = T("未读取报警状态");
             }
-            else if (_snapshot.State == MachineRunState.Disconnected)
+            else if (_connectionUnconfirmed)
             {
-                CountText.Text = string.Format(T("断连会话报警计数"), _snapshot.Alarms.Count, _snapshot.Alarms.Count(alarm => alarm.RequiresReset), _snapshot.Alarms.Count(alarm => !alarm.RequiresReset));
+                CountText.Text = string.Format(T("留存报警记录计数"), _snapshot.Alarms.Count, _snapshot.Alarms.Count(alarm => alarm.RequiresReset), _snapshot.Alarms.Count(alarm => !alarm.RequiresReset));
             }
             else
             {
                 int stopAlarmCount = _snapshot.Alarms.Count(alarm => alarm.RequiresReset);
                 int noticeCount = _snapshot.Alarms.Count - stopAlarmCount;
                 CountText.Text = string.Format(
-                    T("报警数量摘要"), _snapshot.Alarms.Count, stopAlarmCount, noticeCount);
+                    T("报警记录数量摘要"), _snapshot.Alarms.Count, stopAlarmCount, noticeCount);
             }
-            FilterCountText.Text = !_snapshot.HasRuntime || _snapshot.State == MachineRunState.Disconnected
+            FilterCountText.Text = !_snapshot.HasRuntime || _connectionUnconfirmed
                 ? T("报警筛选数量未知") : string.Format(T("报警筛选数量格式"), alarms.Count, _snapshot.Alarms.Count);
-            EmptyText.Text = !_snapshot.HasRuntime ? T("未读取报警状态") : _snapshot.Alarms.Count == 0 ? T("当前无报警") : T("没有匹配的报警");
+            EmptyText.Text = !_snapshot.HasRuntime ? T("未读取报警状态") : _snapshot.Alarms.Count == 0 ? T("报警服务当前无记录") : T("没有匹配的报警");
             string recoveryReason = _preview == null ? _runtime?.RecoveryBlockReason : null;
             if (!string.IsNullOrWhiteSpace(recoveryReason))
             {
                 SourceText.Text += "\n" + RecoveryGuidance() + recoveryReason;
                 if (_snapshot.HasRuntime && _snapshot.Alarms.Count == 0)
-                    EmptyText.Text = _guidanceEnglish ? "No alarms recorded in this session; equipment recovery remains unconfirmed." : "当前会话未记录报警，设备恢复信息仍未确认";
+                    EmptyText.Text = _guidanceEnglish ? "No alarms recorded by the software service; equipment recovery remains unconfirmed." : "软件报警服务未记录报警，设备恢复信息仍未确认";
             }
-            if (_snapshot.State == MachineRunState.Disconnected)
-                SourceText.Text += "\n" + T("断连报警状态未知");
-            if (_snapshot.State == MachineRunState.Disconnected && alarms.Count == 0)
-                EmptyText.Text = string.IsNullOrWhiteSpace(recoveryReason) ? T("断连报警状态未知")
-                    : EmptyText.Text + "\n" + T("断连报警状态未知");
+            if (_connectionUnconfirmed)
+                SourceText.Text += "\n" + T("连接未确认报警状态未知");
+            if (_connectionUnconfirmed && alarms.Count == 0)
+                EmptyText.Text = string.IsNullOrWhiteSpace(recoveryReason) ? T("连接未确认报警状态未知")
+                    : EmptyText.Text + "\n" + T("连接未确认报警状态未知");
             EmptyText.Visibility = alarms.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            if (force || !_rows.Select(row => row.Alarm).SequenceEqual(alarms))
+            bool retained = _connectionUnconfirmed;
+            if (force || _rowsRetained != retained || !_rows.Select(row => row.Alarm).SequenceEqual(alarms))
             {
                 _refreshing = true;
-                _rows = alarms.Select(alarm => new AlarmDisplayRow(alarm, T)).ToList();
+                _rows = alarms.Select(alarm => new AlarmDisplayRow(alarm, T, retained)).ToList();
+                _rowsRetained = retained;
                 AlarmGrid.ItemsSource = _rows;
                 AlarmGrid.SelectedItem = _rows.FirstOrDefault(row => row.Key == _selectedKey) ?? _rows.FirstOrDefault();
                 _refreshing = false;
@@ -163,26 +212,23 @@ namespace MotionControl.Host.Wpf.Operation
         private void ShowDetails()
         {
             var row = AlarmGrid.SelectedItem as AlarmDisplayRow;
-            FlowButton.IsEnabled = row != null && _snapshot.Stations.Count(station => MatchesStation(station, row.Alarm.SourceName)) == 1;
-            IoButton.IsEnabled = AxisButton.IsEnabled = row != null;
+            bool retained = _connectionUnconfirmed;
+            FlowButton.IsEnabled = row != null && !retained;
+            IoButton.IsEnabled = AxisButton.IsEnabled = row != null && !retained;
             if (row == null)
             {
                 DetailsPanel.Visibility = Visibility.Collapsed;
-                DetailsRow.MinHeight = 0;
-                DetailsRow.Height = new GridLength(0);
+                UpdateAlarmLayout();
                 WhereText.Text = CauseText.Text = CheckText.Text = AfterText.Text = string.Empty;
                 DiagnosticText.Clear();
                 return;
             }
             DetailsPanel.Visibility = Visibility.Visible;
-            DetailsRow.MinHeight = 160;
-            DetailsRow.Height = new GridLength(1.6, GridUnitType.Star);
+            UpdateAlarmLayout();
             _selectedKey = row.Key;
             var alarm = row.Alarm;
-            CauseTitle.Text = T(alarm.RequiresReset ? "2 当前为什么不能运行" : "2 当前提醒条件");
-            var matchingStations = _snapshot.Stations.Where(station => MatchesStation(station, alarm.SourceName)).Take(2).ToArray();
-            var flow = matchingStations.Length == 1 ? matchingStations[0] : null;
-            WhereText.Text = alarm.SourceName + (flow == null ? "" : "\n" + T("当前动作") + "：" + flow.CurrentStep);
+            CauseTitle.Text = T("2 报警记录状态");
+            WhereText.Text = alarm.SourceName;
             CauseText.Text = alarm.Definition.Message + "\n" + row.ConditionText;
             string catalogGuidance = alarm.Definition.CheckGuidance;
             string runtimeDetail = alarm.Detail;
@@ -192,36 +238,40 @@ namespace MotionControl.Host.Wpf.Operation
                 CheckText.Text = string.IsNullOrWhiteSpace(catalogGuidance)
                     ? string.IsNullOrWhiteSpace(runtimeDetail) ? T("按报警内容检查相关机构和信号，具体处理要求由设备项目提供") : runtimeDetail
                     : catalogGuidance;
+            CheckText.Text = T("以下为报警记录信息") + "\n" + T("记录的关联输入") + "："
+                + (string.IsNullOrWhiteSpace(alarm.RelatedInputName) ? T("未提供") : alarm.RelatedInputName) + "\n" + CheckText.Text;
 
             // 报警库的固定指导不能覆盖当前条件状态，否则现场人员可能误以为可以立即复位。
-            AfterText.Text = T(alarm.RequiresReset ? alarm.ConditionActive ? "条件仍有效，先处理原因，不能通过确认或刷新清除" : "停机报警待复位处理提示"
+            AfterText.Text = retained ? T("断连后核查现场及报警记录") : T(alarm.RequiresReset ? alarm.ConditionActive ? "条件仍有效，先处理原因，不能通过确认或刷新清除" : "停机报警待复位处理提示"
                 : "非停机提醒随条件恢复自动消失，不用人工清除");
             if (!string.IsNullOrWhiteSpace(alarm.Definition.RecoveryGuidance))
-                AfterText.Text += "\n" + alarm.Definition.RecoveryGuidance;
-            if (alarm.RequiresReset)
+                AfterText.Text += "\n" + T("报警记录的恢复指导") + "：" + alarm.Definition.RecoveryGuidance;
+            if (alarm.RequiresReset && !retained)
                 AfterText.Text += "\n" + (_guidanceEnglish
                     ? "Next: resolve the cause and verify feedback, then reset using the machine controls. Reset does not start production. If stopping failed, feedback is unknown or resources await confirmation, maintenance must inspect them before recovery. Output commands do not confirm fixture position."
                     : "下一步：处理原因并核对反馈后，再从设备控制入口复位；复位不会启动生产。若停止失败、反馈未知或资源待确认，由设备维护人员先核查处理。输出命令不能证明夹具已到位。");
             DiagnosticText.Text = T("报警代码") + "：" + alarm.Definition.Code + "\n" + T("首次发生") + "：" + row.OccurredAt
                 + "\n" + T("最近变化") + "：" + alarm.LastChangedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                + "\n" + T("记录的关联输入") + "：" + (string.IsNullOrWhiteSpace(alarm.RelatedInputName) ? T("未提供") : alarm.RelatedInputName)
                 + "\n\n" + T("最近整机异常，不一定属于此报警") + "\n" + (_snapshot.LastError ?? T("未提供"));
         }
         /// <summary>定位当前执行入口的实际工位，不能切换控制权或启动设备。</summary>
         private void Flow_Click(object sender, RoutedEventArgs e) { Navigate("工位运行"); }
-        /// <summary>仅按来源明确提供的名称或稳定标识关联工位。</summary>
-        private static bool MatchesStation(StationOverviewData station, string source)
-        { return string.Equals(station.Name, source, StringComparison.OrdinalIgnoreCase)
-            || (!string.IsNullOrWhiteSpace(station.Id) && string.Equals(station.Id, source, StringComparison.OrdinalIgnoreCase)); }
         /// <summary>没有明确 IO 名称时仅打开现有监控页。</summary>
         private void Io_Click(object sender, RoutedEventArgs e) { Navigate("IO监控"); }
         /// <summary>仅打开轴手动，页面本身不点动、不使能。</summary>
         private void Axis_Click(object sender, RoutedEventArgs e) { Navigate("轴手动"); }
-        /// <summary>仅使用报警记录明确提供的输入；不把工位当前等待输入当作报警原因。</summary>
+        /// <summary>点击时复核连接周期，只打开页面；报警记录没有可验证的当前工位或输入归属。</summary>
         private void Navigate(string page)
         {
-            if (!(AlarmGrid.SelectedItem is AlarmDisplayRow row)) return;
-            NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs(
-                page, row.Alarm.SourceName, page == "IO监控" ? row.Alarm.RelatedInputName : null));
+            if (!(AlarmGrid.SelectedItem is AlarmDisplayRow) || _connectionUnconfirmed) return;
+            if (_preview == null)
+            {
+                try { if (_runtime == null || !_runtime.IsConnectionSessionCurrent(_displaySession)) { RefreshDisplay(true); return; } }
+                catch { RefreshDisplay(true); return; }
+            }
+            else if (_snapshot.State == MachineRunState.Disconnected) return;
+            NavigationRequested?.Invoke(this, new OperatorNavigationEventArgs(page));
         }
         /// <summary>当前语言的中文资源键。</summary>
         private string T(string text) { return OperationUi.T(this, text); }
@@ -241,12 +291,12 @@ namespace MotionControl.Host.Wpf.Operation
         /// <summary>条件有效、待复位或非停机提醒状态。</summary>
         public string ConditionText { get; private set; }
         /// <summary>将明确信息翻译为当前界面文字，不作报警复位。</summary>
-        internal AlarmDisplayRow(MachineAlarmRecord alarm, Func<string, string> translate)
+        internal AlarmDisplayRow(MachineAlarmRecord alarm, Func<string, string> translate, bool retained)
         {
             Alarm = alarm; Key = alarm.SourceName + "\u001f" + alarm.Definition.Code + "\u001f" + alarm.FirstRaisedAtUtc.Ticks;
             KindText = translate(alarm.RequiresReset ? "停机" : "非停机");
             OccurredAt = alarm.FirstRaisedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
-            ConditionText = translate(alarm.RequiresReset ? alarm.ConditionActive ? "条件仍有效" : "报警等待复位" : "非停机提醒");
+            ConditionText = translate(retained ? "留存记录，现场状态未知" : alarm.RequiresReset ? alarm.ConditionActive ? "记录条件有效" : "记录等待复位" : "记录非停机提醒");
         }
     }
 }

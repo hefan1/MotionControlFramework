@@ -15,6 +15,7 @@ using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Contracts.Safety;
 using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.Framework.Runtime.Machine;
+using MotionControl.Framework.Wpf.ManualDebug;
 using MotionControl.Host.Wpf;
 using MotionControl.Host.Wpf.Operation;
 using MotionControl.TaskEngine.Catalog;
@@ -88,6 +89,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("准备提交期间配置变化与按需装载", () => RunUiAsync(PreparationDependencyPreviewChecks.RunSubmissionAsync), ref failures);
             Check("V1.8 设备准备响应式布局", V18OperatorLayoutChecks.CheckPreparation, ref failures);
             Check("V1.8 设备总览响应式布局", V18OperatorLayoutChecks.CheckOverview, ref failures);
+            Check("V1.8 当前报警布局与断连状态", V18CurrentAlarmsLayoutChecks.Run, ref failures);
             Check("V1.8 任务配置来源与响应式布局", V18TaskConfigurationLayoutChecks.LayoutAndState, ref failures);
             Check("任务库筛选不修改草稿", V18TaskConfigurationLayoutChecks.LibrarySearchIsReadOnly, ref failures);
             Check("V1.8 任务工位运行响应式布局", V18StationRunLayoutChecks.TaskLayout, ref failures);
@@ -97,7 +99,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("产品记录只读显示两种来源及错误", ProductRecordChecks.Run, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：62 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：63 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }
@@ -217,6 +219,9 @@ namespace MotionControl.OperatorPages.Checks
             Assert(((FrameworkElement)overview.FindName("AggregateMetrics")).Visibility == Visibility.Collapsed,
                 "操作员总览仍显示生产统计区。");
             Assert(((TextBlock)alarms.FindName("EmptyText")).Text == "未读取报警状态", "无来源被当作零报警。");
+            Assert(((TextBlock)alarms.FindName("SourceText")).Text.Contains("来源未提供")
+                && !((TextBlock)alarms.FindName("SourceText")).Text.Contains("设备运行数据"),
+                "没有 Runtime 时不能声称报警来自设备运行数据。");
             var card = new GuardCard { IsConnected = true }; var service = new MachineAlarmService();
             var runtime = CreateRuntime(card, service);
             runtime.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
@@ -431,16 +436,16 @@ namespace MotionControl.OperatorPages.Checks
             snapshot.Stations.Add(new StationOverviewData { Name = "另一个工位", CurrentStep = "30 等待复核" });
             var view = new CurrentAlarmsView(); view.SetPreview(snapshot);
             var grid = (DataGrid)view.FindName("AlarmGrid"); var first = (AlarmDisplayRow)grid.SelectedItem;
-            Assert(((TextBlock)view.FindName("CountText")).Text == "当前报警 2 条（停机 1，非停机 1）", "报警页没有区分停机报警和非停机提醒数量。");
+            Assert(((TextBlock)view.FindName("CountText")).Text == "软件报警记录 2 条（停机 1，非停机 1）", "报警页没有区分停机报警和非停机提醒数量。");
             service.ReportCondition(stop, "测试工位", false, null); snapshot.Alarms = service.Alarms.ToList(); view.RefreshDisplay();
             var recovered = (AlarmDisplayRow)grid.SelectedItem;
-            Assert(first.Key == recovered.Key && recovered.ConditionText.Contains("等待复位"), "条件恢复后丢失选择或不显示待复位。");
+            Assert(first.Key == recovered.Key && recovered.ConditionText.Contains("待复位"), "条件恢复后丢失选择或不显示待复位。");
             FindButton(view, "刷新").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert(service.HasLatchedStopAlarm, "刷新居然清除了停机报警。");
             ((TextBox)view.FindName("SearchBox")).Text = "stop";
             Assert(grid.Items.Count == 1, "代码搜索未按大小写无关匹配。");
             Assert(((TextBlock)view.FindName("FilterCountText")).Text == "筛选匹配：1 / 总记录：2"
-                && ((TextBlock)view.FindName("CountText")).Text.Contains("当前报警 2 条"), "筛选改变了总数或未显示匹配数。");
+                && ((TextBlock)view.FindName("CountText")).Text.Contains("软件报警记录 2 条"), "筛选改变了总数或未显示匹配数。");
             ((TextBox)view.FindName("SearchBox")).Text = "没有的内容";
             Assert(grid.Items.Count == 0 && !((Button)view.FindName("AxisButton")).IsEnabled, "空搜索结果仍有可操作报警。");
             Assert(((TextBlock)view.FindName("FilterCountText")).Text == "筛选匹配：0 / 总记录：2", "空筛选没有显示零匹配。");
@@ -449,7 +454,7 @@ namespace MotionControl.OperatorPages.Checks
                 "清除筛选改变报警状态或未恢复全部记录。");
             view.SetLanguage("en-US");
             Assert(((TextBlock)view.FindName("FilterCountText")).Text == "Filter matches: 2 / total records: 2", "英文筛选数量未更新。");
-            Assert(((AlarmDisplayRow)grid.SelectedItem).Key == first.Key && ((AlarmDisplayRow)grid.SelectedItem).ConditionText.Contains("reset"), "语言切换丢失选择或待复位语义。");
+            Assert(((AlarmDisplayRow)grid.SelectedItem).Key == first.Key && ((AlarmDisplayRow)grid.SelectedItem).ConditionText.IndexOf("reset", StringComparison.OrdinalIgnoreCase) >= 0, "语言切换丢失选择或待复位语义。");
             OperatorNavigationEventArgs requested = null; view.NavigationRequested += (sender, e) => requested = e;
             ((Button)view.FindName("IoButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert(requested != null && requested.Page == "IO监控" && service.HasLatchedStopAlarm, "只读导航改变了报警状态。");
@@ -457,18 +462,18 @@ namespace MotionControl.OperatorPages.Checks
             disconnected.SetPreview(new OperationSnapshot { IsPreview = true, HasRuntime = true, State = MachineRunState.Disconnected });
             Assert(((TextBlock)disconnected.FindName("EmptyText")).Text.Contains("现场报警状态未知")
                 && ((TextBlock)disconnected.FindName("FilterCountText")).Text.Contains("未知"), "断连空会话被误报为现场无报警。");
-            Assert(((TextBlock)disconnected.FindName("CountText")).Text == "当前会话报警 0 条（停机 0，非停机 0）", "断连零条记录被称为现场当前报警数。");
+            Assert(((TextBlock)disconnected.FindName("CountText")).Text == "留存报警记录 0 条（停机 0，非停机 0）", "断连零条记录被称为现场当前报警数。");
             var retained = new OperationSnapshot { IsPreview = true, HasRuntime = true, State = MachineRunState.Disconnected, Alarms = snapshot.Alarms.ToList() };
             disconnected.SetPreview(retained);
             Assert(((DataGrid)disconnected.FindName("AlarmGrid")).Items.Count == 2
-                && ((TextBlock)disconnected.FindName("CountText")).Text == "当前会话报警 2 条（停机 1，非停机 1）"
+                && ((TextBlock)disconnected.FindName("CountText")).Text == "留存报警记录 2 条（停机 1，非停机 1）"
                 && ((TextBlock)disconnected.FindName("SourceText")).Text.Contains("现场报警状态未知"), "留存记录隐藏了断连现场未知边界。");
             disconnected.SetLanguage("en-US");
-            Assert(((TextBlock)disconnected.FindName("CountText")).Text == "Current session alarms: 2 (stop 1, non-stop 1)"
+            Assert(((TextBlock)disconnected.FindName("CountText")).Text == "Retained alarm records: 2 (stop 1, non-stop 1)"
                 && ((TextBlock)disconnected.FindName("SourceText")).Text.Contains("equipment alarm state is unknown"), "英文断连记录未区分现场报警状态。");
             ((TextBox)disconnected.FindName("SearchBox")).Text = "stop";
             Assert(((DataGrid)disconnected.FindName("AlarmGrid")).Items.Count == 1
-                && ((TextBlock)disconnected.FindName("CountText")).Text == "Current session alarms: 2 (stop 1, non-stop 1)", "断连筛选改变留存记录总数。");
+                && ((TextBlock)disconnected.FindName("CountText")).Text == "Retained alarm records: 2 (stop 1, non-stop 1)", "断连筛选改变留存记录总数。");
         }
         /// <summary>验证 Host 导航不重复 IO 监控入口，并保留原内容区导航。</summary>
         private static void HostNavigation()
@@ -501,7 +506,7 @@ namespace MotionControl.OperatorPages.Checks
                 string crossPageAlarmSummary = "当前报警 2 条（停机 1，非停机 1）";
                 Assert(((TextBlock)flowStatus.FindName("AlarmText")).Text.StartsWith(crossPageAlarmSummary),
                     "流程状态没有展示停机与提醒的分类汇总。");
-                var ioMonitor = new UserControl();
+                var ioMonitor = new IoMonitorView(false, runtime, null, null, null, null);
                 window.SetFlowStatusPage(flowStatus);
                 window.SetIoMonitorPage(ioMonitor);
                 window.SetMachineRuntime(runtime);
@@ -524,19 +529,24 @@ namespace MotionControl.OperatorPages.Checks
                 FindButton(original, "查看当前报警").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 var alarms = content.Content as CurrentAlarmsView;
                 Assert(alarms != null && card.Calls == 0, "报警导航失败或触发了控制卡操作。");
-                Assert(((TextBlock)alarms.FindName("CountText")).Text == crossPageAlarmSummary
+                Assert(((TextBlock)alarms.FindName("CountText")).Text == "软件报警记录 2 条（停机 1，非停机 1）"
                     && ((DataGrid)alarms.FindName("AlarmGrid")).Items.Cast<AlarmDisplayRow>().Count(row => row.Alarm.RequiresReset) == 1,
                     "从总览进入当前报警后，报警分类数量与流程状态页不一致。");
 
                 var alarmGrid = (DataGrid)alarms.FindName("AlarmGrid");
                 string selectedAlarmKey = ((AlarmDisplayRow)alarmGrid.SelectedItem).Key;
-                var locateFlow = FindButton(alarms, "定位工位流程");
-                Assert(locateFlow.IsEnabled, "工位报警未提供定位对应流程的入口。");
+                var stations = (ListBox)flowStatus.FindName("StationList");
+                object selectionBefore = stations.SelectedItem;
+                OperatorNavigationEventArgs alarmNavigation = null;
+                alarms.NavigationRequested += (sender, args) => alarmNavigation = args;
+                var locateFlow = FindButton(alarms, "查看工位流程");
+                Assert(locateFlow.IsEnabled, "报警未提供普通流程查看入口。");
                 locateFlow.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Assert(ReferenceEquals(content.Content, flowStatus), "当前报警没有打开共享的流程状态页面。");
-                var stations = (ListBox)flowStatus.FindName("StationList");
-                Assert(ReferenceEquals(((ListBoxItem)stations.SelectedItem).Tag, flow),
-                    "报警导航没有选择实际来源工位对象。");
+                Assert(alarmNavigation != null && alarmNavigation.StationName == null && alarmNavigation.IoPointName == null
+                    && ReferenceEquals(stations.SelectedItem, selectionBefore)
+                    && ((TextBlock)window.FindName("PageDescription")).Text.Contains("未自动定位"),
+                    "报警记录未验证当前归属时错误定向工位，或没有提示页面可能保留旧选择。");
 
                 ((Button)window.FindName("OperationReturnButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Assert(ReferenceEquals(content.Content, alarms)
@@ -544,6 +554,7 @@ namespace MotionControl.OperatorPages.Checks
                     "从流程返回后没有恢复同一报警选择。");
                 locateFlow.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Assert(ReferenceEquals(content.Content, flowStatus), "再次从报警定位工位流程失败。");
+                stations.SelectedItem = stations.Items.OfType<ListBoxItem>().Single(item => ReferenceEquals(item.Tag, flow));
 
                 OperatorNavigationEventArgs inputNavigation = null;
                 flowStatus.NavigationRequested += (sender, args) => inputNavigation = args;
@@ -561,6 +572,24 @@ namespace MotionControl.OperatorPages.Checks
                     && ((AlarmDisplayRow)alarmGrid.SelectedItem).Key == selectedAlarmKey
                     && card.Calls == 0,
                     "处理路径没有保留报警选择，或导航过程调用了控制卡。");
+                ((Button)alarms.FindName("IoButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                string pendingInput = (string)typeof(IoMonitorView).GetField("_pendingInputFocusName", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(ioMonitor);
+                string pageDescription = ((TextBlock)window.FindName("PageDescription")).Text;
+                Assert(ReferenceEquals(content.Content, ioMonitor) && pendingInput == flow.WaitingInputName
+                    && pageDescription.Contains("未自动定位") && pageDescription.Contains("上次"),
+                    "报警查看 IO 时旧定位可能仍保留，必须明确提示人员重新核对。");
+                var applyLanguage = typeof(MainWindow).GetMethod("ApplyLanguage", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                applyLanguage.Invoke(window, new object[] { "en-US" });
+                Assert(((TextBlock)window.FindName("PageDescription")).Text.Contains("earlier selection"),
+                    "切换语言后报警导航的旧选择提示丢失。");
+                applyLanguage.Invoke(window, new object[] { "zh-CN" });
+                var currentIoButton = sidebar.Children.OfType<ToggleButton>().Single(item => Equals(item.Tag, "IO监控"));
+                currentIoButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                Assert(((TextBlock)window.FindName("PageDescription")).Text.Contains("未自动定位"), "重选同一 IO 页面丢失旧选择提示。");
+                motionControlButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                Assert(((TextBlock)window.FindName("PageDescription")).Text.Contains("未自动定位"), "重选当前顶部分类丢失旧选择提示。");
+                var currentAlarmButton = sidebar.Children.OfType<ToggleButton>().Single(item => Equals(item.Tag, "当前报警"));
+                currentAlarmButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
 
                 var taskConfiguration = new UserControl();
                 window.SetTaskConfigurationPage(taskConfiguration);

@@ -183,19 +183,21 @@ namespace MotionControl.OperatorPages.Checks
             alarmPage.SetRuntime(runtime);
             alarmPage.SetTaskStationProvider(() => data);
             var locate = (Button)alarmPage.FindName("FlowButton");
-            if (!locate.IsEnabled) throw new InvalidOperationException("报警的稳定工位标识不能定位。");
+            if (!locate.IsEnabled) throw new InvalidOperationException("连接有效时未提供普通工位查看入口。");
             OperatorNavigationEventArgs request = null;
             alarmPage.NavigationRequested += (sender, e) => request = e;
             locate.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            if (request == null || request.Page != "工位运行" || request.StationName != "Press")
-                throw new InvalidOperationException("任务报警未直接进入统一工位运行路径。");
+            if (request == null || request.Page != "工位运行" || request.StationName != null || request.IoPointName != null)
+                throw new InvalidOperationException("来源周期未验证时应只打开工位运行页面。");
             data.Add(new StationOverviewData { Id = "Other", Name = "Press", CurrentStep = "不能错误显示的其他动作" });
             alarmPage.RefreshDisplay(true);
-            if (locate.IsEnabled || ((TextBlock)alarmPage.FindName("WhereText")).Text.Contains("当前动作"))
-                throw new InvalidOperationException("来源歧义时错误关联了另一工位动作。");
+            if (!locate.IsEnabled || ((TextBlock)alarmPage.FindName("WhereText")).Text.Contains("当前动作"))
+                throw new InvalidOperationException("来源歧义时应保留普通入口且不能关联另一工位动作。");
             alarmPage.SetTaskStationProvider(() => null);
-            if (locate.IsEnabled || card.Calls != 0)
-                throw new InvalidOperationException("无工位来源仍允许伪定位，或查看触发了硬件操作。");
+            request = null;
+            locate.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            if (!locate.IsEnabled || request == null || request.StationName != null || card.Calls != 0)
+                throw new InvalidOperationException("无工位来源时应仅打开页面，且查看不能触发硬件操作。");
         }
     }
 }

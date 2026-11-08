@@ -25,6 +25,8 @@ namespace MotionControl.Host.Wpf
         private string _operationReturnPage;
         /// <summary>返回目标所在分区，避免任务配置等非操作页被错误映射到首页。</summary>
         private string _operationReturnSection;
+        /// <summary>报警记录未证明对象归属时，目标页应持续提示旧选择可能保留。</summary>
+        private string _untargetedAlarmPage;
 
         /// <summary>保存当前页为返回目标并显示返回入口。</summary>
         private void SetOperationReturnTarget(string section, string page)
@@ -41,7 +43,16 @@ namespace MotionControl.Host.Wpf
         {
             _operationReturnSection = null;
             _operationReturnPage = null;
+            _untargetedAlarmPage = null;
             OperationReturnButton.Visibility = Visibility.Collapsed;
+        }
+        /// <summary>重选同一页面时保留报警旧选择提示，离开页面才解除。</summary>
+        private void ClearReturnForNavigation(string nextPage)
+        {
+            string retainedNotice = !string.IsNullOrWhiteSpace(_untargetedAlarmPage)
+                && string.Equals(_untargetedAlarmPage, nextPage, StringComparison.Ordinal) ? _untargetedAlarmPage : null;
+            ClearOperationReturnTarget();
+            _untargetedAlarmPage = retainedNotice;
         }
         /// <summary>创建总览、报警、设备准备和空状态页面；页面构造本身不连接控制卡。</summary>
         private void CreateOperationPages()
@@ -81,8 +92,14 @@ namespace MotionControl.Host.Wpf
             if (page == null) return false;
             ManualDebugContent.Content = page; ManualDebugContent.Visibility = Visibility.Visible;
             PagePlaceholder.Visibility = Visibility.Collapsed;
-            PageDescription.SetResourceReference(TextBlock.TextProperty, description);
+            SetOperationPageDescription(description);
             return true;
+        }
+        /// <summary>语言切换或页面重建后仍保留报警无定向提示。</summary>
+        private void SetOperationPageDescription(string defaultResource)
+        {
+            PageDescription.SetResourceReference(TextBlock.TextProperty,
+                _untargetedAlarmPage == _currentPageResourceKey ? "报警查看未自动定位提示" : defaultResource);
         }
         /// <summary>关联页面只能查看；缺少 Runtime 对应页面时显示具体未就绪提示。</summary>
         private void OperationNavigationRequested(object sender, OperatorNavigationEventArgs e)
@@ -102,6 +119,8 @@ namespace MotionControl.Host.Wpf
                 : e.Page == "轴手动" ? "Manual"
                 : e.Page == "IO监控" || e.Page == "流程状态" ? "Monitor"
                 : "Monitor";
+            _untargetedAlarmPage = sender is CurrentAlarmsView && (e.Page == "工位运行" || e.Page == "IO监控" || e.Page == "轴手动")
+                ? e.Page : null;
             NavigateToRelatedPage(e.Page, section);
             if (e.Page == "IO监控" && _ioMonitorPage is IoMonitorView ioMonitorPage)
             {

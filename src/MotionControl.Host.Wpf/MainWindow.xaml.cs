@@ -186,7 +186,8 @@ namespace MotionControl.Host.Wpf
                 return;
             }
 
-            ClearOperationReturnTarget();
+            ClearReturnForNavigation(string.Equals(navigationButton.Tag as string, _currentSectionKey, StringComparison.Ordinal)
+                ? _currentPageResourceKey : null);
             NavigateToSection(navigationButton.Tag as string);
         }
 
@@ -303,8 +304,9 @@ namespace MotionControl.Host.Wpf
         /// </summary>
         private void SidebarNavigationButton_Click(object sender, RoutedEventArgs e)
         {
-            ClearOperationReturnTarget();
-            SelectSidebarPage(sender as ToggleButton);
+            var selected = sender as ToggleButton;
+            ClearReturnForNavigation(selected?.Tag as string);
+            SelectSidebarPage(selected);
         }
 
         /// <summary>
@@ -571,7 +573,7 @@ namespace MotionControl.Host.Wpf
                 ManualDebugContent.Content = _ioMonitorPage;
                 ManualDebugContent.Visibility = Visibility.Visible;
                 PagePlaceholder.Visibility = Visibility.Collapsed;
-                PageDescription.SetResourceReference(TextBlock.TextProperty, "IO监控页面说明");
+                SetOperationPageDescription("IO监控页面说明");
                 return;
             }
 
@@ -625,7 +627,7 @@ namespace MotionControl.Host.Wpf
                 ManualDebugContent.Content = visibleManualMotionPage;
                 ManualDebugContent.Visibility = Visibility.Visible;
                 PagePlaceholder.Visibility = Visibility.Collapsed;
-                PageDescription.SetResourceReference(TextBlock.TextProperty, "轴手动页面说明");
+                SetOperationPageDescription("轴手动页面说明");
                 return;
             }
 

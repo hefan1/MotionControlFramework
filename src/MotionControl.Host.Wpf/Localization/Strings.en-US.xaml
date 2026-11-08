@@ -758,6 +758,7 @@
     <sys:String x:Key="任务配置先断开会话">The controller session is connected. Disconnect it on the axis mapping page before updating task files. It will not disconnect automatically; drafts can still be saved.</sys:String>
     <sys:String x:Key="设备总览页面说明">View equipment status, run information, and alarms.</sys:String>
     <sys:String x:Key="当前报警页面说明">View the location, condition and handling guidance. Refreshing does not reset alarms.</sys:String>
+    <sys:String x:Key="报警查看未自动定位提示">This alarm did not set a target. The page may retain an earlier selection or highlight; verify it again.</sys:String>
     <sys:String x:Key="关联页面尚未就绪">This page is not available from the current Runtime. Check the connection. No device action was performed.</sys:String>
     <sys:String x:Key="返回操作页">Back to operation</sys:String>
     <sys:String x:Key="IO反馈关联">Feedback links</sys:String>

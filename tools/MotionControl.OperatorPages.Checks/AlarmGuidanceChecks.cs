@@ -32,8 +32,8 @@ namespace MotionControl.OperatorPages.Checks
             OperatorNavigationEventArgs navigation = null;
             view.NavigationRequested += (sender, args) => navigation = args;
             ((Button)view.FindName("IoButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Require(navigation != null && navigation.Page == "IO监控" && navigation.StationName == "压装"
-                && navigation.IoPointName == null, "报警未记录关联输入时，不能把工位当前等待的其他输入当成报警信号。");
+            Require(navigation != null && navigation.Page == "IO监控" && navigation.StationName == null
+                && navigation.IoPointName == null, "报警缺少连接周期来源时只能打开普通 IO 页面。");
             var alarmService = new MachineAlarmService();
             alarmService.ReportConditionGroup(new[] { stop, notice }, "压装", true, "传感器超时", "夹紧等待", "夹紧到位");
             alarmService.ReportConditionGroup(new[] { stop }, "压装", false, "超时事件结束", "夹紧等待", "夹紧到位");
@@ -43,7 +43,9 @@ namespace MotionControl.OperatorPages.Checks
             grid.SelectedItem = grid.Items.Cast<AlarmDisplayRow>().Single(row => row.Alarm.Definition.Code == "STOP_GUIDE");
             navigation = null;
             ((Button)view.FindName("IoButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Require(navigation?.IoPointName == "夹紧到位", "报警锁存后丢失了发生时明确关联的输入。");
+            Require(navigation != null && navigation.IoPointName == null && navigation.StationName == null
+                && ((TextBox)view.FindName("DiagnosticText")).Text.Contains("夹紧到位"),
+                "历史关联输入应保留供核查，但不能自动定位为当前连接的输入。");
             alarmService.ReportConditionGroup(new[] { notice }, "压装", true, "另一传感器超时", "第二等待", "另一传感器");
             alarmService.ReportConditionGroup(new[] { notice }, "压装", true, "再次上报", "夹紧等待", "夹紧到位");
             Require(alarmService.Alarms.Single(alarm => alarm.Definition.Code == "NOTICE_GUIDE").RelatedInputName == null,
@@ -77,15 +79,15 @@ namespace MotionControl.OperatorPages.Checks
             view.RefreshDisplay();
             Require(after.Text.Contains("检查故障原因和相关信号") && !after.Text.Contains("条件已恢复")
                 && after.Text.Contains("检查夹具后按设备流程处理。"), "待复位处理提示错误声称传感器已恢复，或隐藏了报警库指导。");
-            Require(((AlarmDisplayRow)grid.SelectedItem).ConditionText == "等待复位", "超时事件被误显示为现场条件已恢复。");
+            Require(((AlarmDisplayRow)grid.SelectedItem).ConditionText == "记录：待复位", "超时事件被误显示为现场条件已恢复。");
             view.SetLanguage("en-US");
             Require(after.Text.Contains("related signals") && !after.Text.Contains("has recovered")
-                && ((AlarmDisplayRow)grid.SelectedItem).ConditionText == "Awaiting reset", "英文待复位提示误称现场条件已恢复。");
+                && ((AlarmDisplayRow)grid.SelectedItem).ConditionText == "Reset pending", "英文待复位提示误称现场条件已恢复。");
             view.SetLanguage("zh-CN");
             grid.SelectedItem = grid.Items.Cast<AlarmDisplayRow>().Single(row => row.Alarm.Definition.Code == "NOTICE_GUIDE");
-            Require(after.Text.Contains("非停机提醒") && after.Text.Contains("更换料框。"), "非停机状态或报警库指导被隐藏。");
+            Require(after.Text.Contains("收到条件恢复上报") && after.Text.Contains("更换料框。"), "非停机状态或报警库指导被隐藏。");
             view.SetLanguage("en-US");
-            Require(after.Text.Contains("automatically") && after.Text.Contains("更换料框。"), "切换语言后状态或报警库指导丢失。");
+            Require(after.Text.Contains("recovery is reported") && after.Text.Contains("更换料框。"), "切换语言后状态或报警库指导丢失。");
         }
 
         /// <summary>断言报警详情满足现场提示要求。</summary>
