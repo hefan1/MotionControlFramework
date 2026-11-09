@@ -1,0 +1,67 @@
+name: 单次任务职责迁移与验证
+
+on:
+  push:
+    branches: ['codex/architecture-clarity-20261110']
+    paths:
+      - 'tools/Refactor-CommandBoundary.py'
+      - '.github/workflows/one-shot-command-refactor.yml'
+
+# 仅此单次迁移需要向固定的隔离分支提交通过验证的结果；不修改默认分支。
+# 常规 windows-checks.yml 的只读权限保持不变。完成后移除此临时工作流。
+permissions:
+  contents: write
+
+concurrency:
+  group: one-shot-command-refactor
+  cancel-in-progress: false
+
+jobs:
+  migrate-and-verify:
+    if: github.repository == 'hefan1/MotionControlFramework' && github.ref == 'refs/heads/codex/architecture-clarity-20261110'
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: 只检出本次独立分支
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: codex/architecture-clarity-20261110
+          fetch-depth: 1
+          persist-credentials: true
+      - name: 安装构建 SDK
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
+        with:
+          dotnet-version: '8.0.x'
+      - name: 结构红灯检查、固定基线迁移与结构绿灯检查
+        shell: pwsh
+        run: |
+          python -m py_compile tools/Refactor-CommandBoundary.py
+          if ($LASTEXITCODE -ne 0) { throw '迁移脚本语法错误。' }
+          python tools/Refactor-CommandBoundary.py --apply
+          if ($LASTEXITCODE -ne 0) { throw '迁移或结构检查失败，不提交结果。' }
+      - name: 核对受保护布局
+        shell: pwsh
+        run: ./tools/Verify-ProtectedUi.ps1
+      - name: 正式 Host 构建与全部内部检查
+        shell: pwsh
+        run: ./tools/Verify-V18.ps1
+      - name: 实际单控制器、双控制器与任务操作协调 API 回归
+        shell: pwsh
+        run: ./tools/Verify-ControllerApi.ps1
+      - name: 记录关闭证据并只提交本批文件
+        shell: pwsh
+        run: |
+          python tools/Refactor-CommandBoundary.py --finalize
+          if ($LASTEXITCODE -ne 0) { throw '验证记录生成失败。' }
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { throw '源码差异检查失败。' }
+          git config user.name 'MotionControl Refactor'
+          git config user.email 'motioncontrol-refactor@users.noreply.github.com'
+          git add -- src/MotionControl.Host.Wpf/Tasks/TaskMonitorLauncher.cs src/MotionControl.TaskEngine.MachineDevice/TaskMachineOperations.cs tools/Check-CommandBoundaries.py tools/MotionControl.VirtualAdapter.Checks/Program.Commands.cs tools/MotionControl.VirtualAdapter.Checks/Program.cs tools/MotionControl.VirtualAdapter.Checks/MotionControl.VirtualAdapter.Checks.csproj tools/Verify-V18.ps1 docs/verification/2026-11-10-architecture-closure-plan.md docs/verification/2026-11-10-architecture-closure.md tools/Refactor-CommandBoundary.py
+          if ($LASTEXITCODE -ne 0) { throw '暂存失败。' }
+          git diff --cached --stat
+          git commit -m '重构：任务操作职责移出WPF页面，旧会话隔离与软件控制器回归通过' -m '复位、启动、暂停、终止由同一已绑定会话的具体协调类负责；保留原控制权、停稳确认、异常与资源收尾。新增结构回归和真实软件控制器并发/迟到启动验证。十个受保护UI文件未改，未合并master。'
+          if ($LASTEXITCODE -ne 0) { throw '提交失败。' }
+          git push origin HEAD:refs/heads/codex/architecture-clarity-20261110
+          if ($LASTEXITCODE -ne 0) { throw '推送失败或分支已变化；禁止强推。' }
+          git rev-parse HEAD
