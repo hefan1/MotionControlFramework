@@ -19,7 +19,7 @@ using MotionControl.Framework.Runtime.Safety;
 namespace MotionControl.VirtualAdapter.Checks
 {
     /// <summary>对独立控制器运行轴、IO 和取消运动的适配器往返检查。</summary>
-    internal static class Program
+    internal static partial class Program
     {
         /// <summary>每个检查进程使用独立的临时诊断目录，不写用户设备日志。</summary>
         private static readonly string DiagnosticsRoot = Path.Combine(Path.GetTempPath(), "MotionControl.VirtualAdapter.Checks-" + Guid.NewGuid().ToString("N"));
@@ -39,6 +39,11 @@ namespace MotionControl.VirtualAdapter.Checks
                     int port = int.Parse(args[1]);
                     RunControllerApi(port);
                     CheckRuntimeTaskSession(port);
+                }
+                else if (args.Length == 3 && args[0] == "--multi-controller-api")
+                {
+                    // 两个独立控制器进程上的 IMotionCard 真实调用，不创建假轴。
+                    RunMultiControllerApi(int.Parse(args[1]), int.Parse(args[2]));
                 }
                 else
                     Run(args);
