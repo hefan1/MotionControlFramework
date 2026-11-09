@@ -25,6 +25,7 @@
 - `VirtualAxis.WaitUntilStoppedAsync`：定位和回零完成前要求有效速度、停止标记、有效位置及伺服使能，并继续核对目标容差、回零标记和已有报警处理；NaN/Infinity 不能因数值比较的特殊规则被误判 Done。任何反馈失败继续沿原有异常分支尝试使用独立令牌停车。
 - `ZMotionCard.WaitForAxisMoveCompletedAsync`：成功到位同时满足真实停稳反馈、指令位置和实际位置容差；报警、伺服断使能、无效速度/位置/指令位置立即报错，绝不报告 Done；停稳标志和速度不一致时不会先判 Done。
 - `ZMotionCard.WaitForAxisIdleAsync`：只有有限近零速度与停止标志一致才能确认停稳。未知反馈保持等待直到超时，不当作成功。
+- `ZMotionCard.WaitForHomingAsync`：控制器 HOMESTATUS 报告成功且 idle 之后，还必须读取实际轴反馈，确认停稳速度有效、伺服仍使能且无报警，才允许标记回零成功；校验失败继续走现有回零停车收尾。
 - `ZMotionAxis.WaitForCompletionAndStopOnFailureAsync`：此前只对取消/超时执行受控停轴。由于运动命令可能已被控制器接受，改为对完成等待期间的异常（含报警、状态读取失败和无效反馈）都尝试受控停轴；若停止本身失败，以 `AggregateException` 保留最初运动错误和停止错误，不能把后台运动当作已安全停止。
 - `MachineTaskDevice.IsMoveComplete`：任务层在沿用原有报警、位置、速度与回零核对的同时，新增伺服使能检查。否则控制器报告“轴已停止且位置在容差内”时，可能把失能的轴错误记成任务 Done。
 
