@@ -91,17 +91,20 @@ try {
     & $checkExe "--controller-api" "$port"
     $checkExitCode = $LASTEXITCODE
 
-    # 不论检查结果如何，先通过只读 API 核对测试轴没有继续运动。
-    $feedback = Read-ControllerApi -Port $port -Request '{"command":"readAxis","axis":1}'
-    if ($feedback.ok -ne $true -or $null -eq $feedback.axisState) {
-        throw "软件控制器没有返回可信的轴状态。"
-    }
-    if ($null -eq $feedback.axisState.velocity -or $feedback.axisState.moving -ne $false) {
-        throw "测试轴速度未提供或仍在运动，不能确认停止。"
-    }
-    $velocity = [double]$feedback.axisState.velocity
-    if ([double]::IsNaN($velocity) -or [double]::IsInfinity($velocity) -or [Math]::Abs($velocity) -gt 0.001) {
-        throw "API 检查结束后，测试轴速度无效或尚未停稳，不得报告为通过。"
+    # 两项 API 检查使用的轴分别是 1 和 2；按实际控制器反馈逐轴确认停稳。
+    foreach ($axisNumber in @(1, 2)) {
+        $query = '{"command":"readAxis","axis":' + $axisNumber + '}'
+        $feedback = Read-ControllerApi -Port $port -Request $query
+        if ($feedback.ok -ne $true -or $null -eq $feedback.axisState) {
+            throw "软件控制器没有返回轴 $axisNumber 的可信状态。"
+        }
+        if ($null -eq $feedback.axisState.velocity -or $feedback.axisState.moving -ne $false) {
+            throw "测试轴 $axisNumber 速度未提供或仍在运动，不能确认停止。"
+        }
+        $velocity = [double]$feedback.axisState.velocity
+        if ([double]::IsNaN($velocity) -or [double]::IsInfinity($velocity) -or [Math]::Abs($velocity) -gt 0.001) {
+            throw "API 检查结束后，轴 $axisNumber 速度无效或尚未停稳，不得报告为通过。"
+        }
     }
     if ($checkExitCode -ne 0) { throw "适配器 API 检查失败，退出码 $checkExitCode。" }
     Write-Host "[通过] 独立软件控制器 API 往返、停止反馈和安全收尾"
