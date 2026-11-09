@@ -34,3 +34,7 @@ jobs:
       - name: 构建正式 Host 并运行内部检查
         shell: pwsh
         run: ./tools/Verify-V18.ps1
+      - name: 通过已有软件控制器 API 检查轴动作和停稳
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: ./tools/Verify-ControllerApi.ps1
