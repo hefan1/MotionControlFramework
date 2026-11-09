@@ -122,6 +122,8 @@ namespace MotionControl.TaskEngine.MachineDevice
                 || double.IsNaN(status.Position) || double.IsInfinity(status.Position))
                 throw new InvalidOperationException("轴位置或速度状态未知，不能确认停止：" + machine.AxisName + "。");
             if (status.AlarmActive) throw new InvalidOperationException("轴存在报警，不能确认动作完成：" + machine.AxisName + "。");
+            if (!status.ServoEnabled)
+                throw new InvalidOperationException("轴伺服已关闭，不能将正在核对的动作认定为完成：" + machine.AxisName + "。");
             return AxisStopFeedback.IsConfirmedStopped(status) && (!machine.IsHome || status.Homed);
         }
 
