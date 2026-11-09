@@ -632,10 +632,12 @@ namespace MotionControl.Host.Wpf.Tasks
             var runtime = _runtime;
             var device = session.TaskDevice as MotionControl.TaskEngine.MachineDevice.MachineTaskDevice;
             long contextVersion = _machineContextVersion;
-            EnsureCurrentTaskCommandContext(session, runtime, device, contextVersion);
+            if (device?.BoundConnectionSessionId == null)
+                throw new InvalidOperationException("正式任务设备未绑定原控制器连接，无法确认停轴收尾。");
             Guid connection = device.BoundConnectionSessionId.Value;
             try
             {
+                // 失联后也允许原任务执行受控停止；只有提交 Runtime 状态时才要求原连接仍有效。
                 await session.Machine.PauseAsync().ConfigureAwait(true);
                 EnsureCurrentTaskCommandContext(session, runtime, device, contextVersion);
                 TaskMachineSnapshot snapshot = session.Machine.GetSnapshot();
