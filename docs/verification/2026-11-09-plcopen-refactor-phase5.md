@@ -26,10 +26,12 @@
 - `ZMotionCard.WaitForAxisMoveCompletedAsync`：成功到位同时满足真实停稳反馈、指令位置和实际位置容差；报警、伺服断使能、无效速度/位置/指令位置立即报错，绝不报告 Done；停稳标志和速度不一致时不会先判 Done。
 - `ZMotionCard.WaitForAxisIdleAsync`：只有有限近零速度与停止标志一致才能确认停稳。未知反馈保持等待直到超时，不当作成功。
 - `ZMotionAxis.WaitForCompletionAndStopOnFailureAsync`：此前只对取消/超时执行受控停轴。由于运动命令可能已被控制器接受，改为对完成等待期间的异常（含报警、状态读取失败和无效反馈）都尝试受控停轴；若停止本身失败，以 `AggregateException` 保留最初运动错误和停止错误，不能把后台运动当作已安全停止。
+- `MachineTaskDevice.IsMoveComplete`：任务层在沿用原有报警、位置、速度与回零核对的同时，新增伺服使能检查。否则控制器报告“轴已停止且位置在容差内”时，可能把失能的轴错误记成任务 Done。
 
 ### 兼容性
 
 - 原 `IAxis`/ `AxisStatus` 构造签名和已有页面未变；仅增加一个短小、可直接查阅的反馈方法。
+- 任务设备原有公开方法签名不变，只增加一项有意义的动作完成保护检查。
 - 此次故意收紧成功条件。原本可能将异常反馈误认作成功的调用，现在返回具体异常；业务不应依赖原错误行为。
 - `AxisStopMode.Abort` 不等同 PLCopen MC_Stop，也不替代硬件急停。
 
