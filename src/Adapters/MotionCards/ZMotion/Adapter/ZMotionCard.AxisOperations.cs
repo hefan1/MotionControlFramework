@@ -460,6 +460,14 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 if (idle != 0
                     && (homeStatus == HomeStatusSucceeded || homeStatus == HomeStatusCompleted))
                 {
+                    // HOMESTATUS 是回零过程结果，还需用同一轴实际速度和报警反馈确认停止。
+                    AxisStatus feedback = await ReadAxisStatusAsync(axis, cancellationToken).ConfigureAwait(false);
+                    if (!feedback.HasStoppedMotionFeedback())
+                        throw new InvalidOperationException("正运动逻辑轴 '" + axis.Name
+                            + "' 回零已报告完成，但速度反馈未确认停稳。");
+                    if (feedback.AlarmActive || !feedback.ServoEnabled)
+                        throw new InvalidOperationException("正运动逻辑轴 '" + axis.Name
+                            + "' 回零结束时存在报警或伺服未使能，不能确认回零成功。");
                     return;
                 }
 
