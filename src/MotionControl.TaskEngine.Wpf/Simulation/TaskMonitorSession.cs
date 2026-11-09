@@ -98,16 +98,16 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
             }
         }
 
-        /// <summary>只读本机任务及已有轴、IO、变量、示教点文件，不创建另一份映射清单。</summary>
-        public static TaskMonitorSession LoadMachine(MachineConfigurationStore store, string machineId)
-        {
-            return LoadMachine(store, machineId, null, null);
-        }
-
-        /// <summary>用正式设备和 Runtime 报警服务装载现有本机任务，不生成另一份配置。</summary>
+        /// <summary>使用调用方明确提供的设备端口与报警服务装载任务；禁止缺失设备时回退到内存执行器。</summary>
         public static TaskMonitorSession LoadMachine(MachineConfigurationStore store, string machineId,
             ITaskDevice device, IMachineAlarmService alarmService)
         {
+            if (store == null) throw new ArgumentNullException(nameof(store));
+            if (device == null)
+                throw new ArgumentNullException(nameof(device), "正式任务加载必须提供实际设备端口，不能自动回退到内存任务设备。");
+            if (alarmService == null)
+                throw new ArgumentNullException(nameof(alarmService), "正式任务加载必须使用当前运行时的报警服务。");
+
             new MotionControl.TaskEngine.Editing.TaskWorkspaceStore(store).RequireNoPendingApply(machineId);
             string taskFolder = Path.Combine(store.GetMachineDirectory(machineId), "Tasks");
             if (!Directory.Exists(taskFolder)) throw new InvalidOperationException("本机尚无 Tasks 任务目录。可先打开示例任务查看页面。");
@@ -131,8 +131,7 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
                 }
             }
 
-            ITaskDevice selectedDevice = device ?? new InMemoryTaskDevice(catalog);
-            return new TaskMonitorSession(configuration, definitions, selectedDevice,
+            return new TaskMonitorSession(configuration, definitions, device,
                 store.GetMachineDirectory(machineId), false, alarmService, controlInputConfiguration);
         }
     }
