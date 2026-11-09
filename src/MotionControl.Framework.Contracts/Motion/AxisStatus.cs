@@ -19,7 +19,8 @@ namespace MotionControl.Framework.Contracts.Motion
             bool requiresHomingAfterLimitAlarm,
             double? commandPosition = null,
             bool? originInputActive = null,
-            string limitStatusSource = null)
+            string limitStatusSource = null,
+            AxisMotionState motionState = AxisMotionState.Unknown)
         {
             Position = position;
             Velocity = velocity;
@@ -36,6 +37,7 @@ namespace MotionControl.Framework.Contracts.Motion
             CommandPosition = commandPosition;
             OriginInputActive = originInputActive;
             LimitStatusSource = limitStatusSource;
+            MotionState = motionState;
         }
 
         /// <summary>控制器读取的轴实际位置反馈（通常为编码器位置），使用该轴配置的工程单位。</summary>
@@ -82,5 +84,11 @@ namespace MotionControl.Framework.Contracts.Motion
 
         /// <summary>限位状态的读取来源标识，例如控制器轴状态 API 或逻辑 DI；未知时为空。</summary>
         public string LimitStatusSource { get; private set; }
+
+        /// <summary>
+        /// 控制器明确报告的单轴运动阶段；旧适配器未提供时为 Unknown。
+        /// 此值仅用于补充诊断，不能代替 Moving、Velocity、报警和控制权校验。
+        /// </summary>
+        public AxisMotionState MotionState { get; private set; }
     }
 }

@@ -33,6 +33,26 @@ namespace MotionControl.Adapter.MotionCard.Virtual
         {
             return data.TryGetValue(key, out var value) && value != null ? (bool?)Convert.ToBoolean(value) : null;
         }
+        /// <summary>只接受软件控制器明确报告的轴状态，缺失或未知名称不靠布尔位推断。</summary>
+        private static AxisMotionState ReadMotionState(Dictionary<string, object> state)
+        {
+            if (!state.TryGetValue("motionState", out var value) || value == null)
+                return AxisMotionState.Unknown;
+
+            switch (Convert.ToString(value))
+            {
+                case "Disabled": return AxisMotionState.Disabled;
+                case "Standstill": return AxisMotionState.Standstill;
+                case "Homing": return AxisMotionState.Homing;
+                case "DiscreteMotion": return AxisMotionState.DiscreteMotion;
+                case "ContinuousMotion": return AxisMotionState.ContinuousMotion;
+                case "SynchronizedMotion": return AxisMotionState.SynchronizedMotion;
+                case "Stopping": return AxisMotionState.Stopping;
+                case "ErrorStop": return AxisMotionState.ErrorStop;
+                default: return AxisMotionState.Unknown;
+            }
+        }
+
         /// <summary>读取控制器返回的独立轴反馈快照。</summary>
         public async Task<AxisStatus> ReadStatusAsync(CancellationToken cancellationToken)
         {
@@ -46,7 +66,8 @@ namespace MotionControl.Adapter.MotionCard.Virtual
                 Convert.ToBoolean(state["alarmActive"]), state.TryGetValue("alarmMessage", out var message) ? Convert.ToString(message) : null,
                 Convert.ToBoolean(state["requiresHomingAfterLimitAlarm"]),
                 state.TryGetValue("commandPosition", out var position) && position != null ? (double?)Convert.ToDouble(position) : null,
-                OptionalBoolean(state, "originInputActive"), "软件控制器");
+                OptionalBoolean(state, "originInputActive"), "软件控制器",
+                ReadMotionState(state));
         }
         /// <summary>使能轴伺服。</summary>
         public async Task EnableServoAsync(CancellationToken cancellationToken) { await SendAsync("servo", cancellationToken, value: true).ConfigureAwait(false); }

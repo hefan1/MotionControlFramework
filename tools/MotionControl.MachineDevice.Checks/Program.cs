@@ -37,6 +37,7 @@ namespace MotionControl.MachineDevice.Checks
             Run("取消时让轴受控停止并确认停稳", CancelStopsAxis, ref failures);
             Run("未使能、未回零和越行程拒绝动作", MotionPreconditionsAreRejected, ref failures);
             Run("轴报警无说明或状态未知不能视为正常", AxisAlarmWithoutDetailsIsNotCleared, ref failures);
+            Run("PLCopen 轴状态缺失时不能从旧布尔位猜测", AxisMotionStateRequiresExplicitEvidence, ref failures);
             Run("确认停止必须有有效停稳速度反馈", ConfirmStoppedRequiresValidVelocity, ref failures);
             Run("轴动作前必须确认停稳且位置有效", MotionStartRequiresValidFeedback, ref failures);
             Run("回零完成必须确认原点状态", HomeCompletionRequiresHomedFeedback, ref failures);
@@ -79,6 +80,26 @@ namespace MotionControl.MachineDevice.Checks
 
             Console.WriteLine("真机任务设备检查：共 " + _executedChecks + " 组，失败 " + failures + "。未连接控制器。");
             return failures == 0 ? 0 : 1;
+        }
+
+        /// <summary>旧适配器状态保持未知，只有明确提供的运动阶段才按对应枚举展示。</summary>
+        private static void AxisMotionStateRequiresExplicitEvidence()
+        {
+            var legacy = new AxisStatus(0, 0, false, false, false,
+                null, null, null, null, false, null, false);
+            Ensure(legacy.MotionState == AxisMotionState.Unknown,
+                "旧状态未提供运动阶段时必须保持 Unknown。");
+
+            var movingWithoutSource = new AxisStatus(1, 1, true, true, true,
+                null, null, null, null, false, null, false);
+            Ensure(movingWithoutSource.MotionState == AxisMotionState.Unknown,
+                "Moving=true 不能自行推断为定位或连续运动。");
+
+            var reportedHoming = new AxisStatus(1, 1, true, true, false,
+                null, null, null, null, false, null, false,
+                motionState: AxisMotionState.Homing);
+            Ensure(reportedHoming.MotionState == AxisMotionState.Homing,
+                "来源明确提供的回零阶段应当被保留。");
         }
 
         /// <summary>轴报警即使没有描述也必须保留；空状态和读取失败不能被伪装成正常。</summary>

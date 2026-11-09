@@ -41,6 +41,7 @@ namespace MotionControl.VirtualController
                 ["velocity"] = _velocity,
                 ["servoEnabled"] = _servo,
                 ["moving"] = _velocity != 0,
+                ["motionState"] = ReadMotionState(),
                 ["homed"] = _homed,
                 ["positiveLimitActive"] = SensorPositiveLimit(),
                 ["negativeLimitActive"] = SensorNegativeLimit(),
@@ -51,6 +52,20 @@ namespace MotionControl.VirtualController
                 ["requiresHomingAfterLimitAlarm"] = _requiresSensorHome,
                 ["originInputActive"] = _sensorRule == null ? JValue.CreateNull() : new JValue(SensorOrigin())
             };
+        }
+
+        /// <summary>
+        /// 按本软件控制器自己维护的回零、定位、点动与报警阶段返回只读状态。
+        /// 控制器当前采用瞬时停止模型，因此不伪造 Stopping 或同步运动状态。
+        /// </summary>
+        private string ReadMotionState()
+        {
+            if (_alarm) return "ErrorStop";
+            if (!_servo) return "Disabled";
+            if (_homing) return "Homing";
+            if (_positioning) return "DiscreteMotion";
+            if (_velocity != 0) return "ContinuousMotion";
+            return "Standstill";
         }
 
         /// <summary>切换伺服；运行时禁止断使能，报警时禁止使能。</summary>
