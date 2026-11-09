@@ -124,7 +124,6 @@ namespace MotionControl.VirtualAdapter.Checks
                 group.DisconnectAsync(token).GetAwaiter().GetResult();
                 if (group.IsConnected || cardA.IsConnected || cardB.IsConnected)
                     throw new Exception("多控制卡断开后仍报告连接成功。");
-                Console.WriteLine("[通过] 多控制器统一契约：独立轴路由、相同通道 IO 隔离、运动时禁止断卡、离线与重连");
             }
             finally
             {
@@ -149,6 +148,9 @@ namespace MotionControl.VirtualAdapter.Checks
                 if (cleanupErrors.Count != 0)
                     throw new AggregateException("多控制器联调退出时，停轴或断卡未能确认。", cleanupErrors);
             }
+
+            // 所有轴已确认停止且两张卡正常断开后，才能打印检查成功。
+            Console.WriteLine("[通过] 多控制器统一契约：独立轴路由、相同通道 IO 隔离、运动时禁止断卡、离线与重连");
         }
 
         /// <summary>不连接控制器就核对配置冲突，避免新板卡接管时混入重名映射。</summary>
