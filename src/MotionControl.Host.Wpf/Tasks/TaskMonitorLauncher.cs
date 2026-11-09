@@ -138,6 +138,19 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>返回当前会话身份，供恢复保护区分是否为同一次任务接管。</summary>
         internal object CurrentTaskSession { get { return _session; } }
 
+        /// <summary>仅返回仍绑定当前连接与准备配置的已发布任务会话，供只读页面展示。</summary>
+        internal TaskMonitorSession CurrentPublishedTaskSession
+        {
+            get
+            {
+                var session = _session;
+                var runtime = _runtime;
+                return session != null && session.PublishedMetadata != null && runtime != null
+                    && runtime.ControlOwner == MachineControlOwner.TaskEngine && runtime.IsTaskEngineControlClaimed
+                    && HasPublishedPreparationSession(runtime, runtime.ConnectionSessionId) ? session : null;
+            }
+        }
+
         /// <summary>核对同一任务会话已完成暂停和故障处理；只读，不发设备命令。</summary>
         internal bool IsTaskSessionSettled(object session)
         {
@@ -272,7 +285,10 @@ namespace MotionControl.Host.Wpf.Tasks
             _loadedSource = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 4) };
             details.Children.Add(_loadedSource);
             details.Children.Add(_diagnosticText);
-            _diagnostics = new Expander { Margin = new Thickness(0, 6, 0, 0), Content = details };
+            // 任务库较大时诊断区保持有界，完整显示内容可在区内滚动。
+            var diagnosticsScroll = new ScrollViewer { Content = details, MaxHeight = 200,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+            _diagnostics = new Expander { Margin = new Thickness(0, 6, 0, 0), Content = diagnosticsScroll };
             Grid.SetRow(_diagnostics, 5); root.Children.Add(_diagnostics);
             Grid.SetRow(monitorArea, 3); root.Children.Add(monitorArea);
 
@@ -360,6 +376,7 @@ namespace MotionControl.Host.Wpf.Tasks
             UpdateRunStatus();
             UpdateCommandAvailability();
             RefreshAlarmState();
+            RefreshSessionSource();
         }
         /// <summary>异常断线锁存到新设备上下文建立，避免心跳恢复就误认旧会话有效。</summary>
         private bool IsControllerConnected()
@@ -486,6 +503,8 @@ namespace MotionControl.Host.Wpf.Tasks
                     CheckContext();
                     if (runtime.PreparationConfigurationVersion != installedVersion)
                         throw new InvalidOperationException("任务准备配置在读取期间发生变化，请核对当前配置后重新读取。");
+                    // 仅在连接与准备定义均核对成功后生成本次会话身份。
+                    loaded.Publish(_machineId);
                 }
                 catch (Exception loadError)
                 {
@@ -509,6 +528,7 @@ namespace MotionControl.Host.Wpf.Tasks
                 _catalog = loaded.TaskDevice.Catalog;
                 _catalogFromLoadedSession = true;
                 _monitor = new TaskMonitorView(loaded);
+                _monitor.SetSessionValidityProvider(() => ReferenceEquals(CurrentPublishedTaskSession, loaded));
                 _monitor.HideSourcePath();
                 _taskSource = loaded.Source;
                 _monitor.ReferenceRequested += Monitor_ReferenceRequested;
@@ -735,6 +755,9 @@ namespace MotionControl.Host.Wpf.Tasks
 
             _stateTimer.Stop();
             _closingTaskSession = true;
+            // 关闭期间可能长时间等待，立即撤销旧身份，不依赖已经停止的计时器。
+            RefreshSessionSource();
+            _monitor?.Refresh();
             try
             {
                 Task close = preserveBlockedForShutdown ? session.Machine.CloseForShutdownAsync() : session.Machine.CloseAsync();
@@ -821,6 +844,7 @@ namespace MotionControl.Host.Wpf.Tasks
         {
             if (_session == null) return;
             _monitor?.Refresh();
+            RefreshSessionSource();
             RefreshAlarms();
             TaskMachineSnapshot snapshot = _session.Machine.GetSnapshot();
             if (!_faultStatusSyncing && snapshot.State == TaskMachineState.Faulted
@@ -1146,11 +1170,20 @@ namespace MotionControl.Host.Wpf.Tasks
                 "Load applied stations and steps without resetting, homing, or starting the equipment.");
             _recoverResourcesButton.Content = PageText("核查待确认资源", "Inspect blocked resources");
             _productRecordsButton.Content = PageText("产品记录", "Product records");
-            _loadedSource.Text = string.IsNullOrWhiteSpace(_taskSource) ? PageText("会话来源未提供；当前运行版本未提供。", "Session source not provided; running version not provided.")
-                : PageText("已读取任务来源：", "Loaded task source: ") + _taskSource;
+            RefreshSessionSource();
             if (_lastError == null && _successTextKey != null) _status.Text = SuccessText(_successTextKey);
             RefreshCatalogDetails();
             RefreshConnectionDisplay();
+        }
+
+        /// <summary>只展示当前连接内已发布的会话来源；失效时不沿用旧任务身份。</summary>
+        private void RefreshSessionSource()
+        {
+            if (_loadedSource == null) return;
+            var metadata = CurrentPublishedTaskSession?.PublishedMetadata;
+            _loadedSource.Text = metadata == null
+                ? PageText("当前没有可确认的任务会话。", "No task session is currently confirmed.")
+                : metadata.FormatDetails(string.Equals(_host.CurrentLanguage, "en-US", StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>按实际来源展示目录统计；已装载会话固定显示其冻结目录。</summary>

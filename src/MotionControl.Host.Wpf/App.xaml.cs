@@ -309,6 +309,7 @@ namespace MotionControl.Host.Wpf
                 GetTaskRuntimeReadinessReason,
                 IsTaskEngineOwner,
                 MotionControl.TaskEngine.MachineDevice.MachineTaskDevice.ExecutionCapabilities);
+            _taskConfigurationPage.SetCurrentTaskSessionProvider(() => _taskMonitorLauncher.CurrentPublishedTaskSession);
             _taskConfigurationPage.ReferenceRequested += TaskEditorReferenceRequested;
             _taskConfigurationPage.CurrentFlowRequested += (sender, args) =>
             {

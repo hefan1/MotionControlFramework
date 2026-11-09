@@ -18,6 +18,7 @@ using MotionControl.TaskEngine.Editing;
 using MotionControl.TaskEngine.Machine;
 using MotionControl.TaskEngine.Validation;
 using MotionControl.TaskEngine.Wpf.Monitoring;
+using MotionControl.TaskEngine.Wpf.Simulation;
 using MotionControl.TaskEngine.Wpf.Views;
 
 namespace MotionControl.TaskEngine.Wpf.Editing
@@ -45,6 +46,8 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         private readonly Func<string> _getRuntimeReadinessReason;
         /// <summary>由 Host 判断当前是否使用任务列表控制。</summary>
         private readonly Func<bool> _isTaskEngineOwner;
+        /// <summary>Host 提供的当前有效已发布任务会话；不从磁盘猜测运行来源。</summary>
+        private Func<TaskMonitorSession> _getCurrentTaskSession;
         /// <summary>完整设备草稿。</summary>
         private TaskWorkspaceDocument _workspace;
         /// <summary>已应用文件的快照，仅供显示版本与草稿差异。</summary>
@@ -116,6 +119,13 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             Loaded += ViewLoaded; Unloaded += ViewUnloaded;
             LoadWorkspace();
         }
+        /// <summary>接入当前有效任务会话的只读查询，不加载配置或控制设备。</summary>
+        public void SetCurrentTaskSessionProvider(Func<TaskMonitorSession> provider)
+        {
+            _getCurrentTaskSession = provider;
+            RefreshPermission(null, EventArgs.Empty);
+        }
+
         /// <summary>只翻译界面，稳定对象名称与 ID 保持原值。</summary>
         public void SetLanguage(string language)
         {
@@ -231,14 +241,42 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             Grid.SetRow(StationSettingsCard, narrow ? 2 : 0);
         }
 
-        /// <summary>分别说明编辑状态、已载入文件快照和未提供的会话信息。</summary>
-        private void RefreshSummaryCards()
+        /// <summary>即时更新草稿状态，不改变当前会话的只读来源。</summary>
+        private void RefreshDraftSummaryCard()
         {
             DraftSummaryText.Text = T(_workspace == null ? "编辑状态未知" : _dirty ? "有未保存编辑" : "无待保存编辑")
                 + (_workspace != null && _sourceChanged ? " · " + T("草稿基准待核查") : string.Empty);
+        }
+
+        /// <summary>从 Host 查询当前有效会话；查询失败时保留原因并使旧身份失效。</summary>
+        private TaskSessionMetadata ReadCurrentSessionMetadata(out string sessionError)
+        {
+            sessionError = null;
+            if (_getCurrentTaskSession == null) return null;
+            try { return _getCurrentTaskSession()?.PublishedMetadata; }
+            catch (Exception error) { sessionError = error.GetBaseException().Message; return null; }
+        }
+
+        /// <summary>刷新三张来源卡片，供编辑状态变化时使用。</summary>
+        private void RefreshSummaryCards()
+        {
+            var metadata = ReadCurrentSessionMetadata(out string sessionError);
+            DisplaySummaryCards(metadata, sessionError);
+        }
+
+        /// <summary>分别展示草稿、文件快照和当前有效会话，不用文件版本代替运行会话。</summary>
+        private void DisplaySummaryCards(TaskSessionMetadata metadata, string sessionError)
+        {
+            RefreshDraftSummaryCard();
             FileSummaryText.Text = _activeWorkspace?.Tasks == null ? T("文件快照未提供")
                 : string.Format(T("已载入文件快照数量格式"), _activeWorkspace.Tasks.Count);
-            SessionSummaryText.Text = T("会话信息未提供");
+            bool english = _language == "en-US";
+            SessionSummaryText.Text = sessionError != null
+                ? (english ? "Task session read failed: " : "任务会话信息读取失败：") + sessionError
+                : metadata != null ? metadata.FormatSummary(english)
+                : _getCurrentTaskSession == null ? T("会话信息未提供")
+                : english ? "No task session is currently confirmed." : "当前没有可确认的任务会话。";
+            SessionSummaryText.ToolTip = metadata == null ? SessionSummaryText.Text : metadata.FormatDetails(english);
         }
 
         /// <summary>显示应用禁用原因，并在来源变化时提供保留草稿或重新载入入口。</summary>
@@ -246,9 +284,17 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         {
             RefreshPreparationSource();
             RefreshRuntimeContext();
-            string sourceSummary = TaskSourceSummary.Build(_workspace, _activeWorkspace, _dirty, _sourceChanged, _language == "en-US");
+            bool english = _language == "en-US";
+            TaskSessionMetadata metadata = ReadCurrentSessionMetadata(out string sessionError);
+            string sourceSummary = metadata == null
+                ? TaskSourceSummary.Build(_workspace, _activeWorkspace, _dirty, _sourceChanged, english)
+                : TaskSourceSummary.BuildWithSession(_workspace, _activeWorkspace, _dirty, _sourceChanged, english, metadata);
+            if (metadata == null && _getCurrentTaskSession != null)
+                sourceSummary += sessionError == null
+                    ? (english ? "\nNo task session is currently confirmed." : "\n当前没有可确认的任务会话。")
+                    : (english ? "\nTask session read failed: " : "\n任务会话信息读取失败：") + sessionError;
             SourceSummaryText.Text = sourceSummary;
-            RefreshSummaryCards();
+            DisplaySummaryCards(metadata, sessionError);
             _editor?.SetSourceSummary(sourceSummary);
             string reason = _getBlockedReason();
             bool pending;

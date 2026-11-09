@@ -23,6 +23,10 @@ namespace MotionControl.TaskEngine.Wpf.Views
         private bool _hideSourcePath;
         /// <summary>提供当前任务定义、设备端口和整机状态的监控会话。</summary>
         private readonly TaskMonitorSession _session;
+        /// <summary>Host 用于确认该任务仍属于当前连接和控制入口的只读查询。</summary>
+        private Func<bool> _sessionValidityProvider;
+        /// <summary>本次刷新确认的会话身份状态；未确认时保留步骤供核查。</summary>
+        private bool _sessionIdentityCurrent = true;
         /// <summary>稳定的工位行集合。</summary>
         private readonly ObservableCollection<TaskStationRow> _stations = new ObservableCollection<TaskStationRow>();
         /// <summary>当前工位定义树，换工位时才重建。</summary>
@@ -58,6 +62,13 @@ namespace MotionControl.TaskEngine.Wpf.Views
             _timer.Tick += RefreshTick;
             Loaded += View_Loaded;
             Unloaded += View_Unloaded;
+        }
+
+        /// <summary>接入 Host 的会话有效性查询；失效只改变显示，不关闭或控制会话。</summary>
+        public void SetSessionValidityProvider(Func<bool> provider)
+        {
+            _sessionValidityProvider = provider;
+            Refresh();
         }
 
         /// <summary>由正式 Host 将来源路径收纳到诊断区，保留监控刷新时间。</summary>
@@ -166,6 +177,23 @@ namespace MotionControl.TaskEngine.Wpf.Views
         {
             try
             {
+                string sessionValidityError = null;
+                try { _sessionIdentityCurrent = _sessionValidityProvider == null || _sessionValidityProvider(); }
+                catch (Exception error) { _sessionIdentityCurrent = false; sessionValidityError = error.GetBaseException().Message; }
+                // 先撤销旧身份，再读取快照；即使读取抛错也不能继续显示旧会话。
+                if (!_sessionIdentityCurrent)
+                {
+                    SourceText.Text = _guidanceEnglish
+                        ? "Task session is not confirmed. Retained steps are for inspection and do not establish current equipment state."
+                        : "任务会话未确认；保留步骤仅供核查，不能代表当前设备状态。";
+                    if (!string.IsNullOrWhiteSpace(sessionValidityError))
+                        SourceText.Text += (_guidanceEnglish ? " Session check failed: " : " 会话核查失败：") + sessionValidityError;
+                    SourceText.ToolTip = SourceText.Text;
+                    SourceText.Visibility = Visibility.Visible;
+                    foreach (var button in ReferencesPanel.Children.OfType<Button>()) button.IsEnabled = false;
+                    // 下一次成功读取时按最新身份重建关联入口。
+                    _referenceRow = null;
+                }
                 _snapshot = _session.Machine.GetSnapshot();
                 var stations = new List<StationTaskSnapshot>();
                 if (_snapshot.Initialization != null) stations.Add(_snapshot.Initialization);
@@ -178,7 +206,17 @@ namespace MotionControl.TaskEngine.Wpf.Views
                 }
                 if (StationsGrid.SelectedItem == null && _stations.Count > 0) StationsGrid.SelectedIndex = 0;
                 var source = _session.IsExample ? T("内置示例来源") : _session.Source;
-                SourceText.Text = _hideSourcePath ? T("任务来源摘要") : string.Format(T("流程数据来源格式"), source);
+                var metadata = _sessionIdentityCurrent ? _session.PublishedMetadata : null;
+                SourceText.Text = !_sessionIdentityCurrent
+                    ? (_guidanceEnglish ? "Task session is not confirmed. Retained steps are for inspection and do not establish current equipment state."
+                        : "任务会话未确认；保留步骤仅供核查，不能代表当前设备状态。")
+                    : metadata == null
+                        ? (_hideSourcePath ? T("任务来源摘要") : string.Format(T("流程数据来源格式"), source))
+                        : (_guidanceEnglish ? "Execution source: task list · " : "执行来源：任务列表 · ") + metadata.FormatSummary(_guidanceEnglish);
+                if (!_sessionIdentityCurrent && !string.IsNullOrWhiteSpace(sessionValidityError))
+                    SourceText.Text += (_guidanceEnglish ? " Session check failed: " : " 会话核查失败：") + sessionValidityError;
+                if (metadata != null && !_hideSourcePath)
+                    SourceText.Text += "\n" + string.Format(T("流程数据来源格式"), source);
                 if (_snapshot.State == TaskMachineState.Stopped)
                     SourceText.Text += (SourceText.Text.Length == 0 ? string.Empty : "\n") + (_guidanceEnglish ? "Task session terminated. Review the retained steps; this session cannot restart. Termination alone does not confirm stopped axes or safe fixtures." : "任务会话已终止：保留步骤供核查，本会话不能再次启动。任务终止不等于轴已停稳或夹具安全。");
                 if (_snapshot.State == TaskMachineState.Faulted)
@@ -204,6 +242,14 @@ namespace MotionControl.TaskEngine.Wpf.Views
             catch (Exception error)
             {
                 _refreshFailed = true;
+                if (!_sessionIdentityCurrent)
+                {
+                    // 同时失效并读取失败时移除旧定义来源，保留的其他数据已标注为旧数据。
+                    FlowDetails.ItemsSource = null;
+                    GlobalProjectionDiagnostics.ItemsSource = null;
+                    GlobalProjectionDiagnosticsExpander.Visibility = Visibility.Collapsed;
+                    _projectionDiagnosticsSource = null;
+                }
                 UpdateNodeSummary(null);
                 LocateCurrentCauseButton.IsEnabled = false;
                 RefreshStatus.Text = T("刷新失败，以下为旧数据");

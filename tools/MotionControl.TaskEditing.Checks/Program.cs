@@ -43,6 +43,7 @@ namespace MotionControl.TaskEditing.Checks
             Check("任务检查字段显示为易读名称", ReadableIssueFields, ref failed);
             Check("任务库筛选及引用保护", V14TaskLibrarySearchChecks.Run, ref failed);
             Check("任务草稿、文件与会话来源", V14TaskSourceSummaryChecks.Run, ref failed);
+            Check("已发布任务会话身份与来源隔离", TaskSessionMetadataChecks.Run, ref failed);
             Check("V1.8 准备专用任务引用与删除保护", V18PreparationReferences, ref failed);
             Check("V1.8 外部准备变更使来源和检查失效", V18PreparationSourceChanges, ref failed);
             Check("V1.8 准备任务、依赖和资源纯校验", V18PreparationValidation, ref failed);
@@ -51,7 +52,7 @@ namespace MotionControl.TaskEditing.Checks
             Check("V1.8 部分恢复失败保留标记并可重试", V18TaskApplyPartialRecovery, ref failed);
             Check("V1.8 工作区定义与后端能力准入分开", V18WorkspaceCapabilityPreflight, ref failed);
             Check("V1.8 异常恢复标记路径阻断装载与应用", V18TaskPendingMarkerDirectory, ref failed);
-            Console.WriteLine("任务编辑内部检查：25 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
+            Console.WriteLine("任务编辑内部检查：26 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
             return failed == 0 ? 0 : 1;
         }
         /// <summary>逐项执行并保留异常堆栈。</summary>

@@ -38,6 +38,14 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
         public bool IsExample { get; }
         /// <summary>本机会话加载的现场启动、停止、复位按钮映射；示例会话保持空映射。</summary>
         public SafetyInterlockConfigurationDocument ControlInputConfiguration { get; }
+        /// <summary>已成功发布的任务会话元数据；发布前为空。</summary>
+        public TaskSessionMetadata PublishedMetadata { get; private set; }
+        /// <summary>防止同一会话被并发发布并生成多个身份。</summary>
+        private readonly object _publicationGate = new object();
+        /// <summary>与执行器构造时同源的不可变任务和工位清单修订。</summary>
+        private readonly IReadOnlyDictionary<string, int> _executionRevisions;
+        /// <summary>执行器构造时使用的设备任务清单修订。</summary>
+        private readonly int _executionMachineRevision;
 
         /// <summary>冻结显示库并建立控制器；不会启动或连接任何运动卡。</summary>
         public TaskMonitorSession(TaskMachineConfiguration configuration, IEnumerable<TaskDefinition> definitions,
@@ -69,10 +77,25 @@ namespace MotionControl.TaskEngine.Wpf.Simulation
                 Projection = TaskProjectProjection.FromSession(frozenConfiguration, frozen.Values, device.Catalog);
                 if (Projection == null) throw new InvalidOperationException("会话引用投影未返回结果。"); }
             catch (Exception projectionError) { ProjectionError = projectionError; }
+            // 执行器会再次复制这些定义；在同一构造阶段冻结修订，避免显示库被修改后改变会话身份。
+            _executionRevisions = new ReadOnlyDictionary<string, int>(frozen.ToDictionary(
+                item => item.Key, item => item.Value.Revision, StringComparer.OrdinalIgnoreCase));
             Machine = new TaskMachineController(frozenConfiguration, frozen.Values, device, alarmService);
+            _executionMachineRevision = frozenConfiguration.Revision;
             Library = new ReadOnlyDictionary<string, TaskDefinition>(frozen);
             Device = device as InMemoryTaskDevice; Source = source; IsExample = isExample;
             ControlInputConfiguration = controlInputConfiguration ?? new SafetyInterlockConfigurationDocument();
+        }
+
+        /// <summary>在正式发布点冻结会话身份和任务修订；同一会话不允许重新发布。</summary>
+        public TaskSessionMetadata Publish(string machineId)
+        {
+            lock (_publicationGate)
+            {
+                if (PublishedMetadata != null) throw new InvalidOperationException("任务会话已经发布，不能重新生成身份。");
+                PublishedMetadata = new TaskSessionMetadata(machineId, Source, _executionMachineRevision, _executionRevisions);
+                return PublishedMetadata;
+            }
         }
 
         /// <summary>只读本机任务及已有轴、IO、变量、示教点文件，不创建另一份映射清单。</summary>

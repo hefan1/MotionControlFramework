@@ -45,6 +45,9 @@ namespace MotionControl.OperatorPages.Checks
             const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
             var type = typeof(MainWindow).Assembly.GetType("MotionControl.Host.Wpf.Tasks.TaskMonitorLauncher", true);
             var page = Activator.CreateInstance(type, flags, null, new object[] { store, id, window, null }, null);
+            var currentPublishedSession = type.GetProperty("CurrentPublishedTaskSession", flags);
+            Require(currentPublishedSession != null, "RED: valid published task session is not exposed.");
+            Require(currentPublishedSession.GetValue(page) == null, "未装载任务时返回了有效会话。");
             // 发起同一正式 WPF 命令，等待 UI 上下文的实际续体。
             Task Invoke(string name, params object[] arguments)
                 => (Task)type.GetMethod(name, flags).Invoke(page, arguments);
@@ -139,6 +142,20 @@ namespace MotionControl.OperatorPages.Checks
                 });
                 await Invoke("LoadTaskSessionAsync");
                 Require(Published() != null && runtime.IsTaskEngineControlClaimed, "当前连接没有正常发布任务。");
+                object firstPublished = Published();
+                Require(ReferenceEquals(currentPublishedSession.GetValue(page), firstPublished), "有效任务会话身份与实际发布对象不一致。");
+                object firstMetadata = firstPublished.GetType().GetProperty("PublishedMetadata").GetValue(firstPublished);
+                Require(firstMetadata != null, "正式任务发布时没有冻结来源元数据。");
+                Guid firstTaskSessionId = (Guid)firstMetadata.GetType().GetProperty("SessionId").GetValue(firstMetadata);
+                Require(firstTaskSessionId != Guid.Empty && firstTaskSessionId != runtime.ConnectionSessionId, "任务会话标识错误复用连接会话。");
+                var controlOwner = typeof(MachineRuntime).GetField("_controlOwner", flags);
+                object previousOwner = controlOwner.GetValue(runtime);
+                try
+                {
+                    controlOwner.SetValue(runtime, MachineControlOwner.StationFlows);
+                    Require(currentPublishedSession.GetValue(page) == null, "RED: task session remains current after C# owner switch.");
+                }
+                finally { controlOwner.SetValue(runtime, previousOwner); }
 
                 // 任务发布后若另有新安装，页面不能把它当作当前任务，关闭时也不能覆盖它。
                 var isPublished = type.GetMethod("HasPublishedPreparationSession", flags);
@@ -148,6 +165,7 @@ namespace MotionControl.OperatorPages.Checks
                 long lostPreparationVersion = runtime.PreparationConfigurationVersion;
                 long lostSafetyVersion = runtime.SafetyObservationVersion;
                 type.GetMethod("MarkControllerConnectionLost", flags).Invoke(page, null);
+                Require(currentPublishedSession.GetValue(page) == null, "断连后配置页仍可读取旧任务会话身份。");
                 Require(card.Online && !runtime.IsConnectionSessionCurrent(lostSession)
                     && !(bool)isPublished.Invoke(page, new object[] { runtime, lostSession }),
                     "连接丢失已锁存但底层反馈恢复时，旧任务范围仍被当成有效会话。");
@@ -161,6 +179,10 @@ namespace MotionControl.OperatorPages.Checks
                 await Invoke("LoadTaskSessionAsync");
                 Require((bool)isPublished.Invoke(page, new object[] { runtime, runtime.ConnectionSessionId }),
                     "重新连接并读取任务后没有建立新的准备会话。");
+                object nextPublished = currentPublishedSession.GetValue(page);
+                object nextMetadata = nextPublished.GetType().GetProperty("PublishedMetadata").GetValue(nextPublished);
+                Require((Guid)nextMetadata.GetType().GetProperty("SessionId").GetValue(nextMetadata) != firstTaskSessionId,
+                    "重连读取后错误沿用旧任务会话标识。");
                 // 两个关闭入口同时等待同一底层收尾时，只能恢复一次配置，两个调用均应得到一致结果。
                 object concurrentSession = Published();
                 object concurrentMachine = concurrentSession.GetType().GetProperty("Machine").GetValue(concurrentSession);
@@ -168,11 +190,14 @@ namespace MotionControl.OperatorPages.Checks
                 var delayedClose = new TaskCompletionSource<bool>();
                 concurrentCloseField.SetValue(concurrentMachine, delayedClose.Task);
                 Task closeFirst = Invoke("CloseTaskSessionAsync", false);
+                var closingSource = (TextBlock)type.GetField("_loadedSource", flags).GetValue(page);
+                bool pendingSourceInvalidated = closingSource.Text.Contains("未确认") || closingSource.Text.Contains("没有可确认");
                 Task closeSecond = Invoke("CloseTaskSessionAsync", false);
                 concurrentCloseField.SetValue(concurrentMachine, null);
                 await (Task)concurrentMachine.GetType().GetMethod("CloseAsync").Invoke(concurrentMachine, null);
                 delayedClose.SetResult(true);
                 await Task.WhenAll(closeFirst, closeSecond);
+                Require(pendingSourceInvalidated, "RED: engineering diagnostics retain stale session identity while close is pending.");
                 Require(Published() == null && !runtime.IsTaskEngineControlClaimed,
                     "并发关闭后会话或设备控制权没有安全释放。");
                 await Invoke("LoadTaskSessionAsync");
@@ -184,6 +209,10 @@ namespace MotionControl.OperatorPages.Checks
                 Task closing = Invoke("CloseTaskSessionAsync", false);
                 closeFailure.SetException(new IOException("simulated close failure"));
                 await Reject(closing, "simulated close failure");
+                type.GetMethod("StateTimer_Tick", flags).Invoke(page, new object[] { null, EventArgs.Empty });
+                var loadedSource = (TextBlock)type.GetField("_loadedSource", flags).GetValue(page);
+                Require(loadedSource.Text.Contains("未确认") || loadedSource.Text.Contains("没有可确认"),
+                    "RED: engineering diagnostics retain stale session identity after a close failure.");
                 Require(ReferenceEquals(Published(), closingSession)
                     && !(bool)isPublished.Invoke(page, new object[] { runtime, runtime.ConnectionSessionId }),
                     "关闭失败后仍将未确认会话作为可提交的准备范围。");
@@ -194,6 +223,7 @@ namespace MotionControl.OperatorPages.Checks
                 runtime.ConfigurePreparations(new[] { replacement });
                 Require(!(bool)isPublished.Invoke(page, new object[] { runtime, runtime.ConnectionSessionId }),
                     "已发布任务错误地认领了其他准备配置代次。");
+                Require(currentPublishedSession.GetValue(page) == null, "准备配置换代后仍显示旧任务会话为当前来源。");
                 await Reject(Invoke("CloseTaskSessionAsync", false), "设备准备配置未能恢复");
                 Require(Published() == null && !runtime.IsTaskEngineControlClaimed
                     && runtime.PreparationStations[0].StationId == "replacement",

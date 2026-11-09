@@ -23,6 +23,8 @@ namespace MotionControl.TaskEngine.Wpf.Views
         private TaskStepRow _referenceRow;
         /// <summary>上次构建关联入口时的界面语言标记。</summary>
         private string _referenceLanguage;
+        /// <summary>关联按钮对应的会话有效状态，变化时重建按钮。</summary>
+        private bool _referenceSessionCurrent = true;
 
         /// <summary>刷新采样表和类型专属内容；非运行状态下不把暂停轴显示成仍在运动。</summary>
         private void ShowDetails(TaskStepRow row)
@@ -74,6 +76,8 @@ namespace MotionControl.TaskEngine.Wpf.Views
             AddFlowDetails(row, fields, parameters, references);
             AddWaitDiagnostics(row.Snapshot, fields, references);
             var selectedStation = StationsGrid.SelectedItem as MotionControl.TaskEngine.Wpf.Monitoring.TaskStationRow;
+            _projectionDetailCache.SetSessionMetadata(_sessionIdentityCurrent ? _session.PublishedMetadata : null);
+            _projectionDetailCache.SetSessionValidity(_sessionIdentityCurrent);
             var projectionFields = _projectionDetailCache.Read(_session.Projection, _session.ProjectionError,
                 selectedStation?.Id, row.TaskId, node.Id, _guidanceEnglish);
             string diagnosticName = _guidanceEnglish ? "Diagnostic" : "诊断";
@@ -89,14 +93,15 @@ namespace MotionControl.TaskEngine.Wpf.Views
             ParametersList.ItemsSource = parameters;
             DetailNotice.Text = row.Snapshot?.State == TaskNodeState.Failed ? T("故障恢复提示")
                 : T("监控只读说明");
-            if (_referenceRow != row || _referenceLanguage != T("关联配置"))
+            if (_referenceRow != row || _referenceLanguage != T("关联配置") || _referenceSessionCurrent != _sessionIdentityCurrent)
             {
-                _referenceRow = row; _referenceLanguage = T("关联配置");
+                _referenceRow = row; _referenceLanguage = T("关联配置"); _referenceSessionCurrent = _sessionIdentityCurrent;
                 ReferencesPanel.Children.Clear();
                 foreach (var reference in references.GroupBy(item => item.Page + "\n" + item.Name + "\n" + item.Direction).Select(group => group.First()))
                 {
                     string suffix = string.IsNullOrEmpty(reference.Direction) ? string.Empty : " (" + reference.Direction + ")";
-                    var button = new Button { Content = T(reference.Page) + " · " + reference.Name + suffix, Tag = reference, ToolTip = reference.Name };
+                    var button = new Button { Content = T(reference.Page) + " · " + reference.Name + suffix, Tag = reference,
+                        ToolTip = reference.Name, IsEnabled = _sessionIdentityCurrent };
                     button.Click += Reference_Click;
                     ReferencesPanel.Children.Add(button);
                 }
@@ -133,9 +138,16 @@ namespace MotionControl.TaskEngine.Wpf.Views
                     + (viewed.Snapshot?.ExecutionId ?? T("定义无执行记录"));
         }
 
-        /// <summary>关联点击仅通知窗口查看配置，不发送运动命令。</summary>
+        /// <summary>跳转前重新核对会话，失效时不把旧定义定位到当前配置。</summary>
         private void Reference_Click(object sender, RoutedEventArgs e)
-        { ReferenceRequested?.Invoke(this, (TaskReferenceEventArgs)((Button)sender).Tag); }
+        {
+            try
+            {
+                if (_sessionValidityProvider != null && !_sessionValidityProvider()) { Refresh(); return; }
+            }
+            catch { Refresh(); return; }
+            ReferenceRequested?.Invoke(this, (TaskReferenceEventArgs)((Button)sender).Tag);
+        }
 
         /// <summary>把布尔值和比较操作转换为可读文字，保留用户自己的名称。</summary>
         private string TranslateValue(string value)

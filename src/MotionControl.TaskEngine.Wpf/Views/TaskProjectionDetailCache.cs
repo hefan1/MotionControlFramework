@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using MotionControl.TaskEngine.Projection;
 using MotionControl.TaskEngine.Wpf.Monitoring;
+using MotionControl.TaskEngine.Wpf.Simulation;
 namespace MotionControl.TaskEngine.Wpf.Views
 {
     /// <summary>只保留当前选择的定义引用显示，避免轮询重复扫描或缓存无限增长。</summary>
@@ -18,6 +19,26 @@ namespace MotionControl.TaskEngine.Wpf.Views
         private bool _english;
         /// <summary>当前选择的有界显示字段。</summary>
         private IReadOnlyList<TaskDetailField> _fields;
+        /// <summary>本监控页已发布会话的真实身份，未提供时保持空值。</summary>
+        private TaskSessionMetadata _sessionMetadata;
+        /// <summary>当前引用是否仍属于已确认的任务会话。</summary>
+        private bool _sessionCurrent = true;
+
+        /// <summary>会话身份变化时作废显示缓存，不改变任务或设备状态。</summary>
+        internal void SetSessionMetadata(TaskSessionMetadata metadata)
+        {
+            if (ReferenceEquals(_sessionMetadata, metadata)) return;
+            _sessionMetadata = metadata;
+            _fields = null;
+        }
+        /// <summary>会话失效时保留引用供核查，但不再称为当前运行来源。</summary>
+        internal void SetSessionValidity(bool current)
+        {
+            if (_sessionCurrent == current) return;
+            _sessionCurrent = current;
+            _fields = null;
+        }
+
         /// <summary>仅选择或来源变化时扫描一次；引用总量保留，界面最多100条，诊断最多20条。</summary>
         internal IReadOnlyList<TaskDetailField> Read(TaskProjectProjection projection, Exception error,
             string station, string task, string node, bool english)
@@ -26,9 +47,15 @@ namespace MotionControl.TaskEngine.Wpf.Views
                 && _station == station && _task == task && _node == node && _english == english) return _fields;
             _projection = projection; _error = error; _station = station; _task = task; _node = node; _english = english;
             var fields = new List<TaskDetailField>();
-            fields.Add(new TaskDetailField(english ? "Definition source" : "定义来源", english
-                ? "Loaded session; project version and session ID not provided. Definition paths are not active instances."
-                : "已加载会话；工程版本与会话标识未提供；定义路径不表示当前活动实例。"));
+            string origin = !_sessionCurrent
+                ? (english ? "Task session is not confirmed; retained definition references are not current active instances."
+                    : "任务会话未确认；保留的定义引用不代表当前活动实例。")
+                : _sessionMetadata == null
+                    ? (english ? "Loaded session; project version and session ID not provided. Definition paths are not active instances."
+                        : "已加载会话；工程版本与会话标识未提供；定义路径不表示当前活动实例。")
+                    : _sessionMetadata.FormatSummary(english) + (english
+                        ? "; definition paths are not active instances." : "；定义路径不表示当前活动实例。");
+            fields.Add(new TaskDetailField(english ? "Definition source" : "定义来源", origin));
             if (error != null) fields.Add(new TaskDetailField(english ? "Projection failed" : "引用投影失败", error.GetBaseException().Message));
             int total = 0;
             if (projection != null && station != null)
