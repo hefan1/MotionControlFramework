@@ -1,0 +1,51 @@
+name: 任务装载关闭专项红绿验证
+
+on:
+  push:
+    branches: ['codex/task-session-lifecycle-20261110']
+    paths:
+      - 'tools/Migrate-TaskSessionLifecycle.py'
+      - '.github/workflows/session-lifecycle-refactor.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: task-session-lifecycle-refactor
+  cancel-in-progress: false
+
+jobs:
+  reproduce:
+    if: github.repository == 'hefan1/MotionControlFramework' && github.ref == 'refs/heads/codex/task-session-lifecycle-20261110'
+    runs-on: windows-2022
+    timeout-minutes: 12
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: 'utf-8'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
+        with:
+          dotnet-version: '8.0.x'
+      - name: 只增加回归并编译原生产实现
+        shell: pwsh
+        run: |
+          python tools/Migrate-TaskSessionLifecycle.py --tests
+          if ($LASTEXITCODE -ne 0) { throw '测试迁移失败。' }
+          dotnet build tools/MotionControl.OperatorPages.Checks/MotionControl.OperatorPages.Checks.csproj -c Release -p:Platform=x64 -o tmp/lifecycle-red
+          if ($LASTEXITCODE -ne 0) { throw '编译失败，不能算作预期红灯。' }
+      - name: 必须观察到指定时序失败
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          & ./tmp/lifecycle-red/MotionControl.OperatorPages.Checks.exe '--pending-task-load' 2>&1 | Tee-Object -FilePath tmp/lifecycle-red.log
+          $code = $LASTEXITCODE
+          $ErrorActionPreference = 'Stop'
+          $text = Get-Content tmp/lifecycle-red.log -Raw
+          if ($code -eq 0 -or !$text.Contains('PENDING_LOAD_CLOSE_RETURNED_EARLY')) {
+            throw '没有复现指定的提前关闭问题，不允许开始修改生产代码。'
+          }
+          Write-Host '[RED 已确认] 读取仍在途时关闭提前成功；未修改生产代码。'
+          exit 0
