@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using MotionControl.Framework.Contracts.Alarms;
 using MotionControl.TaskEngine.Definitions;
 using MotionControl.TaskEngine.Device;
-using MotionControl.TaskEngine.Device.InMemory;
 using MotionControl.TaskEngine.Execution;
 using MotionControl.TaskEngine.Resources;
 
@@ -67,7 +66,7 @@ namespace MotionControl.TaskEngine.Machine
                 TaskAxisState axis = _device.ReadAxis(name);
                 if (requireAxisAlarmsCleared && !string.IsNullOrWhiteSpace(axis.Alarm))
                     throw new InvalidOperationException("轴报警尚未解除：" + name + "，" + axis.Alarm);
-                if (!(_device is InMemoryTaskDevice) && axesRequiringHome.Contains(name))
+                if (_requiresAxisReadinessOnReset && axesRequiringHome.Contains(name))
                 {
                     // Runtime 随后会清除轴报警；报警存在时先不以伺服状态阻止该清除步骤。
                     if (!axis.Enabled && string.IsNullOrWhiteSpace(axis.Alarm))
@@ -126,7 +125,7 @@ namespace MotionControl.TaskEngine.Machine
         /// <summary>兼容内存工作台的同步暂停；真实设备页面应使用等待轴停稳的 PauseAsync。</summary>
         public void Pause()
         {
-            if (!(_device is InMemoryTaskDevice))
+            if (!_allowsSynchronousStateChangeWithoutStopSettlement)
                 throw new InvalidOperationException("真实设备暂停必须调用 PauseAsync，并等待所有轴受控停稳。");
             lock (_sync)
             {
@@ -187,7 +186,7 @@ namespace MotionControl.TaskEngine.Machine
         /// <summary>更新外部停机条件；解除条件后仍须复位，不能自动继续。</summary>
         public void SetStopAlarm(string code, string message, bool active)
         {
-            if (!(_device is InMemoryTaskDevice))
+            if (!_allowsSynchronousStateChangeWithoutStopSettlement)
                 throw new InvalidOperationException("真实设备停机条件必须使用 SetStopAlarmAsync，确认轴受控停稳。");
             SetStopAlarmCore(code, message, active);
         }

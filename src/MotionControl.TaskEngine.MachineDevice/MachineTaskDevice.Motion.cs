@@ -122,7 +122,9 @@ namespace MotionControl.TaskEngine.MachineDevice
                 || double.IsNaN(status.Position) || double.IsInfinity(status.Position))
                 throw new InvalidOperationException("轴位置或速度状态未知，不能确认停止：" + machine.AxisName + "。");
             if (status.AlarmActive) throw new InvalidOperationException("轴存在报警，不能确认动作完成：" + machine.AxisName + "。");
-            return !status.Moving && Math.Abs(status.Velocity) <= 0.001 && (!machine.IsHome || status.Homed);
+            if (!status.ServoEnabled)
+                throw new InvalidOperationException("轴伺服已关闭，不能将正在核对的动作认定为完成：" + machine.AxisName + "。");
+            return AxisStopFeedback.IsConfirmedStopped(status) && (!machine.IsHome || status.Homed);
         }
 
         /// <summary>
@@ -194,8 +196,7 @@ namespace MotionControl.TaskEngine.MachineDevice
         {
             IAxis axis = _motionCards.GetAxis(name);
             AxisStatus status = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
-            if (status == null || status.Moving || double.IsNaN(status.Velocity)
-                || double.IsInfinity(status.Velocity) || Math.Abs(status.Velocity) > 0.001)
+            if (!AxisStopFeedback.IsConfirmedStopped(status))
             {
                 throw new InvalidOperationException("轴仍在运动或速度状态未知，不能确认已停止：" + name + "。");
             }
@@ -242,7 +243,7 @@ namespace MotionControl.TaskEngine.MachineDevice
                 AxisStatus status = await move.Axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
                 if (status == null || double.IsNaN(status.Velocity) || double.IsInfinity(status.Velocity))
                     throw new InvalidOperationException("轴速度状态未知，不能确认停止：" + move.AxisName + "。");
-                if (!status.Moving && Math.Abs(status.Velocity) <= 0.001)
+                if (AxisStopFeedback.IsConfirmedStopped(status))
                 {
                     return;
                 }

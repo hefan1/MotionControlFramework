@@ -11,6 +11,10 @@ using System.Threading.Tasks;
 using MotionControl.Adapter.MotionCard.Virtual;
 using MotionControl.Framework.Contracts.Configuration;
 using MotionControl.Framework.Contracts.Motion;
+using MotionControl.Framework.Contracts.Flow;
+using MotionControl.Framework.Runtime.Alarms;
+using MotionControl.Framework.Runtime.Machine;
+using MotionControl.Framework.Runtime.Safety;
 
 namespace MotionControl.VirtualAdapter.Checks
 {
@@ -27,7 +31,18 @@ namespace MotionControl.VirtualAdapter.Checks
                 StartMotionAndExit(int.Parse(args[1]));
                 return;
             }
-            try { Run(args); }
+            try
+            {
+                // 只通过现有软件控制器 API 检查运动语义，不创建内存假轴。
+                if (args.Length == 2 && args[0] == "--controller-api")
+                {
+                    int port = int.Parse(args[1]);
+                    RunControllerApi(port);
+                    CheckRuntimeTaskSession(port);
+                }
+                else
+                    Run(args);
+            }
             catch (Exception ex)
             {
                 Console.Error.WriteLine(ex.GetType().FullName);
@@ -64,6 +79,15 @@ namespace MotionControl.VirtualAdapter.Checks
             var axis = card.Axes.Single();
             axis.EnableServoAsync(token).GetAwaiter().GetResult();
             axis.HomeAsync(token).GetAwaiter().GetResult();
+            // Abort 没有独立控制器命令，必须在发送任何停车命令前拒绝。
+            bool abortRejected = false;
+            try { axis.StopAsync(AxisStopMode.Abort, token).GetAwaiter().GetResult(); }
+            catch (NotSupportedException) { abortRejected = true; }
+            if (!abortRejected) throw new Exception("软件控制器未拒绝不支持的 Abort 停止模式");
+            bool invalidStopRejected = false;
+            try { axis.StopAsync((AxisStopMode)999, token).GetAwaiter().GetResult(); }
+            catch (ArgumentOutOfRangeException) { invalidStopRejected = true; }
+            if (!invalidStopRejected) throw new Exception("软件控制器未拒绝未知停止模式");
             bool jogRejected = false;
             try { axis.StartJogAsync(MotionDirection.Positive, new AxisMotionProfile(10, 10, 10), token).GetAwaiter().GetResult(); }
             catch (NotSupportedException) { jogRejected = true; }
@@ -109,6 +133,182 @@ namespace MotionControl.VirtualAdapter.Checks
             AssertHeartbeatDiagnostic(false);
             AssertHeartbeatDiagnostic(true);
             Console.WriteLine("虚拟控制器适配器往返检查通过。");
+        }
+
+        /// <summary>
+        /// 连接已有的独立软件控制器，仅通过实际 IMotionCard/IAxis API 验证轴命令及反馈。
+        /// 不创建 FakeAxis、内存运动模型或新的控制器协议。
+        /// </summary>
+        private static void RunControllerApi(int port)
+        {
+            var definition = new AxisHardwareDefinition
+            {
+                Name = "ApiAxis", ControllerId = "ApiCheck", AxisNumber = 1,
+                PositionTolerance = 0.01, SoftLimitEnabled = false
+            };
+            var card = new VirtualMotionCard("ApiCheck", new[] { definition },
+                new DigitalIoHardwareDefinition[0], new DigitalIoHardwareDefinition[0], port, DiagnosticsRoot);
+            IAxis axis = card.Axes.Single();
+            var token = CancellationToken.None;
+            var profile = new AxisMotionProfile(10, 20, 20);
+            try
+            {
+                card.ConnectAsync(token).GetAwaiter().GetResult();
+                axis.EnableServoAsync(token).GetAwaiter().GetResult();
+                axis.HomeAsync(token).GetAwaiter().GetResult();
+                AxisStatus homed = axis.ReadStatusAsync(token).GetAwaiter().GetResult();
+                if (!homed.Homed || homed.Moving)
+                    throw new Exception("控制器 API 未确认回零完成。");
+
+                axis.MoveAbsoluteAsync(1, profile, token).GetAwaiter().GetResult();
+                AxisStatus atTarget = axis.ReadStatusAsync(token).GetAwaiter().GetResult();
+                if (Math.Abs(atTarget.Position - 1) > definition.PositionTolerance || atTarget.Moving)
+                    throw new Exception("绝对定位后的真实轴反馈不符合目标。");
+                axis.MoveRelativeAsync(-0.5, profile, token).GetAwaiter().GetResult();
+                AxisStatus afterRelative = axis.ReadStatusAsync(token).GetAwaiter().GetResult();
+                if (Math.Abs(afterRelative.Position - 0.5) > definition.PositionTolerance
+                    || !afterRelative.HasStoppedMotionFeedback())
+                    throw new Exception("相对定位后的真实轴反馈未确认停稳或不符合目标。");
+
+                // 注入控制器真实 API 读取失败：命令已经发出，必须停车，且不能把操作当成 Done。
+                string readFault = SendRaw(port,
+                    "{\"command\":\"setCommandFault\",\"targetCommand\":\"readAxis\",\"targetIndex\":1,\"mode\":\"reject\",\"delayMs\":0}");
+                if (!readFault.Contains("\"ok\":true"))
+                    throw new Exception("独立控制器未接受一次性轴状态读取故障。");
+                bool moveRejectedOnFeedbackError = false;
+                try
+                {
+                    axis.MoveAbsoluteAsync(10, new AxisMotionProfile(1, 1, 1), token).GetAwaiter().GetResult();
+                }
+                catch (InvalidOperationException error)
+                {
+                    moveRejectedOnFeedbackError = error.Message.Contains("拒绝 readAxis");
+                }
+                if (!moveRejectedOnFeedbackError)
+                    throw new Exception("定位期间控制器状态读取失败被错误当成动作完成。");
+                AxisStatus afterFailedMove = axis.ReadStatusAsync(token).GetAwaiter().GetResult();
+                if (!afterFailedMove.HasStoppedMotionFeedback()
+                    || afterFailedMove.Position >= 10 - definition.PositionTolerance)
+                    throw new Exception("定位反馈失败后未能通过控制器真实回读确认停车。");
+
+                axis.StartJogAsync(MotionDirection.Positive, profile, token).GetAwaiter().GetResult();
+                AxisStatus jogging = axis.ReadStatusAsync(token).GetAwaiter().GetResult();
+                if (!jogging.Moving || jogging.HasStoppedMotionFeedback())
+                    throw new Exception("点动中的实际反馈被错误标记为停稳。");
+                bool abortRejected = false;
+                try { axis.StopAsync(AxisStopMode.Abort, token).GetAwaiter().GetResult(); }
+                catch (NotSupportedException) { abortRejected = true; }
+                if (!abortRejected)
+                    throw new Exception("不支持的 Abort 停止模式没有明确拒绝。");
+                if (!axis.ReadStatusAsync(token).GetAwaiter().GetResult().Moving)
+                    throw new Exception("拒绝 Abort 后意外发送了停止命令。");
+
+                axis.StopAsync(AxisStopMode.Controlled, token).GetAwaiter().GetResult();
+                AxisStatus stopped = axis.ReadStatusAsync(token).GetAwaiter().GetResult();
+                if (!stopped.HasStoppedMotionFeedback())
+                    throw new Exception("Controlled 停止后真实反馈仍未确认停稳。");
+
+                // 控制器停止请求已执行但回读失败，API 不得报告“停止确认成功”。
+                axis.StartJogAsync(MotionDirection.Positive, profile, token).GetAwaiter().GetResult();
+                string stopFeedbackFault = SendRaw(port,
+                    "{\"command\":\"setCommandFault\",\"targetCommand\":\"readAxis\",\"targetIndex\":1,\"mode\":\"reject\",\"delayMs\":0}");
+                if (!stopFeedbackFault.Contains("\"ok\":true"))
+                    throw new Exception("控制器未接受停止反馈读取故障。");
+                bool stopFeedbackRejected = false;
+                try { axis.StopAsync(AxisStopMode.Controlled, token).GetAwaiter().GetResult(); }
+                catch (InvalidOperationException error) { stopFeedbackRejected = error.Message.Contains("拒绝 readAxis"); }
+                if (!stopFeedbackRejected)
+                    throw new Exception("停车后状态读取失败仍被错误标记为停止确认成功。");
+                if (!axis.ReadStatusAsync(token).GetAwaiter().GetResult().HasStoppedMotionFeedback())
+                    throw new Exception("停止反馈故障后无法从真实控制器确认轴停稳。");
+                axis.DisableServoAsync(token).GetAwaiter().GetResult();
+                Console.WriteLine("[通过] 独立软件控制器 API：定位、点动、停止、异常回读、真实停稳和断使能");
+            }
+            finally
+            {
+                if (card.IsConnected)
+                {
+                    // 即使中间断言失败，也先停止该隔离测试轴再释放连接租约。
+                    try { axis.StopAsync(AxisStopMode.Controlled, CancellationToken.None).GetAwaiter().GetResult(); }
+                    finally { card.DisconnectAsync(CancellationToken.None).GetAwaiter().GetResult(); }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 连接现有软件控制器并通过真实 MotionCardGroup/Runtime 检查任务控制权交接。
+        /// 本检查只读取轴、报警和连接状态，不创建虚构的轴状态，也不发运动命令。
+        /// </summary>
+        private static void CheckRuntimeTaskSession(int port)
+        {
+            var axis = new AxisHardwareDefinition
+            {
+                Name = "SessionAxis", ControllerId = "SessionCheck", AxisNumber = 2,
+                SoftLimitEnabled = false, PositionTolerance = 0.01
+            };
+            var stopInput = new DigitalIoHardwareDefinition
+            {
+                Name = "SessionEmergencyStop", ControllerId = "SessionCheck",
+                Channel = 42, ActiveHigh = true
+            };
+            var card = new VirtualMotionCard("SessionCheck", new[] { axis },
+                new[] { stopInput }, new DigitalIoHardwareDefinition[0], port,
+                Path.Combine(DiagnosticsRoot, "runtime-session"));
+            var group = new MotionCardGroup(new IMotionCard[] { card });
+            var alarms = new MachineAlarmService();
+            var safety = new LogicalIoEmergencyStopStatus(card, "SessionEmergencyStop");
+            var runtime = new MachineRuntime(group, new IStationFlow[0], alarms, safety);
+            var token = CancellationToken.None;
+            object currentOwner = null;
+            try
+            {
+                runtime.ConnectAsync(token).GetAwaiter().GetResult();
+                runtime.ResetAsync(token).GetAwaiter().GetResult();
+                Guid originalSession = runtime.ConnectionSessionId.Value;
+                currentOwner = new object();
+                runtime.AcquireTaskEngineControlAsync(currentOwner, token).GetAwaiter().GetResult();
+                CheckOldTaskFinishRejected(runtime, originalSession, new object(), "不是当前任务持权设备");
+                CheckOldTaskFinishRejected(runtime, Guid.NewGuid(), currentOwner, "不是当前连接会话");
+                runtime.FinishTaskEngineRunAsync(originalSession, currentOwner, false, null).GetAwaiter().GetResult();
+                runtime.ReleaseTaskEngineControl(currentOwner);
+                currentOwner = null;
+                runtime.DisconnectAsync(token).GetAwaiter().GetResult();
+
+                // 使用同一台真实软件控制器重连，旧会话不能结束新连接的任务状态。
+                runtime.ConnectAsync(token).GetAwaiter().GetResult();
+                Guid newSession = runtime.ConnectionSessionId.Value;
+                if (newSession == originalSession) throw new Exception("重连没有生成新的运行时会话身份。");
+                currentOwner = new object();
+                runtime.AcquireTaskEngineControlAsync(currentOwner, token).GetAwaiter().GetResult();
+                CheckOldTaskFinishRejected(runtime, originalSession, currentOwner, "重连前旧会话");
+                runtime.FinishTaskEngineRunAsync(newSession, currentOwner, false, null).GetAwaiter().GetResult();
+                runtime.ReleaseTaskEngineControl(currentOwner);
+                currentOwner = null;
+                runtime.DisconnectAsync(token).GetAwaiter().GetResult();
+                Console.WriteLine("[通过] 独立软件控制器 Runtime：持权身份拒绝、跨连接迟到状态拒绝与正常收尾");
+            }
+            finally
+            {
+                // 本检查没有使能或运动。失败时仍尝试归还该测试会话并断开控制器。
+                if (currentOwner != null) runtime.ReleaseTaskEngineControl(currentOwner);
+                if (card.IsConnected) runtime.DisconnectAsync(CancellationToken.None).GetAwaiter().GetResult();
+            }
+        }
+
+        /// <summary>错误身份不能修改 Runtime 状态；只接受明确的连接或持权拒绝原因。</summary>
+        private static void CheckOldTaskFinishRejected(MachineRuntime runtime, Guid session,
+            object owner, string scenario)
+        {
+            MachineRunState stateBefore = runtime.State;
+            bool rejected = false;
+            try { runtime.FinishTaskEngineRunAsync(session, owner, false, null).GetAwaiter().GetResult(); }
+            catch (InvalidOperationException error)
+            {
+                rejected = error.Message.Contains("连接会话已变化")
+                    || error.Message.Contains("未持有本机控制权");
+            }
+            if (!rejected || runtime.State != stateBefore)
+                throw new Exception("旧任务完成回调未被安全拒绝：" + scenario);
         }
 
         /// <summary>通过正式虚拟卡适配器读取独立物料输入，核对未知、变化、冲突和输出隔离。</summary>

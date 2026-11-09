@@ -28,6 +28,13 @@ jobs:
         uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6
         with:
           dotnet-version: '8.0.x'
+      - name: 检查受保护 UI 布局基线
+        shell: pwsh
+        run: ./tools/Verify-ProtectedUi.ps1
       - name: 构建正式 Host 并运行内部检查
         shell: pwsh
         run: ./tools/Verify-V18.ps1
+      - name: 通过已有软件控制器 API 检查轴动作和停稳
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: ./tools/Verify-ControllerApi.ps1

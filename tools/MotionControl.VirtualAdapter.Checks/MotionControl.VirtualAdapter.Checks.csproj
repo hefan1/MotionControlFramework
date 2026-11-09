@@ -4,5 +4,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Adapters\MotionCards\Virtual\Adapter\MotionControl.Adapter.MotionCard.Virtual.csproj" />
+    <ProjectReference Include="..\..\src\MotionControl.Framework.Runtime\MotionControl.Framework.Runtime.csproj" />
   </ItemGroup>
 </Project>

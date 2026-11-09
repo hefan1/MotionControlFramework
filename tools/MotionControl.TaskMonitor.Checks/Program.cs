@@ -40,8 +40,9 @@ namespace MotionControl.TaskMonitor.Checks
             Check("示例任务与未知输入、整机暂停、恢复和关闭", () => ExampleLifecycle().GetAwaiter().GetResult(), ref failures);
             Check("重复子任务调用与未选择分支", () => TreeAssociations().GetAwaiter().GetResult(), ref failures);
             Check("同工位多条并行活动行及暂停覆盖", () => ParallelRows().GetAwaiter().GetResult(), ref failures);
+            Check("正式装载缺少设备时禁止内存回退", RequireDeviceForFormalLoad, ref failures);
             Check("WPF 监控页面、关联详情与操作按钮生产流程", ConstructViews, ref failures);
-            Console.WriteLine("任务监控内部检查完成：4 组，失败 " + failures + "。不代表实际屏幕验证。");
+            Console.WriteLine("任务监控内部检查完成：5 组，失败 " + failures + "。不代表实际屏幕验证。");
             return failures == 0 ? 0 : 1;
         }
 
@@ -50,6 +51,17 @@ namespace MotionControl.TaskMonitor.Checks
         {
             try { action(); Console.WriteLine("[通过] " + name); }
             catch (Exception error) { failures++; Console.Error.WriteLine("[失败] " + name + "\n" + error); }
+        }
+
+        /// <summary>缺少当前设备端口时，正式装载应在读取任务文件前拒绝；不建立假轴或控制器。</summary>
+        private static void RequireDeviceForFormalLoad()
+        {
+            // 此目录仅作构造参数，不会装载配置或连接控制器。
+            var store = new MachineConfigurationStore(Path.GetTempPath());
+            bool rejected = false;
+            try { TaskMonitorSession.LoadMachine(store, "UnavailableDevice", null, null); }
+            catch (ArgumentNullException error) { rejected = error.ParamName == "device"; }
+            Assert(rejected, "正式任务加载缺少实际设备时没有明确拒绝，可能隐式使用内存执行器。");
         }
 
         /// <summary>示例由实际引擎运行，暂停时保留步骤，输入恢复后继续生产。</summary>
@@ -191,11 +203,16 @@ namespace MotionControl.TaskMonitor.Checks
                 view.ReferenceRequested += (sender, args) => requestedReference = args;
                 view.Refresh(); view.SetLanguage("en-US");
                 Assert(view.T("步骤详情") == "Step details", "英文资源未加载。");
-                Assert(((DataGrid)view.FindName("StationsGrid")).Columns[0].Header.ToString() == "Station",
-                    "英文工位列表表头没有说明该列显示工位名称。");
+                // 目前的工位列表采用无表头卡片布局，不能再访问没有设置的列 Header。
+                var stationGrid = view.FindName("StationsGrid") as DataGrid;
+                Assert(stationGrid != null && stationGrid.HeadersVisibility == DataGridHeadersVisibility.None
+                    && stationGrid.Columns.Count == 1 && stationGrid.Columns[0] is DataGridTemplateColumn
+                    && stationGrid.Items.OfType<TaskStationRow>().Any(row => row.Id == "inspect"),
+                    "工位卡片列表未使用现行无表头布局，或丢失了真实工位数据。");
                 view.SetLanguage("zh-CN");
-                Assert(((DataGrid)view.FindName("StationsGrid")).Columns[0].Header.ToString() == "工位名称",
-                    "工位列表表头没有说明该列显示工位名称。");
+                Assert(view.T("步骤详情") == "步骤详情"
+                    && stationGrid.Items.OfType<TaskStationRow>().Any(row => row.Id == "inspect"),
+                    "切换中文后资源或原工位身份丢失。");
                 Assert(view.FocusStationByName("inspect")
                     && ((TaskStationRow)((DataGrid)view.FindName("StationsGrid")).SelectedItem).Id == "inspect",
                     "来自报警的稳定工位标识没有直接定位工位。");
@@ -247,7 +264,9 @@ namespace MotionControl.TaskMonitor.Checks
                 Assert(!causeButton.IsEnabled, "没有运行步骤或停机故障时仍允许点击原因定位。");
                 ExerciseMultipleStationFaultSelection(view, session, stationsGrid, causeButton);
                 ExerciseFiveStationLayout(application);
+                Console.WriteLine("[阶段] 验证多工位超时报警定位。");
                 ExerciseTimeoutAlarmLocation(application);
+                Console.WriteLine("[阶段] 验证等待诊断的中英文说明。");
                 ExerciseOperatorWaitDescriptions(application);
                 ExerciseOperatorControls(application);
                 ExerciseFaultRecoveryFromOperatorInput(application);
@@ -360,7 +379,7 @@ namespace MotionControl.TaskMonitor.Checks
             finally
             {
                 pendingWindow?.Close();
-                if (pendingSession != null) pendingSession.Machine.CloseAsync().GetAwaiter().GetResult();
+                if (pendingSession != null) CloseTestSession(pendingSession.Machine, "循环工位监控会话");
                 CloseExampleSessionAsync(session, false).GetAwaiter().GetResult();
                 application.Shutdown();
             }
@@ -474,6 +493,21 @@ namespace MotionControl.TaskMonitor.Checks
             var stations = session.Machine.GetSnapshot().Stations;
             return new[] { "load", "transfer", "inspect" }
                 .Select(id => stations.Single(station => station.StationId == id).CompletedCycles).ToArray();
+        }
+
+        /// <summary>
+        /// 在 WPF 检查中有界等待内存任务会话关闭；不阻塞界面线程的 Dispatcher。
+        /// 超过时限必须报告失败，不能让 CI 一直挂起，也不能当作设备安全收尾成功。
+        /// </summary>
+        private static void CloseTestSession(TaskMachineController machine, string source)
+        {
+            // CloseAsync 可能在第一次 await 之前同步触发取消回调、报警或资源收尾。
+            // 不能在 STA UI 线程直接调用后才进入 Dispatcher 等待，否则若同步阶段阻塞就无法超时。
+            Console.WriteLine("[检查收尾] 开始关闭：" + source);
+            Task closing = Task.Run(() => machine.CloseAsync());
+            WaitWithDispatcher(() => closing.IsCompleted, 15000, source + "在 15 秒内未能关闭；保留原始未收尾状态。");
+            closing.GetAwaiter().GetResult();
+            Console.WriteLine("[检查收尾] 已确认完成：" + source);
         }
 
         /// <summary>用 WPF Dispatcher 推进窗口计时器和后台 UI 刷新。</summary>
@@ -706,11 +740,11 @@ namespace MotionControl.TaskMonitor.Checks
                         && session.Machine.GetSnapshot().State == TaskMachineState.Closed,
                         30000, "故障恢复检查窗口关闭后，整机会话没有完成收尾。");
                 }
-                else session.Machine.CloseAsync().GetAwaiter().GetResult();
+                else CloseTestSession(session.Machine, "输入超时恢复检查会话");
             }
         }
 
-        /// <summary>验证初始化与四个工位在常见任务监控高度下默认可见，步骤区仍可操作。</summary>
+        /// <summary>验证小窗口内仍能滚动定位初始化与四个工位，且步骤区可操作。</summary>
         private static void ExerciseFiveStationLayout(Application application)
         {
             var task = Definition("LayoutCheck", Delay("delay", 10));
@@ -732,12 +766,20 @@ namespace MotionControl.TaskMonitor.Checks
                 view.Refresh();
                 view.UpdateLayout();
                 var grid = (DataGrid)view.FindName("StationsGrid");
-                var lastRow = grid.ItemContainerGenerator.ContainerFromIndex(4) as DataGridRow;
-                Assert(grid.Items.Count == 5 && lastRow != null && lastRow.IsVisible,
-                    "初始化和四个工位没有同时生成可见行。 ");
-                var rowBottom = lastRow.TranslatePoint(new Point(0, lastRow.ActualHeight), grid).Y;
-                Assert(rowBottom <= grid.ActualHeight - 1,
-                    "任务监控默认高度下末工位被裁切，需要滚动才能看到。 ");
+                Assert(grid.Items.Count == 5 && grid.ActualHeight > 0,
+                    "初始化与四个工位没有全部加载，或工位列表不可见。");
+                // 工位行现在包含更完整的动作与来源信息；小窗口允许滚动，但末工位必须能定位。
+                var lastStation = grid.Items[4];
+                grid.ScrollIntoView(lastStation);
+                view.UpdateLayout();
+                application.Dispatcher.Invoke(new Action(() => { }), DispatcherPriority.ApplicationIdle);
+                var lastRow = grid.ItemContainerGenerator.ContainerFromItem(lastStation) as DataGridRow;
+                Assert(lastRow != null && lastRow.IsVisible,
+                    "小窗口滚动后仍无法定位最后一个工位。");
+                double rowTop = lastRow.TranslatePoint(new Point(0, 0), grid).Y;
+                double rowBottom = lastRow.TranslatePoint(new Point(0, lastRow.ActualHeight), grid).Y;
+                Assert(rowTop >= -1 && rowBottom <= grid.ActualHeight + 1,
+                    "滚动定位后最后一个工位仍被裁切。");
                 var tree = (TreeView)view.FindName("StepsTree");
                 var cause = (Button)view.FindName("LocateCurrentCauseButton");
                 var executing = (TextBlock)view.FindName("ExecutingNodesText");
@@ -753,7 +795,7 @@ namespace MotionControl.TaskMonitor.Checks
             finally
             {
                 window.Close();
-                session.Machine.CloseAsync().GetAwaiter().GetResult();
+                CloseTestSession(session.Machine, "任务监控窗口会话");
             }
         }
 
@@ -851,7 +893,7 @@ namespace MotionControl.TaskMonitor.Checks
             finally
             {
                 window.Close();
-                session.Machine.CloseAsync().GetAwaiter().GetResult();
+                CloseTestSession(session.Machine, "任务监控窗口会话");
             }
         }
 
@@ -880,6 +922,7 @@ namespace MotionControl.TaskMonitor.Checks
             var view = new TaskMonitorView(session);
             try
             {
+                Console.WriteLine("[等待诊断] 启动隔离任务");
                 session.Machine.Reset(); session.Machine.Start();
                 WaitWithDispatcher(() =>
                 {
@@ -890,6 +933,7 @@ namespace MotionControl.TaskMonitor.Checks
                             && station.Run?.Nodes.Any(node => node.NodeId == "wait" && node.State == TaskNodeState.Waiting
                                 && node.Diagnostics?.WaitKind == StationWaitKind.Condition) == true);
                 }, 5000, "工位未进入等待状态。");
+                Console.WriteLine("[等待诊断] 两工位均已进入等待，开始刷新中文快照");
                 view.Refresh();
                 var grid = (DataGrid)view.FindName("StationsGrid");
                 var pressRow = grid.Items.OfType<TaskStationRow>().Single(row => row.Id == "press");
@@ -929,6 +973,7 @@ namespace MotionControl.TaskMonitor.Checks
                     && ((TextBlock)view.FindName("DetailSummary")).Text.Contains("Load.Ready")
                     && ((DataGrid)view.FindName("ObservationTable")).Items.Count > 0,
                     "步骤详情未同步完整等待提示，或维护采样表丢失。");
+                Console.WriteLine("[等待诊断] 中文快照检查完成，注入未知采样");
                 device.SetVariable("Press.Request", null); device.SetVariable("Load.Ready", null);
                 WaitWithDispatcher(() =>
                 {
@@ -939,6 +984,7 @@ namespace MotionControl.TaskMonitor.Checks
                         && pressDiagnostic.WaitItems.Single(item => item.ObjectId == "Press.Request").Quality == StationValueQuality.Unknown
                         && loadDiagnostic.Decision == null && loadDiagnostic.WaitItems.Single().Quality == StationValueQuality.Unknown;
                 }, 5000, "未知信号没有反映到运行快照。");
+                Console.WriteLine("[等待诊断] 未知采样已写入，开始验证英文显示");
                 view.Refresh();
                 Assert(pressRow.Snapshot.Diagnostics.WaitItems.Single(item => item.ObjectId == "Press.Request").Actual == null
                     && pressRow.Snapshot.Diagnostics.WaitItems.Single(item => item.ObjectId == "Press.Complete").Quality == StationValueQuality.Good,
@@ -959,6 +1005,7 @@ namespace MotionControl.TaskMonitor.Checks
                     && pressRow.EngineeringDetail.Contains("Press.Request=未知")
                     && loadRow.EngineeringDetail == loadRow.Snapshot.Run.Nodes.Single(node => node.NodeId == "wait").Detail,
                     "切换显示语言改变了原始工程诊断。");
+                Console.WriteLine("[等待诊断] 英文显示完成，继续验证握手复位阶段");
                 view.SetLanguage("zh-CN"); device.SetVariable("Press.Request", "true");
                 WaitWithDispatcher(() => session.Machine.GetSnapshot().Stations.Single(station => station.StationId == "press")
                     .Diagnostics?.ReasonCode == "handshake.wait_request_reset_after_completion",
@@ -973,8 +1020,13 @@ namespace MotionControl.TaskMonitor.Checks
                     && pressRow.Detail.Contains("Press.Request") && pressRow.Detail.Contains("Press.Complete")
                     && pressRow.Detail.Contains("未提供") && pressRow.EngineeringDetail == pressRow.Snapshot.Detail
                     && pressRow.EngineeringDetail.Contains("Press.Request"), "完成后的交接提示不准确或原始信号丢失。");
+                Console.WriteLine("[等待诊断] 所有断言完成");
             }
-            finally { session.Machine.CloseAsync().GetAwaiter().GetResult(); }
+            finally
+            {
+                Console.WriteLine("[等待诊断] 开始有界关闭会话");
+                CloseTestSession(session.Machine, "等待诊断会话");
+            }
         }
 
         /// <summary>用于只读定位检查的未连接控制卡替身。</summary>

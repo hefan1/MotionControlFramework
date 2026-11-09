@@ -997,19 +997,32 @@ namespace MotionControl.Framework.Runtime.Machine
             }
             if (ControlOwner == MachineControlOwner.TaskEngine)
             {
-                IAutomaticProductionPause taskPause;
-                lock (_controlOwnerLock) taskPause = _taskEngineOwner as IAutomaticProductionPause;
+                // 捕获启动暂停时的设备身份；异步停止期间不得误用后来接管的新任务会话。
+                Guid? session = ConnectionSessionId;
+                object taskOwner;
+                lock (_controlOwnerLock) taskOwner = _taskEngineOwner;
+                IAutomaticProductionPause taskPause = taskOwner as IAutomaticProductionPause;
                 if (taskPause == null)
                     throw new InvalidOperationException("任务执行入口未提供受控暂停能力，不能确认生产暂停。");
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
+                    // 失联时仍先请求原任务停止；连接身份只用于随后更新 Runtime 的可信状态。
                     await taskPause.PauseAutomaticProductionAsync().ConfigureAwait(false);
-                    await FinishTaskEngineRunAsync(false, null).ConfigureAwait(false);
+                    if (!session.HasValue)
+                        throw new InvalidOperationException("任务已请求暂停，但原连接会话失效，不能确认整机已暂停。");
+                    await FinishTaskEngineRunAsync(session.Value, taskOwner, false, null).ConfigureAwait(false);
                 }
                 catch (Exception error)
                 {
-                    await FinishTaskEngineRunAsync(true, error).ConfigureAwait(false);
+                    if (session.HasValue)
+                    {
+                        try { await FinishTaskEngineRunAsync(session.Value, taskOwner, true, error).ConfigureAwait(false); }
+                        catch (Exception finishError)
+                        {
+                            throw new AggregateException("任务暂停失败且当前连接的状态收尾未确认。", error, finishError);
+                        }
+                    }
                     throw;
                 }
                 return;

@@ -22,6 +22,10 @@ namespace MotionControl.TaskEngine.Machine
         private readonly object _sync = new object();
         /// <summary>本会话独占的任务设备，可连接内存设备或已接入的运动控制卡。</summary>
         private readonly ITaskDevice _device;
+        /// <summary>是否必须在复位时检查定位轴的真实使能及回零反馈；未声明策略的设备默认必须检查。</summary>
+        private readonly bool _requiresAxisReadinessOnReset;
+        /// <summary>是否允许同步修改暂停与停机报警；未声明策略的设备默认禁止跳过异步停稳收尾。</summary>
+        private readonly bool _allowsSynchronousStateChangeWithoutStopSettlement;
         /// <summary>当前设备报警服务；可由 Host 注入正式 Runtime 共用的实例。</summary>
         public IMachineAlarmService AlarmService { get; }
         /// <summary>冻结的设备清单。</summary>
@@ -88,6 +92,11 @@ namespace MotionControl.TaskEngine.Machine
             ITaskDevice device, IMachineAlarmService alarmService = null)
         {
             _device = device ?? throw new ArgumentNullException(nameof(device));
+            // 严格模式是默认值；仅框架内部已知、没有物理轴和输出的内存设备声明例外。
+            var executionPolicy = device as ITaskDeviceExecutionPolicy;
+            _requiresAxisReadinessOnReset = executionPolicy == null || executionPolicy.RequiresAxisReadinessOnReset;
+            _allowsSynchronousStateChangeWithoutStopSettlement =
+                executionPolicy != null && executionPolicy.AllowsSynchronousStateChangeWithoutStopSettlement;
             AlarmService = alarmService ?? new MachineAlarmService();
             var original = new List<TaskDefinition>();
             foreach (TaskDefinition task in definitions ?? new TaskDefinition[0])

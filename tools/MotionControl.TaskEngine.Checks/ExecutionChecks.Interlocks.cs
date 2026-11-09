@@ -41,14 +41,23 @@ namespace MotionControl.TaskEngine.Checks
             scope.ExitInterlock.Inputs[0].Expected = true; // 不能改到启动时冻结的定义。
             device.SetInput("PartReady", true);
             await Until(() => HasNode(run, "zoneBody", TaskNodeState.Completed), "正文没有完成。");
-            CheckAssert.True(!run.Completion.IsCompleted && ResourceFor(device, run).State == TaskResourceState.Held, "退出条件不满足却释放。");
+            // 等到退出互锁真正进入等待态，避免用正文刚完成的过渡时刻检查资源。
+            await Until(() => HasNode(run, "zone", TaskNodeState.Waiting), "正文完成后没有进入退出互锁等待。");
+            var resourceBeforePause = ResourceFor(device, run);
+            CheckAssert.True(!run.Completion.IsCompleted && resourceBeforePause != null
+                && resourceBeforePause.State == TaskResourceState.Held,
+                "退出条件不满足却释放资源；当前运行=" + run.GetSnapshot().State
+                + "，资源条数=" + device.ReadResources().Count + "。");
             device.SetVariable("Process.Ready", "true");
             await Task.Delay(40);
             CheckAssert.True(!run.Completion.IsCompleted, "退出条件被外部定义改动覆盖。");
             CheckAssert.True(run.Pause(), "退出等待不能暂停。");
             device.SetInput("PartReady", false);
             await Task.Delay(40);
-            CheckAssert.True(ResourceFor(device, run).State == TaskResourceState.Held, "暂停期间释放了区域。");
+            var resourceDuringPause = ResourceFor(device, run);
+            CheckAssert.True(resourceDuringPause != null && resourceDuringPause.State == TaskResourceState.Held,
+                "暂停期间资源丢失或提前释放；当前运行=" + run.GetSnapshot().State
+                + "，资源条数=" + device.ReadResources().Count + "。");
             run.Resume();
             Success(await Complete(run));
             CheckAssert.True(device.ReadResources().Count == 0, "正常退出未释放。");

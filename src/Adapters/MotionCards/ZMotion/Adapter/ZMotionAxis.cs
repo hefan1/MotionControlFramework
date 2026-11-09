@@ -208,7 +208,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             _isHomed = false;
         }
 
-        /// <summary>等待运动完成；取消或超时时先请求受控停止，再保留原异常。</summary>
+        /// <summary>运动命令已下发后，无论取消、超时还是反馈/报警错误，都先尝试受控停止。</summary>
         private async Task WaitForCompletionAndStopOnFailureAsync(
             double targetPosition,
             CancellationToken cancellationToken)
@@ -221,19 +221,16 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                     _card.MotionTimeoutMilliseconds,
                     cancellationToken).ConfigureAwait(false);
             }
-            catch (OperationCanceledException cancellationError)
+            catch (Exception motionError)
             {
-                await StopAfterInterruptedMoveAsync(cancellationError).ConfigureAwait(false);
-                throw;
-            }
-            catch (TimeoutException timeoutError)
-            {
-                await StopAfterInterruptedMoveAsync(timeoutError).ConfigureAwait(false);
+                // 命令可能已启动，不能因状态读取错误而直接退出，留下轴继续运动。
+                // 停止失败时由 StopAfterInterruptedMoveAsync 同时保留原故障与停止故障。
+                await StopAfterInterruptedMoveAsync(motionError).ConfigureAwait(false);
                 throw;
             }
         }
 
-        /// <summary>在运动被取消或超时后执行受控停止，并确认轴已停稳。</summary>
+        /// <summary>运动等待出现取消、超时、报警或反馈错误时请求受控停止，并确认轴停稳。</summary>
         private async Task StopAfterInterruptedMoveAsync(Exception originalError)
         {
             try
@@ -251,7 +248,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             catch (Exception stopError)
             {
                 throw new AggregateException(
-                    "正运动逻辑轴 '" + Name + "' 的运动被取消或超时，且受控停止未能确认完成。",
+                    "正运动逻辑轴 '" + Name + "' 的运动等待失败，且受控停止未能确认完成。",
                     originalError,
                     stopError);
             }
