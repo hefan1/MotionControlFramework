@@ -21,10 +21,23 @@ namespace MotionControl.Host.Wpf
         /// <summary>读取后端选择并显式创建连接；错误配置不回退到其他控制器。</summary>
         internal static IMotionCardHostConnection Create(MachineConfigurationStore store, string machineId)
         {
+            return CreateCore(store, machineId, false);
+        }
+
+        /// <summary>本机默认仿真项目只允许软件控制器，不能因为配置变化连接其他后端。</summary>
+        internal static IMotionCardHostConnection CreateVirtualOnly(MachineConfigurationStore store, string machineId)
+        {
+            return CreateCore(store, machineId, true);
+        }
+
+        /// <summary>按需要校验软件控制器限制，再创建指定的连接。</summary>
+        private static IMotionCardHostConnection CreateCore(MachineConfigurationStore store, string machineId, bool requireVirtual)
+        {
             string fullPath = Path.Combine(store.GetMachineDirectory(machineId),
                 ConfigurationPath.Replace('/', Path.DirectorySeparatorChar));
             if (!File.Exists(fullPath))
             {
+                if (requireVirtual) throw new InvalidOperationException("默认项目缺少软件控制器配置，拒绝连接其他后端。");
                 Trace.TraceInformation("运动卡后端：ZMotion（默认）。");
                 return new ZMotionAxisMappingCardConnection(store, machineId);
             }
@@ -35,6 +48,7 @@ namespace MotionControl.Host.Wpf
 
             if (string.Equals(settings.Backend.Trim(), ZMotionBackend, StringComparison.OrdinalIgnoreCase))
             {
+                if (requireVirtual) throw new InvalidOperationException("默认项目只允许连接本机软件控制器。");
                 Trace.TraceInformation("运动卡后端：ZMotion（工程配置）。");
                 return new ZMotionAxisMappingCardConnection(store, machineId);
             }

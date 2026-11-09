@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using MotionControl.Host.Wpf;
 using MotionControl.Equipment.Demo;
@@ -28,6 +29,7 @@ namespace MotionControl.HostIsolation.Checks
                 Reject(new[] { "--simulation-config-root", Path.Combine(live, "Machine01") }, live, "拒绝现场子目录");
                 Reject(new[] { "--simulation-config-root", Path.GetDirectoryName(live) }, live, "拒绝现场父目录");
                 Reject(new[] { "--simulation-config-root", isolated, "--task-simulation" }, live, "拒绝与预览入口混用");
+                CheckSavedDefaultProject(live);
                 CheckEquipmentSelection();
                 Console.WriteLine("隔离配置目录检查全部通过。");
                 return 0;
@@ -36,6 +38,79 @@ namespace MotionControl.HostIsolation.Checks
             {
                 Console.Error.WriteLine(error);
                 return 1;
+            }
+        }
+
+        /// <summary>保存的默认项目只指向现存软件控制器配置，显式参数和独立预览保持优先。</summary>
+        private static void CheckSavedDefaultProject(string live)
+        {
+            string root = Path.Combine(Path.GetTempPath(), "MotionControlDefaultProject-" + Guid.NewGuid().ToString("N"));
+            string project = Path.Combine(root, "Project");
+            string preference = Path.Combine(root, "default-project.txt");
+            string backend = Path.Combine(project, "Machine01", "Parameters", "ControllerBackend.json");
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(backend));
+                File.WriteAllText(backend, "{\"backend\":\"Virtual\",\"port\":19580}");
+                bool saved;
+                Check(SimulationConfigurationRoot.Resolve(new string[0], live, preference, out saved) == null && !saved,
+                    "没有默认项目时保留原配置入口");
+                File.WriteAllText(preference, project);
+                bool identityRejected = false;
+                try { SimulationConfigurationRoot.Resolve(new string[0], live, preference, out saved); }
+                catch (ArgumentException) { identityRejected = true; }
+                Check(identityRejected, "默认项目缺少会话编号时拒绝启动");
+                File.WriteAllText(Path.Combine(project, "ProjectSession.id"), Guid.NewGuid().ToString("N"));
+                Check(SimulationConfigurationRoot.Resolve(new string[0], live, preference, out saved) == project && saved,
+                    "无参数打开已保存的仿真项目");
+                string otherProject = Path.Combine(root, "OtherProject");
+                Directory.CreateDirectory(otherProject);
+                File.Copy(Path.Combine(project, "ProjectSession.id"), Path.Combine(otherProject, "ProjectSession.id"));
+                Check(SimulationConfigurationRoot.ReadProjectSession(project) != SimulationConfigurationRoot.ReadProjectSession(otherProject),
+                    "不同项目目录不共用软件控制器会话");
+                Check(SimulationConfigurationRoot.Resolve(new[] { "--use-production-config" }, live, preference, out saved) == null && !saved,
+                    "明确选择原设备配置时不加载仿真项目");
+                Check(SimulationConfigurationRoot.Resolve(new[] { "--task-simulation" }, live, preference, out saved) == null && !saved,
+                    "独立预览不受默认项目影响");
+                string explicitRoot = Path.Combine(root, "Explicit");
+                Check(SimulationConfigurationRoot.Resolve(new[] { "--simulation-config-root", explicitRoot }, live, preference, out saved) == explicitRoot && !saved,
+                    "显式隔离目录优先于默认项目");
+                string outside = Path.Combine(root, "OutsideRuntime");
+                string junction = Path.Combine(project, "Machine01", "Runtime");
+                Directory.CreateDirectory(outside);
+                using (var link = Process.Start(new ProcessStartInfo("cmd.exe", "/c mklink /J \"" + junction + "\" \"" + outside + "\"")
+                { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true }))
+                {
+                    string output = link.StandardOutput.ReadToEnd() + link.StandardError.ReadToEnd();
+                    link.WaitForExit();
+                    if (link.ExitCode != 0) throw new InvalidOperationException("无法创建测试目录联接：" + output);
+                }
+                try
+                {
+                    bool linkRejected = false;
+                    try { SimulationConfigurationRoot.Resolve(new string[0], live, preference, out saved); }
+                    catch (ArgumentException) { linkRejected = true; }
+                    Check(linkRejected, "默认项目内部不能含目录联接");
+                }
+                finally { Directory.Delete(junction); }
+                File.WriteAllText(backend, "{\"backend\":\"ZMotion\",\"port\":19580}");
+                bool rejected = false;
+                try { SimulationConfigurationRoot.Resolve(new string[0], live, preference, out saved); }
+                catch (ArgumentException) { rejected = true; }
+                Check(rejected, "默认仿真项目不能连接非软件控制器");
+                File.WriteAllText(preference, live);
+                rejected = false;
+                try { SimulationConfigurationRoot.Resolve(new string[0], live, preference, out saved); }
+                catch (ArgumentException) { rejected = true; }
+                Check(rejected, "默认项目不能指向原设备目录");
+            }
+            finally
+            {
+                string absolute = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
+                string temp = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar);
+                if (Directory.Exists(absolute) && string.Equals(Path.GetDirectoryName(absolute), temp, StringComparison.OrdinalIgnoreCase)
+                    && Path.GetFileName(absolute).StartsWith("MotionControlDefaultProject-", StringComparison.Ordinal))
+                    Directory.Delete(absolute, true);
             }
         }
 

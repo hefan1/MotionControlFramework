@@ -50,6 +50,14 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>由 Host 创建并在应用退出时释放的运动卡连接服务。</summary>
         private IMotionCardHostConnection _cardConnection;
+        /// <summary>本次无参数启动使用了本机保存的仿真项目，只允许软件控制器。</summary>
+        private bool _usingSavedSimulationProject;
+        /// <summary>绑定默认项目目录和独有编号的软件控制器会话标识。</summary>
+        private string _savedControllerSession;
+        /// <summary>默认仿真项目的本机控制器身份已经确认。</summary>
+        private volatile bool _savedControllerReady;
+        /// <summary>默认仿真项目是否已经开始接触控制器；未尝试时关闭可安全结束空会话。</summary>
+        private volatile bool _savedControllerConnectionAttempted;
 
         /// <summary>同步软件控制器心跳状态，不对其他厂商连接主动发起探测。</summary>
         private DispatcherTimer _softwareConnectionTimer;
@@ -149,7 +157,10 @@ namespace MotionControl.Host.Wpf
             string simulationRoot;
             try
             {
-                simulationRoot = SimulationConfigurationRoot.Parse(e.Args, productionRoot);
+                string preferenceFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "MotionControlFramework", "DefaultSimulationProject.txt");
+                simulationRoot = SimulationConfigurationRoot.Resolve(e.Args, productionRoot, preferenceFile, out _usingSavedSimulationProject);
+                if (_usingSavedSimulationProject) _savedControllerSession = SimulationConfigurationRoot.ReadProjectSession(simulationRoot);
             }
             catch (Exception error)
             {
@@ -227,7 +238,23 @@ namespace MotionControl.Host.Wpf
                 _deviceVariableStore,
                 MachineId);
             _machineRecoveryCoordinator.Load(out _recoveryWarningMessage);
-            _cardConnection = CreateMotionCardConnection();
+            try
+            {
+                _cardConnection = CreateMotionCardConnection();
+                if (_usingSavedSimulationProject)
+                {
+                    var connection = (VirtualAxisMappingCardConnection)_cardConnection;
+                    connection.BeforeConnect = BeforeSavedSimulationConnect;
+                    connection.VerifiedControllerPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "MotionControl.VirtualController.exe");
+                    connection.VerifiedProjectSession = _savedControllerSession;
+                }
+            }
+            catch (Exception error)
+            {
+                MessageBox.Show(error.Message, "设备连接配置错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                Shutdown();
+                return;
+            }
             _axisMappingPage = new AxisMappingConfigurationView(
                 _configurationStore,
                 MachineId,
@@ -362,7 +389,9 @@ namespace MotionControl.Host.Wpf
         /// <summary>在 Host 组合入口选择本次运行使用的运动卡连接实现。</summary>
         private IMotionCardHostConnection CreateMotionCardConnection()
         {
-            return HostMotionCardBackendSelection.Create(_configurationStore, MachineId);
+            return _usingSavedSimulationProject
+                ? HostMotionCardBackendSelection.CreateVirtualOnly(_configurationStore, MachineId)
+                : HostMotionCardBackendSelection.Create(_configurationStore, MachineId);
         }
 
         /// <summary>复制首次部署的变量模板，并加载校验后的单机变量定义。</summary>
@@ -407,7 +436,31 @@ namespace MotionControl.Host.Wpf
                 _softwareConnectionTimer.Tick += SoftwareConnectionTimer_Tick;
                 _softwareConnectionTimer.Start();
             }
+            if (_usingSavedSimulationProject)
+            {
+                try
+                {
+                    var connection = (VirtualAxisMappingCardConnection)_cardConnection;
+                    await Task.Run(() => DefaultSimulationController.EnsureRunning(connection.Port, connection.VerifiedControllerPath, _savedControllerSession));
+                    if (_exitingApplication || _mainWindow == null || !_mainWindow.IsLoaded) return;
+                    _savedControllerReady = true;
+                }
+                catch (Exception error)
+                {
+                    if (_exitingApplication) return;
+                    MessageBox.Show("当前项目已打开，但软件控制器未启动或身份未确认。可以离线查看配置；处理原因后重新打开程序。\n" + error.Message,
+                        "软件控制器未就绪", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+            }
             await _axisMappingPage.InitializeSavedCardConnectionAsync();
+        }
+
+        /// <summary>只有确认本程序的软件控制器后才允许默认仿真项目发起连接。</summary>
+        private void BeforeSavedSimulationConnect()
+        {
+            if (!_savedControllerReady) throw new InvalidOperationException("软件控制器身份尚未确认，请处理端口或程序后重新打开上位机。");
+            _savedControllerConnectionAttempted = true;
         }
 
         /// <summary>软件控制器心跳中断后及时显示断线，保留旧运行时并禁止误认状态。</summary>
@@ -1360,7 +1413,10 @@ namespace MotionControl.Host.Wpf
             bool alarmHandoffComplete = _alarmHandoffSettled && !_shutdownRetainedBlockedEvidence
                 && (_taskMonitorLauncher == null || (!_taskMonitorLauncher.HasTaskSession && !_taskMonitorLauncher.IsCommandInProgress))
                 && (_cardConnection == null || (!_cardConnection.IsConnected && _cardConnection.ConnectedMotionCard == null));
-            _alarmContinuity?.CloseIfSettled(alarmHandoffComplete);
+            bool defaultProjectNeverConnected = _usingSavedSimulationProject && !_savedControllerConnectionAttempted
+                && _machineRuntime == null && (_cardConnection == null
+                    || (!_cardConnection.IsConnected && _cardConnection.ConnectedMotionCard == null));
+            _alarmContinuity?.CloseIfSettled(alarmHandoffComplete || defaultProjectNeverConnected);
             ReleaseSingleInstanceMutex();
 
             base.OnExit(e);

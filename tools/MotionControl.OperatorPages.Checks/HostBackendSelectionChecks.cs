@@ -26,14 +26,20 @@ namespace MotionControl.OperatorPages.Checks
                 Type selector = typeof(MainWindow).Assembly.GetType("MotionControl.Host.Wpf.HostMotionCardBackendSelection", true);
                 MethodInfo create = selector.GetMethod("Create", BindingFlags.Static | BindingFlags.NonPublic);
                 if (create == null) throw new InvalidOperationException("找不到后端选择入口。");
+                MethodInfo createVirtual = selector.GetMethod("CreateVirtualOnly", BindingFlags.Static | BindingFlags.NonPublic);
+                if (createVirtual == null) throw new InvalidOperationException("找不到默认仿真项目的软件控制器保护入口。");
                 Func<IMotionCardHostConnection> select = () => (IMotionCardHostConnection)create.Invoke(null, new object[] { store, "Machine01" });
                 if (!(select() is ZMotionAxisMappingCardConnection)) throw new InvalidOperationException("缺省后端没有保持正运动。");
+                try { createVirtual.Invoke(null, new object[] { store, "Machine01" }); throw new InvalidOperationException("缺少后端时默认仿真项目错误连接其他控制器。"); }
+                catch (TargetInvocationException error) when (error.InnerException is InvalidOperationException) { }
                 string folder = Path.Combine(root, "Machine01", "Parameters");
                 Directory.CreateDirectory(folder);
                 string path = Path.Combine(folder, "ControllerBackend.json");
                 File.WriteAllText(path, "{\"backend\":\"Virtual\",\"port\":18520}");
                 IMotionCardHostConnection virtualConnection = select();
                 if (!(virtualConnection is VirtualAxisMappingCardConnection)) throw new InvalidOperationException("明确选择后未使用独立控制器。");
+                if (!(createVirtual.Invoke(null, new object[] { store, "Machine01" }) is VirtualAxisMappingCardConnection))
+                    throw new InvalidOperationException("默认仿真项目没有使用软件控制器。");
                 var page = new AxisMappingConfigurationView(store, "Machine01", virtualConnection);
                 page.SetHardwareConfigurationReadOnly(true);
                 if (((Button)page.FindName("SaveConfigurationButton")).IsEnabled
@@ -75,6 +81,8 @@ namespace MotionControl.OperatorPages.Checks
 
                 File.WriteAllText(path, "{\"backend\":\"ZMotion\"}");
                 if (!(select() is ZMotionAxisMappingCardConnection)) throw new InvalidOperationException("正运动配置未选择厂商适配器。");
+                try { createVirtual.Invoke(null, new object[] { store, "Machine01" }); throw new InvalidOperationException("默认仿真项目错误连接正运动。"); }
+                catch (TargetInvocationException error) when (error.InnerException is InvalidOperationException) { }
                 foreach (string json in new[] { "{}", "{\"backend\":\"Unknown\"}", "{\"backend\":\"Virtual\",\"port\":0}" })
                 {
                     File.WriteAllText(path, json);

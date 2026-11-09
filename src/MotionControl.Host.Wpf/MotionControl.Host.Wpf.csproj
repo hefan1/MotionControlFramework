@@ -16,5 +16,13 @@
     <ProjectReference Include="..\MotionControl.TaskEngine.MachineDevice\MotionControl.TaskEngine.MachineDevice.csproj" />
     <ProjectReference Include="..\Adapters\MotionCards\ZMotion\Adapter\MotionControl.Adapter.MotionCard.ZMotion.csproj" />
     <ProjectReference Include="..\Adapters\MotionCards\Virtual\Adapter\MotionControl.Adapter.MotionCard.Virtual.csproj" />
+    <ProjectReference Include="..\..\tools\MotionControl.VirtualController\MotionControl.VirtualController.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+  <Target Name="CopyDefaultSimulationController" AfterTargets="Build">
+    <ItemGroup>
+      <_DefaultSimulationFiles Include="$(MSBuildProjectDirectory)\..\..\tools\MotionControl.VirtualController\bin\$(Configuration)\$(TargetFramework)\MotionControl.VirtualController.exe" />
+      <_DefaultSimulationFiles Include="$(MSBuildProjectDirectory)\..\..\tools\MotionControl.VirtualController\bin\$(Configuration)\$(TargetFramework)\MotionControl.VirtualController.exe.config" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_DefaultSimulationFiles)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

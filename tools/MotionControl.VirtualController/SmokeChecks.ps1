@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 $exePath = if ($ControllerExe) { $ControllerExe } else { Join-Path $PSScriptRoot 'bin\Release\net48\MotionControl.VirtualController.exe' }
 if (-not (Test-Path -LiteralPath $exePath)) { throw '请先构建 Release 虚拟控制器。' }
 
-# 通过和上位机相同的本地 TCP 接口发送一条请求。
+# 通过软件控制器的本地 TCP 测试接口发送一条请求。
 function Send-Request([hashtable]$Request) {
     $client = [System.Net.Sockets.TcpClient]::new()
     try {
@@ -62,6 +62,7 @@ try {
     if (-not $connected) { throw '无法连接测试控制器。' }
     $identity = Send-Ok @{command='ping'}
     if ($identity.controllerType -ne 'MotionControl.VirtualController' -or $identity.protocolVersion -ne 2) { throw '测试端口连接到了错误的控制器。' }
+    if ([int]$identity.processId -ne $process.Id) { throw '控制器身份没有返回本次进程号。' }
 
     if ((Send-Request @{command='unsupported'}).ok) { throw '未知命令不得报告成功。' }
     if ((Send-Request @{command='servo'; axis=1; value=$true}).ok) { throw '没有租约不允许使能轴。' }

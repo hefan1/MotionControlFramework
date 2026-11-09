@@ -36,12 +36,15 @@ namespace MotionControl.VirtualController
         private string _leaseId;
         /// <summary>当前租约超时的单调秒数。</summary>
         private double _leaseDeadline;
+        /// <summary>由默认项目启动时指定的会话标识；普通 TCP 测试控制器为空。</summary>
+        private readonly string _projectSession;
         /// <summary>主动检查心跳，避免无请求时轴继续运动。</summary>
         private readonly Timer _leaseWatchdog;
 
         /// <summary>创建控制器并启动租约看门狗。</summary>
-        public ControllerState()
+        public ControllerState(string projectSession)
         {
+            _projectSession = projectSession;
             _leaseWatchdog = new Timer(CheckLease, null, 100, 100);
         }
 
@@ -99,7 +102,9 @@ namespace MotionControl.VirtualController
                     {
                         ["ok"] = true,
                         ["controllerType"] = "MotionControl.VirtualController",
-                        ["protocolVersion"] = 2
+                        ["protocolVersion"] = 2,
+                        ["processId"] = System.Diagnostics.Process.GetCurrentProcess().Id,
+                        ["projectSession"] = _projectSession
                     };
                     case "acquireLease": return AcquireLease();
                     case "heartbeat": RenewLease(request); return Ok();

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -33,6 +34,14 @@ namespace MotionControl.Host.Wpf
         private readonly string _machineId;
         /// <summary>独立控制器的本机连接端口。</summary>
         private readonly int _port;
+        /// <summary>默认仿真项目的连接前检查；其他连接不安装该回调。</summary>
+        internal Action BeforeConnect { get; set; }
+        /// <summary>软件控制器监听端口，供 Host 启动同一个测试实例。</summary>
+        internal int Port { get { return _port; } }
+        /// <summary>设置后每次通信都要求对端是本程序自带的软件控制器。</summary>
+        internal string VerifiedControllerPath { get; set; }
+        /// <summary>默认项目期望的软件控制器会话标识；其他入口保持空值。</summary>
+        internal string VerifiedProjectSession { get; set; }
         /// <summary>已成功连接的控制器适配器。</summary>
         private VirtualMotionCard _card;
         /// <summary>当前连接使用的逻辑轴定义。</summary>
@@ -74,7 +83,9 @@ namespace MotionControl.Host.Wpf
         public async Task ConnectAsync(MotionCardSettingsDocument settings, CancellationToken cancellationToken)
         {
             using (await HostProjectOperationGate.EnterConnectAsync(_store, _machineId, cancellationToken).ConfigureAwait(false))
+            {
                 await ConnectCoreAsync(settings, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         /// <summary>在工程操作门内读取配置并建立控制器会话。</summary>
@@ -104,7 +115,12 @@ namespace MotionControl.Host.Wpf
             ValidateIoMappings(io.DigitalOutputs, selected.ControllerId);
             var inputs = io.DigitalInputs.ToList().AsReadOnly();
             var outputs = io.DigitalOutputs.ToList().AsReadOnly();
-            var card = new VirtualMotionCard(selected.ControllerId, axes, inputs, outputs, _port);
+            var card = VerifiedControllerPath == null
+                ? new VirtualMotionCard(selected.ControllerId, axes, inputs, outputs, _port)
+                : new VirtualMotionCard(selected.ControllerId, axes, inputs, outputs, _port,
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MotionControlFramework", "Logs"),
+                    VerifiedControllerPath, VerifiedProjectSession);
+            BeforeConnect?.Invoke();
             await card.ConnectAsync(cancellationToken).ConfigureAwait(false);
             try
             {

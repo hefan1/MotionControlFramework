@@ -23,6 +23,10 @@ namespace MotionControl.Adapter.MotionCard.Virtual
 
         /// <summary>控制器本机监听端口。</summary>
         private readonly int _port;
+        /// <summary>非空时每条命令只通过实际服务进程路径匹配的本机管道发送。</summary>
+        private readonly string _verifiedControllerPath;
+        /// <summary>非空时每条命令要求对端属于当前默认项目的控制器会话。</summary>
+        private readonly string _verifiedProjectSession;
         /// <summary>设备中已配置的轴实例。</summary>
         private readonly ReadOnlyCollection<IAxis> _axes;
         /// <summary>逻辑输入对应的物理映射。</summary>
@@ -53,11 +57,31 @@ namespace MotionControl.Adapter.MotionCard.Virtual
         /// <summary>指定诊断目录创建软件控制卡；供隔离测试或应用明确指定维护位置。</summary>
         public VirtualMotionCard(string controllerId, IEnumerable<AxisHardwareDefinition> axes,
             IEnumerable<DigitalIoHardwareDefinition> inputs, IEnumerable<DigitalIoHardwareDefinition> outputs, int port, string diagnosticsDirectory)
+            : this(controllerId, axes, inputs, outputs, port, diagnosticsDirectory, null)
+        {
+        }
+
+        /// <summary>为默认项目指定允许连接的本机控制器程序；非空时逐连接核验实际管道服务进程。</summary>
+        public VirtualMotionCard(string controllerId, IEnumerable<AxisHardwareDefinition> axes,
+            IEnumerable<DigitalIoHardwareDefinition> inputs, IEnumerable<DigitalIoHardwareDefinition> outputs, int port,
+            string diagnosticsDirectory, string verifiedControllerPath)
+            : this(controllerId, axes, inputs, outputs, port, diagnosticsDirectory, verifiedControllerPath, null)
+        {
+        }
+
+        /// <summary>同时限制控制器程序和项目会话；每条命令在同一管道内先核对会话。</summary>
+        public VirtualMotionCard(string controllerId, IEnumerable<AxisHardwareDefinition> axes,
+            IEnumerable<DigitalIoHardwareDefinition> inputs, IEnumerable<DigitalIoHardwareDefinition> outputs, int port,
+            string diagnosticsDirectory, string verifiedControllerPath, string verifiedProjectSession)
         {
             if (string.IsNullOrWhiteSpace(controllerId)) throw new ArgumentException("控制卡编号不能为空。", nameof(controllerId));
             if (port < 1 || port > 65535) throw new ArgumentOutOfRangeException(nameof(port));
             ControllerId = controllerId;
             _port = port;
+            _verifiedControllerPath = verifiedControllerPath == null ? null : Path.GetFullPath(verifiedControllerPath);
+            if (verifiedProjectSession != null && (_verifiedControllerPath == null || verifiedProjectSession.Length != 64))
+                throw new ArgumentException("项目会话必须绑定已验证的控制器程序。", nameof(verifiedProjectSession));
+            _verifiedProjectSession = verifiedProjectSession;
             _diagnostics = new VirtualConnectionDiagnostics(diagnosticsDirectory);
             _axes = (axes ?? throw new ArgumentNullException(nameof(axes))).Select(a => (IAxis)new VirtualAxis(this, a)).ToList().AsReadOnly();
             _inputs = (inputs ?? throw new ArgumentNullException(nameof(inputs))).ToDictionary(p => p.Name, StringComparer.OrdinalIgnoreCase);
@@ -168,6 +192,11 @@ namespace MotionControl.Adapter.MotionCard.Virtual
             {
                 return await Task.Run(() =>
                 {
+                    if (_verifiedControllerPath != null)
+                    {
+                        using (var pipe = VerifiedLocalControllerPipe.Connect(_port, _verifiedControllerPath))
+                            return ExchangeRequest(pipe, request, true, _verifiedProjectSession);
+                    }
                     using (var client = new TcpClient())
                     {
                         IAsyncResult connect = client.BeginConnect("127.0.0.1", _port, null, null);
@@ -179,26 +208,55 @@ namespace MotionControl.Adapter.MotionCard.Virtual
                         client.ReceiveTimeout = 3000;
                         client.SendTimeout = 3000;
                         using (NetworkStream stream = client.GetStream())
-                        using (var writer = new StreamWriter(stream, new UTF8Encoding(false), 1024, true) { AutoFlush = true })
-                        using (var reader = new StreamReader(stream, Encoding.UTF8))
-                        {
-                            var serializer = new JavaScriptSerializer();
-                            writer.WriteLine(serializer.Serialize(request));
-                            string line = reader.ReadLine();
-                            if (line == null) throw new IOException("软件控制器已断开连接。");
-                            var response = serializer.Deserialize<Dictionary<string, object>>(line);
-                            if (!response.ContainsKey("ok") || !Convert.ToBoolean(response["ok"]))
-                                throw new InvalidOperationException("软件控制器拒绝 " + request["command"] + "：" + (response.ContainsKey("error") ? response["error"] : "未知错误"));
-                            return response;
-                        }
+                            return ExchangeRequest(stream, request, false, null);
                     }
                 }, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is IOException || ex is SocketException || ex is TimeoutException)
             {
                 if (requireConnected) RecordDisconnected(leaseId, "通信/" + Convert.ToString(request["command"]), ex);
-                throw new IOException("软件控制器通信失败，端口 " + _port + "。", ex);
+                throw new IOException("软件控制器通信失败，端口 " + _port + "：" + ex.Message, ex);
             }
+        }
+
+        /// <summary>在已经确认的连接上发送一条协议请求，管道等待应答不超过三秒。</summary>
+        private static Dictionary<string, object> ExchangeRequest(Stream stream, Dictionary<string, object> request, bool pipe, string projectSession)
+        {
+            using (var writer = new StreamWriter(stream, new UTF8Encoding(false), 1024, true) { AutoFlush = true })
+            using (var reader = new StreamReader(stream, Encoding.UTF8, true, 1024, true))
+            {
+                var serializer = new JavaScriptSerializer();
+                if (projectSession != null)
+                {
+                    var identity = ExchangeOne(writer, reader, serializer, new Dictionary<string, object> { ["command"] = "ping" }, pipe);
+                    if (!identity.TryGetValue("projectSession", out object session)
+                        || !string.Equals(session as string, projectSession, StringComparison.Ordinal))
+                        throw new IOException("软件控制器属于其他项目，未发送控制命令。");
+                    if (string.Equals(Convert.ToString(request["command"]), "ping", StringComparison.Ordinal)) return identity;
+                }
+                return ExchangeOne(writer, reader, serializer, request, pipe);
+            }
+        }
+
+        /// <summary>通过当前连接交换一条请求，并限制管道应答等待时间。</summary>
+        private static Dictionary<string, object> ExchangeOne(StreamWriter writer, StreamReader reader, JavaScriptSerializer serializer,
+            Dictionary<string, object> request, bool pipe)
+        {
+            writer.WriteLine(serializer.Serialize(request));
+            string line;
+            if (pipe)
+            {
+                Task<string> read = reader.ReadLineAsync();
+                if (Task.WhenAny(read, Task.Delay(TimeSpan.FromSeconds(3))).GetAwaiter().GetResult() != read)
+                    throw new TimeoutException("等待软件控制器应答超时。");
+                line = read.GetAwaiter().GetResult();
+            }
+            else line = reader.ReadLine();
+            if (line == null) throw new IOException("软件控制器已断开连接。");
+            var response = serializer.Deserialize<Dictionary<string, object>>(line);
+            if (!response.ContainsKey("ok") || !Convert.ToBoolean(response["ok"]))
+                throw new InvalidOperationException("软件控制器拒绝 " + request["command"] + "：" + (response.ContainsKey("error") ? response["error"] : "未知错误"));
+            return response;
         }
 
         /// <summary>仅记录当前会话首次离线的原始原因；过期会话不能改变新连接状态。</summary>

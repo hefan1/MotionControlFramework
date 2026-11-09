@@ -31,7 +31,7 @@ $command = '.\tools\MotionControl.VirtualController\ControllerCommand.ps1'
 
 以上为软件控制器和测试机构模型，不验证实际机械、制动、布线或安全回路。
 
-这是一个独立进程，通过本机 TCP 接收框架的虚拟卡适配器请求，供正式上位机验证操作界面和设备流程。它不是正运动原厂 SDK，也不会访问实际控制卡。进程关闭后，轴、IO 和测试场景状态均丢失；设备的 Machine01 配置文件不会因此删除或恢复。
+这是一个独立进程，通过本机 TCP 和按端口命名的本机管道接收框架虚拟卡适配器请求，供正式上位机验证操作界面和设备流程。默认仿真项目使用本机管道：适配器在每次发送请求前读取 Windows 返回的管道服务进程号，核对其程序路径和项目会话，拒绝向替换服务发命令；管道拒绝远程客户端并限制当前用户访问。其他显式配置入口和测试脚本仍可使用原有 TCP 协议。它不是正运动原厂 SDK，也不会访问实际控制卡。进程关闭后，轴、IO 和测试场景状态均丢失；设备的 Machine01 配置文件不会因此删除或恢复。
 
 ## 启动与关闭
 
@@ -57,10 +57,10 @@ Start-Process -FilePath .\tools\MotionControl.VirtualController\bin\Release\net4
 
 ```powershell
 dotnet build .\src\MotionControl.Host.Wpf\MotionControl.Host.Wpf.csproj -c Release
-Start-Process -FilePath .\src\MotionControl.Host.Wpf\bin\Release\net48\MotionControl.Host.Wpf.exe
+Start-Process -FilePath .\src\MotionControl.Host.Wpf\bin\Release\net48\MotionControl.Host.Wpf.exe -ArgumentList '--use-production-config'
 ```
 
-先启动虚拟控制器，再启动 Host。控制器只监听 `127.0.0.1:18520`；命令行第一个参数可以指定其他端口，但 Host 和下面脚本的 `-Port` 也必须一致。端口已被占用时进程直接报错退出。连接时必须检查 `ping` 返回的 `controllerType` 和 `protocolVersion`；不要将其他本机服务误认为该控制器，也不要在失败时自动切换其他设备。不同版本的控制器和适配器需要重新构建并使用相同协议版本。
+上例明确打开原设备配置，先启动虚拟控制器，再启动 Host。若已设置本机默认仿真项目，无参数启动则打开该项目并自动启动或复用其自带的软件控制器，详见 [Host 配置说明](../../src/MotionControl.Host.Wpf/README.md)。控制器只监听本机 TCP `127.0.0.1:18520`；命令行第一个参数可以指定其他端口，但 Host 和下面脚本的 `-Port` 也必须一致。端口已被占用时进程直接报错退出。TCP 连接时必须检查 `ping` 返回的 `controllerType` 和 `protocolVersion`；不要将其他本机服务误认为该控制器，也不要在失败时自动切换其他设备。不同版本的控制器和适配器需要重新构建并使用相同协议版本。
 
 测试结束先通过正式 Host 停止流程、确认各轴停止并关闭相关输出，再关闭本轮 Host 和控制器窗口。关闭控制器窗口会断开连接，不会把 Machine01 测试配置恢复为默认配置。
 
