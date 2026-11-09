@@ -90,9 +90,17 @@ namespace MotionControl.Adapter.MotionCard.Virtual
                 throw new NotSupportedException("软件控制器尚不支持点动的软件限位，已拒绝该轴点动。");
             await SendAsync("jog", cancellationToken, speed: profile.Speed * (int)direction).ConfigureAwait(false);
         }
-        /// <summary>停止轴运动并检查控制器确实报告停止。</summary>
+        /// <summary>
+        /// 请求软件控制器受控停止并确认停止反馈。
+        /// 软件控制器没有单独的立即中止命令；不能把 Abort 当成受控停止静默执行。
+        /// </summary>
         public async Task StopAsync(AxisStopMode stopMode, CancellationToken cancellationToken)
         {
+            if (stopMode == AxisStopMode.Abort)
+                throw new NotSupportedException("软件控制器尚不支持立即中止运动指令（Abort）；未发送停止命令。");
+            if (stopMode != AxisStopMode.Controlled)
+                throw new ArgumentOutOfRangeException(nameof(stopMode), "轴停止方式无效。");
+
             await SendAsync("stop", cancellationToken).ConfigureAwait(false);
             AxisStatus status = await ReadStatusAsync(cancellationToken).ConfigureAwait(false);
             if (status.Moving) throw new InvalidOperationException("轴 " + Name + " 停止命令后仍在运动。");
