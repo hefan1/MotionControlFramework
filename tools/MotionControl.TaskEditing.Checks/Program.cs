@@ -115,7 +115,10 @@ namespace MotionControl.TaskEditing.Checks
                 var initial = test.Store.Load(Workspace.Id); var catalog = test.Store.LoadCatalog(initial);
                 string before = test.ActiveBytes();
                 CreateInterruptedTaskApply(test);
-                Throws(() => test.Store.Load(Workspace.Id)); Throws(() => TaskMonitorSession.LoadMachine(test.Configuration, Workspace.Id));
+                // 正式 LoadMachine 现要求明确的控制器设备端口，不再允许不带设备的内存回退。
+                // 此处只验证恢复标记拦截：工作区、任务清单和任务文件均不能越过未完成的应用恢复。
+                Throws(() => test.Store.Load(Workspace.Id));
+                Throws(() => test.Store.RequireNoPendingApply(Workspace.Id));
                 Throws(() => new TaskMachineConfigurationStore(test.Configuration).Load(Workspace.Id, initial.Tasks.Select(item => item.Definition), catalog));
                 Throws(() => new TaskDefinitionStore(test.Configuration).Load(Workspace.Id, "Camera.json", catalog));
                 test.Store.RecoverPendingApply(Workspace.Id); Assert(test.ActiveBytes() == before && !test.Store.HasPendingApply(Workspace.Id), "意外退出恢复失败。");
