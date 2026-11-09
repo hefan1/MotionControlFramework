@@ -671,6 +671,15 @@
     <sys:String x:Key="变量定义任务会话锁定">A task session is loaded or a task command is in progress. Close the session before editing definitions, then reload the tasks. Current values remain writable when the machine state and variable permissions allow.</sys:String>
     <sys:String x:Key="变量定义设备操作锁定">Preparation, clearance, or shutdown is still in progress. Wait for that operation to finish before editing variable definitions.</sys:String>
     <sys:String x:Key="变量新增成功">Variable added and saved.</sys:String>
+    <sys:String x:Key="配置变更记录未保存">Configuration history was not saved: </sys:String>
+    <sys:String x:Key="配置变更记录未接入">History service is not connected.</sys:String>
+    <sys:String x:Key="配置变更提示关闭">Dismiss</sys:String>
+    <sys:String x:Key="配置变更记录提醒">Configuration history warning</sys:String>
+    <sys:String x:Key="报警库文件已保存">The alarm catalog file was saved.</sys:String>
+    <sys:String x:Key="变更记录文件阶段">File save stage: </sys:String>
+    <sys:String x:Key="变更记录内存阶段">Memory update stage: </sys:String>
+    <sys:String x:Key="变更记录检查阶段">Validation stage: </sys:String>
+    <sys:String x:Key="变量文件已保存内存状态未确认">The variable definition file was saved; the memory update returned an error and its state must be checked: </sys:String>
     <sys:String x:Key="变量保存成功">Variable definition saved.</sys:String>
     <sys:String x:Key="变量删除成功">Variable deleted.</sys:String>
     <sys:String x:Key="变量写入成功">Current value written.</sys:String>

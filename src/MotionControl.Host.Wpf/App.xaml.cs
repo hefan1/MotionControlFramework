@@ -272,6 +272,7 @@ namespace MotionControl.Host.Wpf
             _safetyInterlockPage = new SafetyInterlockConfigurationView(_configurationStore, MachineId);
             _safetyInterlockPage.SaveConfigurationAsync = SaveSafetyInterlockAsync;
             _alarmCatalogPage = new Configuration.AlarmCatalogConfigurationView(_alarmCatalogStore, MachineId);
+            _alarmCatalogPage.SetChangeJournal(new ConfigurationChangeJournal(_configurationStore, MachineId));
             _deviceVariablePage = new DeviceVariableView(
                 _deviceVariableStore,
                 _configurationStore,

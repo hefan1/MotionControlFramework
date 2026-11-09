@@ -22,6 +22,8 @@ namespace MotionControl.Framework.Wpf.Variables
 
         /// <summary>按当前 MachineId 保存变量定义的 JSON 配置服务。</summary>
         private readonly MachineConfigurationStore _configurationStore;
+        /// <summary>同设备配置变更记录；文件保存与内存更新分别记录。</summary>
+        private readonly ConfigurationChangeJournal _changeJournal;
 
         /// <summary>当前设备的稳定编号，用于隔离不同设备的变量定义。</summary>
         private readonly string _machineId;
@@ -63,6 +65,7 @@ namespace MotionControl.Framework.Wpf.Variables
             _variableStore = variableStore;
             _configurationStore = configurationStore;
             _machineId = machineId;
+            _changeJournal = new ConfigurationChangeJournal(configurationStore, machineId);
             Variables = new ObservableCollection<DeviceVariableRow>();
             DataContext = this;
             _variableStore.VariablesChanged += VariableStore_VariablesChanged;
@@ -615,35 +618,125 @@ namespace MotionControl.Framework.Wpf.Variables
             }
         }
 
-        /// <summary>弹窗返回后重新核对定义维护许可，再保存文件并应用；不自动替换已加载任务的冻结目录。</summary>
+        /// <summary>重新核对维护许可；文件保存、内存更新和变更记录各自报告真实结果。</summary>
         private void SaveDefinitions(
             System.Collections.Generic.IEnumerable<DeviceVariableDefinition> definitions,
             string successResourceKey)
         {
             if (!EnsureEditingAllowed()) return;
+            string operationId = Guid.NewGuid().ToString("N");
+            var recordErrors = new List<string>();
+            List<DeviceVariableDefinition> checkedDefinitions;
+            DeviceVariableConfigurationDocument document;
             try
             {
-                var checkedDefinitions = DeviceVariableStore.ValidateDefinitions(definitions);
-                var document = new DeviceVariableConfigurationDocument
-                {
-                    SchemaVersion = 1,
-                    Variables = checkedDefinitions
-                };
+                checkedDefinitions = DeviceVariableStore.ValidateDefinitions(definitions);
+                document = new DeviceVariableConfigurationDocument { SchemaVersion = 1, Variables = checkedDefinitions };
                 document.Validate();
-                _configurationStore.SaveJson(
-                    _machineId,
-                    "Parameters/DeviceVariables.json",
-                    document);
-                _variableStore.ReplaceDefinitions(checkedDefinitions);
-                SetStatusResource(successResourceKey);
             }
             catch (Exception error)
             {
-                StatusText.Text = error.Message;
-                ShowOperationMessage(error.Message, MessageBoxImage.Error);
+                AddRecordError(recordErrors, ConfigurationChangeStage.Check, RecordVariableChange(ConfigurationChangeStage.Check,
+                    ConfigurationChangeOutcome.Failed, DateTimeOffset.UtcNow, operationId, error.Message));
+                RememberHistoryErrors(recordErrors);
+                ShowDefinitionFailure(error.Message, recordErrors);
+                return;
             }
+
+            DateTimeOffset fileCompletedUtc;
+            try
+            {
+                _configurationStore.SaveJson(_machineId, "Parameters/DeviceVariables.json", document);
+                fileCompletedUtc = DateTimeOffset.UtcNow;
+            }
+            catch (Exception error)
+            {
+                AddRecordError(recordErrors, ConfigurationChangeStage.SaveFiles, RecordVariableChange(ConfigurationChangeStage.SaveFiles,
+                    ConfigurationChangeOutcome.Failed, DateTimeOffset.UtcNow, operationId, error.Message));
+                RememberHistoryErrors(recordErrors);
+                ShowDefinitionFailure(error.Message, recordErrors);
+                return;
+            }
+
+            Exception applyError = null;
+            try { _variableStore.ReplaceDefinitions(checkedDefinitions); }
+            catch (Exception error) { applyError = error; }
+            DateTimeOffset applyCompletedUtc = DateTimeOffset.UtcNow;
+            // 先完成原有文件和内存操作，再写记录，避免审计延长两者之间的不一致窗口。
+            AddRecordError(recordErrors, ConfigurationChangeStage.SaveFiles, RecordVariableChange(ConfigurationChangeStage.SaveFiles,
+                ConfigurationChangeOutcome.Succeeded, fileCompletedUtc, operationId, null));
+            string applyDetail = applyError == null ? null : GetLocalizedText("变量文件已保存内存状态未确认") + applyError.Message;
+            AddRecordError(recordErrors, ConfigurationChangeStage.Apply, RecordVariableChange(ConfigurationChangeStage.Apply,
+                applyError == null ? ConfigurationChangeOutcome.Succeeded : ConfigurationChangeOutcome.Failed,
+                applyCompletedUtc, operationId, applyDetail));
+            RememberHistoryErrors(recordErrors);
+            if (applyError != null)
+            {
+                DefinitionApplyWarningText.Text = applyDetail;
+                DefinitionApplyWarningScroll.Visibility = Visibility.Visible;
+                ShowDefinitionFailure(applyDetail, recordErrors);
+                return;
+            }
+            SetStatusResource(successResourceKey);
         }
 
+        /// <summary>保留真实业务错误，并单独显示可能发生的记录故障。</summary>
+        private void ShowDefinitionFailure(string detail, List<string> recordErrors)
+        {
+            string message = detail + (recordErrors.Count == 0 ? string.Empty : "\n"
+                + GetLocalizedText("配置变更记录未保存") + string.Join("；", recordErrors));
+            StatusText.Text = message;
+            ShowOperationMessage(message, MessageBoxImage.Error);
+        }
+        /// <summary>仅持久记录源方法返回的阶段结果，不推定操作者和运行版本。</summary>
+        private string RecordVariableChange(ConfigurationChangeStage stage, ConfigurationChangeOutcome outcome,
+            DateTimeOffset completedUtc, string operationId, string detail)
+        {
+            try
+            {
+                return _changeJournal.TryAppend(new ConfigurationChangeRecord {
+                    RecordId = Guid.NewGuid(), MachineId = _machineId, TimeUtc = completedUtc,
+                    Stage = stage, Outcome = outcome, OperationId = operationId,
+                    Source = stage == ConfigurationChangeStage.Apply ? "IDeviceVariableStore.ReplaceDefinitions"
+                        : stage == ConfigurationChangeStage.Check ? "DeviceVariableStore.ValidateDefinitions" : "MachineConfigurationStore.SaveJson",
+                    ObjectType = "设备变量定义", ObjectId = "Parameters/DeviceVariables.json", Detail = detail });
+            }
+            catch (Exception error) { return error.Message; }
+        }
+
+        /// <summary>标明哪个阶段的记录失败；记录异常不替代原配置操作结果。</summary>
+        private void AddRecordError(List<string> errors, ConfigurationChangeStage stage, string error)
+        {
+            if (string.IsNullOrWhiteSpace(error)) return;
+            string key = stage == ConfigurationChangeStage.SaveFiles ? "变更记录文件阶段"
+                : stage == ConfigurationChangeStage.Apply ? "变更记录内存阶段" : "变更记录检查阶段";
+            string text = GetLocalizedText(key) + error;
+            if (!errors.Contains(text)) errors.Add(text);
+        }
+
+        /// <summary>把记录故障单独保留，不被变量值或设备状态刷新覆盖。</summary>
+        private void RememberHistoryErrors(List<string> errors)
+        {
+            if (errors.Count == 0) return;
+            string warning = GetLocalizedText("配置变更记录未保存") + string.Join("；", errors);
+            if (string.IsNullOrEmpty(ChangeHistoryWarningText.Text)) ChangeHistoryWarningText.Text = warning;
+            else if (!ChangeHistoryWarningText.Text.Contains(warning)) ChangeHistoryWarningText.Text += "\n" + warning;
+            ChangeHistoryWarningScroll.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>人员确认后关闭内存状态待核查提示，不改变设备或变量定义。</summary>
+        private void DismissDefinitionWarning_Click(object sender, RoutedEventArgs e)
+        {
+            DefinitionApplyWarningText.Text = string.Empty;
+            DefinitionApplyWarningScroll.Visibility = Visibility.Collapsed;
+        }
+
+        /// <summary>人员明确关闭记录故障提示，不修改变量或历史文件。</summary>
+        private void DismissHistoryWarning_Click(object sender, RoutedEventArgs e)
+        {
+            ChangeHistoryWarningText.Text = string.Empty;
+            ChangeHistoryWarningScroll.Visibility = Visibility.Collapsed;
+        }
         /// <summary>打开编辑窗口和最终保存都核对任务会话与设备状态，禁止把旧任务目录配上新变量含义。</summary>
         private bool EnsureEditingAllowed()
         {

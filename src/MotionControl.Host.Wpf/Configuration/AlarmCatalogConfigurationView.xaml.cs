@@ -17,6 +17,10 @@ namespace MotionControl.Host.Wpf.Configuration
 
         /// <summary>当前编辑的设备编号。</summary>
         private readonly string _machineId;
+        /// <summary>设备工程变更记录服务，未接入时明确提示而不影响保存结果。</summary>
+        private ConfigurationChangeJournal _changeJournal;
+        /// <summary>尚未被人员确认的记录故障，关闭页面前需再次提示。</summary>
+        private string _pendingHistoryWarning;
 
         /// <summary>本页编辑的报警副本；保存成功前不改写设备配置。</summary>
         public ObservableCollection<MachineAlarmCatalogEntry> Alarms { get; private set; }
@@ -42,6 +46,14 @@ namespace MotionControl.Host.Wpf.Configuration
             DataContext = this;
             LoadAlarms();
             Search_TextChanged(this, null);
+        }
+
+        /// <summary>接入同一设备的变更记录；不同设备的记录不能混写。</summary>
+        public void SetChangeJournal(ConfigurationChangeJournal journal)
+        {
+            if (journal != null && !string.Equals(journal.MachineId, _machineId, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("变更记录设备与报警库不一致。", nameof(journal));
+            _changeJournal = journal;
         }
 
         /// <summary>从磁盘读取报警定义副本，保留配置损坏或缺失的具体诊断。</summary>
@@ -126,33 +138,92 @@ namespace MotionControl.Host.Wpf.Configuration
             MarkDirty();
         }
 
-        /// <summary>先提交当前选中项的编辑，再通过设备配置存储原子保存整个报警库。</summary>
+        /// <summary>分别报告报警库保存结果和变更记录结果；记录故障不撤销已保存文件。</summary>
         private void SaveAlarms_Click(object sender, RoutedEventArgs e)
         {
+            MachineAlarmCatalogDocument document;
             try
             {
                 CommitSelectedAlarm();
-                var document = new MachineAlarmCatalogDocument
+                document = new MachineAlarmCatalogDocument
                 {
                     SchemaVersion = 1,
                     Alarms = Alarms.Select(alarm => alarm.Copy()).ToList()
                 };
-                string backupPath = _store.Save(_machineId, document);
-                _catalogLoaded = true;
-                _dirty = false;
-                AlarmGrid.Items.Refresh();
-                RefreshLocalizedText();
-                SetStatus(string.IsNullOrWhiteSpace(backupPath)
-                    ? T("报警库保存成功")
-                    : T("报警库保存成功，已备份") + " " + backupPath);
             }
             catch (Exception error)
             {
                 StatusText.Text = T("报警库保存失败") + "：" + error.Message;
                 StatusText.Foreground = Brush("#B54747");
+                return;
             }
+
+            string operationId = Guid.NewGuid().ToString("N");
+            try { document.Validate(); }
+            catch (Exception error)
+            {
+                RememberHistoryError(RecordAlarmChange(ConfigurationChangeStage.Check, ConfigurationChangeOutcome.Failed,
+                    DateTimeOffset.UtcNow, operationId, error.Message));
+                StatusText.Text = T("报警库保存失败") + "：" + error.Message;
+                StatusText.Foreground = Brush("#B54747");
+                return;
+            }
+
+            string backupPath;
+            try { backupPath = _store.Save(_machineId, document); }
+            catch (Exception error)
+            {
+                RememberHistoryError(RecordAlarmChange(ConfigurationChangeStage.SaveFiles, ConfigurationChangeOutcome.Failed,
+                    DateTimeOffset.UtcNow, operationId, error.Message));
+                StatusText.Text = T("报警库保存失败") + "：" + error.Message;
+                StatusText.Foreground = Brush("#B54747");
+                return;
+            }
+            RememberHistoryError(RecordAlarmChange(ConfigurationChangeStage.SaveFiles, ConfigurationChangeOutcome.Succeeded,
+                DateTimeOffset.UtcNow, operationId, null));
+            _catalogLoaded = true;
+            _dirty = false;
+            AlarmGrid.Items.Refresh();
+            RefreshLocalizedText();
+            SetStatus(string.IsNullOrWhiteSpace(backupPath)
+                ? T("报警库保存成功")
+                : T("报警库保存成功，已备份") + " " + backupPath);
         }
 
+        /// <summary>记录实际校验或文件保存的终态，未知人员和版本保持空值。</summary>
+        private string RecordAlarmChange(ConfigurationChangeStage stage, ConfigurationChangeOutcome outcome,
+            DateTimeOffset completedUtc, string operationId, string detail)
+        {
+            if (_changeJournal == null) return T("配置变更记录未接入");
+            try
+            {
+                return _changeJournal.TryAppend(new ConfigurationChangeRecord {
+                    RecordId = Guid.NewGuid(), MachineId = _machineId, TimeUtc = completedUtc,
+                    Stage = stage, Outcome = outcome, OperationId = operationId,
+                    Source = stage == ConfigurationChangeStage.Check ? "MachineAlarmCatalogDocument.Validate" : "MachineAlarmCatalogStore.Save", ObjectType = "报警库",
+                    ObjectId = MachineAlarmCatalogStore.RelativeFilePath, Detail = detail });
+            }
+            catch (Exception error) { return error.Message; }
+        }
+
+        /// <summary>记录故障独立保留，后续状态刷新不能把它当作已保存。</summary>
+        private void RememberHistoryError(string error)
+        {
+            if (string.IsNullOrWhiteSpace(error)) return;
+            string warning = T("配置变更记录未保存") + error;
+            if (string.IsNullOrEmpty(_pendingHistoryWarning)) _pendingHistoryWarning = warning;
+            else if (!_pendingHistoryWarning.Contains(warning)) _pendingHistoryWarning += "\n" + warning;
+            ChangeHistoryWarningText.Text = _pendingHistoryWarning;
+            ChangeHistoryWarningScroll.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>人员明确关闭记录故障提示，不改变文件和历史。</summary>
+        private void DismissHistoryWarning_Click(object sender, RoutedEventArgs e)
+        {
+            _pendingHistoryWarning = null;
+            ChangeHistoryWarningText.Text = string.Empty;
+            ChangeHistoryWarningScroll.Visibility = Visibility.Collapsed;
+        }
         /// <summary>切换报警时先保留旧行输入，再显示新选中报警字段。</summary>
         private void AlarmGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -224,16 +295,30 @@ namespace MotionControl.Host.Wpf.Configuration
         /// <summary>关闭 Host 前处理尚未保存的报警目录修改。</summary>
         public bool ConfirmClose()
         {
-            if (!_dirty) return true;
-            MessageBoxResult result = MessageBox.Show(
-                T("报警库未保存修改"),
-                T("报警库未保存"),
-                MessageBoxButton.YesNoCancel,
-                MessageBoxImage.Warning);
-            if (result == MessageBoxResult.No) return true;
-            if (result == MessageBoxResult.Cancel) return false;
-            SaveAlarms_Click(this, new RoutedEventArgs());
-            return !_dirty;
+            bool savedDuringClose = false;
+            if (_dirty)
+            {
+                MessageBoxResult result = MessageBox.Show(
+                    T("报警库未保存修改"), T("报警库未保存"), MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
+                if (result == MessageBoxResult.Cancel) return false;
+                if (result == MessageBoxResult.Yes)
+                {
+                    SaveAlarms_Click(this, new RoutedEventArgs());
+                    if (_dirty)
+                    {
+                        string failure = StatusText.Text + (string.IsNullOrEmpty(_pendingHistoryWarning) ? string.Empty : "\n" + _pendingHistoryWarning);
+                        MessageBox.Show(Window.GetWindow(this), failure, T("报警库保存失败"), MessageBoxButton.OK, MessageBoxImage.Error);
+                        return false;
+                    }
+                    savedDuringClose = true;
+                }
+            }
+            if (!string.IsNullOrEmpty(_pendingHistoryWarning))
+            {
+                string warning = (savedDuringClose ? T("报警库文件已保存") + "\n" : string.Empty) + _pendingHistoryWarning;
+                MessageBox.Show(Window.GetWindow(this), warning, T("配置变更记录提醒"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            return true;
         }
 
         /// <summary>显示报警目录草稿尚未写入文件。</summary>

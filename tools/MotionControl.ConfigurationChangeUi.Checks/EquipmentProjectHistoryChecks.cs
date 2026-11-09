@@ -161,10 +161,27 @@ namespace MotionControl.ConfigurationChangeUi.Checks
             timer.Start();
             try { Pump(ready.Task); }
             finally { timer.Stop(); }
-            string visible = detail.Text;
+            var historyRows = (ListBox)page.FindName("HistoryList");
+            var displayed = (KeyValuePair<string, ConfigurationChangeRecord>)historyRows.Items[0];
+            Check(displayed.Key.Contains("测试工程"), "RED: history list does not identify the recorded object type.");
+            Check(message.Text.Contains("变量") && message.Text.Contains("报警库") && message.Text.Contains("未全部接入"),
+                "RED: history scope does not distinguish connected and unconnected sources.");
+            var variable = new ConfigurationChangeRecord { RecordId = Guid.NewGuid(), TimeUtc = DateTimeOffset.UtcNow,
+                MachineId = id, ObjectType = "设备变量定义", ObjectId = "Parameters/DeviceVariables.json",
+                Stage = ConfigurationChangeStage.Apply, Outcome = ConfigurationChangeOutcome.Failed,
+                Source = "IDeviceVariableStore.ReplaceDefinitions", OperationId = "operation-42", Detail = "调用异常，状态待核查" };
+            Check(journal.TryAppend(variable) == null, "变量测试记录未写入。");
+            Run(page, "RefreshHistoryAsync");
+            var variableRow = historyRows.Items.Cast<KeyValuePair<string, ConfigurationChangeRecord>>()
+                .Single(row => row.Value.RecordId == variable.RecordId);
+            Check(variableRow.Key.Contains("内存更新") && variableRow.Key.Contains("状态待核查"),
+                "RED: failed variable memory update is displayed as a definite unchanged state.");
+            historyRows.SelectedItem = variableRow;
+            Check(detail.Text.Contains("operation-42"), "RED: history detail omits the actual operation correlation ID.");
+            Check(message.Text.Contains("50"), "RED: history list does not disclose its 50-record limit.");
             pendingOk.SetResult((Array.Empty<ConfigurationChangeRecord>(), Array.Empty<string>()));
             Pump(oldOk);
-            Check(detail.Text == visible && !message.Text.Contains("尚无"), "卸载前的旧空结果覆盖了重进后的真实记录。");
+            Check(detail.Text.Contains("operation-42") && !message.Text.Contains("尚无"), "卸载前的旧空结果覆盖了重进后的真实记录。");
         }
 
         /// <summary>驱动 STA 调度器完成真实异步页面任务，不显示窗口或操作设备。</summary>

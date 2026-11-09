@@ -681,6 +681,15 @@
     <sys:String x:Key="变量定义任务会话锁定">任务会话已加载或正在读写，不能修改变量定义。请先关闭任务会话，修改后重新读取任务；符合设备状态和变量权限要求的当前值仍可写入。</sys:String>
     <sys:String x:Key="变量定义设备操作锁定">设备准备、清料或退出尚未完成，暂时不能修改变量定义。请等待相关操作完成。</sys:String>
     <sys:String x:Key="变量新增成功">变量已新增并保存。</sys:String>
+    <sys:String x:Key="配置变更记录未保存">配置变更记录未保存：</sys:String>
+    <sys:String x:Key="配置变更记录未接入">记录服务未接入。</sys:String>
+    <sys:String x:Key="配置变更提示关闭">关闭提示</sys:String>
+    <sys:String x:Key="配置变更记录提醒">配置变更记录提醒</sys:String>
+    <sys:String x:Key="报警库文件已保存">报警库文件已保存。</sys:String>
+    <sys:String x:Key="变更记录文件阶段">文件保存阶段：</sys:String>
+    <sys:String x:Key="变更记录内存阶段">内存更新阶段：</sys:String>
+    <sys:String x:Key="变更记录检查阶段">检查阶段：</sys:String>
+    <sys:String x:Key="变量文件已保存内存状态未确认">变量定义文件已保存；内存更新返回异常，实际状态待核查：</sys:String>
     <sys:String x:Key="变量保存成功">变量定义已保存。</sys:String>
     <sys:String x:Key="变量删除成功">变量已删除。</sys:String>
     <sys:String x:Key="变量写入成功">当前值已写入。</sys:String>

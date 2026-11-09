@@ -77,6 +77,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("V1.4 总览工位选择与只读定位", V14StationOverviewChecks.Run, ref failures);
             Check("V1.4 会话投影来源及失败隔离", V14SessionProjectionChecks.Run, ref failures);
             Check("V1.4 引用详情有界与缓存", V14ProjectionDetailCacheChecks.Run, ref failures);
+            Check("变量及报警库配置变更记录", ConfigurationChangeEntryChecks.Run, ref failures);
             Check("设备工程页面和应用后重启保护", EquipmentProjectPageChecks.Run, ref failures);
             Check("工程导入等待映射回滚续体", ProjectGateContinuationChecks.Run, ref failures);
             Check("工程应用后退出保留原恢复记录", ShutdownEvidenceChecks.Run, ref failures);
@@ -99,7 +100,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("产品记录只读显示两种来源及错误", ProductRecordChecks.Run, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：63 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：64 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }

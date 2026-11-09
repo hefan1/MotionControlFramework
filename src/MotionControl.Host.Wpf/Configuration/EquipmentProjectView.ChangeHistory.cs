@@ -106,7 +106,8 @@ namespace MotionControl.Host.Wpf.Configuration
         /// <summary>说明当前有实际记录源的业务范围。</summary>
         private string HistoryScope()
         {
-            return T("当前已接入工程导入的应用结果。", "Project import application results are recorded.");
+            return T("当前接入工程导入、报警库保存、变量定义文件保存及内存更新；其他配置来源尚未全部接入。最多显示最近 50 条。",
+                "Recorded sources include project import, alarm catalog saves, and variable definition file saves and memory updates; other configuration sources are not fully connected. At most the latest 50 records are shown.");
         }
 
         /// <summary>仅选中历史页时查询，其他页选择不会取得控制许可。</summary>
@@ -148,7 +149,8 @@ namespace MotionControl.Host.Wpf.Configuration
                 var (records, notices) = await query;
                 if (generation != _historyGeneration) return;
                 var rows = records.Select(row => new KeyValuePair<string, ConfigurationChangeRecord>(
-                    row.TimeUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") + "  " + StageText(row.Stage) + "  " + OutcomeText(row.Outcome), row)).ToList();
+                    row.TimeUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") + "  " + row.ObjectType + "  "
+                        + RecordStageText(row) + "  " + RecordOutcomeText(row), row)).ToList();
                 ChangeHistoryMessage.Text = HistoryScope() + " " + (notices.Count > 0
                     ? T("历史读取不完整：", "History is incomplete: ") + string.Join(" | ", notices.Take(3))
                     : rows.Count == 0 ? T("当前工程尚无持久记录。", "No persistent records for this project.")
@@ -173,14 +175,33 @@ namespace MotionControl.Host.Wpf.Configuration
             HistoryDetail.Text = string.Join(Environment.NewLine, new[] {
                 T("记录 ID　", "Record ID  ") + row.RecordId, T("设备　", "Machine  ") + row.MachineId,
                 T("对象　", "Object  ") + row.ObjectType + " / " + row.ObjectId,
-                T("阶段　", "Stage  ") + StageText(row.Stage), T("结果　", "Outcome  ") + OutcomeText(row.Outcome),
+                T("阶段　", "Stage  ") + RecordStageText(row), T("结果　", "Outcome  ") + RecordOutcomeText(row),
                 T("时间　", "Time  ") + row.TimeUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff zzz"),
+                T("操作关联 ID　", "Operation ID  ") + (row.OperationId ?? missing),
                 T("来源　", "Source  ") + row.Source, T("操作者　", "Operator  ") + (row.Actor ?? missing),
                 T("变更前版本　", "Previous version  ") + (row.BeforeVersion ?? missing),
                 T("变更后版本　", "New version  ") + (row.AfterVersion ?? missing),
                 T("字段　", "Field  ") + (row.Field ?? missing), T("旧值　", "Old value  ") + (row.BeforeValue ?? missing),
                 T("新值　", "New value  ") + (row.AfterValue ?? missing), T("单位　", "Unit  ") + (row.Unit ?? missing),
                 T("说明　", "Details  ") + (row.Detail ?? missing) });
+        }
+
+        /// <summary>变量内存更新的回执只说明调用结果，不能推断内存没有变化。</summary>
+        private string RecordStageText(ConfigurationChangeRecord row)
+        {
+            return row.Stage == ConfigurationChangeStage.Apply && row.Source == "IDeviceVariableStore.ReplaceDefinitions"
+                ? T("变量内存更新", "Variable memory update") : StageText(row.Stage);
+        }
+
+        /// <summary>区分变量更新调用异常和确定未执行，其他来源保留原结果。</summary>
+        private string RecordOutcomeText(ConfigurationChangeRecord row)
+        {
+            if (row.Stage == ConfigurationChangeStage.Apply && row.Source == "IDeviceVariableStore.ReplaceDefinitions")
+            {
+                if (row.Outcome == ConfigurationChangeOutcome.Succeeded) return T("调用完成", "Call completed");
+                if (row.Outcome == ConfigurationChangeOutcome.Failed) return T("调用异常，内存状态待核查", "Call failed; memory state requires inspection");
+            }
+            return OutcomeText(row.Outcome);
         }
 
         /// <summary>仅呈现记录本身的阶段。</summary>

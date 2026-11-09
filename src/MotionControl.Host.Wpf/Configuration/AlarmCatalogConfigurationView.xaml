@@ -149,6 +149,13 @@
             </Grid>
         </Border>
 
-        <TextBlock Grid.Row="4" x:Name="StatusText" Foreground="#176BD0" TextWrapping="Wrap" />
+        <StackPanel Grid.Row="4">
+         <TextBlock x:Name="StatusText" Foreground="#176BD0" TextWrapping="Wrap" />
+         <ScrollViewer x:Name="ChangeHistoryWarningScroll" Visibility="Collapsed" MaxHeight="80" VerticalScrollBarVisibility="Auto">
+          <DockPanel><Button DockPanel.Dock="Right" Content="{DynamicResource 配置变更提示关闭}" Click="DismissHistoryWarning_Click"/>
+           <TextBlock x:Name="ChangeHistoryWarningText" TextWrapping="Wrap" Foreground="#A35D08" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+          </DockPanel>
+         </ScrollViewer>
+        </StackPanel>
     </Grid>
 </UserControl>

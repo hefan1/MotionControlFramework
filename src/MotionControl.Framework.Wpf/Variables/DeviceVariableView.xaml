@@ -238,7 +238,18 @@
                            Foreground="#40536A"
                            TextTrimming="CharacterEllipsis"
                            ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
-                <StackPanel Grid.Row="1" Grid.ColumnSpan="2">                    <DockPanel Margin="0,5,0,0"><Button x:Name="ClearVariableSearchButton" DockPanel.Dock="Right" Content="{DynamicResource 变量清除筛选}" Click="ClearVariableSearch_Click" /><TextBlock x:Name="VariableSearchCountText" DockPanel.Dock="Right" Margin="8,0" /><TextBox x:Name="VariableSearchBox" ToolTip="{DynamicResource 变量搜索提示}" TextChanged="VariableSearch_TextChanged" /></DockPanel>
+                <StackPanel Grid.Row="1" Grid.ColumnSpan="2">
+                    <ScrollViewer x:Name="DefinitionApplyWarningScroll" Visibility="Collapsed" MaxHeight="80" VerticalScrollBarVisibility="Auto">
+                        <DockPanel><Button DockPanel.Dock="Right" Content="{DynamicResource 配置变更提示关闭}" Click="DismissDefinitionWarning_Click" />
+                            <TextBlock x:Name="DefinitionApplyWarningText" TextWrapping="Wrap" Foreground="#B54747" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
+                        </DockPanel>
+                    </ScrollViewer>
+                    <ScrollViewer x:Name="ChangeHistoryWarningScroll" Visibility="Collapsed" MaxHeight="80" VerticalScrollBarVisibility="Auto">
+                        <DockPanel><Button DockPanel.Dock="Right" Content="{DynamicResource 配置变更提示关闭}" Click="DismissHistoryWarning_Click" />
+                            <TextBlock x:Name="ChangeHistoryWarningText" TextWrapping="Wrap" Foreground="#A35D08" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
+                        </DockPanel>
+                    </ScrollViewer>
+                    <DockPanel Margin="0,5,0,0"><Button x:Name="ClearVariableSearchButton" DockPanel.Dock="Right" Content="{DynamicResource 变量清除筛选}" Click="ClearVariableSearch_Click" /><TextBlock x:Name="VariableSearchCountText" DockPanel.Dock="Right" Margin="8,0" /><TextBox x:Name="VariableSearchBox" ToolTip="{DynamicResource 变量搜索提示}" TextChanged="VariableSearch_TextChanged" /></DockPanel>
                     <TextBlock Text="{DynamicResource 变量筛选保留选择}" Foreground="#596B7D" />
                     <TextBlock x:Name="SelectedDefinitionSummaryText" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
                                MaxHeight="58" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
