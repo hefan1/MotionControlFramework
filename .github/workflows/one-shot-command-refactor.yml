@@ -7,7 +7,7 @@ on:
       - 'tools/Refactor-CommandBoundary.py'
       - '.github/workflows/one-shot-command-refactor.yml'
 
-# 仅此单次迁移需要向固定的隔离分支提交通过验证的结果；不修改默认分支。
+# 仅此单次迁移向固定隔离分支提交通过验证的结果；不修改默认分支。
 # 常规 windows-checks.yml 的只读权限保持不变。完成后移除此临时工作流。
 permissions:
   contents: write
@@ -21,12 +21,15 @@ jobs:
     if: github.repository == 'hefan1/MotionControlFramework' && github.ref == 'refs/heads/codex/architecture-clarity-20261110'
     runs-on: windows-2022
     timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: 'utf-8'
     steps:
-      - name: 只检出本次独立分支
+      - name: 只检出本次独立分支与比较所需历史
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: codex/architecture-clarity-20261110
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: true
       - name: 安装构建 SDK
         uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
