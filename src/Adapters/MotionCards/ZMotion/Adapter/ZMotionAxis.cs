@@ -230,7 +230,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             }
         }
 
-        /// <summary>在运动被取消或超时后执行受控停止，并确认轴已停稳。</summary>
+        /// <summary>运动等待出现取消、超时、报警或反馈错误时请求受控停止，并确认轴停稳。</summary>
         private async Task StopAfterInterruptedMoveAsync(Exception originalError)
         {
             try
@@ -248,7 +248,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
             catch (Exception stopError)
             {
                 throw new AggregateException(
-                    "正运动逻辑轴 '" + Name + "' 的运动被取消或超时，且受控停止未能确认完成。",
+                    "正运动逻辑轴 '" + Name + "' 的运动等待失败，且受控停止未能确认完成。",
                     originalError,
                     stopError);
             }
