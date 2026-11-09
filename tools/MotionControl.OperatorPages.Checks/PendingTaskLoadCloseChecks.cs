@@ -1,9 +1,4 @@
-"""仅本次隔离分支使用的精确迁移；最终交付删除此脚本。"""
-from pathlib import Path
-import sys
-
-ROOT = Path(__file__).resolve().parents[1]
-TEST = r'''using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -98,49 +93,3 @@ namespace MotionControl.OperatorPages.Checks
         }
     }
 }
-'''
-
-
-def replace_once(text, before, after):
-    """不匹配就终止，避免覆盖其他会话已变更的代码。"""
-    if text.count(before) != 1:
-        raise RuntimeError('迁移定位不是唯一匹配: ' + before[:100])
-    return text.replace(before, after, 1)
-
-
-def write(path, text):
-    """统一写入 UTF-8，生产源码由编译与完整差异复核确认。"""
-    target = ROOT / path
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(text, encoding='utf-8')
-
-
-def add_tests():
-    """只增加测试和独立运行入口，完全不修改生产行为。"""
-    path = 'tools/MotionControl.OperatorPages.Checks/BoundTaskLoadChecks.cs'
-    text = (ROOT / path).read_text(encoding='utf-8-sig')
-    text = replace_once(text, 'internal static class BoundTaskLoadChecks', 'internal static partial class BoundTaskLoadChecks')
-    write(path, text)
-    write('tools/MotionControl.OperatorPages.Checks/PendingTaskLoadCloseChecks.cs', TEST)
-    path = 'tools/MotionControl.OperatorPages.Checks/Program.cs'
-    text = (ROOT / path).read_text(encoding='utf-8-sig')
-    text = replace_once(text, 'private static int Main()', 'private static int Main(string[] args)')
-    anchor = '            int failures = 0;'
-    text = replace_once(text, anchor, anchor + '''
-            // 专项入口仅用于快速复现同一正式页面的装载/关闭行为，完整检查也始终执行它。
-            if (args.Length == 1 && args[0] == "--pending-task-load")
-            {
-                Check("在途任务装载关闭", () => RunUiAsync(BoundTaskLoadChecks.RunPendingLoadChecksAsync), ref failures);
-                app.Shutdown();
-                return failures == 0 ? 0 : 1;
-            }
-            Check("在途任务装载关闭", () => RunUiAsync(BoundTaskLoadChecks.RunPendingLoadChecksAsync), ref failures);''')
-    text = replace_once(text, '操作页面内部检查：64 组', '操作页面内部检查：65 组')
-    write(path, text)
-
-
-if __name__ == '__main__':
-    if sys.argv[1:] == ['--tests']:
-        add_tests()
-    else:
-        raise SystemExit('本阶段只允许 --tests；先验证原实现确实失败。')

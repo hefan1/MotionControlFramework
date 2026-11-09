@@ -26,7 +26,7 @@ using MotionControl.TaskEngine.Machine;
 namespace MotionControl.OperatorPages.Checks
 {
     /// <summary>驱动正式 WPF 装载方法、真实 Runtime 生命周期和临时机器配置，完全使用内存卡。</summary>
-    internal static class BoundTaskLoadChecks
+    internal static partial class BoundTaskLoadChecks
     {
         /// <summary>检查同 Runtime 重连、准备订阅者错误、并发版本更换及解析失败后关闭可重试。</summary>
         internal static async Task RunAsync()

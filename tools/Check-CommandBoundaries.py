@@ -46,5 +46,32 @@ class CommandBoundaryChecks(unittest.TestCase):
         self.assertIn('_taskOperations = null;', text)
 
 
+    def test_task_load_has_a_tracked_owner_before_background_read(self):
+        """装载状态由独立具体对象保存；页面只核对身份和挂接展示。"""
+        text = (ROOT / 'src/MotionControl.Host.Wpf/Tasks/TaskMonitorLauncher.cs').read_text(encoding='utf-8-sig')
+        body = method_body(text, 'LoadTaskSessionAsync')
+        for forbidden in ['HostTaskSessionLoader.Load', 'TryConfigurePreparations', 'loaded.Publish(', '_retryUnpublishedCleanup']:
+            self.assertNotIn(forbidden, body)
+        self.assertLess(body.index('_pendingTaskLoad = pending;'), body.index('await pending.LoadAsync('))
+        self.assertIn('RetryUnpublishedCleanupAsync(pending)', body)
+        self.assertIn('_pendingTaskLoad != null', method_body(text, 'SetMachineContextAsync'))
+        self.assertIn('await RetryUnpublishedCleanupAsync()', method_body(text, 'CloseTaskSessionCoreAsync'))
+
+    def test_task_load_rollback_keeps_original_runtime_and_versions(self):
+        """不引入控件、厂商或测试设备，回滚只操作原会话和本次准备代次。"""
+        text = (ROOT / 'src/MotionControl.Host.Wpf/Tasks/HostTaskSessionLoadOperation.cs').read_text(encoding='utf-8-sig')
+        self.assertIn('internal sealed class HostTaskSessionLoadOperation', text)
+        for forbidden in ['using System.Windows', 'Dispatcher', 'ZAux_', 'FakeAxis', 'InMemoryTaskDevice', 'Activator.CreateInstance']:
+            self.assertNotIn(forbidden, text)
+        self.assertIn('await _loadFinished.Task', text)
+        self.assertIn('out _installedPreparationVersion', text)
+        self.assertIn('TryConfigurePreparations(_equipmentPreparations, _installedPreparationVersion', text)
+        self.assertIn('Session.Machine.CloseAsync()', text)
+        page = (ROOT / 'src/MotionControl.Host.Wpf/Tasks/TaskMonitorLauncher.cs').read_text(encoding='utf-8-sig')
+        close = method_body(page, 'CloseTaskSessionCoreAsync')
+        self.assertIn('var runtime = _runtime;', close)
+        self.assertIn('runtime.TryConfigurePreparations(equipmentPreparations, publishedPreparationVersion', close)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
