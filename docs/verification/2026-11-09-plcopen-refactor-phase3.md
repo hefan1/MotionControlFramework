@@ -30,6 +30,14 @@
 
 **安全界限**：只允许框架内部已知的、不向物理设备发运动/输出命令的实现明确启用宽松同步路径。它不是 PLCopen 的功能块接口，不替代 `MC_Stop`、`MC_Halt`、硬件急停和安全回路。厂商适配器依旧必须提供可信停止/回零反馈；缺失能力时不伪造状态。
 
+## R06：正式任务装载禁止隐式回退内存设备
+
+- **原问题**：`TaskMonitorSession.LoadMachine(store, machineId)` 调用可空设备版本，后者执行 `device ?? new InMemoryTaskDevice(catalog)`。正式 Host 当前已正确传入设备，因此未发现现有 Host 直接误用；但新接入的代码若漏传设备，就可能创建不接真实控制器的任务执行器，造成“任务看似加载、实际没有调用硬件”的维护风险。
+- **修复**：移除不要求设备的双参数重载。四参数正式入口现强制要求 `device` 和 `alarmService` 非空，并在读取任务工程文件前拒绝缺失参数；不再自动创建内存设备。正式 `HostTaskSessionLoader.Load` 本来就传入当前 `MachineTaskDevice` 和 `runtime.AlarmService`，调用方式保持不变。
+- **兼容性**：此项是有意的源码接口收紧。旧代码若调用双参数 `LoadMachine`，需要改为显式取得真实设备和报警服务后调用四参数入口。若只需要展示独立离线示例，应明确使用 `TaskMonitorExample.Create()`，不能伪装成设备实际运行会话。
+- **新增测试**：在已有 `MotionControl.TaskMonitor.Checks` 增加“正式装载缺少设备时禁止内存回退”一组，直接断言缺少设备立即拒绝，不启动控制器、不创建模拟轴。
+- **PLCopen 语义**：此项并非 PLCopen 单轴功能块的具体实现，而是保障规范化运动命令真正进入已指定的设备 API，避免把不具硬件反馈的离线执行当作正式设备。
+
 ## 测试与保护范围
 
 - 本批未修改 `AxisMappingConfigurationView.xaml`、`IoMappingConfigurationView.xaml`、`ManualAxisControl.xaml`、`IoMonitorView.xaml` 和 `MainWindow.xaml`，也不修改上述四页后台代码。
