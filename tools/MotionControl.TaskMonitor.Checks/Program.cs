@@ -191,11 +191,16 @@ namespace MotionControl.TaskMonitor.Checks
                 view.ReferenceRequested += (sender, args) => requestedReference = args;
                 view.Refresh(); view.SetLanguage("en-US");
                 Assert(view.T("步骤详情") == "Step details", "英文资源未加载。");
-                Assert(((DataGrid)view.FindName("StationsGrid")).Columns[0].Header.ToString() == "Station",
-                    "英文工位列表表头没有说明该列显示工位名称。");
+                // 目前的工位列表采用无表头卡片布局，不能再访问没有设置的列 Header。
+                var stationGrid = view.FindName("StationsGrid") as DataGrid;
+                Assert(stationGrid != null && stationGrid.HeadersVisibility == DataGridHeadersVisibility.None
+                    && stationGrid.Columns.Count == 1 && stationGrid.Columns[0] is DataGridTemplateColumn
+                    && stationGrid.Items.OfType<TaskStationRow>().Any(row => row.Id == "inspect"),
+                    "工位卡片列表未使用现行无表头布局，或丢失了真实工位数据。");
                 view.SetLanguage("zh-CN");
-                Assert(((DataGrid)view.FindName("StationsGrid")).Columns[0].Header.ToString() == "工位名称",
-                    "工位列表表头没有说明该列显示工位名称。");
+                Assert(view.T("步骤详情") == "步骤详情"
+                    && stationGrid.Items.OfType<TaskStationRow>().Any(row => row.Id == "inspect"),
+                    "切换中文后资源或原工位身份丢失。");
                 Assert(view.FocusStationByName("inspect")
                     && ((TaskStationRow)((DataGrid)view.FindName("StationsGrid")).SelectedItem).Id == "inspect",
                     "来自报警的稳定工位标识没有直接定位工位。");
