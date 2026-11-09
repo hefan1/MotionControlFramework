@@ -18,7 +18,8 @@ try {
             $failures++
             continue
         }
-        $actual = (& git hash-object -- $path).Trim()
+        # 使用仓库属性执行文本归一化，避免 Windows 的 CRLF 换行产生误报。
+        $actual = (& git hash-object "--path=$path" -- $path).Trim()
         if ($LASTEXITCODE -ne 0 -or $actual -ne $protected[$path]) {
             Write-Host "[不通过] 受保护 UI 发生变化：$path"
             Write-Host "  基线：$($protected[$path])"
