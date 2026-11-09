@@ -167,15 +167,27 @@ namespace MotionControl.TaskEngine.MachineDevice
         }
     }
 
-    /// <summary>由实际持权设备创建任务操作入口，不增加通用工厂或反射装配。</summary>
+    /// <summary>由实际持权设备提供本会话唯一的任务操作入口，不增加通用工厂或反射装配。</summary>
     public sealed partial class MachineTaskDevice
     {
-        /// <summary>使用本设备已经绑定的 Runtime 和任务控制器创建操作入口，不重新连接或启动设备。</summary>
+        /// <summary>同一绑定会话只创建一次；不同页面共用命令锁，失效后也不替换成新的对象。</summary>
+        private TaskMachineOperations _operationEntry;
+
+        /// <summary>取得本设备已绑定会话的唯一操作入口；不会连接、启动设备或复活已撤销入口。</summary>
         public TaskMachineOperations CreateOperations(TaskMachineController controller)
         {
             if (controller == null) throw new ArgumentNullException(nameof(controller));
+            // Runtime 的身份检查在设备锁外执行，避免跨组件锁顺序反转。
             RequireOperationOwner(controller);
-            return new TaskMachineOperations(_runtime, this, controller, _expectedSession.Value);
+            lock (_sync)
+            {
+                // 身份核对后可能发生关闭；创建或返回入口前再次核对本地持权状态。
+                if (_changingOwner || _closing || !ReferenceEquals(_machineOwner, controller))
+                    throw new InvalidOperationException("任务控制器不再持有本设备的稳定控制权。");
+                if (_operationEntry == null)
+                    _operationEntry = new TaskMachineOperations(_runtime, this, controller, _expectedSession.Value);
+                return _operationEntry;
+            }
         }
 
         /// <summary>锁内只检查本地持权者；锁外复核 Runtime 绑定，避免跨组件锁顺序反转。</summary>
