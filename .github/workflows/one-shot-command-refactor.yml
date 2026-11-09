@@ -7,8 +7,7 @@ on:
       - 'tools/Refactor-CommandBoundary.py'
       - '.github/workflows/one-shot-command-refactor.yml'
 
-# 仅此单次迁移向固定隔离分支提交通过验证的结果；不修改默认分支。
-# 常规 windows-checks.yml 的只读权限保持不变。完成后移除此临时工作流。
+# 仅向固定隔离分支提交通过验证的结果，不修改默认分支；完成后移除。
 permissions:
   contents: write
 
@@ -42,15 +41,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw '迁移脚本语法错误。' }
           python tools/Refactor-CommandBoundary.py --apply
           if ($LASTEXITCODE -ne 0) { throw '迁移或结构检查失败，不提交结果。' }
+          python -c "from pathlib import Path; p=Path('tools/MotionControl.VirtualAdapter.Checks/Program.cs'); s=p.read_text(encoding='utf-8'); assert s.count('Console.Error.WriteLine(ex.Message);')==1; p.write_text(s.replace('Console.Error.WriteLine(ex.Message);','Console.Error.WriteLine(ex.ToString());'),encoding='utf-8')"
+          if ($LASTEXITCODE -ne 0) { throw '异常链诊断补充失败。' }
       - name: 核对受保护布局
         shell: pwsh
         run: ./tools/Verify-ProtectedUi.ps1
+      - name: 优先验证实际软件控制器与新任务操作路径
+        shell: pwsh
+        run: ./tools/Verify-ControllerApi.ps1
       - name: 正式 Host 构建与全部内部检查
         shell: pwsh
         run: ./tools/Verify-V18.ps1
-      - name: 实际单控制器、双控制器与任务操作协调 API 回归
-        shell: pwsh
-        run: ./tools/Verify-ControllerApi.ps1
       - name: 记录关闭证据并只提交本批文件
         shell: pwsh
         run: |
