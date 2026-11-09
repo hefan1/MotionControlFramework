@@ -546,33 +546,41 @@ namespace MotionControl.Host.Wpf.Tasks
             }
         }
 
-        /// <summary>顶部报警复位复用任务侧条件核对，不绕过任务故障锁存。</summary>
+        /// <summary>顶部报警复位使用与任务页面相同的校验和复位顺序，不绕过任务故障锁存。</summary>
         internal async Task ResetFromHostAsync(bool confirmedStoppedProduction)
         {
             if (_commandInProgress) throw new InvalidOperationException("任务命令正在执行，请等待完成。");
             _commandInProgress = true;
-            try
-            {
-                RequireTaskSession();
-                await _session.Machine.ValidateResetPrerequisitesAsync();
-                if (_runtime.State != MachineRunState.Ready) await _runtime.ResetAsync(CancellationToken.None, confirmedStoppedProduction);
-                await _session.Machine.ResetAsync();
-            }
+            try { await ResetTaskCoreAsync(confirmedStoppedProduction).ConfigureAwait(true); }
             finally { _commandInProgress = false; UpdateCommandAvailability(); }
         }
 
-        /// <summary>复位运动卡、Runtime 报警与任务整机状态；复位后仍需操作员按启动。</summary>
+        /// <summary>任务页面复位复用顶部按钮的同一执行过程，保留原有成功提示。</summary>
         private async void ResetTask_Click(object sender, RoutedEventArgs e)
         {
             await RunCommandAsync(async () =>
             {
-                RequireTaskSession();
-                await _session.Machine.ValidateResetPrerequisitesAsync().ConfigureAwait(true);
-                if (_runtime.State != MachineRunState.Ready)
-                    await _runtime.ResetAsync(CancellationToken.None).ConfigureAwait(true);
-                await _session.Machine.ResetAsync().ConfigureAwait(true);
+                await ResetTaskCoreAsync(false).ConfigureAwait(true);
                 SetSuccessText("任务执行复位完成");
             }, "任务复位失败", "任务运行复位建议").ConfigureAwait(true);
+        }
+
+        /// <summary>复位前后确认当前任务与连接未切换；只按原会话执行轴及报警准入。</summary>
+        private async Task ResetTaskCoreAsync(bool confirmedStoppedProduction)
+        {
+            RequireTaskSession();
+            var session = _session;
+            var runtime = _runtime;
+            var device = session.TaskDevice as MotionControl.TaskEngine.MachineDevice.MachineTaskDevice;
+            long contextVersion = _machineContextVersion;
+            EnsureCurrentTaskCommandContext(session, runtime, device, contextVersion);
+            await session.Machine.ValidateResetPrerequisitesAsync().ConfigureAwait(true);
+            EnsureCurrentTaskCommandContext(session, runtime, device, contextVersion);
+            if (runtime.State != MachineRunState.Ready)
+                await runtime.ResetAsync(CancellationToken.None, confirmedStoppedProduction).ConfigureAwait(true);
+            EnsureCurrentTaskCommandContext(session, runtime, device, contextVersion);
+            await session.Machine.ResetAsync().ConfigureAwait(true);
+            EnsureCurrentTaskCommandContext(session, runtime, device, contextVersion);
         }
 
         /// <summary>先让 Runtime 建立安全运行状态和急停监控，再启动任务工位。</summary>
