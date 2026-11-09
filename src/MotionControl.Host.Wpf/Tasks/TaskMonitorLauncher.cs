@@ -16,6 +16,7 @@ using MotionControl.Framework.Runtime.Machine;
 using MotionControl.Framework.Runtime.Variables;
 using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Machine;
+using MotionControl.TaskEngine.MachineDevice;
 using MotionControl.TaskEngine.Resources;
 using MotionControl.TaskEngine.Wpf.Simulation;
 using MotionControl.TaskEngine.Wpf.Views;
@@ -101,6 +102,8 @@ namespace MotionControl.Host.Wpf.Tasks
         private DeviceVariableStore _variables;
         /// <summary>当前任务运行会话；创建时取得设备控制权。</summary>
         private TaskMonitorSession _session;
+        /// <summary>当前已发布任务的设备操作入口；撤销后不复用到新连接。</summary>
+        private TaskMachineOperations _taskOperations;
         /// <summary>已发布任务实际安装的准备配置代次；变化后不能再当作该会话的准备范围。</summary>
         private long _publishedPreparationVersion = -1;
         /// <summary>任务关闭期间不再将其作为可提交准备的会话。</summary>
@@ -330,6 +333,7 @@ namespace MotionControl.Host.Wpf.Tasks
             ILogicalIo logicalIo, DeviceVariableStore variables, IReadOnlyList<IStationPreparation> preparations = null)
         {
             _machineContextVersion++;
+            _taskOperations?.Invalidate();
             if (_session != null || _retryUnpublishedCleanup != null) await CloseTaskSessionAsync().ConfigureAwait(true);
             _runtime = runtime; _motionCards = motionCards; _logicalIo = logicalIo; _variables = variables;
             _equipmentPreparations = preparations ?? new IStationPreparation[0];
@@ -358,6 +362,7 @@ namespace MotionControl.Host.Wpf.Tasks
         internal void MarkControllerConnectionLost()
         {
             _machineContextVersion++;
+            _taskOperations?.Invalidate();
             _controllerConnectionLost = true;
             _runtime?.InvalidateConnectionSessionOnLoss();
             RefreshConnectionDisplay();
@@ -494,6 +499,7 @@ namespace MotionControl.Host.Wpf.Tasks
                         throw new InvalidOperationException("设备连接在任务读取期间发生变化，本次读取已取消；请在当前连接中重新读取任务。");
                 }
                 long installedVersion = 0;
+                TaskMachineOperations operations = null;
                 try
                 {
                     CheckContext();
@@ -505,6 +511,7 @@ namespace MotionControl.Host.Wpf.Tasks
                         throw new InvalidOperationException("任务准备配置在读取期间发生变化，请核对当前配置后重新读取。");
                     // 仅在连接与准备定义均核对成功后生成本次会话身份。
                     loaded.Publish(_machineId);
+                    operations = ((MachineTaskDevice)loaded.TaskDevice).CreateOperations(loaded.Machine);
                 }
                 catch (Exception loadError)
                 {
@@ -525,6 +532,7 @@ namespace MotionControl.Host.Wpf.Tasks
 
                 _publishedPreparationVersion = installedVersion;
                 _session = loaded;
+                _taskOperations = operations;
                 _catalog = loaded.TaskDevice.Catalog;
                 _catalogFromLoadedSession = true;
                 _monitor = new TaskMonitorView(loaded);
@@ -568,19 +576,9 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>复位前后确认当前任务与连接未切换；只按原会话执行轴及报警准入。</summary>
         private async Task ResetTaskCoreAsync(bool confirmedStoppedProduction)
         {
-            RequireTaskSession();
-            var session = _session;
-            var runtime = _runtime;
-            var device = session.TaskDevice as MotionControl.TaskEngine.MachineDevice.MachineTaskDevice;
-            long contextVersion = _machineContextVersion;
-            EnsureCurrentTaskCommandContext(session, runtime, device, contextVersion);
-            await session.Machine.ValidateResetPrerequisitesAsync().ConfigureAwait(true);
-            EnsureCurrentTaskCommandContext(session, runtime, device, contextVersion);
-            if (runtime.State != MachineRunState.Ready)
-                await runtime.ResetAsync(CancellationToken.None, confirmedStoppedProduction).ConfigureAwait(true);
-            EnsureCurrentTaskCommandContext(session, runtime, device, contextVersion);
-            await session.Machine.ResetAsync().ConfigureAwait(true);
-            EnsureCurrentTaskCommandContext(session, runtime, device, contextVersion);
+            var operations = RequireTaskOperations();
+            await operations.ResetAsync(confirmedStoppedProduction).ConfigureAwait(true);
+            operations.EnsureCurrent();
         }
 
         /// <summary>先让 Runtime 建立安全运行状态和急停监控，再启动任务工位。</summary>
@@ -592,29 +590,9 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>任务页和顶部启动复用同一流程，确认仍是原连接和任务会话后发放运行许可。</summary>
         private async Task StartTaskCoreAsync()
         {
-            RequireTaskSession();
-            var session = _session;
-            var runtime = _runtime;
-            var device = session.TaskDevice as MotionControl.TaskEngine.MachineDevice.MachineTaskDevice;
-            long contextVersion = _machineContextVersion;
-            EnsureCurrentTaskCommandContext(session, runtime, device, contextVersion);
-            Guid connection = device.BoundConnectionSessionId.Value;
-            await runtime.BeginTaskEngineRunAsync(connection, device, CancellationToken.None).ConfigureAwait(true);
-            try
-            {
-                EnsureCurrentTaskCommandContext(session, runtime, device, contextVersion);
-                session.Machine.Start();
-                runtime.ConfirmTaskEngineProductionStarted();
-            }
-            catch (Exception startError)
-            {
-                try { await runtime.FinishTaskEngineRunAsync(connection, device, true, startError).ConfigureAwait(true); }
-                catch (Exception finishError)
-                {
-                    throw new AggregateException("任务启动失败，原连接的运行状态也未能确认收尾。", startError, finishError);
-                }
-                throw;
-            }
+            var operations = RequireTaskOperations();
+            await operations.StartAsync().ConfigureAwait(true);
+            operations.EnsureCurrent();
             SetSuccessText("任务执行已启动");
         }
 
@@ -627,36 +605,9 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>受控停轴后只更新原运行时；停止失败时必须锁存故障，不能保留虚假的运行状态。</summary>
         private async Task PauseTaskCoreAsync()
         {
-            RequireTaskSession();
-            var session = _session;
-            var runtime = _runtime;
-            var device = session.TaskDevice as MotionControl.TaskEngine.MachineDevice.MachineTaskDevice;
-            long contextVersion = _machineContextVersion;
-            if (device?.BoundConnectionSessionId == null)
-                throw new InvalidOperationException("正式任务设备未绑定原控制器连接，无法确认停轴收尾。");
-            Guid connection = device.BoundConnectionSessionId.Value;
-            try
-            {
-                // 失联后也允许原任务执行受控停止；只有提交 Runtime 状态时才要求原连接仍有效。
-                await session.Machine.PauseAsync().ConfigureAwait(true);
-                EnsureCurrentTaskCommandContext(session, runtime, device, contextVersion);
-                TaskMachineSnapshot snapshot = session.Machine.GetSnapshot();
-                if (snapshot.State != TaskMachineState.Paused)
-                {
-                    string reason = snapshot.Faults.LastOrDefault()?.Message ?? "任务未确认暂停及全部动作收尾。";
-                    throw new InvalidOperationException(reason);
-                }
-                await runtime.FinishTaskEngineRunAsync(connection, device, false, null).ConfigureAwait(true);
-            }
-            catch (Exception pauseError)
-            {
-                try { await runtime.FinishTaskEngineRunAsync(connection, device, true, pauseError).ConfigureAwait(true); }
-                catch (Exception finishError)
-                {
-                    throw new AggregateException("任务暂停失败，原连接的报警状态也未能确认收尾。", pauseError, finishError);
-                }
-                throw;
-            }
+            var operations = RequireTaskOperations();
+            await operations.PauseAsync().ConfigureAwait(true);
+            operations.EnsureCurrent();
             SetSuccessText("任务执行已暂停");
         }
 
@@ -714,18 +665,11 @@ namespace MotionControl.Host.Wpf.Tasks
         {
             TaskMonitorSession session = _session;
             if (session == null) return;
-            var runtime = _runtime;
-            var device = session.TaskDevice as MotionControl.TaskEngine.MachineDevice.MachineTaskDevice;
-            long contextVersion = _machineContextVersion;
-            // 即使连接刚丢失，也先尝试结束本次会话的任务；只有后续状态提交需要有效连接。
-            await WaitForShutdownSettlementAsync(session.Machine.AbortAsync(), "任务终止").ConfigureAwait(true);
-            EnsureCurrentTaskCommandContext(session, runtime, device, contextVersion);
-            Guid connection = device.BoundConnectionSessionId.Value;
-            if (runtime.State == MachineRunState.Running || runtime.State == MachineRunState.Pausing)
-                await runtime.FinishTaskEngineRunAsync(connection, device, false, null).ConfigureAwait(true);
+            var operations = RequireTaskOperations();
+            await WaitForShutdownSettlementAsync(operations.AbortAsync(), "任务终止").ConfigureAwait(true);
+            operations.EnsureCurrent();
             bool preserveBlocked = allowBlockedHandoff && session.TaskDevice.ReadResources()
                 .Any(resource => resource.State == TaskResourceState.Blocked);
-            EnsureCurrentTaskCommandContext(session, runtime, device, contextVersion);
             await CloseTaskSessionAsync(preserveBlocked).ConfigureAwait(true);
         }
 
@@ -796,6 +740,7 @@ namespace MotionControl.Host.Wpf.Tasks
 
             _stateTimer.Stop();
             _closingTaskSession = true;
+            _taskOperations?.Invalidate();
             // 关闭期间可能长时间等待，立即撤销旧身份，不依赖已经停止的计时器。
             RefreshSessionSource();
             _monitor?.Refresh();
@@ -823,6 +768,7 @@ namespace MotionControl.Host.Wpf.Tasks
             }
             catch (Exception error) { restoreError = error; }
             _session = null;
+            _taskOperations = null;
             _publishedPreparationVersion = -1;
             _closingTaskSession = false;
             _monitor = null;
@@ -1015,16 +961,14 @@ namespace MotionControl.Host.Wpf.Tasks
                 throw new InvalidOperationException("请先连接运动控制卡并读取任务配置。");
         }
 
-        /// <summary>核对异步命令仍属于发起时的设备、连接和任务；失败时不操作新的会话。</summary>
-        private void EnsureCurrentTaskCommandContext(TaskMonitorSession session, MachineRuntime runtime,
-            MotionControl.TaskEngine.MachineDevice.MachineTaskDevice device, long contextVersion)
+        /// <summary>取得当前已发布任务的操作入口，不在页面内编排设备运行状态。</summary>
+        private TaskMachineOperations RequireTaskOperations()
         {
-            if (session == null || runtime == null || device?.BoundConnectionSessionId == null
-                || _machineContextVersion != contextVersion
-                || !ReferenceEquals(_session, session) || !ReferenceEquals(_runtime, runtime)
-                || !ReferenceEquals(session.TaskDevice, device) || !IsControllerConnected()
-                || !runtime.IsConnectionSessionCurrent(device.BoundConnectionSessionId))
-                throw new InvalidOperationException("任务操作期间设备连接或任务会话已变化，不能用旧结果更新当前设备；请确认停稳并重新读取任务。");
+            RequireTaskSession();
+            if (_taskOperations == null)
+                throw new InvalidOperationException("当前任务尚未建立设备操作入口，请重新读取任务。");
+            // 不在这里拒绝失效实例：Pause/Abort 仍需优先尝试停止其原任务。
+            return _taskOperations;
         }
 
         /// <summary>向操作人员说明异常和下一步，并保留可复制的完整堆栈。</summary>
