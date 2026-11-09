@@ -56,8 +56,8 @@ function Confirm-ControllerReady([int]$Port, [System.Diagnostics.Process]$Contro
         }
         try {
             $identity = Read-ControllerApi -Port $Port -Request '{"command":"ping"}'
-            if ($identity.ok -eq $true -and $identity.controllerType -eq "MotionControl.VirtualController"
-                -and $identity.protocolVersion -eq 2) {
+            $identityMatches = $identity.ok -eq $true -and $identity.controllerType -eq "MotionControl.VirtualController" -and $identity.protocolVersion -eq 2
+            if ($identityMatches) {
                 return
             }
         }
@@ -80,8 +80,7 @@ function Confirm-ControllerAxisStopped([int]$Port, [int]$AxisNumber) {
         throw "控制器端口 $Port 的轴 $AxisNumber 速度未提供或仍在运动。"
     }
     $velocity = [double]$feedback.axisState.velocity
-    if ([double]::IsNaN($velocity) -or [double]::IsInfinity($velocity)
-        -or [Math]::Abs($velocity) -gt 0.001) {
+    if ([double]::IsNaN($velocity) -or [double]::IsInfinity($velocity) -or [Math]::Abs($velocity) -gt 0.001) {
         throw "控制器端口 $Port 的轴 $AxisNumber 速度无效或尚未停稳。"
     }
 }
