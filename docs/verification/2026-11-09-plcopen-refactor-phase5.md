@@ -54,3 +54,12 @@
 - CI 静态 Blob SHA 检查继续有效；正式 Host 屏幕交互验收和厂商 SDK / 实卡检查仍未由本批执行。
 - 第五批尚未取得 Windows CI 结果时只能标记**已提交待验证**，不能写作全部通过或合并 `master`。
 - 若后续需完整映射 Homing、DiscreteMotion、ContinuousMotion、Stopping、ErrorStop 等 PLCopen 轴状态，必须先核对每个控制器能可靠提供的状态来源及正在执行的命令凭证；不靠 `Moving` 猜出一套状态机。
+
+## 首轮 Windows CI 实际结果及回归诊断修正
+
+[第五批首轮运行 42632995273](https://github.com/hefan1/MotionControlFramework/actions/runs/42632995273) 的结果为 **failure，不能声称整批通过**。
+
+- 正式 Host 构建成功；受保护 UI 基线检查成功；现有软件控制器的 `--controller-api` 实际完成定位、点动、停止、一次性 `readAxis` 故障注入、反馈拒绝和停稳复核，**该 API 步骤成功**。
+- 15 个内部检查项目中 14 个通过；`MotionControl.TaskEngine.Checks` 的既有 `ResourceInterlocks` 用例在暂停后检查资源占用时出现 `NullReferenceException`，堆栈位于 `ExecutionChecks.Interlocks.cs`。这是内存任务逻辑的并发/时序验证，不涉及实际控制卡；**尚不能把它判定为框架实际资源被错误释放，也不能当作无关小错误跳过**。
+- 为明确原因，测试现等待“正文完成且退出互锁进入 Waiting”后再核对资源。暂停后仍要求资源记录存在且 `State == Held`；异常时显示运行状态和资源条数，不再因为访问空记录丢失根因。此改动没有新增内存轴/模拟控制器，也没有放宽资源互锁或生产安全代码。
+- 本批代码是否可以合并，仍以更新后的完整 Windows CI 为准；即使 CI 通过，也不替代正式 Host 屏幕、真实 ZMotion SDK 或实物安全验收。
