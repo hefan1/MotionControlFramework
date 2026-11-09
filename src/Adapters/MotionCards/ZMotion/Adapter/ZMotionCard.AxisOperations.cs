@@ -240,24 +240,33 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     AxisStatus status = await ReadAxisStatusAsync(axis, cancellationToken).ConfigureAwait(false);
+                    if (status.AlarmActive)
+                        throw new InvalidOperationException("正运动逻辑轴 '" + axis.Name + "' 定位中存在报警：" + status.AlarmMessage);
+                    if (!status.ServoEnabled)
+                        throw new InvalidOperationException("正运动逻辑轴 '" + axis.Name + "' 伺服已关闭，不能确认定位成功。");
+                    if (double.IsNaN(status.Velocity) || double.IsInfinity(status.Velocity)
+                        || double.IsNaN(status.Position) || double.IsInfinity(status.Position))
+                        throw new InvalidOperationException("正运动逻辑轴 '" + axis.Name + "' 的速度或位置反馈无效，不能确认定位成功。");
                     if (status.Moving)
                     {
                         observedMotion = true;
                     }
 
                     double commandPosition = status.CommandPosition ?? status.Position;
+                    if (double.IsNaN(commandPosition) || double.IsInfinity(commandPosition))
+                        throw new InvalidOperationException("正运动逻辑轴 '" + axis.Name + "' 指令位置反馈无效，不能确认定位成功。");
                     bool targetReached = Math.Abs(commandPosition - (double)(float)targetPosition)
                         <= commandPositionTolerance;
                     double feedbackPositionError = Math.Abs(status.Position - targetPosition);
                     bool feedbackWithinTolerance = feedbackPositionError <= axis.Configuration.PositionTolerance;
 
-                    if (!status.Moving && targetReached && feedbackWithinTolerance)
+                    if (status.HasStoppedMotionFeedback() && targetReached && feedbackWithinTolerance)
                     {
                         return;
                     }
 
                     double elapsedMilliseconds = (DateTime.UtcNow - startedAt).TotalMilliseconds;
-                    if (observedMotion && !status.Moving)
+                    if (observedMotion && status.HasStoppedMotionFeedback())
                     {
                         throw new InvalidOperationException(
                             "正运动逻辑轴 '" + axis.Name
@@ -403,7 +412,7 @@ namespace MotionControl.Adapter.MotionCard.ZMotion
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var status = await ReadAxisStatusAsync(axis, cancellationToken).ConfigureAwait(false);
-                    if (!status.Moving)
+                    if (status.HasStoppedMotionFeedback())
                     {
                         return;
                     }
