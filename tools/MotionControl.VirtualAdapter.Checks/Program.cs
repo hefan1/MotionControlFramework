@@ -27,7 +27,14 @@ namespace MotionControl.VirtualAdapter.Checks
                 StartMotionAndExit(int.Parse(args[1]));
                 return;
             }
-            try { Run(args); }
+            try
+            {
+                // 只通过现有软件控制器 API 检查运动语义，不创建内存假轴。
+                if (args.Length == 2 && args[0] == "--controller-api")
+                    RunControllerApi(int.Parse(args[1]));
+                else
+                    Run(args);
+            }
             catch (Exception ex)
             {
                 Console.Error.WriteLine(ex.GetType().FullName);
@@ -118,6 +125,70 @@ namespace MotionControl.VirtualAdapter.Checks
             AssertHeartbeatDiagnostic(false);
             AssertHeartbeatDiagnostic(true);
             Console.WriteLine("虚拟控制器适配器往返检查通过。");
+        }
+
+        /// <summary>
+        /// 连接已有的独立软件控制器，仅通过实际 IMotionCard/IAxis API 验证轴命令及反馈。
+        /// 不创建 FakeAxis、内存运动模型或新的控制器协议。
+        /// </summary>
+        private static void RunControllerApi(int port)
+        {
+            var definition = new AxisHardwareDefinition
+            {
+                Name = "ApiAxis", ControllerId = "ApiCheck", AxisNumber = 1,
+                PositionTolerance = 0.01, SoftLimitEnabled = false
+            };
+            var card = new VirtualMotionCard("ApiCheck", new[] { definition },
+                new DigitalIoHardwareDefinition[0], new DigitalIoHardwareDefinition[0], port, DiagnosticsRoot);
+            IAxis axis = card.Axes.Single();
+            var token = CancellationToken.None;
+            var profile = new AxisMotionProfile(10, 20, 20);
+            try
+            {
+                card.ConnectAsync(token).GetAwaiter().GetResult();
+                axis.EnableServoAsync(token).GetAwaiter().GetResult();
+                axis.HomeAsync(token).GetAwaiter().GetResult();
+                AxisStatus homed = axis.ReadStatusAsync(token).GetAwaiter().GetResult();
+                if (!homed.Homed || homed.Moving)
+                    throw new Exception("控制器 API 未确认回零完成。");
+
+                axis.MoveAbsoluteAsync(1, profile, token).GetAwaiter().GetResult();
+                AxisStatus atTarget = axis.ReadStatusAsync(token).GetAwaiter().GetResult();
+                if (Math.Abs(atTarget.Position - 1) > definition.PositionTolerance || atTarget.Moving)
+                    throw new Exception("绝对定位后的真实轴反馈不符合目标。");
+                axis.MoveRelativeAsync(-0.5, profile, token).GetAwaiter().GetResult();
+                AxisStatus afterRelative = axis.ReadStatusAsync(token).GetAwaiter().GetResult();
+                if (Math.Abs(afterRelative.Position - 0.5) > definition.PositionTolerance || afterRelative.Moving)
+                    throw new Exception("相对定位后的真实轴反馈不符合目标。");
+
+                axis.StartJogAsync(MotionDirection.Positive, profile, token).GetAwaiter().GetResult();
+                if (!axis.ReadStatusAsync(token).GetAwaiter().GetResult().Moving)
+                    throw new Exception("控制器 API 未确认连续点动已启动。");
+                bool abortRejected = false;
+                try { axis.StopAsync(AxisStopMode.Abort, token).GetAwaiter().GetResult(); }
+                catch (NotSupportedException) { abortRejected = true; }
+                if (!abortRejected)
+                    throw new Exception("不支持的 Abort 停止模式没有明确拒绝。");
+                if (!axis.ReadStatusAsync(token).GetAwaiter().GetResult().Moving)
+                    throw new Exception("拒绝 Abort 后意外发送了停止命令。");
+
+                axis.StopAsync(AxisStopMode.Controlled, token).GetAwaiter().GetResult();
+                AxisStatus stopped = axis.ReadStatusAsync(token).GetAwaiter().GetResult();
+                if (stopped.Moving || double.IsNaN(stopped.Velocity)
+                    || double.IsInfinity(stopped.Velocity) || Math.Abs(stopped.Velocity) > 0.001)
+                    throw new Exception("Controlled 停止后真实反馈仍未确认停稳。");
+                axis.DisableServoAsync(token).GetAwaiter().GetResult();
+                Console.WriteLine("[通过] 独立软件控制器 API：回零、绝对/相对定位、点动、Abort 拒绝、Controlled 停稳和断使能");
+            }
+            finally
+            {
+                if (card.IsConnected)
+                {
+                    // 即使中间断言失败，也先停止该隔离测试轴再释放连接租约。
+                    try { axis.StopAsync(AxisStopMode.Controlled, CancellationToken.None).GetAwaiter().GetResult(); }
+                    finally { card.DisconnectAsync(CancellationToken.None).GetAwaiter().GetResult(); }
+                }
+            }
         }
 
         /// <summary>通过正式虚拟卡适配器读取独立物料输入，核对未知、变化、冲突和输出隔离。</summary>
