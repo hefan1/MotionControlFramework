@@ -315,10 +315,10 @@ namespace MotionControl.Host.Wpf
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     AxisStatus status = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
-                    if (status.Moving)
+                    if (status == null || !status.HasStoppedMotionFeedback())
                     {
                         throw new InvalidOperationException(
-                            "逻辑轴 '" + axis.Name + "' 仍在运动，停止所有轴后再保存并应用轴映射。");
+                            "逻辑轴 '" + axis.Name + "' 的停止标志或速度反馈未确认停稳，不能重连或应用轴映射。");
                     }
                 }
 
@@ -441,10 +441,10 @@ namespace MotionControl.Host.Wpf
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 AxisStatus status = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
-                if (status.Moving)
+                if (status == null || !status.HasStoppedMotionFeedback())
                 {
                     throw new InvalidOperationException(
-                        "逻辑轴 '" + axis.Name + "' 仍在运动，停止所有轴后再保存 IO 映射。");
+                        "逻辑轴 '" + axis.Name + "' 的停止标志或速度反馈未确认停稳，不能在线保存 IO 映射。");
                 }
             }
 
