@@ -103,7 +103,8 @@ namespace MotionControl.Adapter.MotionCard.Virtual
 
             await SendAsync("stop", cancellationToken).ConfigureAwait(false);
             AxisStatus status = await ReadStatusAsync(cancellationToken).ConfigureAwait(false);
-            if (status.Moving) throw new InvalidOperationException("轴 " + Name + " 停止命令后仍在运动。");
+            if (!status.HasStoppedMotionFeedback())
+                throw new InvalidOperationException("轴 " + Name + " 停止命令后仍在运动或速度反馈不可信。");
         }
         /// <summary>请求清除轴报警，控制器负责检查报警前置条件。</summary>
         public async Task ResetAlarmAsync(CancellationToken cancellationToken) { await SendAsync("resetAlarm", cancellationToken).ConfigureAwait(false); }
@@ -118,8 +119,16 @@ namespace MotionControl.Adapter.MotionCard.Virtual
                     token.ThrowIfCancellationRequested();
                     AxisStatus status = await ReadStatusAsync(token).ConfigureAwait(false);
                     if (status.AlarmActive) throw new InvalidOperationException("轴 " + Name + " 报警：" + status.AlarmMessage);
-                    if (!status.Moving)
+                    if (double.IsNaN(status.Velocity) || double.IsInfinity(status.Velocity))
+                        throw new InvalidOperationException("轴 " + Name + " 速度反馈无效，不能确认动作完成。");
+                    if (!status.Moving && !status.HasStoppedMotionFeedback())
+                        throw new InvalidOperationException("轴 " + Name + " 已报告停止，但速度未确认停稳。");
+                    if (status.HasStoppedMotionFeedback())
                     {
+                        if (!status.ServoEnabled)
+                            throw new InvalidOperationException("轴 " + Name + " 伺服未使能，不能将运动指令当作完成。");
+                        if (double.IsNaN(status.Position) || double.IsInfinity(status.Position))
+                            throw new InvalidOperationException("轴 " + Name + " 位置反馈无效，不能确认动作完成。");
                         if (homing && !status.Homed) throw new InvalidOperationException("轴 " + Name + " 回零未完成。");
                         if (target.HasValue && Math.Abs(status.Position - target.Value) > _definition.PositionTolerance)
                             throw new InvalidOperationException("轴 " + Name + " 停止但未到目标位置。");
