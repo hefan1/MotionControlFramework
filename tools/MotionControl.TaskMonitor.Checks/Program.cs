@@ -40,8 +40,9 @@ namespace MotionControl.TaskMonitor.Checks
             Check("示例任务与未知输入、整机暂停、恢复和关闭", () => ExampleLifecycle().GetAwaiter().GetResult(), ref failures);
             Check("重复子任务调用与未选择分支", () => TreeAssociations().GetAwaiter().GetResult(), ref failures);
             Check("同工位多条并行活动行及暂停覆盖", () => ParallelRows().GetAwaiter().GetResult(), ref failures);
+            Check("正式装载缺少设备时禁止内存回退", RequireDeviceForFormalLoad, ref failures);
             Check("WPF 监控页面、关联详情与操作按钮生产流程", ConstructViews, ref failures);
-            Console.WriteLine("任务监控内部检查完成：4 组，失败 " + failures + "。不代表实际屏幕验证。");
+            Console.WriteLine("任务监控内部检查完成：5 组，失败 " + failures + "。不代表实际屏幕验证。");
             return failures == 0 ? 0 : 1;
         }
 
@@ -50,6 +51,17 @@ namespace MotionControl.TaskMonitor.Checks
         {
             try { action(); Console.WriteLine("[通过] " + name); }
             catch (Exception error) { failures++; Console.Error.WriteLine("[失败] " + name + "\n" + error); }
+        }
+
+        /// <summary>缺少当前设备端口时，正式装载应在读取任务文件前拒绝；不建立假轴或控制器。</summary>
+        private static void RequireDeviceForFormalLoad()
+        {
+            // 此目录仅作构造参数，不会装载配置或连接控制器。
+            var store = new MachineConfigurationStore(Path.GetTempPath());
+            bool rejected = false;
+            try { TaskMonitorSession.LoadMachine(store, "UnavailableDevice", null, null); }
+            catch (ArgumentNullException error) { rejected = error.ParamName == "device"; }
+            Assert(rejected, "正式任务加载缺少实际设备时没有明确拒绝，可能隐式使用内存执行器。");
         }
 
         /// <summary>示例由实际引擎运行，暂停时保留步骤，输入恢复后继续生产。</summary>
