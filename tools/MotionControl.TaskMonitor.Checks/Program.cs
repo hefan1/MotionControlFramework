@@ -264,7 +264,9 @@ namespace MotionControl.TaskMonitor.Checks
                 Assert(!causeButton.IsEnabled, "没有运行步骤或停机故障时仍允许点击原因定位。");
                 ExerciseMultipleStationFaultSelection(view, session, stationsGrid, causeButton);
                 ExerciseFiveStationLayout(application);
+                Console.WriteLine("[阶段] 验证多工位超时报警定位。");
                 ExerciseTimeoutAlarmLocation(application);
+                Console.WriteLine("[阶段] 验证等待诊断的中英文说明。");
                 ExerciseOperatorWaitDescriptions(application);
                 ExerciseOperatorControls(application);
                 ExerciseFaultRecoveryFromOperatorInput(application);
@@ -377,7 +379,7 @@ namespace MotionControl.TaskMonitor.Checks
             finally
             {
                 pendingWindow?.Close();
-                if (pendingSession != null) pendingSession.Machine.CloseAsync().GetAwaiter().GetResult();
+                if (pendingSession != null) CloseTestSession(pendingSession.Machine, "循环工位监控会话");
                 CloseExampleSessionAsync(session, false).GetAwaiter().GetResult();
                 application.Shutdown();
             }
@@ -491,6 +493,17 @@ namespace MotionControl.TaskMonitor.Checks
             var stations = session.Machine.GetSnapshot().Stations;
             return new[] { "load", "transfer", "inspect" }
                 .Select(id => stations.Single(station => station.StationId == id).CompletedCycles).ToArray();
+        }
+
+        /// <summary>
+        /// 在 WPF 检查中有界等待内存任务会话关闭；不阻塞界面线程的 Dispatcher。
+        /// 超过时限必须报告失败，不能让 CI 一直挂起，也不能当作设备安全收尾成功。
+        /// </summary>
+        private static void CloseTestSession(TaskMachineController machine, string source)
+        {
+            Task closing = machine.CloseAsync();
+            WaitWithDispatcher(() => closing.IsCompleted, 15000, source + "在 15 秒内未能关闭；保留原始未收尾状态。");
+            closing.GetAwaiter().GetResult();
         }
 
         /// <summary>用 WPF Dispatcher 推进窗口计时器和后台 UI 刷新。</summary>
@@ -723,7 +736,7 @@ namespace MotionControl.TaskMonitor.Checks
                         && session.Machine.GetSnapshot().State == TaskMachineState.Closed,
                         30000, "故障恢复检查窗口关闭后，整机会话没有完成收尾。");
                 }
-                else session.Machine.CloseAsync().GetAwaiter().GetResult();
+                else CloseTestSession(session.Machine, "输入超时恢复检查会话");
             }
         }
 
@@ -778,7 +791,7 @@ namespace MotionControl.TaskMonitor.Checks
             finally
             {
                 window.Close();
-                session.Machine.CloseAsync().GetAwaiter().GetResult();
+                CloseTestSession(session.Machine, "任务监控窗口会话");
             }
         }
 
@@ -876,7 +889,7 @@ namespace MotionControl.TaskMonitor.Checks
             finally
             {
                 window.Close();
-                session.Machine.CloseAsync().GetAwaiter().GetResult();
+                CloseTestSession(session.Machine, "任务监控窗口会话");
             }
         }
 
@@ -999,7 +1012,7 @@ namespace MotionControl.TaskMonitor.Checks
                     && pressRow.Detail.Contains("未提供") && pressRow.EngineeringDetail == pressRow.Snapshot.Detail
                     && pressRow.EngineeringDetail.Contains("Press.Request"), "完成后的交接提示不准确或原始信号丢失。");
             }
-            finally { session.Machine.CloseAsync().GetAwaiter().GetResult(); }
+            finally { CloseTestSession(session.Machine, "任务监控窗口会话"); }
         }
 
         /// <summary>用于只读定位检查的未连接控制卡替身。</summary>
