@@ -21,6 +21,6 @@
 
 ## 工作区与后续交付
 
-改动位于本机隔离工作区 `C:\Users\ASUS\.codex\worktrees\v18-audit-fixes\MotionControlFramework`，分支 `codex/v18-ui-handoff-20261109`；当前本地 `master` 保持原状态，原交接 PDF 保留在原仓库 `output/pdf/`。已完成的功能分别作中文本地提交，使用 `git log` 可查看。
+阶段性改动已按用户要求合并到原仓库本地 `master`；隔离工作区 `C:\Users\ASUS\.codex\worktrees\v18-audit-fixes\MotionControlFramework` 和分支 `codex/v18-ui-handoff-20261109` 仍保留。原交接 PDF 保留在原仓库 `output/pdf/`，已完成功能分别作中文本地提交。
 
-用户已明确要求全部完成后默认合并到本地 `master` 并推送 GitHub `master`。本次按用户“先收尾、需求还需讨论”的指示停止在阶段性结果，尚未合并或推送；后续在需求明确、剩余功能实现和验证通过后执行。不可把现有沙盒软件仿真结果等同真实硬件或其他厂商适配器验收。
+用户已要求阶段性改动先合并到本地 `master`；GitHub `master` 尚未推送。其余需求讨论清楚、实现并验证后，再按用户此前要求更新 GitHub。不可把现有沙盒软件仿真结果等同真实硬件或其他厂商适配器验收。
