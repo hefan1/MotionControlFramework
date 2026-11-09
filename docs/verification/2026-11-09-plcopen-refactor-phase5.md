@@ -63,3 +63,14 @@
 - 15 个内部检查项目中 14 个通过；`MotionControl.TaskEngine.Checks` 的既有 `ResourceInterlocks` 用例在暂停后检查资源占用时出现 `NullReferenceException`，堆栈位于 `ExecutionChecks.Interlocks.cs`。这是内存任务逻辑的并发/时序验证，不涉及实际控制卡；**尚不能把它判定为框架实际资源被错误释放，也不能当作无关小错误跳过**。
 - 为明确原因，测试现等待“正文完成且退出互锁进入 Waiting”后再核对资源。暂停后仍要求资源记录存在且 `State == Held`；异常时显示运行状态和资源条数，不再因为访问空记录丢失根因。此改动没有新增内存轴/模拟控制器，也没有放宽资源互锁或生产安全代码。
 - 本批代码是否可以合并，仍以更新后的完整 Windows CI 为准；即使 CI 通过，也不替代正式 Host 屏幕、真实 ZMotion SDK 或实物安全验收。
+
+
+## 后续完整回归与测试收尾修复
+
+[复验 42634159699](https://github.com/hefan1/MotionControlFramework/actions/runs/42634159699) **未完成而取消**：受保护 UI、正式 Host 构建、任务引擎（23+58+28 组）、真机任务设备（43 组离线检查）、任务编辑（26 组）等已完成的检查中未再出现资源互锁空引用；但 `TaskMonitor.Checks` 在执行“等待诊断的中英文说明”时卡住，最后达到 30 分钟限制取消。故不得将整批报告为通过，新增控制器 API 步骤在该次运行中并未执行。
+
+此次只修改 `tools/MotionControl.TaskMonitor.Checks/Program.cs` 内部测试：`CloseTestSession` 将 `machine.CloseAsync()` 的调用本身移到线程池，WPF STA 线程用有界 Dispatcher 消息泵等待其完成（15 秒，超时明确失败）；解决关闭操作在第一次异步等待前同步阻塞时无法进入超时循环的问题。同时为双工位等待、未知采样、英文显示、请求复位和会话关闭增加输出阶段标记。如果再次出现挂起，按最后打印的阶段定位，不跳过任何断言；**此次改动尚待新 Windows CI 证实有效**。
+
+## 关于软件控制器替代实体 ZMotion 验证的决定
+
+用户明确要求本阶段以软件控制器代替实体运动卡做开发和测试；接受此工作流，**当前不要求提供 ZMotion 实卡**。仓库已有的 `MotionControl.VirtualController` 通过 `VirtualMotionCard` API 覆盖软件联调；如需验证 `ZMotionCard` 的 SDK 调用链，应使用能够由原厂 ZAux API 连接的 ZMotion 软件控制器/仿真运行时，验证的是“原厂 SDK 软件调用链”，不是物理卡。若没有相同 API 的仿真运行时或相应原生 DLL，则必须如实标注“ZMotion SDK 调用链未验证”，不能拿 Virtual 适配器的成功冒充 ZMotion 适配器成功。机械、电机、现场安全回路等实体风险仍不属于软件控制器覆盖范围。
