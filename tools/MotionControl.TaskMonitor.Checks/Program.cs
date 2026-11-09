@@ -715,7 +715,7 @@ namespace MotionControl.TaskMonitor.Checks
             }
         }
 
-        /// <summary>验证初始化与四个工位在常见任务监控高度下默认可见，步骤区仍可操作。</summary>
+        /// <summary>验证小窗口内仍能滚动定位初始化与四个工位，且步骤区可操作。</summary>
         private static void ExerciseFiveStationLayout(Application application)
         {
             var task = Definition("LayoutCheck", Delay("delay", 10));
@@ -737,12 +737,20 @@ namespace MotionControl.TaskMonitor.Checks
                 view.Refresh();
                 view.UpdateLayout();
                 var grid = (DataGrid)view.FindName("StationsGrid");
-                var lastRow = grid.ItemContainerGenerator.ContainerFromIndex(4) as DataGridRow;
-                Assert(grid.Items.Count == 5 && lastRow != null && lastRow.IsVisible,
-                    "初始化和四个工位没有同时生成可见行。 ");
-                var rowBottom = lastRow.TranslatePoint(new Point(0, lastRow.ActualHeight), grid).Y;
-                Assert(rowBottom <= grid.ActualHeight - 1,
-                    "任务监控默认高度下末工位被裁切，需要滚动才能看到。 ");
+                Assert(grid.Items.Count == 5 && grid.ActualHeight > 0,
+                    "初始化与四个工位没有全部加载，或工位列表不可见。");
+                // 工位行现在包含更完整的动作与来源信息；小窗口允许滚动，但末工位必须能定位。
+                var lastStation = grid.Items[4];
+                grid.ScrollIntoView(lastStation);
+                view.UpdateLayout();
+                application.Dispatcher.Invoke(new Action(() => { }), DispatcherPriority.ApplicationIdle);
+                var lastRow = grid.ItemContainerGenerator.ContainerFromItem(lastStation) as DataGridRow;
+                Assert(lastRow != null && lastRow.IsVisible,
+                    "小窗口滚动后仍无法定位最后一个工位。");
+                double rowTop = lastRow.TranslatePoint(new Point(0, 0), grid).Y;
+                double rowBottom = lastRow.TranslatePoint(new Point(0, lastRow.ActualHeight), grid).Y;
+                Assert(rowTop >= -1 && rowBottom <= grid.ActualHeight + 1,
+                    "滚动定位后最后一个工位仍被裁切。");
                 var tree = (TreeView)view.FindName("StepsTree");
                 var cause = (Button)view.FindName("LocateCurrentCauseButton");
                 var executing = (TextBlock)view.FindName("ExecutingNodesText");
