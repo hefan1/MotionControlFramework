@@ -51,3 +51,10 @@
 1. 继续检查 `MachineRuntime` 与 `TaskMachineController` 的控制权、状态和异常交接，只有证实重复才合并，避免再新增通用管理器。
 2. 对照 PLCopen Part 1，在不同厂商可读的轴命令状态、动作结果和停止反馈有真实来源后，再新增必要的契约字段；禁止从 `Moving` 单独推算完整 PLCopen 轴状态机。
 3. 针对四个受保护页面，在正式 Host 的设备切换、断连、重连、旧异步回调场景下继续做屏幕回归；布局保护脚本不能代替运行验收。
+
+
+## 第三批 Windows 首轮 CI 暴露的问题与修复
+
+[运行 42618930617](https://github.com/hefan1/MotionControlFramework/actions/runs/42618930617) **不是成功**：受保护 UI 检查、正式 Host 构建以及此前部分内部检查已通过，但 `MotionControl.TaskEditing.Checks` 因仍调用已删除的双参数 `LoadMachine` 重载，出现 `CS7036` 编译错误。相应调用已更新为直接检查恢复标记门禁，继续核对任务草稿、任务清单和任务文件的拒绝行为，不引入模拟轴。
+
+此外 `MotionControl.TaskMonitor.Checks` 的 WPF 检查在打印“五工位布局”后持续未返回，最后达到工作流 30 分钟时限而被取消；**这不能写成通过，也不能断言是某个固定根因**。已将离屏测试中的同步 `CloseAsync().GetAwaiter().GetResult()` 改为通过 Dispatcher 消息泵有界等待（15 秒），超时则明确失败，并增加各阶段日志。这样可把停滞定位到具体会话，而不是长时间无输出；仍需以新 CI 证明是否消除问题。此次修改只涉及测试程序，不改变正式 Host 页面或运动安全行为。
