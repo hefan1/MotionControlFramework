@@ -41,8 +41,28 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw '迁移脚本语法错误。' }
           python tools/Refactor-CommandBoundary.py --apply
           if ($LASTEXITCODE -ne 0) { throw '迁移或结构检查失败，不提交结果。' }
-          python -c "from pathlib import Path; p=Path('tools/MotionControl.VirtualAdapter.Checks/Program.cs'); s=p.read_text(encoding='utf-8'); assert s.count('Console.Error.WriteLine(ex.Message);')==1; p.write_text(s.replace('Console.Error.WriteLine(ex.Message);','Console.Error.WriteLine(ex.ToString());'),encoding='utf-8')"
-          if ($LASTEXITCODE -ne 0) { throw '异常链诊断补充失败。' }
+          @'
+          from pathlib import Path
+          p = Path('tools/MotionControl.VirtualAdapter.Checks/Program.cs')
+          text = p.read_text(encoding='utf-8')
+          assert text.count('Console.Error.WriteLine(ex.Message);') == 1
+          p.write_text(text.replace('Console.Error.WriteLine(ex.Message);', 'Console.Error.WriteLine(ex.ToString());'), encoding='utf-8')
+          p = Path('src/MotionControl.TaskEngine.MachineDevice/TaskMachineOperations.cs')
+          text = p.read_text(encoding='utf-8')
+          before = 'await _runtime.BeginTaskEngineRunAsync(_connection, _device, CancellationToken.None).ConfigureAwait(false);'
+          assert text.count(before) == 1
+          text = text.replace(before, before + '\n                bool taskStartAttempted = false;')
+          before = '                    _machine.Start();'
+          assert text.count(before) == 1
+          text = text.replace(before, '                    // 调用开始后即按可能部分启动处理，不能漏掉失败收尾。\n                    taskStartAttempted = true;\n' + before)
+          before = 'try { await _machine.PauseAsync().ConfigureAwait(false); }'
+          assert text.count(before) == 1
+          text = text.replace(before, 'try { if (taskStartAttempted) await _machine.PauseAsync().ConfigureAwait(false); }')
+          p.write_text(text, encoding='utf-8')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw '启动收尾修复或异常链诊断补充失败。' }
+          python tools/Check-CommandBoundaries.py
+          if ($LASTEXITCODE -ne 0) { throw '修复后的职责边界检查失败。' }
       - name: 核对受保护布局
         shell: pwsh
         run: ./tools/Verify-ProtectedUi.ps1
