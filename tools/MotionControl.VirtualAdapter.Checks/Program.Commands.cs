@@ -23,7 +23,7 @@ namespace MotionControl.VirtualAdapter.Checks
     /// <summary>实际软件控制器上的任务操作协调回归，不创建轴替身。</summary>
     internal static partial class Program
     {
-        /// <summary>连接实际软件控制器，检查正常操作、并发拒绝、旧会话隔离及异步启动撤销。</summary>
+        /// <summary>连接实际软件控制器，检查正常操作、共享门禁、旧会话隔离及异步启动撤销。</summary>
         private static async Task CheckTaskCommandOperationsAsync(int port)
         {
             var axisDefinition = new AxisHardwareDefinition
@@ -52,11 +52,14 @@ namespace MotionControl.VirtualAdapter.Checks
                 var device = CreateCommandDevice(group, card, runtime);
                 machine = CreateCommandMachine(device, alarms);
                 var operations = device.CreateOperations(machine);
+                var otherPageOperations = device.CreateOperations(machine);
+                RequireCommandState(ReferenceEquals(operations, otherPageOperations),
+                    "同一任务设备重复获取操作入口时创建了第二套命令门禁");
 
                 // 使用控制器已有的单次延迟反馈，不用线程替身模拟运动卡。
                 RequireCommandFault(port, "delayReply", 300);
                 Task resetting = operations.ResetAsync();
-                await RequireCommandRejectedAsync(() => operations.StartAsync(), "并发启动");
+                await RequireCommandRejectedAsync(() => otherPageOperations.StartAsync(), "并发启动", "任务命令正在执行");
                 await resetting;
                 RequireCommandState(runtime.State == MachineRunState.Ready
                     && machine.GetSnapshot().State == TaskMachineState.Ready, "复位未同时使两个执行层就绪");
@@ -76,7 +79,7 @@ namespace MotionControl.VirtualAdapter.Checks
                 // 同一 Runtime 重连后，旧操作实例绝不能复位新设备。
                 await runtime.ConnectAsync(CancellationToken.None);
                 MachineRunState beforeOldCommand = runtime.State;
-                await RequireCommandRejectedAsync(() => operations.ResetAsync(), "旧会话复位");
+                await RequireCommandRejectedAsync(() => operations.ResetAsync(), "旧会话复位", "不再持有本设备");
                 RequireCommandState(runtime.State == beforeOldCommand, "旧操作改写了新连接状态");
                 device = CreateCommandDevice(group, card, runtime);
                 machine = CreateCommandMachine(device, alarms);
@@ -87,12 +90,14 @@ namespace MotionControl.VirtualAdapter.Checks
                 RequireCommandFault(port, "delayReply", 300);
                 Task starting = current.StartAsync();
                 current.Invalidate();
-                await RequireCommandRejectedAsync(() => starting, "异步启动完成前撤销上下文");
+                await RequireCommandRejectedAsync(() => starting, "异步启动完成前撤销上下文", "任务操作上下文已撤销");
                 RequireCommandState(machine.GetSnapshot().State != TaskMachineState.Running
                     && runtime.State != MachineRunState.Running, "撤销的启动仍保留运行许可");
-                await RequireCommandRejectedAsync(() => current.StartAsync(), "撤销后重新启动");
+                var reacquired = device.CreateOperations(machine);
+                RequireCommandState(ReferenceEquals(current, reacquired), "重复获取操作入口复活了已撤销的会话");
+                await RequireCommandRejectedAsync(() => reacquired.StartAsync(), "撤销后重新启动", "任务操作上下文已撤销");
                 // 停止优先：撤销不能让原会话失去尝试停步的途径，但不得返回假成功。
-                await RequireCommandRejectedAsync(() => current.AbortAsync(), "撤销后的终止结果提交");
+                await RequireCommandRejectedAsync(() => current.AbortAsync(), "撤销后的终止结果提交", "任务操作上下文已撤销");
                 RequireCommandState(machine.GetSnapshot().State == TaskMachineState.Stopped,
                     "撤销后没有先终止原工步");
                 await machine.CloseAsync();
@@ -121,7 +126,7 @@ namespace MotionControl.VirtualAdapter.Checks
                 }
             }
             if (errors.Count != 0) throw new AggregateException("任务操作协调 API 检查或退出收尾失败。", errors);
-            Console.WriteLine("[通过] 任务操作协调：复位/启动/暂停/终止、并发拒绝、旧连接拒绝、异步撤销与停止优先");
+            Console.WriteLine("[通过] 任务操作协调：共享门禁、复位/启动/暂停/终止、准确拒绝原因、旧连接拒绝与撤销不可复活");
         }
 
         /// <summary>使用实际卡、逻辑 IO、空变量表和当前连接创建正式任务设备。</summary>
@@ -163,12 +168,17 @@ namespace MotionControl.VirtualAdapter.Checks
             RequireCommandState(response.Contains("\"ok\":true"), "控制器未接受延迟反馈配置");
         }
 
-        /// <summary>操作确实被明确拒绝才算成功，不能吞掉不相关异常。</summary>
-        private static async Task RequireCommandRejectedAsync(Func<Task> command, string scenario)
+        /// <summary>只接受预期类型与具体拒绝原因，避免用无关的状态错误掩盖命令互斥缺失。</summary>
+        private static async Task RequireCommandRejectedAsync(Func<Task> command, string scenario, string expectedReason)
         {
             bool rejected = false;
             try { await command(); }
-            catch (InvalidOperationException) { rejected = true; }
+            catch (InvalidOperationException error)
+            {
+                if (!error.Message.Contains(expectedReason))
+                    throw new InvalidOperationException(scenario + "出现了非预期拒绝原因：" + error.Message, error);
+                rejected = true;
+            }
             RequireCommandState(rejected, scenario + "未被拒绝");
         }
 
