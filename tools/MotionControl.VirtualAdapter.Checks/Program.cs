@@ -166,12 +166,35 @@ namespace MotionControl.VirtualAdapter.Checks
                     throw new Exception("绝对定位后的真实轴反馈不符合目标。");
                 axis.MoveRelativeAsync(-0.5, profile, token).GetAwaiter().GetResult();
                 AxisStatus afterRelative = axis.ReadStatusAsync(token).GetAwaiter().GetResult();
-                if (Math.Abs(afterRelative.Position - 0.5) > definition.PositionTolerance || afterRelative.Moving)
-                    throw new Exception("相对定位后的真实轴反馈不符合目标。");
+                if (Math.Abs(afterRelative.Position - 0.5) > definition.PositionTolerance
+                    || !afterRelative.HasStoppedMotionFeedback())
+                    throw new Exception("相对定位后的真实轴反馈未确认停稳或不符合目标。");
+
+                // 注入控制器真实 API 读取失败：命令已经发出，必须停车，且不能把操作当成 Done。
+                string readFault = SendRaw(port,
+                    "{\"command\":\"setCommandFault\",\"targetCommand\":\"readAxis\",\"targetIndex\":1,\"mode\":\"reject\",\"delayMs\":0}");
+                if (!readFault.Contains("\"ok\":true"))
+                    throw new Exception("独立控制器未接受一次性轴状态读取故障。");
+                bool moveRejectedOnFeedbackError = false;
+                try
+                {
+                    axis.MoveAbsoluteAsync(10, new AxisMotionProfile(1, 1, 1), token).GetAwaiter().GetResult();
+                }
+                catch (InvalidOperationException error)
+                {
+                    moveRejectedOnFeedbackError = error.Message.Contains("拒绝 readAxis");
+                }
+                if (!moveRejectedOnFeedbackError)
+                    throw new Exception("定位期间控制器状态读取失败被错误当成动作完成。");
+                AxisStatus afterFailedMove = axis.ReadStatusAsync(token).GetAwaiter().GetResult();
+                if (!afterFailedMove.HasStoppedMotionFeedback()
+                    || afterFailedMove.Position >= 10 - definition.PositionTolerance)
+                    throw new Exception("定位反馈失败后未能通过控制器真实回读确认停车。");
 
                 axis.StartJogAsync(MotionDirection.Positive, profile, token).GetAwaiter().GetResult();
-                if (!axis.ReadStatusAsync(token).GetAwaiter().GetResult().Moving)
-                    throw new Exception("控制器 API 未确认连续点动已启动。");
+                AxisStatus jogging = axis.ReadStatusAsync(token).GetAwaiter().GetResult();
+                if (!jogging.Moving || jogging.HasStoppedMotionFeedback())
+                    throw new Exception("点动中的实际反馈被错误标记为停稳。");
                 bool abortRejected = false;
                 try { axis.StopAsync(AxisStopMode.Abort, token).GetAwaiter().GetResult(); }
                 catch (NotSupportedException) { abortRejected = true; }
@@ -182,11 +205,24 @@ namespace MotionControl.VirtualAdapter.Checks
 
                 axis.StopAsync(AxisStopMode.Controlled, token).GetAwaiter().GetResult();
                 AxisStatus stopped = axis.ReadStatusAsync(token).GetAwaiter().GetResult();
-                if (stopped.Moving || double.IsNaN(stopped.Velocity)
-                    || double.IsInfinity(stopped.Velocity) || Math.Abs(stopped.Velocity) > 0.001)
+                if (!stopped.HasStoppedMotionFeedback())
                     throw new Exception("Controlled 停止后真实反馈仍未确认停稳。");
+
+                // 控制器停止请求已执行但回读失败，API 不得报告“停止确认成功”。
+                axis.StartJogAsync(MotionDirection.Positive, profile, token).GetAwaiter().GetResult();
+                string stopFeedbackFault = SendRaw(port,
+                    "{\"command\":\"setCommandFault\",\"targetCommand\":\"readAxis\",\"targetIndex\":1,\"mode\":\"reject\",\"delayMs\":0}");
+                if (!stopFeedbackFault.Contains("\"ok\":true"))
+                    throw new Exception("控制器未接受停止反馈读取故障。");
+                bool stopFeedbackRejected = false;
+                try { axis.StopAsync(AxisStopMode.Controlled, token).GetAwaiter().GetResult(); }
+                catch (InvalidOperationException error) { stopFeedbackRejected = error.Message.Contains("拒绝 readAxis"); }
+                if (!stopFeedbackRejected)
+                    throw new Exception("停车后状态读取失败仍被错误标记为停止确认成功。");
+                if (!axis.ReadStatusAsync(token).GetAwaiter().GetResult().HasStoppedMotionFeedback())
+                    throw new Exception("停止反馈故障后无法从真实控制器确认轴停稳。");
                 axis.DisableServoAsync(token).GetAwaiter().GetResult();
-                Console.WriteLine("[通过] 独立软件控制器 API：回零、绝对/相对定位、点动、Abort 拒绝、Controlled 停稳和断使能");
+                Console.WriteLine("[通过] 独立软件控制器 API：定位、点动、停止、异常回读、真实停稳和断使能");
             }
             finally
             {
