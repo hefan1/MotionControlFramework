@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.Threading;
@@ -30,6 +30,13 @@ namespace MotionControl.OperatorPages.Checks
             page.SetAutomaticStartReadiness(null, false);
             var message = (TextBlock)page.FindName("StartConditionsMessage");
             var list = (ListBox)page.FindName("StartConditionsList");
+            var table = list as ListView;
+            var columns = table?.View as GridView;
+            Assert(columns != null && columns.Columns.Count == 4, "RED: start conditions are not presented in four observation columns.");
+            Assert(string.Join("|", columns.Columns.Select(column => column.Header.ToString())) == "条件|观察结果|设备采样时间|来源",
+                "启动条件中文列标题或顺序错误。");
+            var sampleTime = list.Items[0].GetType().GetProperty("SampleTimeText");
+            Assert(sampleTime != null && (string)sampleTime.GetValue(list.Items[0]) == "未提供", "缺少真实设备采样时间时必须显示未提供。");
             Assert(message.Text.Contains("覆盖不完整") && message.Text.Contains("设备采样时间"), "缺少覆盖与时间边界。");
             Assert(list.Items.Count == 2 && list.Items.Cast<object>().All(item => item.ToString().Contains("未知")), "空运行时连接和报警应显示未知。");
             page.SetAutomaticStartReadiness("obsolete blocker", false);
@@ -53,6 +60,17 @@ namespace MotionControl.OperatorPages.Checks
             sessionField.SetValue(runtime, Guid.NewGuid());
             page.SetRuntime(runtime);
             page.SetAutomaticStartReadiness(null, false);
+            var ownerField = typeof(MachineRuntime).GetField("_controlOwner", BindingFlags.NonPublic | BindingFlags.Instance);
+            object originalOwner = ownerField.GetValue(runtime);
+            try
+            {
+                ownerField.SetValue(runtime, MachineControlOwner.TaskEngine);
+                ((Button)page.FindName("RefreshStartConditionsButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert(message.Text.Contains("控制来源：任务列表") && !message.Text.Contains("TaskEngine"),
+                    "RED: operator sees the internal control-owner enum instead of a readable label.");
+            }
+            finally { ownerField.SetValue(runtime, originalOwner); }
+            ((Button)page.FindName("RefreshStartConditionsButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             string all = string.Join("\n", list.Items.Cast<object>());
             Assert(all.Contains("当前读写未核实"), "连接会话被误当当前通信有效。");
             Assert(all.Contains("未报告恢复阻断（仅此属性）") && message.Text.Contains("不能判断整体可启动"), "恢复单项无阻断被解释为整机可启动。");
@@ -72,6 +90,8 @@ namespace MotionControl.OperatorPages.Checks
             Assert(card.LifecycleCalls == 0 && loads == 0 && navigations == 0, "内存刷新触发动作或配置装载。");
             page.SetLanguage("en-US");
             Assert(message.Text.Contains("incomplete coverage") && message.Text.Contains("UI observation time"), "英文缺少准确边界。");
+            Assert(string.Join("|", columns.Columns.Select(column => column.Header.ToString())) == "Condition|Observation|Device sample time|Source"
+                && (string)sampleTime.GetValue(list.Items[0]) == "Not provided", "英文列或未知采样时间没有更新。");
             Assert(list.Items[0].ToString().Contains("Unknown"), "未知态未切换英文。");
             CheckSelectedConditions();
             PreparationConditionLayoutChecks.Run();

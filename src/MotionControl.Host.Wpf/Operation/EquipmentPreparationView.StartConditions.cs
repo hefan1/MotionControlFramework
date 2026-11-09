@@ -19,19 +19,31 @@ namespace MotionControl.Host.Wpf.Operation
             public string Key { get; set; }
             /// <summary>已知关联工位标识；没有明确对象时为空。</summary>
             public string ObjectId { get; set; }
-            /// <summary>当前语言的结论与来源说明。</summary>
+            /// <summary>当前语言的观察结果。</summary>
             private string _description;
             /// <summary>条件变化时仅通知当前行，不重建列表。</summary>
-            public string Description { get { return _description; } set { if (_description == value) return; _description = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("DisplayText")); } }
+            public string Description { get { return _description; } set { if (_description == value) return; _description = value; Notify("Description"); Notify("DisplayText"); } }
+            /// <summary>当前语言的条件名称。</summary>
+            private string _name;
             /// <summary>面向操作员的双语条件名称。</summary>
-            public string Name { get; set; }
+            public string Name { get { return _name; } set { if (_name == value) return; _name = value; Notify("NameWithObject"); Notify("DisplayText"); } }
+            /// <summary>当前语言的观察来源。</summary>
+            private string _source;
             /// <summary>产生此观察的实际内存来源。</summary>
-            public string Source { get; set; }
-            /// <summary>列表文字；内部稳定键不显示。</summary>
-            public string DisplayText { get { return Name + (string.IsNullOrEmpty(ObjectId) ? "" : " [" + ObjectId + "]") + " · " + Description + " / " + Source; } }
+            public string Source { get { return _source; } set { if (_source == value) return; _source = value; Notify("Source"); Notify("DisplayText"); } }
+            /// <summary>当前源未提供设备采样时间，随语言显示缺失状态。</summary>
+            private string _sampleTimeText;
+            /// <summary>设备采样时间的真实状态，不使用界面观察时间代替。</summary>
+            public string SampleTimeText { get { return _sampleTimeText; } set { if (_sampleTimeText == value) return; _sampleTimeText = value; Notify("SampleTimeText"); } }
+            /// <summary>显示条件及已知工位标识，不暴露内部条件键。</summary>
+            public string NameWithObject { get { return Name + (string.IsNullOrEmpty(ObjectId) ? "" : " [" + ObjectId + "]"); } }
+            /// <summary>简要文字保留名称、结果和来源。</summary>
+            public string DisplayText { get { return NameWithObject + " · " + Description + " / " + Source; } }
             /// <summary>当前行内容变化通知。</summary>
             public event PropertyChangedEventHandler PropertyChanged;
-            /// <summary>列表显示稳定键、对象与来源，不隐藏能力缺失。</summary>
+            /// <summary>通知表格更新指定字段，同时保留行对象和当前选择。</summary>
+            private void Notify(string property) { PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property)); }
+            /// <summary>列表显示名称、对象与来源，不隐藏能力缺失。</summary>
             public override string ToString() { return DisplayText; }
         }
 
@@ -42,6 +54,16 @@ namespace MotionControl.Host.Wpf.Operation
         private Guid? _conditionSession;
         private long _conditionSourceVersion;
         private long _conditionPreparationVersion;
+        /// <summary>按可见宽度分配列宽，长结果保留在详情和提示中。</summary>
+        private void StartConditionsList_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            double width = Math.Max(0, e.NewSize.Width - 36);
+            ConditionNameColumn.Width = width * 0.20;
+            ConditionObservationColumn.Width = width * 0.40;
+            ConditionSampleTimeColumn.Width = width * 0.17;
+            ConditionSourceColumn.Width = width * 0.23;
+        }
+
         /// <summary>仅重新投影已有内存，不调用启动检查、配置装载或设备接口。</summary>
         private void RefreshStartConditions_Click(object sender, RoutedEventArgs e) { RefreshStartConditionsSnapshot(); }
 
@@ -72,6 +94,19 @@ namespace MotionControl.Host.Wpf.Operation
                 case StopAlarmKey: return PageText("设备运行时报警记录", "Runtime alarm records");
                 case "host.start-readiness": return PageText("主界面检查缓存", "Host check cache");
                 default: return PageText("摘要读取失败", "Summary read failed");
+            }
+        }
+
+        /// <summary>将已确认的实际控制来源显示为操作员可理解的名称。</summary>
+        private string ConditionControlOwner(MachineRuntime runtime, bool connected)
+        {
+            if (!connected || runtime == null) return PageText("未确认", "Unconfirmed");
+            switch (runtime.ControlOwner)
+            {
+                case MachineControlOwner.TaskEngine: return PageText("任务列表", "Task list");
+                case MachineControlOwner.StationFlows: return PageText("C# 工位流程", "C# station flows");
+                case MachineControlOwner.None: return PageText("未接管", "No owner");
+                default: return PageText("未知", "Unknown");
             }
         }
 
@@ -141,7 +176,7 @@ namespace MotionControl.Host.Wpf.Operation
                 StartConditionsMessage.Text = PageText("部分只读内存观察 / 覆盖不完整，不能判断整体可启动。每项设备采样时间、有效期未提供；下方时间仅为界面观察时间。", "Partial read-only memory observations / incomplete coverage; cannot determine overall start permission. Device sample time and validity are not provided for any item; the time below is UI observation time only.")
                     + "\n" + PageText("界面观察：", "UI observed: ") + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
                     + " · " + PageText("连接会话：", "Connection session: ") + (connected ? session.Value.ToString() : PageText("未提供", "Not provided"))
-                    + " · " + PageText("控制来源：", "Control source: ") + (runtime == null ? unknown : runtime.ControlOwner.ToString())
+                    + " · " + PageText("控制来源：", "Control source: ") + ConditionControlOwner(runtime, connected)
                     + "\n" + PageText("工程版本、设备身份和整体快照序号未提供；准备、恢复与 Host 缓存并非原子设备快照。启动提交时仍执行原完整检查。", "Project version, equipment identity and overall snapshot sequence are not provided; preparation, recovery and Host cache are not an atomic device snapshot. Existing complete checks still run on start submission.");
             }
             catch (Exception error)
@@ -164,9 +199,10 @@ namespace MotionControl.Host.Wpf.Operation
             {
                 item.Name = ConditionName(item.Key);
                 item.Source = ConditionSource(item.Key);
+                item.SampleTimeText = PageText("未提供", "Not provided");
                 var existing = _conditionObservations.FirstOrDefault(row => row.Key == item.Key);
                 if (existing == null) _conditionObservations.Add(item);
-                else { existing.Name = item.Name; existing.Source = item.Source; existing.Description = item.Description; }
+                else { existing.Name = item.Name; existing.Source = item.Source; existing.Description = item.Description; existing.SampleTimeText = item.SampleTimeText; }
             }
             foreach (var old in _conditionObservations.Where(row => !observations.Any(item => item.Key == row.Key)).ToList()) _conditionObservations.Remove(old);
             if (!ReferenceEquals(StartConditionsList.ItemsSource, _conditionObservations))
@@ -176,8 +212,12 @@ namespace MotionControl.Host.Wpf.Operation
             UpdateConditionDetail();
         }
 
-        /// <summary>选择只改变详情，不查询硬件或申请设备命令。</summary>
-        private void ConditionSelection_Changed(object sender, SelectionChangedEventArgs e) { UpdateConditionDetail(); }
+        /// <summary>选择变化回到详情开头；周期刷新不改变人员的滚动位置。</summary>
+        private void ConditionSelection_Changed(object sender, SelectionChangedEventArgs e)
+        {
+            UpdateConditionDetail();
+            ConditionDetailScroll?.ScrollToTop();
+        }
 
         private void UpdateConditionDetail()
         {
@@ -186,7 +226,8 @@ namespace MotionControl.Host.Wpf.Operation
             ConditionDetailText.Text = row == null
                 ? PageText("选择条件，查看原因和数据来源。", "Select a condition to see its reason and source.")
                 : row.Name + (row.ObjectId == null ? "" : " [" + row.ObjectId + "]") + "\n" + row.Description
-                    + "\n" + PageText("来源：", "Source: ") + row.Source;
+                    + "\n" + PageText("设备采样时间：", "Device sample time: ") + row.SampleTimeText
+                    + " · " + PageText("来源：", "Source: ") + row.Source;
             string label = null;
             if (row != null && _conditionSession.HasValue)
             {

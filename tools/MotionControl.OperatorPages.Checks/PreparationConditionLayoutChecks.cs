@@ -41,6 +41,7 @@ namespace MotionControl.OperatorPages.Checks
                 name => destination = name);
             page.SetLanguage(language);
             page.SetRuntime(runtime);
+            page.SetAutomaticStartReadiness(string.Concat(Enumerable.Repeat("另一条长原因 / Another long reason. ", 75)) + "END2", false);
             ((Button)page.FindName("StartConditionsButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             var list = (ListBox)page.FindName("StartConditionsList");
             void Layout()
@@ -59,6 +60,20 @@ namespace MotionControl.OperatorPages.Checks
             detail.ScrollToEnd(); Layout();
             Require(detail.VerticalOffset >= detail.ScrollableHeight - 1
                 && ((TextBlock)page.FindName("ConditionDetailText")).Text.Contains("END"), "恢复原因末尾不可达。");
+            list.SelectedItem = Row("host.start-readiness"); Layout();
+            Require(detail.ScrollableHeight > 0 && detail.VerticalOffset == 0,
+                "RED: selecting another long condition retains the old detail scroll position.");
+            detail.ScrollToEnd(); Layout();
+            ((Button)page.FindName("RefreshStartConditionsButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Layout();
+            Require(detail.VerticalOffset > 0, "周期只读刷新不应把当前条件的滚动位置重置。");
+            var table = (ListView)list;
+            var grid = (GridView)table.View;
+            double previousWidth = grid.Columns[0].Width;
+            grid.Columns[0].Width = width + 500; Layout();
+            Require(scroll.ScrollableWidth > 0, "RED: a resized column hides the remaining columns without horizontal scrolling.");
+            scroll.ScrollToRightEnd(); Layout();
+            Require(scroll.HorizontalOffset >= scroll.ScrollableWidth - 1, "拖宽列后无法滚动到末列。");
+            grid.Columns[0].Width = previousWidth; Layout();
             list.SelectedItem = Row("runtime.stop-alarms");
             Layout(); scroll.ScrollToBottom(); Layout();
             var last = (FrameworkElement)list.ItemContainerGenerator.ContainerFromIndex(list.Items.Count - 1);

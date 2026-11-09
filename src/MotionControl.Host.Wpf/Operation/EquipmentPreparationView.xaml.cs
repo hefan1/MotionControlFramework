@@ -150,6 +150,10 @@ namespace MotionControl.Host.Wpf.Operation
             RefreshStartConditionsButton.Content = PageText("重新读取条件", "Refresh conditions");
             RefreshStartConditionsButton.ToolTip = PageText("仅观察已有内存，不读取设备。", "Observe existing memory only; no device reads.");
             StartConditionsTitle.Text = PageText("启动条件摘要 / 只读", "Start conditions / read only");
+            ConditionNameColumn.Header = PageText("条件", "Condition");
+            ConditionObservationColumn.Header = PageText("观察结果", "Observation");
+            ConditionSampleTimeColumn.Header = PageText("设备采样时间", "Device sample time");
+            ConditionSourceColumn.Header = PageText("来源", "Source");
             RefreshStartConditionsSnapshot();
             StationColumn.Header = T("工位"); StateColumn.Header = T("准备状态"); ActionColumn.Header = T("当前动作");
             var observedRuntime = _runtime;

@@ -82,15 +82,25 @@
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <TextBlock x:Name="StartConditionsTitle" FontSize="18" FontWeight="SemiBold" Foreground="#26384D"/>
     <TextBlock x:Name="StartConditionsMessage" Grid.Row="1" Margin="0,10,0,0" Foreground="#40536A" TextWrapping="Wrap"/>
-    <ListBox x:Name="StartConditionsList" Grid.Row="2" Margin="0,12,0,0" HorizontalContentAlignment="Stretch"
-             ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
-             SelectionChanged="ConditionSelection_Changed">
-     <ListBox.ItemTemplate><DataTemplate>
-      <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis">
-       <TextBlock.ToolTip><TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap" MaxWidth="460"/></TextBlock.ToolTip>
-      </TextBlock>
-     </DataTemplate></ListBox.ItemTemplate>
-    </ListBox>
+    <ListView x:Name="StartConditionsList" Grid.Row="2" Margin="0,12,0,0" HorizontalContentAlignment="Stretch"
+              ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto"
+              SelectionChanged="ConditionSelection_Changed" SizeChanged="StartConditionsList_SizeChanged">
+     <ListView.ItemContainerStyle><Style TargetType="ListViewItem">
+      <Setter Property="MinHeight" Value="27"/><Setter Property="VerticalContentAlignment" Value="Center"/>
+     </Style></ListView.ItemContainerStyle>
+     <ListView.View><GridView>
+      <GridViewColumn x:Name="ConditionNameColumn" Width="140"><GridViewColumn.CellTemplate><DataTemplate>
+       <TextBlock Text="{Binding NameWithObject}" TextTrimming="CharacterEllipsis" ToolTip="{Binding NameWithObject}"/>
+      </DataTemplate></GridViewColumn.CellTemplate></GridViewColumn>
+      <GridViewColumn x:Name="ConditionObservationColumn" Width="230"><GridViewColumn.CellTemplate><DataTemplate>
+       <TextBlock Text="{Binding Description}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Description}"/>
+      </DataTemplate></GridViewColumn.CellTemplate></GridViewColumn>
+      <GridViewColumn x:Name="ConditionSampleTimeColumn" Width="110" DisplayMemberBinding="{Binding SampleTimeText}"/>
+      <GridViewColumn x:Name="ConditionSourceColumn" Width="140"><GridViewColumn.CellTemplate><DataTemplate>
+       <TextBlock Text="{Binding Source}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Source}"/>
+      </DataTemplate></GridViewColumn.CellTemplate></GridViewColumn>
+     </GridView></ListView.View>
+    </ListView>
     <DockPanel Grid.Row="3" Margin="0,8,0,0">
      <Button x:Name="ConditionTargetButton" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="10,0,0,0" Padding="10,5"
              Visibility="Collapsed" Click="OpenConditionTarget_Click"/>
