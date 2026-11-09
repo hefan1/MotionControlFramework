@@ -707,10 +707,10 @@ namespace MotionControl.Host.Wpf.Tasks
             var runtime = _runtime;
             var device = session.TaskDevice as MotionControl.TaskEngine.MachineDevice.MachineTaskDevice;
             long contextVersion = _machineContextVersion;
-            EnsureCurrentTaskCommandContext(session, runtime, device, contextVersion);
-            Guid connection = device.BoundConnectionSessionId.Value;
+            // 即使连接刚丢失，也先尝试结束本次会话的任务；只有后续状态提交需要有效连接。
             await WaitForShutdownSettlementAsync(session.Machine.AbortAsync(), "任务终止").ConfigureAwait(true);
             EnsureCurrentTaskCommandContext(session, runtime, device, contextVersion);
+            Guid connection = device.BoundConnectionSessionId.Value;
             if (runtime.State == MachineRunState.Running || runtime.State == MachineRunState.Pausing)
                 await runtime.FinishTaskEngineRunAsync(connection, device, false, null).ConfigureAwait(true);
             bool preserveBlocked = allowBlockedHandoff && session.TaskDevice.ReadResources()
