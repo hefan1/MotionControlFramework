@@ -21,18 +21,26 @@
 2. 关闭和装载失败各自触发清理：共享同一次清理，成功后才能忘记原会话。
 3. 安装准备定义时订阅者抛错或替换代次：只撤回本次安装，保留新代次。
 4. 在途关闭跨设备上下文变化：仅恢复原 Runtime 的原准备定义，不读取后来替换的字段。
-5. 超时和迟到结果不能清空页面中的会话证据；关闭重试沿用既有语义。
+5. 已发布会话超时和迟到结果不能清空页面中的会话证据；关闭重试沿用既有语义。
 
 ## 步骤与文件
 
-- [ ] 扩展 tools/MotionControl.OperatorPages.Checks/BoundTaskLoadChecks.cs：复用现有无轴生命周期测试设施，增加装载期间关闭与新上下文不能提前安装的断言；先在旧实现上观察失败。不把此离线检查算作运动验证。
-- [ ] 新增 src/MotionControl.Host.Wpf/Tasks/HostTaskSessionLoadOperation.cs：保存一次读取、准备安装版本与待清理会话，公开 LoadAsync / RollbackAsync / RequireCurrent，清理可重试、并发等待不重复。
-- [ ] 修改 TaskMonitorLauncher.cs：在后台读取前登记 _pendingTaskLoad；页面不再直接装配、安装/回滚准备定义。关闭先撤销并清理在途读取；已发布会话关闭固定原 Runtime、准备代次与设备准备定义。
-- [ ] 扩展现有 Check-CommandBoundaries.py，防止装载编排重新回到页面；保留全部既有检查。
-- [ ] Windows 构建、15 个内部检查、实际单/双软件控制器 API 全部验证，比较十个保护文件并更新中文关闭记录。
+- [x] 复用 BoundTaskLoadChecks 的现有无轴设施，在同类 partial 文件 PendingTaskLoadCloseChecks.cs 增加在途关闭和上下文切换断言；旧实现明确失败。不把此离线检查算作运动验证。
+- [x] 新增 HostTaskSessionLoadOperation.cs：保存一次读取、准备安装版本与待清理会话；LoadAsync / RollbackAsync / RequireCurrent 为 Host 内部方法，清理可重试、并发等待不重复。
+- [x] 修改 TaskMonitorLauncher.cs：读取前登记 _pendingTaskLoad；页面不再直接装配、安装/回滚准备定义。关闭先撤销并清理在途读取；已发布会话关闭固定原 Runtime、准备代次与设备准备定义。
+- [x] 扩展 Check-CommandBoundaries.py：结构检查从三项增加到五项，保留已有操作协调检查。
+- [x] 迁移工作树的 Windows Host、15 个内部检查项目、已有单/双软件控制器 API 全部通过，十个保护文件不变；结果随后提交。完整记录见同目录 task-session-lifecycle-closure.md，最终提交另由常规 CI 复验并在 PR #10 记录。
+
+## 执行账与判定
+
+- 原实现红灯：运行 42694017057，指定 PENDING_LOAD_CLOSE_RETURNED_EARLY 已复现。
+- 完整迁移验证：运行 42694972829 成功；生成的生产源码与正式回归提交为 bfa469f5ece4d547f069e150cde504b777a4ea57。
+- 决定：仍以已有 Host 调度上下文串行管理生命周期，不扩展成任意线程可调用的通用会话框架；这减少额外抽象，但非 UI 调用方不能擅自跨线程调用该内部对象。
+- 决定：专项测试复用原无轴连接时序设施，不增加轴替身；运动验证继续经已有软件控制器 API。
+- 决定：整机 App 退出流程另列未关闭项，本批只处理已明确的关闭/上下文切换装载交接，不夸大范围。
 
 ## 执行环境与交付
 
-当前容器不能联网克隆且没有 Windows/.NET Framework。通过已有 GitHub 连接器读取源码，在固定独立分支的 Windows 工作区执行精确源码迁移与验证；临时迁移脚本和工作流验证后删除。仅将明确列出的文件提交至该分支，不强推、不修改主线。
+当前容器不能联网克隆且没有 Windows/.NET Framework。通过已有 GitHub 连接器读取源码，在固定独立分支的 Windows 工作区执行精确源码迁移与验证；临时迁移脚本已在成功提交中删除，临时工作流在交付清理时删除。仅提交本批明确文件，不强推、不修改主线。
 
 本批不宣称完成整个 App 生命周期、逐卡混合品牌、ZMotion SDK 软件链或正式屏幕验收。
