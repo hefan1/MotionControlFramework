@@ -501,9 +501,13 @@ namespace MotionControl.TaskMonitor.Checks
         /// </summary>
         private static void CloseTestSession(TaskMachineController machine, string source)
         {
-            Task closing = machine.CloseAsync();
+            // CloseAsync 可能在第一次 await 之前同步触发取消回调、报警或资源收尾。
+            // 不能在 STA UI 线程直接调用后才进入 Dispatcher 等待，否则若同步阶段阻塞就无法超时。
+            Console.WriteLine("[检查收尾] 开始关闭：" + source);
+            Task closing = Task.Run(() => machine.CloseAsync());
             WaitWithDispatcher(() => closing.IsCompleted, 15000, source + "在 15 秒内未能关闭；保留原始未收尾状态。");
             closing.GetAwaiter().GetResult();
+            Console.WriteLine("[检查收尾] 已确认完成：" + source);
         }
 
         /// <summary>用 WPF Dispatcher 推进窗口计时器和后台 UI 刷新。</summary>
@@ -918,6 +922,7 @@ namespace MotionControl.TaskMonitor.Checks
             var view = new TaskMonitorView(session);
             try
             {
+                Console.WriteLine("[等待诊断] 启动隔离任务");
                 session.Machine.Reset(); session.Machine.Start();
                 WaitWithDispatcher(() =>
                 {
@@ -928,6 +933,7 @@ namespace MotionControl.TaskMonitor.Checks
                             && station.Run?.Nodes.Any(node => node.NodeId == "wait" && node.State == TaskNodeState.Waiting
                                 && node.Diagnostics?.WaitKind == StationWaitKind.Condition) == true);
                 }, 5000, "工位未进入等待状态。");
+                Console.WriteLine("[等待诊断] 两工位均已进入等待，开始刷新中文快照");
                 view.Refresh();
                 var grid = (DataGrid)view.FindName("StationsGrid");
                 var pressRow = grid.Items.OfType<TaskStationRow>().Single(row => row.Id == "press");
@@ -967,6 +973,7 @@ namespace MotionControl.TaskMonitor.Checks
                     && ((TextBlock)view.FindName("DetailSummary")).Text.Contains("Load.Ready")
                     && ((DataGrid)view.FindName("ObservationTable")).Items.Count > 0,
                     "步骤详情未同步完整等待提示，或维护采样表丢失。");
+                Console.WriteLine("[等待诊断] 中文快照检查完成，注入未知采样");
                 device.SetVariable("Press.Request", null); device.SetVariable("Load.Ready", null);
                 WaitWithDispatcher(() =>
                 {
@@ -977,6 +984,7 @@ namespace MotionControl.TaskMonitor.Checks
                         && pressDiagnostic.WaitItems.Single(item => item.ObjectId == "Press.Request").Quality == StationValueQuality.Unknown
                         && loadDiagnostic.Decision == null && loadDiagnostic.WaitItems.Single().Quality == StationValueQuality.Unknown;
                 }, 5000, "未知信号没有反映到运行快照。");
+                Console.WriteLine("[等待诊断] 未知采样已写入，开始验证英文显示");
                 view.Refresh();
                 Assert(pressRow.Snapshot.Diagnostics.WaitItems.Single(item => item.ObjectId == "Press.Request").Actual == null
                     && pressRow.Snapshot.Diagnostics.WaitItems.Single(item => item.ObjectId == "Press.Complete").Quality == StationValueQuality.Good,
@@ -997,6 +1005,7 @@ namespace MotionControl.TaskMonitor.Checks
                     && pressRow.EngineeringDetail.Contains("Press.Request=未知")
                     && loadRow.EngineeringDetail == loadRow.Snapshot.Run.Nodes.Single(node => node.NodeId == "wait").Detail,
                     "切换显示语言改变了原始工程诊断。");
+                Console.WriteLine("[等待诊断] 英文显示完成，继续验证握手复位阶段");
                 view.SetLanguage("zh-CN"); device.SetVariable("Press.Request", "true");
                 WaitWithDispatcher(() => session.Machine.GetSnapshot().Stations.Single(station => station.StationId == "press")
                     .Diagnostics?.ReasonCode == "handshake.wait_request_reset_after_completion",
@@ -1011,8 +1020,13 @@ namespace MotionControl.TaskMonitor.Checks
                     && pressRow.Detail.Contains("Press.Request") && pressRow.Detail.Contains("Press.Complete")
                     && pressRow.Detail.Contains("未提供") && pressRow.EngineeringDetail == pressRow.Snapshot.Detail
                     && pressRow.EngineeringDetail.Contains("Press.Request"), "完成后的交接提示不准确或原始信号丢失。");
+                Console.WriteLine("[等待诊断] 所有断言完成");
             }
-            finally { CloseTestSession(session.Machine, "任务监控窗口会话"); }
+            finally
+            {
+                Console.WriteLine("[等待诊断] 开始有界关闭会话");
+                CloseTestSession(session.Machine, "等待诊断会话");
+            }
         }
 
         /// <summary>用于只读定位检查的未连接控制卡替身。</summary>
