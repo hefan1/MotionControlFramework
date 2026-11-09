@@ -11,6 +11,10 @@ using System.Threading.Tasks;
 using MotionControl.Adapter.MotionCard.Virtual;
 using MotionControl.Framework.Contracts.Configuration;
 using MotionControl.Framework.Contracts.Motion;
+using MotionControl.Framework.Contracts.Flow;
+using MotionControl.Framework.Runtime.Alarms;
+using MotionControl.Framework.Runtime.Machine;
+using MotionControl.Framework.Runtime.Safety;
 
 namespace MotionControl.VirtualAdapter.Checks
 {
@@ -31,7 +35,11 @@ namespace MotionControl.VirtualAdapter.Checks
             {
                 // 只通过现有软件控制器 API 检查运动语义，不创建内存假轴。
                 if (args.Length == 2 && args[0] == "--controller-api")
-                    RunControllerApi(int.Parse(args[1]));
+                {
+                    int port = int.Parse(args[1]);
+                    RunControllerApi(port);
+                    CheckRuntimeTaskSession(port);
+                }
                 else
                     Run(args);
             }
@@ -189,6 +197,82 @@ namespace MotionControl.VirtualAdapter.Checks
                     finally { card.DisconnectAsync(CancellationToken.None).GetAwaiter().GetResult(); }
                 }
             }
+        }
+
+        /// <summary>
+        /// 连接现有软件控制器并通过真实 MotionCardGroup/Runtime 检查任务控制权交接。
+        /// 本检查只读取轴、报警和连接状态，不创建虚构的轴状态，也不发运动命令。
+        /// </summary>
+        private static void CheckRuntimeTaskSession(int port)
+        {
+            var axis = new AxisHardwareDefinition
+            {
+                Name = "SessionAxis", ControllerId = "SessionCheck", AxisNumber = 2,
+                SoftLimitEnabled = false, PositionTolerance = 0.01
+            };
+            var stopInput = new DigitalIoHardwareDefinition
+            {
+                Name = "SessionEmergencyStop", ControllerId = "SessionCheck",
+                Channel = 42, ActiveHigh = true
+            };
+            var card = new VirtualMotionCard("SessionCheck", new[] { axis },
+                new[] { stopInput }, new DigitalIoHardwareDefinition[0], port,
+                Path.Combine(DiagnosticsRoot, "runtime-session"));
+            var group = new MotionCardGroup(new IMotionCard[] { card });
+            var alarms = new MachineAlarmService();
+            var safety = new LogicalIoEmergencyStopStatus(card, "SessionEmergencyStop");
+            var runtime = new MachineRuntime(group, new IStationFlow[0], alarms, safety);
+            var token = CancellationToken.None;
+            object currentOwner = null;
+            try
+            {
+                runtime.ConnectAsync(token).GetAwaiter().GetResult();
+                runtime.ResetAsync(token).GetAwaiter().GetResult();
+                Guid originalSession = runtime.ConnectionSessionId.Value;
+                currentOwner = new object();
+                runtime.AcquireTaskEngineControlAsync(currentOwner, token).GetAwaiter().GetResult();
+                CheckOldTaskFinishRejected(runtime, originalSession, new object(), "不是当前任务持权设备");
+                CheckOldTaskFinishRejected(runtime, Guid.NewGuid(), currentOwner, "不是当前连接会话");
+                runtime.FinishTaskEngineRunAsync(originalSession, currentOwner, false, null).GetAwaiter().GetResult();
+                runtime.ReleaseTaskEngineControl(currentOwner);
+                currentOwner = null;
+                runtime.DisconnectAsync(token).GetAwaiter().GetResult();
+
+                // 使用同一台真实软件控制器重连，旧会话不能结束新连接的任务状态。
+                runtime.ConnectAsync(token).GetAwaiter().GetResult();
+                Guid newSession = runtime.ConnectionSessionId.Value;
+                if (newSession == originalSession) throw new Exception("重连没有生成新的运行时会话身份。");
+                currentOwner = new object();
+                runtime.AcquireTaskEngineControlAsync(currentOwner, token).GetAwaiter().GetResult();
+                CheckOldTaskFinishRejected(runtime, originalSession, currentOwner, "重连前旧会话");
+                runtime.FinishTaskEngineRunAsync(newSession, currentOwner, false, null).GetAwaiter().GetResult();
+                runtime.ReleaseTaskEngineControl(currentOwner);
+                currentOwner = null;
+                runtime.DisconnectAsync(token).GetAwaiter().GetResult();
+                Console.WriteLine("[通过] 独立软件控制器 Runtime：持权身份拒绝、跨连接迟到状态拒绝与正常收尾");
+            }
+            finally
+            {
+                // 本检查没有使能或运动。失败时仍尝试归还该测试会话并断开控制器。
+                if (currentOwner != null) runtime.ReleaseTaskEngineControl(currentOwner);
+                if (card.IsConnected) runtime.DisconnectAsync(CancellationToken.None).GetAwaiter().GetResult();
+            }
+        }
+
+        /// <summary>错误身份不能修改 Runtime 状态；只接受明确的连接或持权拒绝原因。</summary>
+        private static void CheckOldTaskFinishRejected(MachineRuntime runtime, Guid session,
+            object owner, string scenario)
+        {
+            MachineRunState stateBefore = runtime.State;
+            bool rejected = false;
+            try { runtime.FinishTaskEngineRunAsync(session, owner, false, null).GetAwaiter().GetResult(); }
+            catch (InvalidOperationException error)
+            {
+                rejected = error.Message.Contains("连接会话已变化")
+                    || error.Message.Contains("未持有本机控制权");
+            }
+            if (!rejected || runtime.State != stateBefore)
+                throw new Exception("旧任务完成回调未被安全拒绝：" + scenario);
         }
 
         /// <summary>通过正式虚拟卡适配器读取独立物料输入，核对未知、变化、冲突和输出隔离。</summary>
