@@ -62,8 +62,11 @@ namespace MotionControl.VirtualAdapter.Checks
             if (!card.ReadInputAsync("Input", token).GetAwaiter().GetResult()) throw new Exception("低有效 DI 状态错误");
             if (!SendRaw(port, "{\"command\":\"invalidCommand\"}").Contains("\"ok\":false")) throw new Exception("未知命令未返回失败");
             var axis = card.Axes.Single();
+            AssertMotionState(axis.ReadStatusAsync(token).GetAwaiter().GetResult(), AxisMotionState.Disabled, "尚未使能");
             axis.EnableServoAsync(token).GetAwaiter().GetResult();
+            AssertMotionState(axis.ReadStatusAsync(token).GetAwaiter().GetResult(), AxisMotionState.Standstill, "伺服使能后");
             axis.HomeAsync(token).GetAwaiter().GetResult();
+            AssertMotionState(axis.ReadStatusAsync(token).GetAwaiter().GetResult(), AxisMotionState.Standstill, "回零完成后");
             bool jogRejected = false;
             try { axis.StartJogAsync(MotionDirection.Positive, new AxisMotionProfile(10, 10, 10), token).GetAwaiter().GetResult(); }
             catch (NotSupportedException) { jogRejected = true; }
@@ -88,6 +91,7 @@ namespace MotionControl.VirtualAdapter.Checks
             }
             AxisStatus stopped = axis.ReadStatusAsync(token).GetAwaiter().GetResult();
             if (stopped.Moving) throw new Exception("取消后轴仍在运动");
+            AssertMotionState(stopped, AxisMotionState.Standstill, "取消并确认停止后");
             if (stopped.Position <= 1 || stopped.Position >= 9) throw new Exception("停止位置不在运动路径内");
             card.WriteDigitalOutputChannelAsync(0, false, token).GetAwaiter().GetResult();
             var outputGuarantee = card as IOutputStatePreservingDisconnect;
@@ -109,6 +113,13 @@ namespace MotionControl.VirtualAdapter.Checks
             AssertHeartbeatDiagnostic(false);
             AssertHeartbeatDiagnostic(true);
             Console.WriteLine("虚拟控制器适配器往返检查通过。");
+        }
+
+        /// <summary>核对控制器明确报告的运动阶段已通过适配器保留。</summary>
+        private static void AssertMotionState(AxisStatus status, AxisMotionState expected, string stage)
+        {
+            if (status.MotionState != expected)
+                throw new Exception(stage + "的运动阶段错误：预期 " + expected + "，实际 " + status.MotionState + "。");
         }
 
         /// <summary>通过正式虚拟卡适配器读取独立物料输入，核对未知、变化、冲突和输出隔离。</summary>
@@ -157,9 +168,13 @@ namespace MotionControl.VirtualAdapter.Checks
             }
             string moving = SendRaw(port, "{\"command\":\"readAxis\",\"axis\":1}");
             if (!moving.Contains("\"moving\":true")) throw new Exception("退出前未成功发出点动");
+            if (!moving.Contains("\"motionState\":\"ContinuousMotion\""))
+                throw new Exception("连续点动时未报告 ContinuousMotion。");
             Thread.Sleep(3000);
             string stopped = SendRaw(port, "{\"command\":\"readAxis\",\"axis\":1}");
             if (!stopped.Contains("\"moving\":false")) throw new Exception("租约过期后轴仍在运动");
+            if (!stopped.Contains("\"motionState\":\"Standstill\""))
+                throw new Exception("租约失效并停止后未报告 Standstill。");
         }
         /// <summary>代理放行定位命令后丢弃响应，检查通信失败后的租约停车。</summary>
         private static void AssertLeaseStopsAfterLostReply(int port)
