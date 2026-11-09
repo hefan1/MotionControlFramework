@@ -169,6 +169,35 @@ namespace MotionControl.Framework.Runtime.Machine
             }
         }
 
+        /// <summary>断卡后检查本运行时可观察的流程、监控和报警通知是否均已收尾。</summary>
+        public bool IsAlarmHandoffSettled
+        {
+            get
+            {
+                if (State != MachineRunState.Disconnected || _flowScheduler.IsRunning || !_flowScheduler.IsSettlementConfirmed
+                    || IsPreparing || IsClearing || IsTaskEngineControlClaimed || _alarmService.HasLatchedStopAlarm)
+                    return false;
+                if (_flowObserverTask == null || _flowObserverTask.Status != TaskStatus.RanToCompletion
+                    || _safetyMonitorTask == null || !_safetyMonitorTask.IsCompleted || _safetyMonitorTask.IsFaulted
+                    || _controlInputMonitorTask == null || !_controlInputMonitorTask.IsCompleted || _controlInputMonitorTask.IsFaulted)
+                    return false;
+                var drain = _alarmService as IMachineStopAlarmNotificationDrain;
+                if (drain == null) return false;
+                try
+                {
+                    Task pending = drain.WaitForStopNotificationDispatchAsync();
+                    if (pending == null) return false;
+                    if (pending.IsFaulted) { var ignored = pending.Exception; return false; }
+                    return pending.Status == TaskStatus.RanToCompletion && !_alarmService.HasLatchedStopAlarm;
+                }
+                catch (Exception error)
+                {
+                    System.Diagnostics.Trace.TraceError("核查报警交接失败：" + error);
+                    return false;
+                }
+            }
+        }
+
         /// <summary>周期监控急停输入的后台任务。</summary>
         private Task _safetyMonitorTask = Task.CompletedTask;
 
@@ -358,8 +387,45 @@ namespace MotionControl.Framework.Runtime.Machine
             get { return _flowScheduler.HasPendingInitialization; }
         }
 
-        /// <summary>恢复记录不可信时拦截自动生产和工位准备；不影响手动排查。</summary>
-        public string RecoveryBlockReason { get; private set; }
+        /// <summary>设备流程和资源恢复的独立门禁。</summary>
+        private string _recoveryBlockReason;
+
+        /// <summary>跨连接报警状态不可信时的独立门禁。</summary>
+        private string _alarmContinuityBlockReason;
+
+        /// <summary>恢复记录或报警交接不可信时向操作员显示所有原因，不影响手动排查。</summary>
+        public string RecoveryBlockReason
+        {
+            get
+            {
+                string alarmReason = Volatile.Read(ref _alarmContinuityBlockReason);
+                if (_recoveryBlockReason == null) return alarmReason;
+                return alarmReason == null ? _recoveryBlockReason : _recoveryBlockReason + "；" + alarmReason;
+            }
+            private set { _recoveryBlockReason = value; }
+        }
+
+        /// <summary>连接前安装报警交接检查结果，不允许普通复位将未知当作条件已恢复。</summary>
+        public void SetAlarmContinuityBlockReason(string reason)
+        {
+            if (State != MachineRunState.Disconnected) throw new InvalidOperationException("只能在连接前设置报警交接检查结果。");
+            _alarmContinuityBlockReason = string.IsNullOrWhiteSpace(reason) ? null : reason;
+        }
+
+        /// <summary>旧来源迟到或连接失效时锁定当前会话；此方法不会解除已有的报警交接门禁。</summary>
+        public void MarkAlarmContinuityUnconfirmed(string reason)
+        {
+            if (string.IsNullOrWhiteSpace(reason)) throw new ArgumentException("报警交接原因不能为空。", nameof(reason));
+            Interlocked.CompareExchange(ref _alarmContinuityBlockReason, reason, null);
+        }
+
+        /// <summary>未知报警来源须先由设备项目核查，普通报警复位不能代替核查。</summary>
+        private void EnsureAlarmContinuityTrusted()
+        {
+            string reason = Volatile.Read(ref _alarmContinuityBlockReason);
+            if (reason != null)
+                throw new InvalidOperationException("旧报警交接尚未确认，不能复位：" + reason);
+        }
 
         /// <summary>连接前安装恢复校验结果，不能在设备运行期间更改此门禁。</summary>
         public void SetRecoveryBlockReason(string reason)
@@ -562,6 +628,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 cancellationToken.ThrowIfCancellationRequested();
                 if (!IsConnectionSessionCurrent(session))
                     throw new InvalidOperationException("控制器连接会话未确认或已变化，不能复位设备。");
+                EnsureAlarmContinuityTrusted();
                 EnsureNoPreparationInProgress("报警复位");
                 EnsureOneOfStates(
                     new[] { MachineRunState.ResetRequired, MachineRunState.Paused, MachineRunState.Stopped, MachineRunState.Alarmed },
@@ -609,6 +676,7 @@ namespace MotionControl.Framework.Runtime.Machine
                     }
 
                     await UpdateEmergencyStopAlarmAsync(cancellationToken).ConfigureAwait(false);
+                    EnsureAlarmContinuityTrusted();
                     _alarmService.EnsureStopAlarmConditionsRecovered();
 
                     foreach (var axis in _motionCards.Axes)
@@ -616,6 +684,7 @@ namespace MotionControl.Framework.Runtime.Machine
                         try
                         {
                             cancellationToken.ThrowIfCancellationRequested();
+                            EnsureAlarmContinuityTrusted();
                             if (!IsConnectionSessionCurrent(session)) throw new InvalidOperationException("控制器连接会话已失效，不能复位轴。");
                             await axis.ResetAlarmAsync(cancellationToken).ConfigureAwait(false);
                         }
@@ -634,6 +703,7 @@ namespace MotionControl.Framework.Runtime.Machine
                     try
                     {
                         EnsureConnectionSessionCurrent(session, "复位设备初始化流程");
+                        EnsureAlarmContinuityTrusted();
                         await _flowScheduler
                             .ResetEquipmentInitializationAsync(cancellationToken)
                             .ConfigureAwait(false);
@@ -652,6 +722,7 @@ namespace MotionControl.Framework.Runtime.Machine
                         try
                         {
                             EnsureConnectionSessionCurrent(session, "复位工位");
+                            EnsureAlarmContinuityTrusted();
                             await flow.ResetAsync(cancellationToken).ConfigureAwait(false);
                         }
                         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -667,6 +738,7 @@ namespace MotionControl.Framework.Runtime.Machine
                     }
 
                     EnsureConnectionSessionCurrent(session, "复位停机报警");
+                    EnsureAlarmContinuityTrusted();
                     _alarmService.ResetStopAlarms();
                     EnsureConnectionSessionCurrent(session, "确认设备复位完成");
                     SetReadyIfNoStopAlarm(confirmedStoppedProduction);

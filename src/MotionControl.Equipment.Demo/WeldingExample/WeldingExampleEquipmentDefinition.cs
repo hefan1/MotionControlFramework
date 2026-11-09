@@ -10,8 +10,10 @@ using MotionControl.Framework.Contracts.Preparation;
 namespace MotionControl.Equipment.Demo.WeldingExample
 {
     /// <summary>夹具焊接测试线的代码流程定义；轴和 IO 均为测试映射，不代表参考设备接线。</summary>
-    public sealed class WeldingExampleEquipmentDefinition : IEquipmentDefinition, IEquipmentPreparationProvider
+    public sealed class WeldingExampleEquipmentDefinition : IEquipmentDefinition, IEquipmentPreparationProvider, IAlarmSourceSettlementDeclaration
     {
+        /// <summary>本软件仿真示例的报警只在受调度器管理的工位流程中发布，没有独立报警后台线程。</summary>
+        public bool AllAlarmSourcesOwnedByTrackedFlows { get { return true; } }
         /// <summary>正式 Host 配置中选择的设备定义名。</summary>
         public string EquipmentName { get { return "WeldingExample"; } }
 

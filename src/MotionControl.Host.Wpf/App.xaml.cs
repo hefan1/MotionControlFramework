@@ -80,6 +80,16 @@ namespace MotionControl.Host.Wpf
 
         /// <summary>协调单机变量、工位步骤和应用生命周期的恢复处理。</summary>
         private MachineRecoveryCoordinator _machineRecoveryCoordinator;
+        /// <summary>报警会话独立持久保护，不能由历史日志代替。</summary>
+        private AlarmContinuityStore _alarmContinuity;
+        /// <summary>上次连接中可读取到的停机报警名称，仅作为待核查线索。</summary>
+        private string _retainedAlarmDetails;
+        /// <summary>当前连接周期的报警服务，旧服务迟到的停机事件会转为未知交接报警。</summary>
+        private MachineAlarmService _currentAlarmService;
+        /// <summary>当前设备项目是否明确声明报警来源都受已跟踪流程管理。</summary>
+        private bool _trackedAlarmSources;
+        /// <summary>最近一次正常断卡是否满足本运行时和设备项目的报警来源收尾条件。</summary>
+        private bool _alarmHandoffSettled;
         /// <summary>当前设备报警历史写入器，随控制器连接创建并在断开时收尾。</summary>
         private AlarmHistoryJournal _alarmHistoryJournal;
         /// <summary>未确认写入完成的旧会话；断卡或重连期间保留在内存中以便重试。</summary>
@@ -97,7 +107,7 @@ namespace MotionControl.Host.Wpf
         private string _recoveryWarningMessage;
 
         /// <summary>由当前连接卡创建的设备运行时，供自动示例流程与手动调试页共同使用。</summary>
-        private MachineRuntime _machineRuntime;
+        private volatile MachineRuntime _machineRuntime;
 
         /// <summary>运行时正在使用的软件急停 DI 状态读取器。</summary>
         private LogicalIoEmergencyStopStatus _machineSafetyStatus;
@@ -192,6 +202,9 @@ namespace MotionControl.Host.Wpf
             _configurationStore = new MachineConfigurationStore(configurationRoot);
             // 加载任何设备配置前先完成中断的工程导入恢复，避免使用混合版本。
             if (!RecoverEquipmentProjectAtStartup()) { Shutdown(); return; }
+            _alarmContinuity = new AlarmContinuityStore(_configurationStore, MachineId);
+            // 控制卡页面会先连接并可能应用参数，再通知 Host 创建 Runtime；记录必须先于页面和控制卡创建。
+            _alarmContinuity.Open();
             _alarmCatalogStore = new MachineAlarmCatalogStore(_configurationStore);
             try
             {
@@ -405,6 +418,7 @@ namespace MotionControl.Host.Wpf
             _lastSoftwareConnectionStatus = connected;
             if (!connected)
             {
+                _alarmContinuity?.MarkUnconfirmed("控制器连接意外中断，旧报警来源及设备状态不可确认。 ");
                 string reason = _mainWindow.TryFindResource("软件控制器通讯中断") as string
                     ?? "软件控制器通讯已中断，轴和输出状态未确认。";
                 _axisMappingPage.ReportCardConnectionLost(reason);
@@ -482,7 +496,49 @@ namespace MotionControl.Host.Wpf
             if (_taskMonitorLauncher != null)
                 await _taskMonitorLauncher.CloseTaskSessionAsync().ConfigureAwait(true);
             if (runtime != null && runtime.State != MachineRunState.Disconnected)
+            {
+                RetainUnconfirmedAlarms(runtime);
                 await runtime.DisconnectAsync(cancellationToken).ConfigureAwait(true);
+                _alarmHandoffSettled = runtime.IsAlarmHandoffSettled && _trackedAlarmSources;
+                if (!runtime.IsAlarmHandoffSettled)
+                    _alarmContinuity?.MarkUnconfirmed("旧连接的停机报警、流程或通知收尾未确认。 ");
+            }
+        }
+
+        /// <summary>记录尚未复位的旧报警名称，不能把其原始条件当成新连接的实时状态。</summary>
+        private void RetainUnconfirmedAlarms(MachineRuntime runtime)
+        {
+            try
+            {
+                var alarms = runtime.AlarmService.Alarms.Where(item => item.RequiresReset).ToArray();
+                if (alarms.Length == 0 && !runtime.AlarmService.HasLatchedStopAlarm) return;
+                _retainedAlarmDetails = string.Join("、", alarms.Select(item => item.SourceName + "/" + item.Definition.Code));
+                _alarmContinuity?.MarkUnconfirmed("旧连接仍有停机报警尚未完成复位。 " + _retainedAlarmDetails);
+            }
+            catch (Exception error)
+            {
+                _alarmContinuity?.MarkUnconfirmed("旧报警列表无法读取：" + error.Message);
+            }
+        }
+
+        /// <summary>旧连接来源迟到时立即锁定新会话，并通过当前服务请求停机。</summary>
+        private void AlarmService_StopAlarmRaised(object sender, MachineAlarmRaisedEventArgs e)
+        {
+            MachineAlarmService current = Volatile.Read(ref _currentAlarmService);
+            if (ReferenceEquals(sender, current)) return;
+            string reason = "旧连接的报警来源在交接后才报告停机：" + e.Alarm.SourceName + "/" + e.Alarm.Definition.Code;
+            _alarmContinuity?.MarkUnconfirmed(reason);
+            _machineRuntime?.MarkAlarmContinuityUnconfirmed(reason);
+            if (current != null)
+                ReportUnconfirmedAlarm(current, reason);
+        }
+
+        /// <summary>以独立停机报警表示交接未知，不把旧条件冒充为当前实时输入。</summary>
+        private static void ReportUnconfirmedAlarm(MachineAlarmService alarms, string detail)
+        {
+            var definition = new MachineAlarmDefinition("ALARM_HANDOFF_UNCONFIRMED", "旧连接报警交接未确认", MachineAlarmKind.StopMachine,
+                "由设备维护人员核查旧报警来源和现场。", "设备项目提供可信核查后，仍需人工复位。");
+            alarms.ReportCondition(definition, "报警交接", true, detail);
         }
 
         /// <summary>连接状态变化后同步整机运行时、连接状态和映射对应的手动调试页。</summary>
@@ -527,6 +583,11 @@ namespace MotionControl.Host.Wpf
 
                 if (_machineRuntime != null)
                 {
+                    if (_machineRuntime.State != MachineRunState.Disconnected)
+                    {
+                        RetainUnconfirmedAlarms(_machineRuntime);
+                        _alarmContinuity?.MarkUnconfirmed("控制器未经过已确认的断开交接。 ");
+                    }
                     _machineRuntime.StatusChanged -= MachineRuntime_RecoveryStatusChanged;
                     try
                     {
@@ -539,6 +600,7 @@ namespace MotionControl.Host.Wpf
                 }
 
                 _machineRuntime = null;
+                Volatile.Write(ref _currentAlarmService, null);
                 CloseAlarmHistory();
                 _machineSafetyStatus = null;
                 _manualMotionDebugPage = null;
@@ -569,9 +631,19 @@ namespace MotionControl.Host.Wpf
                 }
 
                 var motionCards = new MotionCardGroup(new IMotionCard[] { connectedCard });
+                _alarmHandoffSettled = false;
+                _trackedAlarmSources = false;
+                _alarmContinuity.Open();
                 SafetyInterlockConfigurationDocument controlInputConfiguration;
                 _machineSafetyStatus = CreateSafetyStatus(connectedLogicalIo, out controlInputConfiguration);
                 var alarmService = new MachineAlarmService();
+                alarmService.StopAlarmRaised += AlarmService_StopAlarmRaised;
+                Volatile.Write(ref _currentAlarmService, alarmService);
+                if (!string.IsNullOrWhiteSpace(_alarmContinuity.BlockReason))
+                {
+                    ReportUnconfirmedAlarm(alarmService, _alarmContinuity.BlockReason
+                        + (string.IsNullOrWhiteSpace(_retainedAlarmDetails) ? string.Empty : " 旧报警线索：" + _retainedAlarmDetails));
+                }
                 CloseAlarmHistory();
                 _alarmHistoryJournal = new AlarmHistoryJournal(alarmService, _configurationStore, MachineId);
                 IStationFlow[] stationFlows;
@@ -611,6 +683,7 @@ namespace MotionControl.Host.Wpf
                     _machineRecoveryCoordinator.HasCompletedInitializationCheckpoint);
                 // 恢复数据不可信时保留原文件，并阻止自动准备和生产；手动排查仍可用。
                 createdRuntime.SetRecoveryBlockReason(_machineRecoveryCoordinator.RecoveryBlockReason);
+                createdRuntime.SetAlarmContinuityBlockReason(_alarmContinuity.BlockReason);
                 createdRuntime.SetBeforeAutomaticRun(() => _machineRecoveryCoordinator.InvalidateBeforeAutomaticRun(createdRuntime));
                 createdRuntime.SetPreparationRecordCallbacks(() => _machineRecoveryCoordinator.MarkBeforePreparation(createdRuntime),
                     _machineRecoveryCoordinator.SaveAfterSafePreparation);
@@ -621,6 +694,8 @@ namespace MotionControl.Host.Wpf
                 await createdRuntime.ConnectAsync(CancellationToken.None);
 
                 _machineRuntime = createdRuntime;
+                if (!string.IsNullOrWhiteSpace(_alarmContinuity.BlockReason))
+                    createdRuntime.MarkAlarmContinuityUnconfirmed(_alarmContinuity.BlockReason);
                 _machineRuntime.StatusChanged += MachineRuntime_RecoveryStatusChanged;
                 _deviceVariablePage.SetMachineRuntime(createdRuntime);
                 _flowStatusPage = new FlowStatusView(createdRuntime, () => _taskMonitorLauncher != null && _taskMonitorLauncher.HasTaskSession);
@@ -633,6 +708,7 @@ namespace MotionControl.Host.Wpf
             }
             catch (Exception error)
             {
+                _alarmContinuity?.MarkUnconfirmed("运行时初始化未完成：" + error.Message);
                 if (createdRuntime != null)
                 {
                     try
@@ -646,6 +722,7 @@ namespace MotionControl.Host.Wpf
                 }
 
                 _machineRuntime = null;
+                Volatile.Write(ref _currentAlarmService, null);
                 CloseAlarmHistory();
                 _machineSafetyStatus = null;
                 _manualMotionDebugPage = null;
@@ -930,6 +1007,7 @@ namespace MotionControl.Host.Wpf
             out IReadOnlyList<ControlledClearanceProfile> clearanceProfiles)
         {
             IEquipmentDefinition equipment = HostEquipmentSelection.ResolveEquipmentDefinition(_configurationStore, MachineId);
+            var declaration = equipment as IAlarmSourceSettlementDeclaration;
             var context = new HostEquipmentContext(
                 _configurationStore,
                 MachineId,
@@ -944,6 +1022,7 @@ namespace MotionControl.Host.Wpf
             var provider = equipment as IEquipmentPreparationProvider;
             preparations = provider == null ? new IStationPreparation[0] : provider.CreatePreparations(context, flows);
             clearanceProfiles = CreateClearanceProfiles(equipment);
+            _trackedAlarmSources = declaration != null && declaration.AllAlarmSourcesOwnedByTrackedFlows;
             return flows;
         }
 
@@ -1276,6 +1355,12 @@ namespace MotionControl.Host.Wpf
             _exitingApplication = true;
             CloseAlarmHistory();
             FinishAlarmHistoryAtExit();
+            // 只有设备项目明确约束所有报警来源，且正常断卡已确认收尾时才能结束本会话。
+            // 系统强退、异常断连、旧报警未复位或设备项目未声明时保留原记录。
+            bool alarmHandoffComplete = _alarmHandoffSettled && !_shutdownRetainedBlockedEvidence
+                && (_taskMonitorLauncher == null || (!_taskMonitorLauncher.HasTaskSession && !_taskMonitorLauncher.IsCommandInProgress))
+                && (_cardConnection == null || (!_cardConnection.IsConnected && _cardConnection.ConnectedMotionCard == null));
+            _alarmContinuity?.CloseIfSettled(alarmHandoffComplete);
             ReleaseSingleInstanceMutex();
 
             base.OnExit(e);

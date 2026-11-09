@@ -53,6 +53,7 @@ namespace MotionControl.Framework.Runtime.Machine
                 Task pending = executor.InFlightSettlement;
                 if (!pending.IsCompleted) throw new InvalidOperationException("原始设备命令或停止任务仍未结束，不能核查恢复。");
                 if (!_motionCards.IsConnected || _controlInputIo == null) throw new InvalidOperationException("控制器或逻辑 IO 不可用，不能核查恢复。");
+                EnsureAlarmContinuityTrusted();
                 await StopEmergencyStopMonitorAsync().ConfigureAwait(false);
                 if (_safetyMonitorTask == null || !_safetyMonitorTask.IsCompleted || _safetyMonitorTask.IsFaulted)
                     throw new InvalidOperationException("急停监控仍在收尾或发生故障，不能核查恢复。", _safetyMonitorTask?.Exception);

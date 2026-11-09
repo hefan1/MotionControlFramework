@@ -60,6 +60,7 @@ namespace MotionControl.ZMotionSimulatorCheck
             await RunCheckAsync("在线映射与整机命令互斥", OnlineMappingRespectsMachineCommandsAsync, failures);
             await RunCheckAsync("有效或不可读的输出不能被更换映射", OutputMappingSafetyChecks.RunAsync, failures);
             await RunCheckAsync("停机报警暂停流程并要求复位", StopAlarmPausesMachineUntilResetAsync, failures);
+            await RunCheckAsync("报警连接交接及重启未知状态保护", AlarmContinuityChecksAsync, failures);
             await RunCheckAsync("多报警原子发布且订阅者读取完整快照", BatchedAlarmUpdatesPublishCompleteSnapshotAsync, failures);
             await RunCheckAsync("非停机报警在条件恢复后自动清除", NonStopAlarmClearsWhenRecoveredAsync, failures);
             await RunCheckAsync("工位流程异常使整机进入报警", StationFailureAlarmsMachineAsync, failures);
