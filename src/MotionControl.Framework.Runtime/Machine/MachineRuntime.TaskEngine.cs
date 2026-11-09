@@ -102,15 +102,31 @@ namespace MotionControl.Framework.Runtime.Machine
             MarkPreparationProductionStarted();
         }
 
-        /// <summary>任务暂停或终止并停稳后，更新整机状态并停止急停轮询。</summary>
-        public async Task FinishTaskEngineRunAsync(bool faulted, Exception error)
+        /// <summary>保留原有无身份参数的任务状态结束入口，供兼容调用使用。</summary>
+        public Task FinishTaskEngineRunAsync(bool faulted, Exception error)
+        {
+            return FinishTaskEngineRunCoreAsync(null, null, faulted, error);
+        }
+
+        /// <summary>正式任务完成暂停或终止后，必须按原连接和设备所有者归还运行状态。</summary>
+        public Task FinishTaskEngineRunAsync(Guid expectedSession, object deviceOwner, bool faulted, Exception error)
+        {
+            if (deviceOwner == null) throw new ArgumentNullException(nameof(deviceOwner));
+            return FinishTaskEngineRunCoreAsync(expectedSession, deviceOwner, faulted, error);
+        }
+
+        /// <summary>先核对本次任务身份，再停止急停监控并提交状态；迟到的旧会话不能结束新任务。</summary>
+        private async Task FinishTaskEngineRunCoreAsync(Guid? expectedSession, object deviceOwner, bool faulted, Exception error)
         {
             await _commandLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
             try
             {
+                if (deviceOwner != null) EnsureTaskDeviceBinding(expectedSession, deviceOwner);
                 if (ControlOwner != MachineControlOwner.TaskEngine)
                     throw new InvalidOperationException("当前设备控制权不属于图形化任务执行入口，不能结束任务运行状态。");
                 await StopEmergencyStopMonitorAsync().ConfigureAwait(false);
+                // 等待监控收尾期间可能断线；再次核对，禁止旧会话把新设备状态写成暂停。
+                if (deviceOwner != null) EnsureTaskDeviceBinding(expectedSession, deviceOwner);
 
                 // 不在状态锁内调用可由外部实现的报警服务，避免不同组件锁顺序反转。
                 bool hasStopAlarm = _alarmService.HasLatchedStopAlarm;
