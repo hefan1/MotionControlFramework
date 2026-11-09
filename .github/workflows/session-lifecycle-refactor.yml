@@ -34,6 +34,8 @@ jobs:
         run: |
           python tools/Migrate-TaskSessionLifecycle.py --tests
           if ($LASTEXITCODE -ne 0) { throw '测试迁移失败。' }
+          dotnet build tools/MotionControl.VirtualController/MotionControl.VirtualController.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw '软件控制器基础输出构建失败。' }
           dotnet build tools/MotionControl.OperatorPages.Checks/MotionControl.OperatorPages.Checks.csproj -c Release -p:Platform=x64 -o tmp/lifecycle-red
           if ($LASTEXITCODE -ne 0) { throw '编译失败，不能算作预期红灯。' }
       - name: 必须观察到指定时序失败
