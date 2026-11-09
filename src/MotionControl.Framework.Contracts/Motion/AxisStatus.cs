@@ -82,5 +82,21 @@ namespace MotionControl.Framework.Contracts.Motion
 
         /// <summary>限位状态的读取来源标识，例如控制器轴状态 API 或逻辑 DI；未知时为空。</summary>
         public string LimitStatusSource { get; private set; }
+
+        /// <summary>
+        /// 上位机确认轴停稳使用的速度阈值，单位为逻辑轴工程单位/秒。
+        /// 只用于软件反馈检查，不是安全回路或机械制动的判据。
+        /// </summary>
+        public const double StoppedVelocityTolerance = 0.001;
+
+        /// <summary>
+        /// 必须同时看到停止标志和有限的低速反馈，才把本次轴快照看作已停稳。
+        /// 不能由此推断 PLCopen 的 Standstill 状态、命令 Done 或报警已恢复。
+        /// </summary>
+        public bool HasStoppedMotionFeedback()
+        {
+            return !Moving && !double.IsNaN(Velocity) && !double.IsInfinity(Velocity)
+                && System.Math.Abs(Velocity) <= StoppedVelocityTolerance;
+        }
     }
 }
