@@ -11,8 +11,14 @@ using MotionControl.TaskEngine.Resources;
 namespace MotionControl.TaskEngine.Device.InMemory
 {
     /// <summary>任务引擎专用的独立内存设备；没有控制卡、网络或原生 DLL 入口。</summary>
-    public sealed partial class InMemoryTaskDevice : ITaskDevice, ITaskInterlockSupport, ITaskAxisGroupSupport, ITaskRecordSink
+    public sealed partial class InMemoryTaskDevice : ITaskDevice, ITaskInterlockSupport, ITaskAxisGroupSupport, ITaskRecordSink, ITaskDeviceExecutionPolicy
     {
+        /// <summary>纯内存设备不访问物理轴，复位时不执行正式设备的伺服与回零准入判断。</summary>
+        bool ITaskDeviceExecutionPolicy.RequiresAxisReadinessOnReset { get { return false; } }
+
+        /// <summary>纯内存设备的同步暂停仅更新内存状态；不能把该许可用于任何实际控制器。</summary>
+        bool ITaskDeviceExecutionPolicy.AllowsSynchronousStateChangeWithoutStopSettlement { get { return true; } }
+
         /// <summary>内存设备已实现多轴分别定位，仅用于内部逻辑检查，不代表正式设备或控制卡能力。</summary>
         public bool SupportsAxisGroupMove { get { return true; } }
 
