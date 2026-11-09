@@ -64,6 +64,15 @@ namespace MotionControl.VirtualAdapter.Checks
             var axis = card.Axes.Single();
             axis.EnableServoAsync(token).GetAwaiter().GetResult();
             axis.HomeAsync(token).GetAwaiter().GetResult();
+            // Abort 没有独立控制器命令，必须在发送任何停车命令前拒绝。
+            bool abortRejected = false;
+            try { axis.StopAsync(AxisStopMode.Abort, token).GetAwaiter().GetResult(); }
+            catch (NotSupportedException) { abortRejected = true; }
+            if (!abortRejected) throw new Exception("软件控制器未拒绝不支持的 Abort 停止模式");
+            bool invalidStopRejected = false;
+            try { axis.StopAsync((AxisStopMode)999, token).GetAwaiter().GetResult(); }
+            catch (ArgumentOutOfRangeException) { invalidStopRejected = true; }
+            if (!invalidStopRejected) throw new Exception("软件控制器未拒绝未知停止模式");
             bool jogRejected = false;
             try { axis.StartJogAsync(MotionDirection.Positive, new AxisMotionProfile(10, 10, 10), token).GetAwaiter().GetResult(); }
             catch (NotSupportedException) { jogRejected = true; }
