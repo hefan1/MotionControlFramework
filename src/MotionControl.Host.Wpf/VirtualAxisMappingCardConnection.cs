@@ -127,8 +127,8 @@ namespace MotionControl.Host.Wpf
                 foreach (IAxis axis in card.Axes)
                 {
                     AxisStatus status = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
-                    if (status.Moving)
-                        throw new InvalidOperationException("逻辑轴 '" + axis.Name + "' 仍在运动，不能接管控制器。");
+                    if (status == null || !status.HasStoppedMotionFeedback())
+                        throw new InvalidOperationException("逻辑轴 '" + axis.Name + "' 运动状态或速度反馈未确认停稳，不能接管控制器。");
                 }
             }
             catch
@@ -198,7 +198,8 @@ namespace MotionControl.Host.Wpf
                 foreach (IAxis axis in _card.Axes)
                 {
                     AxisStatus status = await axis.ReadStatusAsync(cancellationToken).ConfigureAwait(false);
-                    if (status.Moving) throw new InvalidOperationException("逻辑轴 '" + axis.Name + "' 仍在运动，不能断开连接。");
+                    if (status == null || !status.HasStoppedMotionFeedback())
+                        throw new InvalidOperationException("逻辑轴 '" + axis.Name + "' 运动状态或速度反馈未确认停稳，不能断开连接。");
                 }
             }
             await _card.DisconnectAsync(cancellationToken).ConfigureAwait(false);
