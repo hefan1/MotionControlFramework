@@ -23,6 +23,7 @@ using MotionControl.Framework.Runtime.Machine;
 using MotionControl.Framework.Runtime.Safety;
 using MotionControl.Framework.Runtime.Variables;
 using MotionControl.Framework.Wpf.Configuration;
+using MotionControl.Framework.Wpf.Compatibility;
 using MotionControl.Framework.Wpf.ManualDebug;
 using MotionControl.Framework.Wpf.Monitoring;
 using MotionControl.Framework.Wpf.Variables;
@@ -33,6 +34,12 @@ namespace MotionControl.Host.Wpf
     /// <summary>Host 应用启动入口，负责创建配置服务、页面和控制卡连接。</summary>
     public partial class App : Application
     {
+        /// <summary>在应用资源和页面创建前统一设置 WPF 计时兼容行为，不改动设备启动和连接流程。</summary>
+        public App()
+        {
+            ToolTipTimingCompatibility.Initialize();
+        }
+
         /// <summary>当前 Host 示例所使用设备的稳定编号。</summary>
         private const string MachineId = "Machine01";
 

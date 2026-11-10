@@ -9,7 +9,7 @@
 
 ## 本轮结果
 
-代码修复和可用范围内的内部回归已完成。[PR #12](https://github.com/hefan1/MotionControlFramework/pull/12) 及 ROC-18/23/24/28 均已进入待审查，尚未合并 master。
+来源隔离修复已由 [PR #12](https://github.com/hefan1/MotionControlFramework/pull/12) 合并为 `1b432afe`。合并后主分支检查暴露间歇性页面轮询停顿，ROC-18/23 已重新进入进行中，并由 [PR #13](https://github.com/hefan1/MotionControlFramework/pull/13) 跟进。ROC-24/28 的各自回归仍通过。以下保留原来源隔离证据；本轮追加的计时兼容和检查修正须以新的 Windows 结果判定，不能沿用合并前全绿结论。
 
 | 子任务 | 修复后的行为 |
 | --- | --- |
@@ -17,7 +17,7 @@
 | ROC-24 准备错误 | 页面错误绑定原 Runtime、连接、控制入口和准备版本；准备/停止的迟到异常不进入新范围，当前错误及原 Runtime 报警仍保留 |
 | ROC-28 总览来源 | 失效发布会话的旧工位、选择与定位撤下；同连接保留资源警示继续展示，切换 Runtime/连接或会话时拒绝旧摘要 |
 
-代码提交 `793159aa818c5e7d442cf3c1f4025191933a6729` 的 [Windows 回归](https://github.com/hefan1/MotionControlFramework/actions/runs/42746247040) 全部通过。正式 Windows Host 屏幕验收仍由 ROC-13 跟踪，App 连接同步重入由 ROC-19 跟踪。
+原代码提交 `793159aa818c5e7d442cf3c1f4025191933a6729` 的 [Windows 回归](https://github.com/hefan1/MotionControlFramework/actions/runs/42746247040) 当时全部通过。正式 Windows Host 屏幕验收仍由 ROC-13 跟踪，App 连接同步重入由 ROC-19 跟踪。
 
 ## 四种数据身份
 
@@ -111,3 +111,36 @@
   - 独立源码复核的来源共享、资源归属、错误打戳、显式 UI 发布及超时守护问题均闭合；中文/英文资源解析和 `git diff --check` 通过。
   - CI 未提供正运动 x64 原生库，构建日志保留相应警告；该运行不能作为 ZMotion SDK 调用链验收。
 - 本地环境为 Linux，未运行正式 Windows Host 窗口；现有截图属于历史记录，不能作为本轮验收。
+
+## PR #13：合并后间歇性轮询停顿
+
+### 失败现场与确定回归
+
+[主分支运行 42757120979](https://github.com/hefan1/MotionControlFramework/actions/runs/42757120979) 首次在合并后把任务编辑最后一项记为 180 秒超时，其他 14 个项目与软件控制器 API 通过。诊断提交 `bf4cc2c6` 的 [PR 运行 42759257852](https://github.com/hefan1/MotionControlFramework/actions/runs/42759257852) 记录到轮询、刷新返回、轮询退出均完成 32 次，UI 仍能执行 Send/Background 探针，但原计时器停止。
+
+提交 `972d9fd6` 的两轮检查通过，但只确认实际 WindowsBase/PresentationFramework 为 `4.8.9363.0`、任务来源说明的 Tooltip 时长为 `2147483647ms`；一次偶发通过没有排除故障。随后 `c3ada3dd` 增加可控到期前提与“没有实际读取”的负控，保持生产代码未变。
+
+| 证据 | 实际结果 |
+| --- | --- |
+| [push 运行 42761942117](https://github.com/hefan1/MotionControlFramework/actions/runs/42761942117) | 47 组中恰好新增两组失败，其余 45 组通过。已逾期 53ms 的 25ms 短计时器仍为 Inactive/Pending；Dispatcher 缓存到期值等于极长计时器的到期值，短 Tick 到两秒仍未执行。没有后台读取的页面也被旧固定等待误判为通过，负控因此明确失败。 |
+| [PR 运行 42761950372](https://github.com/hefan1/MotionControlFramework/actions/runs/42761950372) | 两组新增回归同样因预期原因失败；随后原“来源未变化保留检查结果”再次停顿，最终由 180 秒守护记录失败。没有可写文件句柄参与这个原场景。 |
+
+PR 运行的停顿现场快照把原场景与极值机制连接起来：
+
+| 对象 | 现场状态（TickCount=1876562） |
+| --- | --- |
+| 测试 25ms 轮询 | 启用、仍登记，due=1869681，已逾期 6881ms，操作为 Inactive/Pending |
+| 正式任务页 500ms 刷新 | 启用、仍登记，due=1870156，已逾期 6406ms，操作为 Inactive/Pending |
+| 唯一其他计时器 | 间隔 2147483647ms；due=-2145613931；回调为 `PopupControlService.OnShowDurationTimerExpired` |
+| Dispatcher 缓存 | due=-2145613931，与 Tooltip 计时器完全相同；对当前时刻的有符号差仍为正 2147476803 |
+| Send 探针前后 | 两份快照相同；普通队列可执行，但到期扫描仍被这个远期缓存挡住 |
+
+本轮现场支持的根因是 WPF 极长 Tooltip 计时与已逾期短计时的有符号到期比较问题。窗口能响应普通队列，但依赖 DispatcherTimer 的刷新停顿。早期没有完整快照的超时不倒推为已经逐次证明同一原因。
+
+### 最小修正与验收边界
+
+`Framework.Wpf/Compatibility/ToolTipTimingCompatibility.Initialize` 通过公开元数据 API，在控件创建前把系统的 `int.MaxValue` 默认 Tooltip 时长改为一天；旧有限默认值、控件本地值和显式样式值保持。正式 Host 的实例构造、任务编辑和操作页面检查的入口复用同一方法。不修改系统程序集或 Dispatcher 私有状态。固定骨架与四个受保护页面的源码、布局和命令保持；其中未显式指定时长的 Tooltip 默认到期行为也会使用该兼容值。
+
+两个来源未变正控必须见证同工作区、同观察代次的两次成功 UI 发布，再检查原页面状态、文件和草稿。只经过固定时间不算通过。独立八秒守护只将原五秒观察计时器失去调度的情况退出并记失败；正常观察条件不放宽，外层 180 秒进程保护继续保留。临时 WPF 私有快照、调度钩子与十轮重复取证入口清理，保留可重复的行为回归。
+
+本次修正的完整 Windows 构建和内部回归尚待新提交执行。正式 Host 的持续悬停提示、页面刷新与来源切换反馈仍应在 ROC-13 用实际 Windows 窗口核对，不能据此声明正式画面或实体设备已经验收。

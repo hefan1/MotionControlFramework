@@ -1,8 +1,10 @@
 using System;
 using System.Diagnostics;
 using System.Threading;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using MotionControl.Framework.Wpf.Compatibility;
 
 namespace MotionControl.TaskEditing.Checks
 {
@@ -50,11 +52,7 @@ namespace MotionControl.TaskEditing.Checks
                 Assert(unchecked(Environment.TickCount - startedAt) >= 50,
                     "ROC-18：未建立短计时器已经到期的回归前提。");
                 tooltipDuration.Start();
-                int now = Environment.TickCount;
-                Console.WriteLine("[到期调度回归] Tooltip时长=" + duration + "ms；TickCount=" + now
-                    + "；缓存到期=" + ReadRoc18DiagnosticField(dispatcher, "_dueTimeInTicks"));
-                WriteRoc18TimerDetails("已到期短轮询", polling, now, true);
-                WriteRoc18TimerDetails("Tooltip有效时长", tooltipDuration, now, true);
+                Console.WriteLine("[到期调度回归] 当前 Tooltip 默认时长=" + duration + "ms。");
                 Dispatcher.PushFrame(frame);
                 Assert(Volatile.Read(ref result) == 1,
                     "ROC18_TIMER_NOT_PROMOTED：新建 Tooltip 时长计时器后，已到期短轮询未在两秒内执行。");
@@ -71,6 +69,22 @@ namespace MotionControl.TaskEditing.Checks
                 timeoutOperation?.Abort();
                 Assert(disposed, "ROC-18：计时器检查的独立守护未结束，不能继续把后续结果当作有效证据。");
             }
+        }
+
+        /// <summary>重复初始化不能抛错，也不能覆盖控件或样式已明确指定的提示时长。</summary>
+        private static void Roc18ToolTipCompatibilityKeepsExplicitSettings()
+        {
+            var description = new TextBlock { ToolTip = "已明确设置时长的说明" };
+            ToolTipService.SetShowDuration(description, 30000);
+            var buttonStyle = new Style(typeof(Button));
+            buttonStyle.Setters.Add(new Setter(ToolTipService.ShowDurationProperty, 6000));
+            var button = new Button { Style = buttonStyle, ToolTip = "已明确设置时长的按钮" };
+
+            ToolTipTimingCompatibility.Initialize();
+
+            Assert(ToolTipService.GetShowDuration(description) == 30000
+                && ToolTipService.GetShowDuration(button) == 6000,
+                "ROC-18：兼容初始化覆盖了控件本地值或样式指定的 Tooltip 时长。");
         }
     }
 }

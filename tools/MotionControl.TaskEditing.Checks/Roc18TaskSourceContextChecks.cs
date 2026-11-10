@@ -17,6 +17,9 @@ namespace MotionControl.TaskEditing.Checks
     /// <summary>检查任务来源换代后的页面失效与草稿保留；只操作隔离文件和真实 WPF 控件，不连接控制器。</summary>
     internal static partial class Program
     {
+        /// <summary>仅表示本次可见页面未取得两轮合格发布，供独立负控精确识别，不包含采集或守护故障。</summary>
+        private const string Roc18SourceObservationNotPublished = "ROC18_SOURCE_OBSERVATION_NOT_PUBLISHED：本次可见窗口未完成两轮合格来源观察发布。";
+
         /// <summary>准备文件未变但任务内容被替换时，不能继续显示上次检查通过或隐藏来源核查入口。</summary>
         private static void Roc18TaskFileSourceChange()
         {
@@ -273,7 +276,7 @@ namespace MotionControl.TaskEditing.Checks
             }
         }
 
-        /// <summary>故障注入阻止本次后台读取，旧检查结果即使仍正常也不能被固定等待误判为观察通过。</summary>
+        /// <summary>在新页面注入读取未完成状态，仅接受缺少真实发布的精确失败标记，其他故障继续报错。</summary>
         private static void Roc18ObservationRejectsMissingPublication()
         {
             using (var test = new Workspace())
@@ -290,7 +293,7 @@ namespace MotionControl.TaskEditing.Checks
                     try { ObserveCompletedRoc18TaskSources(page); }
                     catch (InvalidOperationException error)
                     {
-                        if (!error.Message.StartsWith("ROC18_SOURCE_OBSERVATION_NOT_PUBLISHED", StringComparison.Ordinal)) throw;
+                        if (!string.Equals(error.Message, Roc18SourceObservationNotPublished, StringComparison.Ordinal)) throw;
                         rejected = true;
                     }
                 }
@@ -299,10 +302,63 @@ namespace MotionControl.TaskEditing.Checks
             }
         }
 
-        /// <summary>复用原固定等待入口，让负控先证明它尚未要求后台观察结果真实发布。</summary>
+        /// <summary>只读见证本次可见页面的两次成功发布，不能用旧检查状态或固定等待代替真实后台读取。</summary>
         private static void ObserveCompletedRoc18TaskSources(TaskConfigurationView page)
         {
-            ObserveRoc18TaskSources(page, () => true, TimeSpan.FromMilliseconds(2500));
+            var running = typeof(TaskConfigurationView).GetField("_sourceObservationRunning", BindingFlags.Instance | BindingFlags.NonPublic);
+            var next = typeof(TaskConfigurationView).GetField("_nextSourceObservationUtc", BindingFlags.Instance | BindingFlags.NonPublic);
+            var revision = typeof(TaskConfigurationView).GetField("_sourceObservationRevision", BindingFlags.Instance | BindingFlags.NonPublic);
+            var workspace = typeof(TaskConfigurationView).GetField("_workspace", BindingFlags.Instance | BindingFlags.NonPublic);
+            var readFailed = typeof(TaskConfigurationView).GetField("_sourceReadFailed", BindingFlags.Instance | BindingFlags.NonPublic);
+            bool firstLoadedSeen = false;
+            bool startCaptured = false;
+            object startingWorkspace = null;
+            long startingRevision = 0;
+            Exception startError = null;
+            DateTime previousPublication = DateTime.MinValue;
+            int publicationCount = 0;
+            bool currentPollQualified = false;
+
+            // 产品构造方法已先订阅 Loaded；这里只读取它启动观察后的状态，不在路由事件中抛出失败。
+            RoutedEventHandler loaded = (sender, args) =>
+            {
+                if (firstLoadedSeen) return;
+                firstLoadedSeen = true;
+                try
+                {
+                    startingWorkspace = workspace.GetValue(page);
+                    startingRevision = (long)revision.GetValue(page);
+                    startCaptured = startingWorkspace != null && (bool)running.GetValue(page)
+                        && (DateTime)next.GetValue(page) == DateTime.MinValue;
+                }
+                catch (Exception error) { startError = error; }
+            };
+            page.Loaded += loaded;
+            try
+            {
+                ObserveRoc18TaskSources(page, () =>
+                {
+                    // 轮询只在 UI 回调之间采样；同一次产品回调内的两次时间写入只能计为一次发布。
+                    DateTime published = (DateTime)next.GetValue(page);
+                    currentPollQualified = startCaptured && ReferenceEquals(startingWorkspace, workspace.GetValue(page))
+                        && startingRevision == (long)revision.GetValue(page) && !(bool)running.GetValue(page)
+                        && !(bool)readFailed.GetValue(page) && published != DateTime.MinValue;
+                    if (currentPollQualified && published != previousPublication)
+                    {
+                        previousPublication = published;
+                        publicationCount++;
+                    }
+                    return currentPollQualified && publicationCount >= 2;
+                }, TimeSpan.FromMilliseconds(2500));
+
+                // 采集异常单独报错，不能被缺失发布负控接受为预期失败。
+                if (startError != null)
+                    throw new InvalidOperationException("ROC-18：采集首次 Loaded 的来源观察起点失败。", startError);
+                // 关闭窗口会由 Unloaded 重置产品代次；这里只断言退出前最后一次轮询保存的有效证据。
+                if (!startCaptured || !currentPollQualified || publicationCount < 2)
+                    throw new InvalidOperationException(Roc18SourceObservationNotPublished);
+            }
+            finally { page.Loaded -= loaded; }
         }
 
         /// <summary>建立有效准备文件与任务，并通过真实页面检查入口生成供后续失效核对的检查状态。</summary>
@@ -320,7 +376,7 @@ namespace MotionControl.TaskEditing.Checks
             return page;
         }
 
-        /// <summary>用真实窗口触发 Loaded 并泵送调度器，最多等五秒观察页面结果；不假定来源读取必须同步完成。</summary>
+        /// <summary>用真实窗口观察最多五秒；独立八秒守护只负责失败退出，不能把唤醒后的结果算作通过。</summary>
         private static void ObserveRoc18TaskSources(TaskConfigurationView page, Func<bool> completed,
             TimeSpan minimumObservation = default(TimeSpan))
         {
@@ -335,212 +391,80 @@ namespace MotionControl.TaskEditing.Checks
             };
             var frame = new DispatcherFrame();
             var elapsed = Stopwatch.StartNew();
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(25) };
+            var timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(25) };
             var refresh = typeof(TaskConfigurationView).GetMethod("RefreshPermission", BindingFlags.Instance | BindingFlags.NonPublic);
-            // 只为本次隔离检查取证；不改变产品刷新、原计时器优先级或五秒观察条件。
             var dispatcher = Dispatcher.CurrentDispatcher;
-            Thread uiThread = Thread.CurrentThread;
             var observationFinished = new ManualResetEvent(false);
-            string phase = "窗口尚未显示";
-            int pollEntered = 0, refreshReturned = 0, pollExited = 0;
-            int operationsStarted = 0, operationsCompleted = 0, deadlineMissed = 0, deadlineSnapshotTaken = 0;
-            DispatcherOperation lastStarted = null, lastCompleted = null;
-            DispatcherHookEventHandler operationStarted = (sender, args) =>
-            {
-                Interlocked.Increment(ref operationsStarted);
-                Volatile.Write(ref lastStarted, args.Operation);
-                // WPF 执行委托前还会扫描到期计时器；先记录调度操作开始时的原状态，避免探针改变证据。
-                if (Volatile.Read(ref deadlineMissed) != 0
-                    && Interlocked.Exchange(ref deadlineSnapshotTaken, 1) == 0)
-                    WriteRoc18TimerSnapshot("期限失守后的首次调度前", dispatcher, timer, page);
-            };
-            DispatcherHookEventHandler operationCompleted = (sender, args) =>
-            {
-                Interlocked.Increment(ref operationsCompleted);
-                Volatile.Write(ref lastCompleted, args.Operation);
-            };
-            dispatcher.Hooks.OperationStarted += operationStarted;
-            dispatcher.Hooks.OperationCompleted += operationCompleted;
-            // 独立后台线程先记下原始停点，再只投递一次 Send/Background 探针；探针唤醒不能算通过。
+            int deadlineMissed = 0;
+            Exception watchdogError = null;
+            DispatcherOperation watchdogExit = null;
+            bool watchdogStarted = false;
+
+            // 不依赖 UI 计时器推进期限；饥饿时先标记失败，再只投递一次 Send 来退出本次消息泵。
             var watchdog = new Thread(() =>
             {
                 try
                 {
                     if (observationFinished.WaitOne(8000)) return;
                     Interlocked.Exchange(ref deadlineMissed, 1);
-                    for (int sample = 0; sample < 3; sample++)
-                    {
-                        Console.Error.WriteLine("[来源观察守护] 用时=" + elapsed.ElapsedMilliseconds
-                            + "ms；阶段=" + Volatile.Read(ref phase) + "；UI线程=" + uiThread.ManagedThreadId
-                            + "/" + uiThread.ThreadState + "；轮询进入/刷新返回/轮询退出="
-                            + Volatile.Read(ref pollEntered) + "/" + Volatile.Read(ref refreshReturned) + "/" + Volatile.Read(ref pollExited)
-                            + "；调度开始/结束=" + Volatile.Read(ref operationsStarted) + "/" + Volatile.Read(ref operationsCompleted)
-                            + "；最后开始=" + DescribeRoc18DispatcherOperation(Volatile.Read(ref lastStarted))
-                            + "；最后结束=" + DescribeRoc18DispatcherOperation(Volatile.Read(ref lastCompleted)));
-                        if (sample == 0)
-                        {
-                            dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(() =>
-                            {
-                                Console.Error.WriteLine("[来源观察探针] Send 已执行，原观察期限已经失守。");
-                                WriteRoc18TimerSnapshot("Send 探针委托内", dispatcher, timer, page);
-                            }));
-                            dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-                                Console.Error.WriteLine("[来源观察探针] Background 已执行，原观察期限已经失守。")));
-                        }
-                        if (observationFinished.WaitOne(1000)) return;
-                    }
+                    watchdogExit = dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(() => frame.Continue = false));
                 }
                 catch (Exception error)
                 {
+                    watchdogError = error;
                     Interlocked.Exchange(ref deadlineMissed, 1);
-                    Console.Error.WriteLine("[来源观察诊断失败] " + error);
                 }
-            }) { IsBackground = true, Name = "ROC18 来源观察诊断" };
-            // 测试只等待可见结果；到期后由调用处的具体断言报告缺失行为。
+            }) { IsBackground = true, Name = "ROC18 来源观察守护" };
             EventHandler poll = (sender, args) =>
             {
-                Volatile.Write(ref phase, "轮询已进入");
-                int entered = Interlocked.Increment(ref pollEntered);
-                if (entered == 1) Console.WriteLine("[来源观察阶段] 首次轮询已进入。");
+                bool observationComplete = false;
                 if (page.IsLoaded)
                 {
-                    // 模拟同步入口没有同步上下文的实际条件；后台观察必须显式回到页面 Dispatcher。
+                    // 模拟同步入口没有同步上下文的条件，并在恢复上下文后每次都采样，不能等到最短观察期才采样。
                     SynchronizationContext context = SynchronizationContext.Current;
                     try
                     {
                         SynchronizationContext.SetSynchronizationContext(null);
-                        Volatile.Write(ref phase, "正在同步刷新页面");
                         refresh.Invoke(page, new object[] { null, EventArgs.Empty });
-                        Interlocked.Increment(ref refreshReturned);
-                        Volatile.Write(ref phase, "同步刷新已经返回");
                     }
                     finally { SynchronizationContext.SetSynchronizationContext(context); }
+                    observationComplete = completed();
                 }
-                if (elapsed.Elapsed >= TimeSpan.FromSeconds(5)
-                    || (page.IsLoaded && elapsed.Elapsed >= minimumObservation && completed()))
-                {
-                    Volatile.Write(ref phase, "已请求退出消息泵");
-                    Console.WriteLine("[来源观察阶段] 请求退出消息泵；轮询次数=" + entered + "。");
+                if (Volatile.Read(ref deadlineMissed) != 0 || elapsed.Elapsed >= TimeSpan.FromSeconds(5)
+                    || (page.IsLoaded && elapsed.Elapsed >= minimumObservation && observationComplete))
                     frame.Continue = false;
-                }
-                Interlocked.Increment(ref pollExited);
-                if (entered == 1) Console.WriteLine("[来源观察阶段] 首次轮询已返回。");
             };
             timer.Tick += poll;
             try
             {
                 watchdog.Start();
-                Volatile.Write(ref phase, "正在显示窗口");
-                Console.WriteLine("[来源观察阶段] 显示任务来源窗口。");
+                watchdogStarted = true;
                 window.Show();
-                Volatile.Write(ref phase, "正在启动轮询计时器");
-                Console.WriteLine("[来源观察阶段] 窗口已显示，启动轮询计时器。");
                 timer.Start();
-                WriteRoc18TimerSnapshot("轮询启动后", dispatcher, timer, page);
-                Volatile.Write(ref phase, "计时器已启动，正在泵送");
-                Console.WriteLine("[来源观察阶段] 计时器已启动，进入消息泵。");
                 Dispatcher.PushFrame(frame);
-                Volatile.Write(ref phase, "消息泵已经返回");
-                Console.WriteLine("[来源观察阶段] 泵送已返回。");
-                Assert(Volatile.Read(ref deadlineMissed) == 0,
-                    "ROC-18：原观察期限已失守，诊断探针唤醒或后来返回不能算检查通过。");
+                if (Volatile.Read(ref deadlineMissed) != 0)
+                    throw new InvalidOperationException("ROC-18：来源观察超过独立八秒守护期限，计时器饥饿后的唤醒不能算通过。", watchdogError);
             }
             finally
             {
                 observationFinished.Set();
-                if (watchdog.Join(1000)) observationFinished.Dispose();
-                else Console.Error.WriteLine("[来源观察诊断失败] 诊断线程未在一秒内退出，保留其等待句柄供外部进程守护收尾。");
-                dispatcher.Hooks.OperationStarted -= operationStarted;
-                dispatcher.Hooks.OperationCompleted -= operationCompleted;
-                timer.Stop();
-                timer.Tick -= poll;
-                Console.WriteLine("[来源观察阶段] 关闭任务来源窗口。");
-                window.Close();
-                window.Content = null;
-                Console.WriteLine("[来源观察阶段] 窗口已关闭并解除内容绑定。");
+                bool watchdogEnded = !watchdogStarted || watchdog.Join(1000);
+                if (watchdogEnded) observationFinished.Dispose();
+                try
+                {
+                    // Join 成功后不再有新操作入队；撤销已取得且尚未执行的退出，避免干扰后续检查。
+                    if (watchdogExit != null) watchdogExit.Abort();
+                }
+                finally
+                {
+                    timer.Stop();
+                    timer.Tick -= poll;
+                    try { window.Close(); }
+                    finally { window.Content = null; }
+                }
+                // 守护收尾失败也必须报告失败，但要先完成计时器和窗口清理。
+                Assert(watchdogEnded, "ROC-18：来源观察守护线程未在一秒内退出，已清理窗口与轮询，保留等待句柄供进程守护收尾。");
             }
-        }
-
-        /// <summary>仅在观察超时后记录 WPF 最后调度操作，私有字段不可用时如实说明，不影响产品行为。</summary>
-        private static string DescribeRoc18DispatcherOperation(DispatcherOperation operation)
-        {
-            if (operation == null) return "无";
-            var callbackField = typeof(DispatcherOperation).GetField("_method", BindingFlags.Instance | BindingFlags.NonPublic);
-            var callback = callbackField?.GetValue(operation) as Delegate;
-            string method = callback == null ? "回调名称未提供"
-                : callback.Method.DeclaringType?.FullName + "." + callback.Method.Name;
-            return operation.Priority + "/" + operation.Status + "/" + method;
-        }
-
-        /// <summary>在 UI 线程只读记录到期登记；私有字段缺失时写明原因，不停止、重启或修改任何计时器。</summary>
-        private static void WriteRoc18TimerSnapshot(string stage, Dispatcher dispatcher, DispatcherTimer pollTimer,
-            TaskConfigurationView page)
-        {
-            try
-            {
-                dispatcher.VerifyAccess();
-                int now = Environment.TickCount;
-                var pageTimer = ReadRoc18DiagnosticField(page, "_timer") as DispatcherTimer;
-                object registered = ReadRoc18DiagnosticField(dispatcher, "_timers");
-                var timers = registered as IEnumerable<DispatcherTimer>;
-                // 不读取或持有框架私有锁；当前 UI 回调中先复制集合，随后只读描述各项。
-                DispatcherTimer[] snapshot = timers == null ? new DispatcherTimer[0] : timers.ToArray();
-                object cachedDue = ReadRoc18DiagnosticField(dispatcher, "_dueTimeInTicks");
-                Console.Error.WriteLine("[来源观察计时器] 阶段=" + stage + "；TickCount=" + now
-                    + "；页面已载入=" + page.IsLoaded + "；调度器退出=" + dispatcher.HasShutdownStarted + "/" + dispatcher.HasShutdownFinished
-                    + "；到期项=" + ReadRoc18DiagnosticField(dispatcher, "_dueTimeFound")
-                    + "；缓存到期=" + cachedDue + "；缓存到期差=" + DescribeRoc18DueDifference(cachedDue, now)
-                    + "；原生计时器登记标记=" + ReadRoc18DiagnosticField(dispatcher, "_isWin32TimerSet")
-                    + "；登记数量=" + (timers == null ? "未取得：" + registered : snapshot.Length.ToString()));
-                WriteRoc18TimerDetails("测试轮询", pollTimer, now, snapshot.Contains(pollTimer));
-                WriteRoc18TimerDetails("页面刷新", pageTimer, now, pageTimer != null && snapshot.Contains(pageTimer));
-                for (int index = 0; index < snapshot.Length; index++)
-                    if (snapshot[index] != pollTimer && snapshot[index] != pageTimer)
-                        WriteRoc18TimerDetails("其他登记 " + index, snapshot[index], now, true);
-                Console.Error.WriteLine("[来源观察运行时] WindowsBase=" + typeof(Dispatcher).Assembly.FullName
-                    + "；文件版本=" + FileVersionInfo.GetVersionInfo(typeof(Dispatcher).Assembly.Location).FileVersion
-                    + "；PresentationFramework=" + FileVersionInfo.GetVersionInfo(typeof(ToolTipService).Assembly.Location).FileVersion
-                    + "；Tooltip默认时长=" + ToolTipService.ShowDurationProperty.GetMetadata(typeof(FrameworkElement)).DefaultValue
-                    + "；来源说明Tooltip时长=" + ToolTipService.GetShowDuration((DependencyObject)page.FindName("SourceSummaryText")));
-            }
-            catch (Exception error)
-            {
-                Console.Error.WriteLine("[来源观察计时器快照未取得] " + error);
-            }
-        }
-
-        /// <summary>描述单个计时器的启用、到期、操作与订阅回调，区分页面轮询和框架内部计时器。</summary>
-        private static void WriteRoc18TimerDetails(string name, DispatcherTimer timer, int now, bool registered)
-        {
-            if (timer == null)
-            {
-                Console.Error.WriteLine("[来源观察计时器项] " + name + "：未取得。");
-                return;
-            }
-            object due = ReadRoc18DiagnosticField(timer, "_dueTimeInTicks");
-            object pending = ReadRoc18DiagnosticField(timer, "_operation");
-            var operation = pending as DispatcherOperation;
-            var tick = ReadRoc18DiagnosticField(timer, "Tick") as Delegate;
-            string callbacks = tick == null ? "回调未提供" : string.Join(",", tick.GetInvocationList()
-                .Select(callback => callback.Method.DeclaringType?.FullName + "." + callback.Method.Name));
-            Console.Error.WriteLine("[来源观察计时器项] " + name + "；启用=" + timer.IsEnabled
-                + "；间隔=" + timer.Interval.TotalMilliseconds + "ms；已登记=" + registered
-                + "；到期=" + due + "；到期差=" + DescribeRoc18DueDifference(due, now)
-                + "；操作=" + (operation == null ? (pending ?? "无").ToString() : DescribeRoc18DispatcherOperation(operation))
-                + "；回调=" + callbacks);
-        }
-
-        /// <summary>读取本次框架版本确有的诊断字段；不可用时保留明确标记，不能当作零值。</summary>
-        private static object ReadRoc18DiagnosticField(object target, string name)
-        {
-            FieldInfo field = target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic);
-            return field == null ? "字段未提供：" + name : field.GetValue(target);
-        }
-
-        /// <summary>按 TickCount 的有符号回绕规则展示到期差，同时由调用处保留原始到期数值。</summary>
-        private static string DescribeRoc18DueDifference(object due, int now)
-        {
-            return due is int ? unchecked((int)due - now).ToString() : "未取得";
         }
 
         /// <summary>核对人员实际可见的旧检查撤销、来源提示和安全重载入口，不要求自动覆盖草稿。</summary>

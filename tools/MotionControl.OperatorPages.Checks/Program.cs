@@ -16,6 +16,7 @@ using MotionControl.Framework.Contracts.Safety;
 using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.Framework.Runtime.Machine;
 using MotionControl.Framework.Wpf.ManualDebug;
+using MotionControl.Framework.Wpf.Compatibility;
 using MotionControl.Host.Wpf;
 using MotionControl.Host.Wpf.Operation;
 using MotionControl.TaskEngine.Catalog;
@@ -33,6 +34,7 @@ namespace MotionControl.OperatorPages.Checks
         [STAThread]
         private static int Main(string[] args)
         {
+            ToolTipTimingCompatibility.Initialize();
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/MotionControl.Host.Wpf;component/Localization/Strings.zh-CN.xaml", UriKind.Relative) });
             int failures = 0;
