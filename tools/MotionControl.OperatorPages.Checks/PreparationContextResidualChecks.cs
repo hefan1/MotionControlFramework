@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.Preparation;
+using MotionControl.Framework.Contracts.Safety;
 using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.Framework.Runtime.Machine;
 using MotionControl.Host.Wpf.Operation;
@@ -16,7 +17,7 @@ namespace MotionControl.OperatorPages.Checks
     /// <summary>使用真实准备页和无轴 Runtime 检查旧来源的页面错误；只验证离屏界面逻辑，不验证运动或正式 Host 屏幕。</summary>
     internal static class PreparationContextResidualChecks
     {
-        /// <summary>分别执行来源保留和四种来源变化，汇总失败以便一次看到所有残留入口。</summary>
+        /// <summary>分别执行来源保留、四种来源变化和真实停止收尾，汇总失败以便看到所有残留入口。</summary>
         internal static async Task RunAsync()
         {
             var failures = new List<Exception>();
@@ -25,6 +26,7 @@ namespace MotionControl.OperatorPages.Checks
             await RunCaseAsync("旧异步失败不能回写新 Runtime", LateFailureDoesNotEnterNewRuntimeAsync, failures);
             await RunCaseAsync("旧异步失败不能回写新连接", LateFailureDoesNotEnterNewConnectionAsync, failures);
             await RunCaseAsync("旧异步失败不能回写新准备定义", LateFailureDoesNotEnterNewPreparationAsync, failures);
+            await RunCaseAsync("旧停止异常不能回写新 Runtime", LateStopFailureDoesNotEnterNewRuntimeAsync, failures);
             if (failures.Count > 0)
                 throw new AggregateException("设备准备页面来源隔离检查失败；这是离屏 UI 逻辑检查。", failures);
         }
@@ -176,6 +178,98 @@ namespace MotionControl.OperatorPages.Checks
             }
         }
 
+        /// <summary>用真实无轴准备等待停止，再返回旧失败；页面换源不能把旧停止错误显示到新设备。</summary>
+        private static async Task LateStopFailureDoesNotEnterNewRuntimeAsync()
+        {
+            const string oldError = "旧设备准备停止期间的步骤异常";
+            var oldCard = new GuardCard { IsConnected = true };
+            var newCard = new GuardCard { IsConnected = true };
+            var preparation = new PendingPreparation();
+            var oldRuntime = new MachineRuntime(new MotionCardGroup(new[] { oldCard }), Array.Empty<IStationFlow>(),
+                new MachineAlarmService(), new ReadableSafetyInput(), pauseTimeout: TimeSpan.FromSeconds(5),
+                controlOwner: MachineControlOwner.StationFlows);
+            oldRuntime.ConfigurePreparations(new[] { preparation });
+            await oldRuntime.ConnectAsync(CancellationToken.None);
+            MachineRuntime newRuntime = await CreateRuntimeAsync(newCard, "新设备准备工位");
+            Task preparationTask = null;
+            Task stopHandlerCompletion = null;
+            try
+            {
+                // 先从真实 Runtime 启动无轴准备；页面只执行停止，避免混入页面 Prepare 的异常回写。
+                preparationTask = oldRuntime.PrepareAsync(preparation.StationId, CancellationToken.None);
+                await WaitForTaskAsync(preparation.Entered, "真实准备没有进入受控等待。");
+                var page = CreatePage(oldRuntime, null);
+                var stopButton = (Button)page.FindName("StopPreparationButton");
+                Require(stopButton.IsEnabled, "真实准备运行时停止按钮没有开放。");
+                stopHandlerCompletion = TrackAsyncVoidCompletion(() =>
+                    stopButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+                await WaitForTaskAsync(preparation.StopObserved, "真实停止未请求原准备令牌取消。");
+                Require(!preparationTask.IsCompleted, "旧准备未保持等待，不能检查迟到停止失败。");
+
+                page.SetRuntime(newRuntime);
+                AssertStationName(page, "新设备准备工位");
+                preparation.Fail(oldError);
+                await RequirePreparationFailureAsync(preparationTask, oldError);
+                await WaitForTaskAsync(stopHandlerCompletion, "停止按钮的异步处理未结束。");
+
+                AssertStationName(page, "新设备准备工位");
+                AssertErrorDoesNotContain(page, oldError, "旧停止操作的迟到异常污染了新设备页面。");
+                Require(oldRuntime.LastError != null && oldRuntime.LastError.ToString().Contains(oldError)
+                    && oldRuntime.AlarmService.HasLatchedStopAlarm,
+                    "隔离页面错误时丢失了旧 Runtime 的停止异常或报警证据。");
+                Require(oldCard.Calls == 0 && newCard.Calls == 0 && !newRuntime.IsPreparing,
+                    "无轴停止异常检查意外访问控制器或启动新设备准备。");
+            }
+            finally
+            {
+                // 无论断言是否失败都解除步骤屏障，并完整观察准备与页面停止的终态。
+                preparation.Fail(oldError);
+                try
+                {
+                    if (preparationTask != null) await RequirePreparationFailureAsync(preparationTask, oldError);
+                    if (stopHandlerCompletion != null)
+                        await WaitForTaskAsync(stopHandlerCompletion, "测试清理时停止页面处理仍未结束。");
+                    // Runtime 首次失败会保留停止待确认；再次走正式停止只核查收尾，不清报警或恢复证据。
+                    if (oldRuntime.IsPreparing)
+                        await WaitForTaskAsync(oldRuntime.StopPreparationAsync(CancellationToken.None), "旧准备停止重试未完成。");
+                    await DisconnectWithoutDeviceCallsAsync(oldRuntime, oldCard);
+                }
+                finally { await DisconnectWithoutDeviceCallsAsync(newRuntime, newCard); }
+            }
+        }
+
+        /// <summary>有界等待实际任务，不用固定延时猜测 async void 页面处理已经结束。</summary>
+        private static async Task WaitForTaskAsync(Task task, string timeoutMessage)
+        {
+            if (await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(5))) != task)
+                throw new TimeoutException(timeoutMessage);
+            await task;
+        }
+
+        /// <summary>准备失败必须携带独立设置的原始标记，其他异常或意外成功都不能算本场景通过。</summary>
+        private static async Task RequirePreparationFailureAsync(Task task, string marker)
+        {
+            try { await WaitForTaskAsync(task, "无轴准备未返回，测试不能安全结束。"); }
+            catch (Exception error)
+            {
+                if (error.ToString().Contains(marker)) return;
+                throw;
+            }
+            throw new InvalidOperationException("应失败的无轴准备意外成功，未覆盖旧停止异常。");
+        }
+
+        /// <summary>保留原 WPF 调度行为，只观察被触发 async void 方法的完成通知。</summary>
+        private static Task TrackAsyncVoidCompletion(Action action)
+        {
+            SynchronizationContext previous = SynchronizationContext.Current;
+            if (previous == null) throw new InvalidOperationException("停止页面检查需要已有 WPF 调度上下文。");
+            var tracking = new AsyncVoidCompletionContext(previous);
+            SynchronizationContext.SetSynchronizationContext(tracking);
+            try { action(); }
+            finally { SynchronizationContext.SetSynchronizationContext(previous); }
+            return tracking.Completion;
+        }
+
         /// <summary>建立真实 Runtime 的连接会话和准备列表；检查卡没有轴，也不访问驱动生命周期。</summary>
         private static async Task<MachineRuntime> CreateRuntimeAsync(GuardCard card, string stationName)
         {
@@ -253,6 +347,73 @@ namespace MotionControl.OperatorPages.Checks
         /// <summary>将违反页面来源契约的行为交给检查入口报告，不吞掉错误。</summary>
         private static void Require(bool condition, string message)
         { if (!condition) throw new InvalidOperationException(message); }
+
+        /// <summary>固定可读的离线安全输入，仅供真实无轴准备路径通过前置读取，不声明现场安全验证。</summary>
+        private sealed class ReadableSafetyInput : IMachineSafetyStatus
+        {
+            /// <summary>返回本例明确布置的非急停状态，不访问 IO 或硬件。</summary>
+            public Task<bool> ReadEmergencyStopActiveAsync(CancellationToken cancellationToken)
+            { return Task.FromResult(false); }
+        }
+
+        /// <summary>只在内存中等待释放的准备项，用实际取消令牌确认停止已进入等待收尾阶段。</summary>
+        private sealed class PendingPreparation : IStationPreparation
+        {
+            /// <summary>通知测试真实准备已经执行到等待点。</summary>
+            private readonly TaskCompletionSource<bool> _entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            /// <summary>通知测试 Runtime 已为本次准备请求停止。</summary>
+            private readonly TaskCompletionSource<bool> _stopObserved = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            /// <summary>由测试释放并返回原始异常的等待点，不包含轴或 IO 操作。</summary>
+            private readonly TaskCompletionSource<bool> _completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            /// <summary>本次准备的固定身份。</summary>
+            public string StationId { get { return "PendingStopStation"; } }
+            /// <summary>旧页面明确显示的工位名称。</summary>
+            public string StationName { get { return "旧设备停止等待工位"; } }
+            /// <summary>无轴逻辑检查没有依赖工位。</summary>
+            public IReadOnlyCollection<string> Dependencies { get { return Array.Empty<string>(); } }
+            /// <summary>公开已进入步骤的同步屏障，避免用延时猜测流程位置。</summary>
+            internal Task Entered { get { return _entered.Task; } }
+            /// <summary>公开已经收到真实取消令牌的同步屏障。</summary>
+            internal Task StopObserved { get { return _stopObserved.Task; } }
+            /// <summary>本例没有设备前提；Runtime 仍执行原来的安全和状态检查。</summary>
+            public Task ValidateStartAsync(CancellationToken cancellationToken) { return Task.CompletedTask; }
+            /// <summary>等待已声明的失败，取消只作为停止屏障，不提前完成以保留真实收尾等待。</summary>
+            public async Task ExecuteAsync(IProgress<StationPreparationProgress> progress, CancellationToken cancellationToken)
+            {
+                using (cancellationToken.Register(() => _stopObserved.TrySetResult(true)))
+                {
+                    _entered.TrySetResult(true);
+                    await _completion.Task.ConfigureAwait(false);
+                }
+            }
+            /// <summary>本例一定以故障结束，不能产生准备完成结论。</summary>
+            public Task ValidateReadyAsync(CancellationToken cancellationToken)
+            { throw new InvalidOperationException("停止异常检查不应到达准备完成校验。"); }
+            /// <summary>释放等待并保留原始失败；清理时重复调用也不会修改已经完成的结果。</summary>
+            internal void Fail(string message) { _completion.TrySetException(new InvalidOperationException(message)); }
+        }
+
+        /// <summary>转发到真实 WPF 同步上下文，只把 async void 生命周期转换为可等待的测试屏障。</summary>
+        private sealed class AsyncVoidCompletionContext : SynchronizationContext
+        {
+            /// <summary>真正执行页面续体的原 WPF 同步上下文。</summary>
+            private readonly SynchronizationContext _inner;
+            /// <summary>收到最后一个 async void 完成通知时结束。</summary>
+            private readonly TaskCompletionSource<bool> _completion = new TaskCompletionSource<bool>();
+            /// <summary>当前观察的异步方法数，不修改 Runtime 或页面忙状态。</summary>
+            private int _operations;
+            /// <summary>保留原调度入口。</summary>
+            internal AsyncVoidCompletionContext(SynchronizationContext inner) { _inner = inner; }
+            /// <summary>页面事件真正返回后完成的任务。</summary>
+            internal Task Completion { get { return _completion.Task; } }
+            /// <summary>记录进入真实 async void 事件处理。</summary>
+            public override void OperationStarted() { Interlocked.Increment(ref _operations); }
+            /// <summary>只有事件处理完成后才释放测试等待。</summary>
+            public override void OperationCompleted()
+            { if (Interlocked.Decrement(ref _operations) == 0) _completion.TrySetResult(true); }
+            /// <summary>页面续体仍通过原 WPF 调度器执行，不改变线程或回调顺序。</summary>
+            public override void Post(SendOrPostCallback callback, object state) { _inner.Post(callback, state); }
+        }
 
         /// <summary>仅提供工位身份建立正式准备快照，任何执行或设备条件读取都属于测试错误。</summary>
         private sealed class DisplayOnlyPreparation : IStationPreparation
