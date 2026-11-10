@@ -18,6 +18,15 @@ def method_body(text, name):
     return text[start.start():end]
 
 
+def app_lifecycle_source():
+    """读取同一个 App 类型的组合与退出文件，不把拆分当作新的运行层次。"""
+    text = (ROOT / 'src/MotionControl.Host.Wpf/App.xaml.cs').read_text(encoding='utf-8-sig')
+    shutdown = ROOT / 'src/MotionControl.Host.Wpf/App.Shutdown.cs'
+    if shutdown.exists():
+        text += '\n' + shutdown.read_text(encoding='utf-8-sig')
+    return text
+
+
 class CommandBoundaryChecks(unittest.TestCase):
     """维护页面、应用协调、运行时、厂商适配器之间的职责边界。"""
     def test_coordinator_is_a_concrete_non_ui_type(self):
@@ -75,7 +84,7 @@ class CommandBoundaryChecks(unittest.TestCase):
 
     def test_window_close_delegates_device_sequence(self):
         """关窗事件保留提示和工程门，不再编排设备停止、输出核验或撤回新 Runtime。"""
-        text = (ROOT / 'src/MotionControl.Host.Wpf/App.xaml.cs').read_text(encoding='utf-8-sig')
+        text = app_lifecycle_source()
         body = method_body(text, 'MainWindow_Closing')
         for forbidden in ['BeginShutdownAsync(', 'StopPreparationAsync(', 'StopStationFlowsForShutdownAsync(', 'VerifyShutdownOutputsAsync(', 'TryCancelShutdownAsync(']:
             self.assertNotIn(forbidden, body)
@@ -93,13 +102,25 @@ class CommandBoundaryChecks(unittest.TestCase):
 
     def test_app_exit_tracks_unpublished_and_closing_tasks(self):
         """未发布装载和失败关闭均参与关窗与报警交接，专用退出复用原关闭模式。"""
-        app = (ROOT / 'src/MotionControl.Host.Wpf/App.xaml.cs').read_text(encoding='utf-8-sig')
+        app = app_lifecycle_source()
         self.assertIn('HasUnsettledTaskSession', method_body(app, 'MainWindow_Closing'))
         self.assertIn('HasUnsettledTaskSession', method_body(app, 'OnExit'))
         page = (ROOT / 'src/MotionControl.Host.Wpf/Tasks/TaskMonitorLauncher.cs').read_text(encoding='utf-8-sig')
         body = method_body(page, 'StopTaskSessionForShutdownAsync')
         self.assertIn('await CloseTaskSessionAsync(_sessionClosePreservesBlocked)', body)
         self.assertNotIn('if (_session == null) return;', body)
+
+
+    def test_app_exit_has_one_named_source_file(self):
+        """退出事件集中到一个可查找文件，启动入口不再混入完整关窗实现。"""
+        path = ROOT / 'src/MotionControl.Host.Wpf/App.Shutdown.cs'
+        self.assertTrue(path.exists(), 'EXIT_LIFECYCLE_NOT_SEPARATED')
+        start = (ROOT / 'src/MotionControl.Host.Wpf/App.xaml.cs').read_text(encoding='utf-8-sig')
+        shutdown = path.read_text(encoding='utf-8-sig')
+        for name in ['MainWindow_Closing', 'AcquireShutdownProjectGateAsync', 'ReleaseShutdownProjectGate', 'OnExit']:
+            pattern = r'\b(?:void|Task)\s+' + name + r'\('
+            self.assertNotRegex(start, pattern)
+            self.assertRegex(shutdown, pattern)
 
 
 if __name__ == '__main__':
