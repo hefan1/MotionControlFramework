@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -334,7 +334,7 @@ namespace MotionControl.Host.Wpf.Tasks
         {
             _machineContextVersion++;
             _taskOperations?.Invalidate();
-            if (_session != null || _retryUnpublishedCleanup != null) await CloseTaskSessionAsync().ConfigureAwait(true);
+            if (_session != null || _pendingTaskLoad != null) await CloseTaskSessionAsync().ConfigureAwait(true);
             _runtime = runtime; _motionCards = motionCards; _logicalIo = logicalIo; _variables = variables;
             _equipmentPreparations = preparations ?? new IStationPreparation[0];
             _controllerConnectionLost = runtime == null;
@@ -472,86 +472,75 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>读取运行配置并建立同一设备会话；仅装配，不发送轴或 IO 命令。</summary>
         private async Task LoadTaskSessionAsync()
         {
-            await RetryUnpublishedCleanupAsync();
+            long requestedContext = _machineContextVersion;
+            await RetryUnpublishedCleanupAsync().ConfigureAwait(true);
+            if (requestedContext != _machineContextVersion)
+                throw new InvalidOperationException("清理期间设备连接已变化，请在当前连接中重新读取任务。");
+            if (_closingTaskSession || (_sessionCloseTask != null && !_sessionCloseTask.IsCompleted))
+                throw new InvalidOperationException("任务会话正在关闭，请等待原会话收尾后重新读取。");
             if (!IsControllerConnected() || _logicalIo == null || _variables == null)
                 throw new InvalidOperationException("请先连接控制器，再读取设备准备配置。");
             if (_session != null) return;
+
+            var runtime = _runtime;
+            var motionCards = _motionCards;
+            var logicalIo = _logicalIo;
+            var variables = _variables;
+            Guid? sessionId = runtime.ConnectionSessionId;
+            if (!runtime.IsConnectionSessionCurrent(sessionId))
+                throw new InvalidOperationException("当前控制器连接会话未确认，请重新连接后读取任务。");
+            long contextVersion = _machineContextVersion;
+            // 此回调只核对页面仍属于原上下文；装载、准备安装和回滚由具体装载对象负责。
+            void CheckContext()
             {
-                var runtime = _runtime;
-                var motionCards = _motionCards;
-                var logicalIo = _logicalIo;
-                var variables = _variables;
-                var equipmentPreparations = _equipmentPreparations;
-                Guid? sessionId = runtime.ConnectionSessionId;
-                if (!runtime.IsConnectionSessionCurrent(sessionId))
-                    throw new InvalidOperationException("当前控制器连接会话未确认，请重新连接后读取任务。");
-                long contextVersion = _machineContextVersion;
-                TaskMonitorSession loaded = await Task.Run(() => HostTaskSessionLoader.Load(
-                    _store, _machineId, motionCards, logicalIo, variables, runtime, sessionId.Value)).ConfigureAwait(true);
-
-                // 准备配置会通知外部订阅者，安装前及发布前均检查最初的上下文。
-                void CheckContext()
-                {
-                    if (contextVersion != _machineContextVersion || !ReferenceEquals(runtime, _runtime)
-                        || !ReferenceEquals(motionCards, _motionCards) || !ReferenceEquals(logicalIo, _logicalIo)
-                        || !ReferenceEquals(variables, _variables) || !IsControllerConnected()
-                        || !runtime.IsConnectionSessionCurrent(sessionId))
-                        throw new InvalidOperationException("设备连接在任务读取期间发生变化，本次读取已取消；请在当前连接中重新读取任务。");
-                }
-                long installedVersion = 0;
-                TaskMachineOperations operations = null;
-                try
-                {
-                    CheckContext();
-                    var preparations = await Task.Run(() => HostTaskSessionLoader.LoadPreparations(_store, _machineId, loaded));
-                    CheckContext();
-                    runtime.TryConfigurePreparations(preparations, null, out installedVersion);
-                    CheckContext();
-                    if (runtime.PreparationConfigurationVersion != installedVersion)
-                        throw new InvalidOperationException("任务准备配置在读取期间发生变化，请核对当前配置后重新读取。");
-                    // 仅在连接与准备定义均核对成功后生成本次会话身份。
-                    loaded.Publish(_machineId);
-                    operations = ((MachineTaskDevice)loaded.TaskDevice).CreateOperations(loaded.Machine);
-                }
-                catch (Exception loadError)
-                {
-                    _retryUnpublishedCleanup = async () =>
-                    {
-                        // 只撤回此次安装的定义；新上下文重设过配置时版本检查直接跳过。
-                        if (installedVersion != 0)
-                            runtime.TryConfigurePreparations(equipmentPreparations, installedVersion, out _);
-                        await loaded.Machine.CloseAsync();
-                    };
-                    try { await RetryUnpublishedCleanupAsync(); }
-                    catch (Exception cleanupError)
-                    {
-                        throw new AggregateException("任务装载未发布且收尾未完成；请重试关闭或读取。", loadError, cleanupError);
-                    }
-                    throw;
-                }
-
-                _publishedPreparationVersion = installedVersion;
-                _session = loaded;
-                _taskOperations = operations;
-                _catalog = loaded.TaskDevice.Catalog;
-                _catalogFromLoadedSession = true;
-                _monitor = new TaskMonitorView(loaded);
-                _monitor.SetSessionValidityProvider(() => ReferenceEquals(CurrentPublishedTaskSession, loaded));
-                _monitor.HideSourcePath();
-                _taskSource = loaded.Source;
-                _monitor.ReferenceRequested += Monitor_ReferenceRequested;
-                _monitor.SetLanguage(_host.CurrentLanguage);
-                _monitorContent.Content = _monitor;
-                _stateTimer.Start();
-                ClearError();
-                SetSuccessText("已读取当前任务");
-                _emptyState.Visibility = Visibility.Collapsed;
-                RefreshAlarms();
-                RefreshPageText();
-                UpdateRunStatus();
-                UpdateCommandAvailability();
-                _host.RefreshMachineStateDisplay();
+                if (contextVersion != _machineContextVersion || !ReferenceEquals(runtime, _runtime)
+                    || !ReferenceEquals(motionCards, _motionCards) || !ReferenceEquals(logicalIo, _logicalIo)
+                    || !ReferenceEquals(variables, _variables) || !IsControllerConnected()
+                    || !runtime.IsConnectionSessionCurrent(sessionId))
+                    throw new InvalidOperationException("设备连接在任务读取期间发生变化，本次读取已取消；请在当前连接中重新读取任务。");
             }
+            var pending = new HostTaskSessionLoadOperation(runtime, _equipmentPreparations, CheckContext);
+            // 必须在第一次后台读取前登记，关闭入口才能等到它归还实际设备控制权。
+            _pendingTaskLoad = pending;
+            try
+            {
+                await pending.LoadAsync(_store, _machineId, motionCards, logicalIo, variables, sessionId.Value).ConfigureAwait(true);
+                pending.RequireCurrent();
+            }
+            catch (Exception loadError)
+            {
+                try { await RetryUnpublishedCleanupAsync(pending).ConfigureAwait(true); }
+                catch (Exception cleanupError)
+                {
+                    throw new AggregateException("任务装载未发布且收尾未完成；请重试关闭或读取。", loadError, cleanupError);
+                }
+                throw;
+            }
+
+            TaskMonitorSession loaded = pending.Session;
+            TaskMachineOperations operations = pending.Operations;
+            _publishedPreparationVersion = pending.InstalledPreparationVersion;
+            _session = loaded;
+            _taskOperations = operations;
+            _pendingTaskLoad = null;
+            _catalog = loaded.TaskDevice.Catalog;
+            _catalogFromLoadedSession = true;
+            _monitor = new TaskMonitorView(loaded);
+            _monitor.SetSessionValidityProvider(() => ReferenceEquals(CurrentPublishedTaskSession, loaded));
+            _monitor.HideSourcePath();
+            _taskSource = loaded.Source;
+            _monitor.ReferenceRequested += Monitor_ReferenceRequested;
+            _monitor.SetLanguage(_host.CurrentLanguage);
+            _monitorContent.Content = _monitor;
+            _stateTimer.Start();
+            ClearError();
+            SetSuccessText("已读取当前任务");
+            _emptyState.Visibility = Visibility.Collapsed;
+            RefreshAlarms();
+            RefreshPageText();
+            UpdateRunStatus();
+            UpdateCommandAvailability();
+            _host.RefreshMachineStateDisplay();
         }
 
         /// <summary>顶部报警复位使用与任务页面相同的校验和复位顺序，不绕过任务故障锁存。</summary>
@@ -686,32 +675,17 @@ namespace MotionControl.Host.Wpf.Tasks
             await work.ConfigureAwait(true);
         }
 
-        /// <summary>未发布任务若无法撤回定义或释放控制权，保留清理工作供关闭或重新读取时重试。</summary>
-        private Func<Task> _retryUnpublishedCleanup;
-        /// <summary>当前未发布会话的清理任务，防止重复关闭同一执行器。</summary>
-        private Task _unpublishedCleanupInProgress;
+        /// <summary>从读取开始即登记的任务装载操作；失败或超时保留它，直到原持权会话完成回滚。</summary>
+        private HostTaskSessionLoadOperation _pendingTaskLoad;
 
         /// <summary>清理未发布的任务设备；仅在恢复或移除原定义并安全关闭后丢弃其引用。</summary>
-        private async Task RetryUnpublishedCleanupAsync()
+        private async Task RetryUnpublishedCleanupAsync(HostTaskSessionLoadOperation pending = null)
         {
-            var cleanup = _retryUnpublishedCleanup;
-            if (cleanup == null) return;
-            if (_unpublishedCleanupInProgress != null) { await _unpublishedCleanupInProgress; return; }
-            var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _unpublishedCleanupInProgress = completed.Task;
-            try
-            {
-                await cleanup();
-                _retryUnpublishedCleanup = null;
-                completed.TrySetResult(true);
-            }
-            catch (Exception error)
-            {
-                completed.TrySetException(error);
-                _ = completed.Task.Exception;
-                throw;
-            }
-            finally { _unpublishedCleanupInProgress = null; }
+            // 装载失败方传入自己的对象，不能清理后来另一次装载的会话。
+            pending = pending ?? _pendingTaskLoad;
+            if (pending == null) return;
+            await WaitForShutdownSettlementAsync(pending.RollbackAsync(), "未发布任务清理").ConfigureAwait(true);
+            if (ReferenceEquals(_pendingTaskLoad, pending)) _pendingTaskLoad = null;
         }
 
         /// <summary>检查会话未运行后关闭任务执行器；断卡和应用退出均复用此安全收尾。</summary>
@@ -733,9 +707,12 @@ namespace MotionControl.Host.Wpf.Tasks
             await RetryUnpublishedCleanupAsync();
             TaskMonitorSession session = _session;
             if (session == null) return;
+            var runtime = _runtime;
+            var equipmentPreparations = _equipmentPreparations;
+            long publishedPreparationVersion = _publishedPreparationVersion;
             TaskMachineState state = session.Machine.GetSnapshot().State;
             if (state == TaskMachineState.Running || state == TaskMachineState.Pausing
-                || _runtime?.State == MachineRunState.Running || _runtime?.State == MachineRunState.Pausing || _runtime?.IsPreparing == true)
+                || runtime?.State == MachineRunState.Running || runtime?.State == MachineRunState.Pausing || runtime?.IsPreparing == true)
                 throw new InvalidOperationException("任务仍在运行或等待停轴；先在任务运行页暂停或停止并确认安全状态。");
 
             _stateTimer.Stop();
@@ -756,14 +733,14 @@ namespace MotionControl.Host.Wpf.Tasks
                 _stateTimer.Start();
                 throw;
             }
-            if (!ReferenceEquals(_session, session))
+            if (!ReferenceEquals(_session, session) || !ReferenceEquals(_runtime, runtime))
                 throw new InvalidOperationException("任务会话在关闭期间发生变化，未清理当前会话。");
             Exception restoreError = null;
             try
             {
                 // 关闭前若已有其他安装代次，保留它，不用旧设备定义覆盖。
-                if (_runtime != null && !_runtime.IsShutdownInProgress
-                    && !_runtime.TryConfigurePreparations(_equipmentPreparations, _publishedPreparationVersion, out _))
+                if (runtime != null && !runtime.IsShutdownInProgress
+                    && !runtime.TryConfigurePreparations(equipmentPreparations, publishedPreparationVersion, out _))
                     throw new InvalidOperationException("准备配置已变化，未覆盖当前配置。");
             }
             catch (Exception error) { restoreError = error; }

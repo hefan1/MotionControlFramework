@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -31,11 +31,19 @@ namespace MotionControl.OperatorPages.Checks
     {
         /// <summary>逐项运行并保留错误堆栈和非零失败退出码。</summary>
         [STAThread]
-        private static int Main()
+        private static int Main(string[] args)
         {
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/MotionControl.Host.Wpf;component/Localization/Strings.zh-CN.xaml", UriKind.Relative) });
             int failures = 0;
+            // 专项入口仅用于快速复现同一正式页面的装载/关闭行为，完整检查也始终执行它。
+            if (args.Length == 1 && args[0] == "--pending-task-load")
+            {
+                Check("在途任务装载关闭", () => RunUiAsync(BoundTaskLoadChecks.RunPendingLoadChecksAsync), ref failures);
+                app.Shutdown();
+                return failures == 0 ? 0 : 1;
+            }
+            Check("在途任务装载关闭", () => RunUiAsync(BoundTaskLoadChecks.RunPendingLoadChecksAsync), ref failures);
             Check("任务入口关闭超时与迟到完成", LauncherCloseTimeoutChecks.Run, ref failures);
             Check("未知状态、真实Runtime来源和无硬件调用", RuntimeSource, ref failures);
             Check("暂停覆盖、任意数量工位和预览来源", OverviewStates, ref failures);
@@ -100,7 +108,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("产品记录只读显示两种来源及错误", ProductRecordChecks.Run, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：64 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：65 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }
