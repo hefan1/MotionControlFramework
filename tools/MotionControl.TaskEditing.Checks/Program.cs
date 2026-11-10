@@ -52,7 +52,15 @@ namespace MotionControl.TaskEditing.Checks
             Check("V1.8 部分恢复失败保留标记并可重试", V18TaskApplyPartialRecovery, ref failed);
             Check("V1.8 工作区定义与后端能力准入分开", V18WorkspaceCapabilityPreflight, ref failed);
             Check("V1.8 异常恢复标记路径阻断装载与应用", V18TaskPendingMarkerDirectory, ref failed);
-            Console.WriteLine("任务编辑内部检查：26 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
+            Check("ROC-18 任务文件替换使旧检查失效", Roc18TaskFileSourceChange, ref failed);
+            Check("ROC-18 任务清单替换使旧检查失效", Roc18TaskMachineSourceChange, ref failed);
+            Check("ROC-18 新增任务使旧检查失效", Roc18TaskFileAdded, ref failed);
+            Check("ROC-18 删除任务使旧检查失效", Roc18TaskFileRemoved, ref failed);
+            Check("ROC-18 任务来源读取失败及恢复", Roc18TaskSourceReadFailure, ref failed);
+            Check("ROC-18 来源变化保留未保存的编辑器", Roc18TaskSourceChangeKeepsUnsavedEditor, ref failed);
+            Check("ROC-18 子编辑器来源变化撤销旧检查", Roc18EditorSourceCheckInvalidation, ref failed);
+            Check("ROC-18 来源未变化保留检查结果", Roc18UnchangedTaskSourcesKeepChecks, ref failed);
+            Console.WriteLine("任务编辑内部检查：34 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
             return failed == 0 ? 0 : 1;
         }
         /// <summary>逐项执行并保留异常堆栈。</summary>
