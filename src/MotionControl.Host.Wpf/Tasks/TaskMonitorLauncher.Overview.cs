@@ -28,13 +28,14 @@ namespace MotionControl.Host.Wpf.Tasks
                     "Holding outputs may remain active. Check fixture feedback and material state on site; open Station operation for resources and handling conditions.");
         }
 
-        /// <summary>仅采样当前连接会话的内存数据；未读取流程时返回空来源，不查询控制卡。</summary>
+        /// <summary>只读取有效发布会话的工位内存快照；读取期间来源变化时撤下本次结果。</summary>
         internal IReadOnlyList<StationOverviewData> ReadStationOverview()
         {
-            if (!IsControllerConnected() || _runtime.ControlOwner != MachineControlOwner.TaskEngine
-                || _session == null || _monitor == null) return null;
+            var session = CurrentPublishedTaskSession;
+            var monitor = _monitor;
+            if (session == null || monitor == null) return null;
 
-            TaskMachineSnapshot snapshot = _session.Machine.GetSnapshot();
+            TaskMachineSnapshot snapshot = session.Machine.GetSnapshot();
             var stations = new List<StationTaskSnapshot>();
             if (snapshot.Initialization != null) stations.Add(snapshot.Initialization);
             stations.AddRange(snapshot.Stations);
@@ -42,14 +43,14 @@ namespace MotionControl.Host.Wpf.Tasks
             foreach (StationTaskSnapshot station in stations)
             {
                 var row = new TaskStationRow(station.StationId);
-                row.Update(station, snapshot.State, _monitor.T);
+                row.Update(station, snapshot.State, monitor.T);
                 StationOperationStatus status = TaskStationOperationProjection.Read(station);
                 result.Add(new StationOverviewData
                 {
                     Id = status.StationId,
                     Name = status.StationName,
                     IndependentState = status.State,
-                    StateText = _monitor.T(StationOperatorPresentation.StateKey(status.State)),
+                    StateText = monitor.T(StationOperatorPresentation.StateKey(status.State)),
                     StateColor = row.Color,
                     CurrentStepId = status.StepId,
                     CurrentStep = status.StepName,
@@ -63,14 +64,17 @@ namespace MotionControl.Host.Wpf.Tasks
                     CompletedCycles = station.CompletedCycles
                 });
             }
-            return result.AsReadOnly();
+            return ReferenceEquals(session, CurrentPublishedTaskSession) && ReferenceEquals(monitor, _monitor)
+                ? result.AsReadOnly() : null;
         }
 
-        /// <summary>按工位唯一标识或显示名定位当前步骤；不读取配置、不发运动命令。</summary>
+        /// <summary>只定位仍有效的发布会话工位，并在定位后复核来源；不读取配置、不发运动命令。</summary>
         internal bool FocusStationByName(string name)
         {
-            return IsControllerConnected() && _runtime.ControlOwner == MachineControlOwner.TaskEngine
-                && _session != null && _monitor != null && _monitor.FocusStationByName(name);
+            var session = CurrentPublishedTaskSession;
+            var monitor = _monitor;
+            if (session == null || monitor == null || !monitor.FocusStationByName(name)) return false;
+            return ReferenceEquals(session, CurrentPublishedTaskSession) && ReferenceEquals(monitor, _monitor);
         }
 
     }

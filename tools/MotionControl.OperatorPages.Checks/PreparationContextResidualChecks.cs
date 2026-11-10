@@ -17,7 +17,7 @@ namespace MotionControl.OperatorPages.Checks
     /// <summary>使用真实准备页和无轴 Runtime 检查旧来源的页面错误；只验证离屏界面逻辑，不验证运动或正式 Host 屏幕。</summary>
     internal static class PreparationContextResidualChecks
     {
-        /// <summary>分别执行来源保留、四种来源变化和真实停止收尾，汇总失败以便看到所有残留入口。</summary>
+        /// <summary>分别执行来源保留、来源变化、错误发布交错和真实停止收尾，汇总失败以便看到所有残留入口。</summary>
         internal static async Task RunAsync()
         {
             var failures = new List<Exception>();
@@ -26,6 +26,7 @@ namespace MotionControl.OperatorPages.Checks
             await RunCaseAsync("旧异步失败不能回写新 Runtime", LateFailureDoesNotEnterNewRuntimeAsync, failures);
             await RunCaseAsync("旧异步失败不能回写新连接", LateFailureDoesNotEnterNewConnectionAsync, failures);
             await RunCaseAsync("旧异步失败不能回写新准备定义", LateFailureDoesNotEnterNewPreparationAsync, failures);
+            await RunCaseAsync("错误发布期间换准备定义不能给旧错误盖新来源", ChangedPreparationWhilePublishingErrorAsync, failures);
             await RunCaseAsync("旧停止异常不能回写新 Runtime", LateStopFailureDoesNotEnterNewRuntimeAsync, failures);
             if (failures.Count > 0)
                 throw new AggregateException("设备准备页面来源隔离检查失败；这是离屏 UI 逻辑检查。", failures);
@@ -34,8 +35,13 @@ namespace MotionControl.OperatorPages.Checks
         /// <summary>单项失败不会掩盖其他来源变化的结果，仍以非零检查结果交给总入口。</summary>
         private static async Task RunCaseAsync(string name, Func<Task> check, List<Exception> failures)
         {
-            try { await check(); }
-            catch (Exception error) { failures.Add(new InvalidOperationException(name, error)); }
+            Console.WriteLine("[准备来源开始] " + name);
+            try { await check(); Console.WriteLine("[准备来源通过] " + name); }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine("[准备来源失败] " + name + "\n" + error);
+                failures.Add(new InvalidOperationException(name, error));
+            }
         }
 
         /// <summary>同一 Runtime、连接和准备定义的刷新不能把仍属于本次操作的诊断清掉。</summary>
@@ -178,6 +184,25 @@ namespace MotionControl.OperatorPages.Checks
             }
         }
 
+        /// <summary>同源校验通过后才更换定义，错误归属仍须使用提交来源，不能重新读取并贴上新版本。</summary>
+        private static async Task ChangedPreparationWhilePublishingErrorAsync()
+        {
+            const string oldError = "发布错误摘要期间才过期的旧准备异常";
+            var card = new GuardCard { IsConnected = true };
+            MachineRuntime runtime = await CreateRuntimeAsync(card, "发布前准备工位");
+            try
+            {
+                var error = new PreparationChangesWhileReadingMessageException(runtime, oldError, "发布后新准备工位");
+                var page = CreatePage(runtime, () => Task.FromException(error));
+                ClickPrepareAll(page);
+                await WaitForSubmissionCompletionAsync(page);
+                AssertStationName(page, "发布后新准备工位");
+                AssertErrorDoesNotContain(page, oldError, "旧错误在发布摘要期间过期，却被标记成了新准备定义的错误。");
+                Require(card.Calls == 0 && !runtime.IsPreparing, "错误发布交错检查意外执行了控制器或准备动作。");
+            }
+            finally { await DisconnectWithoutDeviceCallsAsync(runtime, card); }
+        }
+
         /// <summary>用真实无轴准备等待停止，再返回旧失败；页面换源不能把旧停止错误显示到新设备。</summary>
         private static async Task LateStopFailureDoesNotEnterNewRuntimeAsync()
         {
@@ -189,14 +214,16 @@ namespace MotionControl.OperatorPages.Checks
                 new MachineAlarmService(), new ReadableSafetyInput(), pauseTimeout: TimeSpan.FromSeconds(5),
                 controlOwner: MachineControlOwner.StationFlows);
             oldRuntime.ConfigurePreparations(new[] { preparation });
-            await oldRuntime.ConnectAsync(CancellationToken.None);
+            await RunRuntimeCommandAsync(oldRuntime.ConnectAsync, "旧无轴 Runtime 未能及时建立连接。");
             MachineRuntime newRuntime = await CreateRuntimeAsync(newCard, "新设备准备工位");
             Task preparationTask = null;
             Task stopHandlerCompletion = null;
+            var failures = new List<Exception>();
             try
             {
                 // 先从真实 Runtime 启动无轴准备；页面只执行停止，避免混入页面 Prepare 的异常回写。
-                preparationTask = oldRuntime.PrepareAsync(preparation.StationId, CancellationToken.None);
+                Console.WriteLine("[停止来源阶段] 启动真实无轴准备，等待进入步骤。");
+                preparationTask = Task.Run(() => oldRuntime.PrepareAsync(preparation.StationId, CancellationToken.None));
                 await WaitForTaskAsync(preparation.Entered, "真实准备没有进入受控等待。");
                 var page = CreatePage(oldRuntime, null);
                 var stopButton = (Button)page.FindName("StopPreparationButton");
@@ -206,12 +233,15 @@ namespace MotionControl.OperatorPages.Checks
                 await WaitForTaskAsync(preparation.StopObserved, "真实停止未请求原准备令牌取消。");
                 Require(!preparationTask.IsCompleted, "旧准备未保持等待，不能检查迟到停止失败。");
 
+                Console.WriteLine("[停止来源阶段] 已观察到真实停止取消，换入新 Runtime 后释放旧异常。");
                 page.SetRuntime(newRuntime);
                 AssertStationName(page, "新设备准备工位");
                 preparation.Fail(oldError);
                 await RequirePreparationFailureAsync(preparationTask, oldError);
+                Console.WriteLine("[停止来源阶段] 旧准备任务已失败，等待页面停止事件返回。");
                 await WaitForTaskAsync(stopHandlerCompletion, "停止按钮的异步处理未结束。");
 
+                Console.WriteLine("[停止来源阶段] 页面停止事件已结束，核对新页面与旧 Runtime 证据。");
                 AssertStationName(page, "新设备准备工位");
                 AssertErrorDoesNotContain(page, oldError, "旧停止操作的迟到异常污染了新设备页面。");
                 Require(oldRuntime.LastError != null && oldRuntime.LastError.ToString().Contains(oldError)
@@ -220,29 +250,78 @@ namespace MotionControl.OperatorPages.Checks
                 Require(oldCard.Calls == 0 && newCard.Calls == 0 && !newRuntime.IsPreparing,
                     "无轴停止异常检查意外访问控制器或启动新设备准备。");
             }
+            catch (Exception error) { failures.Add(error); }
             finally
             {
                 // 无论断言是否失败都解除步骤屏障，并完整观察准备与页面停止的终态。
+                Console.WriteLine("[停止来源阶段] 开始有界清理，原断言失败仍保留。");
                 preparation.Fail(oldError);
                 try
                 {
-                    if (preparationTask != null) await RequirePreparationFailureAsync(preparationTask, oldError);
+                    bool settled = true;
+                    if (preparationTask != null)
+                        settled &= await RecordCleanupFailureAsync(
+                            () => RequirePreparationFailureAsync(preparationTask, oldError), failures);
                     if (stopHandlerCompletion != null)
-                        await WaitForTaskAsync(stopHandlerCompletion, "测试清理时停止页面处理仍未结束。");
+                        settled &= await RecordCleanupFailureAsync(
+                            () => WaitForTaskAsync(stopHandlerCompletion, "测试清理时停止页面处理仍未结束。"), failures);
                     // Runtime 首次失败会保留停止待确认；再次走正式停止只核查收尾，不清报警或恢复证据。
-                    if (oldRuntime.IsPreparing)
-                        await WaitForTaskAsync(oldRuntime.StopPreparationAsync(CancellationToken.None), "旧准备停止重试未完成。");
-                    await DisconnectWithoutDeviceCallsAsync(oldRuntime, oldCard);
+                    if (settled)
+                    {
+                        Console.WriteLine("[停止来源阶段] 原准备和页面事件均已结束，正式重试停止收尾。");
+                        settled = await RecordCleanupFailureAsync(() => RunRuntimeCommandAsync(
+                            oldRuntime.StopPreparationAsync, "旧准备停止重试未完成。"), failures);
+                    }
+                    if (settled)
+                    {
+                        Console.WriteLine("[停止来源阶段] 原准备停止收尾已结束，断开旧内存连接。");
+                        await RecordCleanupFailureAsync(() => DisconnectWithoutDeviceCallsAsync(oldRuntime, oldCard), failures);
+                    }
+                    else Console.Error.WriteLine("[停止来源清理失败] 旧操作仍未确认结束；不再叠加断开命令，整项检查必须失败。");
                 }
-                finally { await DisconnectWithoutDeviceCallsAsync(newRuntime, newCard); }
+                finally
+                {
+                    Console.WriteLine("[停止来源阶段] 断开新内存连接。");
+                    await RecordCleanupFailureAsync(() => DisconnectWithoutDeviceCallsAsync(newRuntime, newCard), failures);
+                }
             }
+            Console.WriteLine("[停止来源阶段] 有界清理结束。");
+            if (failures.Count > 0) throw new AggregateException("停止来源检查或清理失败；保留全部原始异常。", failures);
+        }
+
+        /// <summary>保留清理失败而不覆盖原断言，并向调用者说明是否已确认该清理步骤结束。</summary>
+        private static async Task<bool> RecordCleanupFailureAsync(Func<Task> cleanup, List<Exception> failures)
+        {
+            try { await cleanup(); return true; }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine("[准备来源清理失败] " + error);
+                failures.Add(error);
+                return false;
+            }
+        }
+
+        /// <summary>Runtime 命令没有 WPF 线程要求；在线程池调用并限时，避免同步清理阶段阻塞调度器。</summary>
+        private static async Task RunRuntimeCommandAsync(Func<CancellationToken, Task> command, string timeoutMessage)
+        {
+            Task pending = Task.Run(async () =>
+            {
+                using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+                    await command(timeout.Token).ConfigureAwait(false);
+            });
+            await WaitForTaskAsync(pending, timeoutMessage);
         }
 
         /// <summary>有界等待实际任务，不用固定延时猜测 async void 页面处理已经结束。</summary>
         private static async Task WaitForTaskAsync(Task task, string timeoutMessage)
         {
             if (await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(5))) != task)
+            {
+                // 超时只报告未结束；后台以后返回的异常仍输出，不能悄悄丢失诊断。
+                _ = task.ContinueWith(failed => Console.Error.WriteLine("[准备来源迟到异常] " + failed.Exception),
+                    CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
                 throw new TimeoutException(timeoutMessage);
+            }
             await task;
         }
 
@@ -276,7 +355,7 @@ namespace MotionControl.OperatorPages.Checks
             var runtime = new MachineRuntime(new MotionCardGroup(new[] { card }), Array.Empty<IStationFlow>(),
                 new MachineAlarmService(), new GuardSafety(), controlOwner: MachineControlOwner.StationFlows);
             runtime.ConfigurePreparations(new[] { new DisplayOnlyPreparation(stationName) });
-            await runtime.ConnectAsync(CancellationToken.None);
+            await RunRuntimeCommandAsync(runtime.ConnectAsync, "无轴 Runtime 未能及时建立连接。");
             return runtime;
         }
 
@@ -340,13 +419,44 @@ namespace MotionControl.OperatorPages.Checks
         private static async Task DisconnectWithoutDeviceCallsAsync(MachineRuntime runtime, GuardCard card)
         {
             card.IsConnected = false;
-            if (runtime.State != MachineRunState.Disconnected)
-                await runtime.DisconnectAsync(CancellationToken.None);
+            await RunRuntimeCommandAsync(token => runtime.State == MachineRunState.Disconnected
+                ? Task.CompletedTask : runtime.DisconnectAsync(token), "内存连接清理未结束，检查不能声称安全收尾。");
         }
 
         /// <summary>将违反页面来源契约的行为交给检查入口报告，不吞掉错误。</summary>
         private static void Require(bool condition, string message)
         { if (!condition) throw new InvalidOperationException(message); }
+
+        /// <summary>只在第一次读取摘要时切换真实准备定义；诊断输出不会提前触发这一交错。</summary>
+        private sealed class PreparationChangesWhileReadingMessageException : Exception
+        {
+            /// <summary>通过正式配置入口更换准备定义的 Runtime。</summary>
+            private readonly MachineRuntime _runtime;
+            /// <summary>不能进入新页面的独立旧错误标记。</summary>
+            private readonly string _marker;
+            /// <summary>用于确认页面已切换的新工位名称。</summary>
+            private readonly string _stationName;
+            /// <summary>确保本场景只更换一次准备版本。</summary>
+            private bool _changed;
+            /// <summary>记录真实 Runtime 和本场景的可见标记。</summary>
+            internal PreparationChangesWhileReadingMessageException(MachineRuntime runtime, string marker, string stationName)
+            { _runtime = runtime; _marker = marker; _stationName = stationName; }
+            /// <summary>模拟同源判定之后、错误发布之前到达的新准备定义。</summary>
+            public override string Message
+            {
+                get
+                {
+                    if (!_changed)
+                    {
+                        _changed = true;
+                        _runtime.ConfigurePreparations(new[] { new DisplayOnlyPreparation(_stationName) });
+                    }
+                    return _marker;
+                }
+            }
+            /// <summary>原始诊断只输出标记，不调用 Message，以便精确定位发布摘要时的交错。</summary>
+            public override string ToString() { return _marker; }
+        }
 
         /// <summary>固定可读的离线安全输入，仅供真实无轴准备路径通过前置读取，不声明现场安全验证。</summary>
         private sealed class ReadableSafetyInput : IMachineSafetyStatus
@@ -399,7 +509,7 @@ namespace MotionControl.OperatorPages.Checks
             /// <summary>真正执行页面续体的原 WPF 同步上下文。</summary>
             private readonly SynchronizationContext _inner;
             /// <summary>收到最后一个 async void 完成通知时结束。</summary>
-            private readonly TaskCompletionSource<bool> _completion = new TaskCompletionSource<bool>();
+            private readonly TaskCompletionSource<bool> _completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             /// <summary>当前观察的异步方法数，不修改 Runtime 或页面忙状态。</summary>
             private int _operations;
             /// <summary>保留原调度入口。</summary>

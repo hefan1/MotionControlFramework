@@ -357,6 +357,8 @@
  <sys:String x:Key="任务编辑.准备配置">Preparation configuration</sys:String>
  <sys:String x:Key="任务编辑.子任务引用">Subtask reference</sys:String>
  <sys:String x:Key="任务编辑.准备配置已变化，旧检查结论失效，请重新检查或装载">Preparation configuration changed. Previous checks are no longer valid; check or reload the definitions.</sys:String>
+ <sys:String x:Key="任务编辑.任务来源已变化，旧检查结论失效，请重新检查或装载">Task sources changed. Previous checks are no longer valid; check again or reload.</sys:String>
+ <sys:String x:Key="任务编辑.任务来源读取失败，旧检查结论失效，请恢复读取后重新检查">Task sources could not be read. Previous checks are invalid; restore access and check again.</sys:String>
  <sys:String x:Key="任务编辑.任务来源读取失败，旧检查结论失效">Task sources could not be read. Previous checks are no longer valid.</sys:String>
  <sys:String x:Key="任务编辑.任务来源读取已恢复，旧检查结论失效，请重新检查或装载">Task sources are readable again; previous checks are invalid. Check again or reload.</sys:String>
  <sys:String x:Key="任务编辑.无法确认任务引用，不能删除">Task references could not be verified. Deletion is blocked.</sys:String>

@@ -247,6 +247,31 @@ namespace MotionControl.TaskEditing.Checks
             }
         }
 
+        /// <summary>外部编辑器允许读写和替换的句柄不代表文件失读；后台观察不能反向独占写入来源。</summary>
+        private static void Roc18ObservationAllowsWritableSourceHandle()
+        {
+            using (var test = new Workspace())
+            {
+                TaskConfigurationView page = CreateRoc18CheckedPage(test);
+                var grid = (DataGrid)page.FindName("TasksGrid");
+                string[] states = grid.Items.Cast<TaskLibraryRow>().Select(row => row.DraftState).ToArray();
+                string path = Path.Combine(test.Configuration.GetMachineDirectory(Workspace.Id), "Tasks", "Load.json");
+                string files = test.ActiveBytes();
+                using (var editorHandle = new FileStream(path, FileMode.Open, FileAccess.ReadWrite,
+                    FileShare.ReadWrite | FileShare.Delete))
+                {
+                    // 没有写入新字节；只保留一个正常允许其他读写与原子替换的编辑器句柄。
+                    ObserveRoc18TaskSources(page, () => true, TimeSpan.FromMilliseconds(2500));
+                    Assert(grid.Items.Cast<TaskLibraryRow>().Select(row => row.DraftState).SequenceEqual(states)
+                        && ((Expander)page.FindName("ErrorDiagnosticsExpander")).Visibility == Visibility.Collapsed
+                        && ((Button)page.FindName("ApplyButton")).IsEnabled,
+                        "ROC-18：只读观察与允许共享的编辑器写句柄冲突，未变化文件被错误标记为无法读取。");
+                }
+                Assert(test.ActiveBytes() == files && !page.HasUnsavedChanges,
+                    "只读来源观察改动了已保存文件或草稿。");
+            }
+        }
+
         /// <summary>建立有效准备文件与任务，并通过真实页面检查入口生成供后续失效核对的检查状态。</summary>
         private static TaskConfigurationView CreateRoc18CheckedPage(Workspace test)
         {

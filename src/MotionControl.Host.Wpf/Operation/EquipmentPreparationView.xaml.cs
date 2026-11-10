@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -48,10 +49,18 @@ namespace MotionControl.Host.Wpf.Operation
         private readonly DispatcherTimer _timer;
         /// <summary>当前页面是否正在装载或发起准备，阻止重复点击。</summary>
         private bool _commandInProgress;
-        /// <summary>保留最近一次页面命令错误，直至下一次操作。</summary>
+        /// <summary>保留当前来源最近一次页面命令错误，下一次操作或来源变化时撤下。</summary>
         private string _error;
         /// <summary>完整异常供维护人员展开查看，不占据操作员的主要状态区域。</summary>
         private string _diagnostic;
+        /// <summary>页面错误所属的 Runtime；不使用工位行是否可信来决定错误是否过期。</summary>
+        private MachineRuntime _errorRuntime;
+        /// <summary>页面错误所属的连接会话，同一 Runtime 重连后也必须失效。</summary>
+        private Guid? _errorSession;
+        /// <summary>页面错误所属的控制入口，避免任务与 C# 准备之间混用诊断。</summary>
+        private MachineControlOwner _errorOwner;
+        /// <summary>页面错误所属的准备定义版本，普通安全观察刷新不会改变其归属。</summary>
+        private long _errorPreparationVersion = -1;
         /// <summary>实际设备配置目录，恢复被拦截时仅供维护人员定位原始证据。</summary>
         private string _recoveryEvidenceDirectory;
 
@@ -80,8 +89,7 @@ namespace MotionControl.Host.Wpf.Operation
             _runtime = runtime;
             _startBlockReason = null;
             _startReadinessChecking = false;
-            _error = null;
-            _diagnostic = null;
+            ClearPageCommandError();
             _rows.Clear();
             Refresh();
             // 只读展示不能为进入页面装载或切换任务会话。
@@ -229,6 +237,10 @@ namespace MotionControl.Host.Wpf.Operation
                 : _runtime?.IsTaskEngineControlClaimed == true
                     ? T("回零前请确认相关轴已使能、工位与物料状态安全。如需使能，请先暂停并确认轴停稳，在生产流程停止并关闭任务，再到轴手动操作。")
                     : T("回零前请确认相关轴已使能、工位与物料状态安全；回零完成后再核对其他启动条件。");
+            // 行列表的未知状态可能持续多轮；只有实际来源变化才撤下已经显示的命令错误。
+            if (_errorRuntime != null && !IsCommandContextCurrent(
+                _errorRuntime, _errorSession, _errorOwner, _errorPreparationVersion))
+                ClearPageCommandError();
             var failed = snapshots?.FirstOrDefault(item => item.State == StationPreparationState.Failed);
             string errorText = recoveryBlocked ? _runtime.RecoveryBlockReason
                 : string.IsNullOrWhiteSpace(_error) ? string.Empty
@@ -393,7 +405,7 @@ namespace MotionControl.Host.Wpf.Operation
         private async void PrepareSelected_Click(object sender, RoutedEventArgs e)
         { var row = StationsGrid.SelectedItem as PreparationRow; if (row != null) await PrepareAsync(row.Id); }
 
-        /// <summary>提交独立准备命令，成功后停留本页，不自动进入生产。</summary>
+        /// <summary>提交独立准备命令；错误只发布到对应来源，首次按需读取允许采用新安装的准备定义。</summary>
         private async Task PrepareAsync(string stationId)
         {
             if (_runtime == null || _commandInProgress) return;
@@ -406,7 +418,11 @@ namespace MotionControl.Host.Wpf.Operation
                 && commandSession == _rowSession && commandOwner == _rowOwner;
             bool selectedScopeValid = stationId == null ? displayedScopeBound || (!_rowScopeTrusted && commandOwner == MachineControlOwner.TaskEngine)
                 : displayedScopeBound && (StationsGrid.SelectedItem as PreparationRow)?.Id == stationId;
-            _commandInProgress = true; _error = null; _diagnostic = null; DiagnosticExpander.IsExpanded = false; Refresh();
+            long errorPreparationVersion = displayedScopeBound ? selectedVersion : commandRuntime.PreparationConfigurationVersion;
+            _commandInProgress = true;
+            ClearPageCommandError();
+            DiagnosticExpander.IsExpanded = false;
+            Refresh();
             try
             {
                 if (!selectedScopeValid)
@@ -427,12 +443,66 @@ namespace MotionControl.Host.Wpf.Operation
                     || commandRuntime.SafetyObservationVersion != safetyVersion)
                     throw new InvalidOperationException(PageText("设备准备范围或会话已变化，请重新核对后提交回零。",
                         "The preparation scope or session changed. Review it before requesting homing."));
+                // 未发布任务的全部准备可在本次读取中安装定义；后续执行失败属于实际接受的版本。
+                errorPreparationVersion = preparationVersion;
                 await commandRuntime.PrepareAsync(stationId, commandSession, preparationVersion, commandOwner,
                     safetyVersion, CancellationToken.None);
             }
-            catch (OperationCanceledException) { _error = T("回零已停止，请检查当前机构状态后重新回零。"); }
-            catch (Exception error) { SetError(error); }
+            catch (OperationCanceledException error)
+            { SetCommandError(error, commandRuntime, commandSession, commandOwner, errorPreparationVersion, true); }
+            catch (Exception error)
+            { SetCommandError(error, commandRuntime, commandSession, commandOwner, errorPreparationVersion, false); }
             finally { _commandInProgress = false; Refresh(); }
+        }
+
+        /// <summary>只清页面缓存与其来源，不修改 Runtime 异常、报警、恢复原因或资源记录。</summary>
+        private void ClearPageCommandError()
+        {
+            _error = null;
+            _diagnostic = null;
+            _errorRuntime = null;
+            _errorSession = null;
+            _errorOwner = MachineControlOwner.None;
+            _errorPreparationVersion = -1;
+        }
+
+        /// <summary>比较错误实际所属的四项身份；没有准备快照或普通安全观察变化不等于换了来源。</summary>
+        private bool IsCommandContextCurrent(MachineRuntime runtime, Guid? session,
+            MachineControlOwner owner, long preparationVersion)
+        {
+            return runtime != null && ReferenceEquals(runtime, _runtime)
+                && runtime.ConnectionSessionId == session && runtime.ControlOwner == owner
+                && runtime.PreparationConfigurationVersion == preparationVersion;
+        }
+
+        /// <summary>完整输出原失败和来源；旧异常只提示重新核对，不能覆盖新来源已有的有效错误。</summary>
+        private void SetCommandError(Exception error, MachineRuntime runtime, Guid? session,
+            MachineControlOwner owner, long preparationVersion, bool canceled)
+        {
+            string diagnostic = "设备准备页面命令结束：原 Runtime=" + runtime.GetHashCode()
+                + "，连接=" + (session.HasValue ? session.Value.ToString() : "未提供")
+                + "，控制入口=" + owner + "，准备版本=" + preparationVersion + "。\n" + error;
+            if (canceled) Trace.TraceInformation(diagnostic);
+            else Trace.TraceWarning(diagnostic);
+
+            if (IsCommandContextCurrent(runtime, session, owner, preparationVersion))
+            {
+                _error = canceled ? T("回零已停止，请检查当前机构状态后重新回零。") : SimplifyError(error.Message);
+                _diagnostic = error.ToString();
+            }
+            else
+            {
+                if (_errorRuntime != null && IsCommandContextCurrent(
+                    _errorRuntime, _errorSession, _errorOwner, _errorPreparationVersion)) return;
+                ClearPageCommandError();
+                if (_runtime == null) return;
+                _error = PageText("设备准备范围或会话已变化，请重新核对当前范围。",
+                    "The preparation scope or session changed. Review the current scope.");
+            }
+            _errorRuntime = _runtime;
+            _errorSession = _runtime.ConnectionSessionId;
+            _errorOwner = _runtime.ControlOwner;
+            _errorPreparationVersion = _runtime.PreparationConfigurationVersion;
         }
 
         /// <summary>请求统一受控停止，等待 Runtime 确认动作退出。</summary>

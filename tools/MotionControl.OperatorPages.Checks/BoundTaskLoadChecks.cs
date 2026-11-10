@@ -271,6 +271,10 @@ namespace MotionControl.OperatorPages.Checks
                     "关闭任务时覆盖了其他准备配置或遗留了已关闭会话。");
                 await Invoke("LoadTaskSessionAsync");
                 Require(Published() != null && runtime.IsTaskEngineControlClaimed, "保留新定义后无法重新装载任务。");
+                // 总览观察结束后恢复窗口原显示绑定，不改变任务入口的 Runtime 或已重载会话。
+                window.SetTaskMonitorPage(null);
+                window.SetMachineRuntime(null);
+                window.SetMotionCardConnectionStatus(false);
                 Require(overviewCleared && !staleNavigation && !staleFocus && safetySessionRetained,
                     "RED: 准备配置换代后正式总览未撤下旧任务来源或改变了保留会话。工位与选择已清="
                         + overviewCleared + "；旧按钮仍导航=" + staleNavigation + "；旧工位仍可定位="

@@ -86,6 +86,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("轴监控只读详情", V14AxisDetailChecks.Run, ref failures);
             Check("启动条件异步读取的连接与控制权归属", () => RunUiAsync(AutomaticStartReadinessSessionChecks.RunAsync), ref failures);
             Check("正式任务异步装载的连接归属和失败收尾", () => RunUiAsync(BoundTaskLoadChecks.RunAsync), ref failures);
+            Check("总览工位失效与保留资源证据分开", () => RunUiAsync(BoundTaskLoadChecks.RunOverviewSafetySourceChecksAsync), ref failures);
             Check("变量定义与内存摘要", V14VariableSummaryChecks.Run, ref failures);
             Check("变量筛选及隐藏目标保护", V14VariableSearchChecks.Run, ref failures);
             Check("设备总览连接会话与旧定位", EquipmentOverviewSessionChecks.Run, ref failures);
@@ -129,7 +130,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("产品记录只读显示两种来源及错误", ProductRecordChecks.Run, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：68 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：69 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }

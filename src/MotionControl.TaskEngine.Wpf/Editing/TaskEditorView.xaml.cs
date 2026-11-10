@@ -28,6 +28,15 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         private string _sourceSummary;
         /// <summary>只替换来源显示，不读表单、不保存或更新文件。</summary>
         public void SetSourceSummary(string summary) { _sourceSummary = summary; RefreshSourceSummary(); }
+        /// <summary>来源变化或失读后撤销旧检查显示，不读回或重建表单，保留尚未完成的输入。</summary>
+        internal void InvalidateSourceCheck(bool sourceReadFailed)
+        {
+            IssuesGrid.ItemsSource = null;
+            IssuesGrid.Visibility = Visibility.Collapsed;
+            IssuesRow.Height = new GridLength(0);
+            StatusText.Text = T(sourceReadFailed ? "任务来源读取失败，旧检查结论失效，请恢复读取后重新检查"
+                : "任务来源已变化，旧检查结论失效，请重新检查或装载");
+        }
         /// <summary>当前编辑副本的dirty状态优先于上次完整工作区保存时间。</summary>
         private void RefreshSourceSummary()
         {

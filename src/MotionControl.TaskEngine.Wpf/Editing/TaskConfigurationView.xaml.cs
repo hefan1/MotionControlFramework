@@ -191,23 +191,22 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         /// <summary>完整读取草稿、目录与来源状态后再替换页面；读取失败保留本窗口的编辑内容。</summary>
         public void LoadWorkspace()
         {
+            InvalidateSourceObservation();
             try
             {
                 var loaded = _store.Load(_machineId);
                 var catalog = _store.LoadCatalog(loaded);
                 var active = _store.Load(_machineId, false);
-                bool sourceChanged = _store.ComputeSignature(_machineId) != loaded.BaseSignature;
+                string sourceSignature = _store.ComputeSignature(_machineId);
                 string preparationSignature = _store.ComputePreparationSignature(_machineId);
 
                 _workspace = loaded;
                 _catalog = catalog;
                 _activeWorkspace = active;
                 _lastCheckIssues = null;
-                _sourceChanged = sourceChanged;
                 _observedPreparationSignature = preparationSignature;
-                _sourceReadFailed = false;
-                _sourceReadError = null;
                 _editor = null;
+                RememberSourceSignature(sourceSignature);
                 ContentHost.Content = MainTabs;
                 ShowEditor(false);
                 _dirty = false;
@@ -219,10 +218,21 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             catch (Exception error) { ShowError(error); }
             RefreshPermission(null, EventArgs.Empty);
         }
-        /// <summary>页面可见时更新按钮边界。</summary>
-        private void ViewLoaded(object sender, RoutedEventArgs e) { RefreshPermission(sender, e); _timer.Start(); }
-        /// <summary>移出页面停止轮询，草稿仍保留在页面对象中。</summary>
-        private void ViewUnloaded(object sender, RoutedEventArgs e) { _timer.Stop(); }
+        /// <summary>页面可见时立即核查完整来源，并继续刷新按钮边界。</summary>
+        private void ViewLoaded(object sender, RoutedEventArgs e)
+        {
+            _sourceObservationEnabled = true;
+            _nextSourceObservationUtc = DateTime.MinValue;
+            RefreshPermission(sender, e);
+            _timer.Start();
+        }
+        /// <summary>移出页面停止轮询并拒绝迟到观察，草稿和未保存输入仍保留。</summary>
+        private void ViewUnloaded(object sender, RoutedEventArgs e)
+        {
+            _sourceObservationEnabled = false;
+            InvalidateSourceObservation();
+            _timer.Stop();
+        }
         /// <summary>宽屏并列工位与草稿表单，窄屏上下排列并保留足够的可滚动高度。</summary>
         private void StationWorkspace_SizeChanged(object sender, SizeChangedEventArgs e)
         {
@@ -279,10 +289,11 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             SessionSummaryText.ToolTip = metadata == null ? SessionSummaryText.Text : metadata.FormatDetails(english);
         }
 
-        /// <summary>显示应用禁用原因，并在来源变化时提供保留草稿或重新载入入口。</summary>
+        /// <summary>观察任务来源并显示应用边界；变化时提供保留草稿或重新载入入口，不自动重建编辑器。</summary>
         private void RefreshPermission(object sender, EventArgs e)
         {
             RefreshPreparationSource();
+            ObserveTaskSources();
             RefreshRuntimeContext();
             bool english = _language == "en-US";
             TaskSessionMetadata metadata = ReadCurrentSessionMetadata(out string sessionError);
@@ -659,14 +670,14 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             if (!_editor.ConfirmLeave()) return false;
             EditorBack(this, EventArgs.Empty); return true;
         }
-        /// <summary>编辑器占用同一工作区，已有页面跳转后可以返回原草稿。</summary>
+        /// <summary>编辑器占用同一草稿工作区；明确检查时重新核对完整来源，导航后仍可返回原输入。</summary>
         private void OpenEditor(TaskWorkspaceTask entry)
         {
             try
             {
                 _catalog = _store.LoadCatalog(_workspace); _editingEntry = entry;
                 _editor = new TaskEditorView(entry.Definition, _catalog,
-                    () => _store.LoadCatalog(_workspace),
+                    LoadCatalogForEditorCheck,
                     _workspace.Tasks.Where(item => !ReferenceEquals(item, entry)).Select(item => item.Definition));
                 _editor.SetLanguage(_language); _editor.DraftSaved += EditorSaved; _editor.BackRequested += EditorBack; _editor.ReferenceRequested += EditorReference;
                 _editor.BackupExportRequested += EditorExportBackup;
@@ -779,7 +790,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
         {
             ReloadRuntimeFiles();
         }
-        /// <summary>先保留完整草稿副本，再把草稿绑定到当前来源并立即检查引用。</summary>
+        /// <summary>先备份再同步草稿来源；引用检查前后来源不一致时撤销结论，保留备份供核查。</summary>
         private void RebaseDraft_Click(object sender, RoutedEventArgs e)
         {
             if (_workspace == null || _editor != null || !CanResolveTaskSources() || !ReadSettings()) return;
@@ -795,18 +806,18 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 _activeWorkspace = _store.Load(_machineId, false);
                 _catalog = _store.LoadCatalog(_workspace);
                 string preparationSignature;
-                _sourceChanged = ComputeSourceSignatureForAction(out preparationSignature) != _workspace.BaseSignature;
+                string before = ComputeSourceSignatureForAction(out preparationSignature);
                 Rebuild();
 
-                _lastCheckIssues = _store.Check(_workspace);
-                ShowIssues(_lastCheckIssues);
+                var issues = _store.Check(_workspace);
+                string after = ComputeSourceSignatureForAction(out preparationSignature);
+                _lastCheckIssues = before == after ? issues : null;
+                ShowIssues(_lastCheckIssues ?? new TaskValidationIssue[0]);
                 RefreshLibraryRows();
-                _sourceChanged = ComputeSourceSignatureForAction(out preparationSignature) != _workspace.BaseSignature;
-                _observedPreparationSignature = preparationSignature;
-                _sourceReadFailed = false;
-                _sourceReadError = null;
-                bool hasErrors = _lastCheckIssues.Any(issue => issue.Severity == TaskIssueSeverity.Error);
-                SetActionStatusText(T("草稿来源已同步") + "；" + T(hasErrors ? "检查发现问题" : _lastCheckIssues.Count > 0 ? "检查有提醒" : "检查通过")
+                bool hasErrors = issues.Any(issue => issue.Severity == TaskIssueSeverity.Error);
+                SetActionStatusText(T("草稿来源已同步") + "；" + (_lastCheckIssues == null
+                    ? T("来源文件再次变化，请重新检查")
+                    : T(hasErrors ? "检查发现问题" : issues.Count > 0 ? "检查有提醒" : "检查通过"))
                     + (_sourceChanged ? "；" + T("来源文件再次变化，请重新检查") : "") + "\n"
                     + T("同步前草稿备份") + "：" + backupPath);
                 RefreshPermission(null, EventArgs.Empty);
@@ -896,7 +907,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             try { _store.SaveDraft(_workspace); _dirty = false; SetStatusText(T("草稿已保存，未改变运行版本")); Rebuild(); return true; }
             catch (Exception error) { ShowError(error); return false; }
         }
-        /// <summary>使用最新目录与准备配置检查；检查过程中来源再次变化时不保留过期的成功结论。</summary>
+        /// <summary>明确检查撤销旧轮询，并复核前后完整来源；检查中来源变化时不保留过期结论。</summary>
         private void Check_Click(object sender, RoutedEventArgs e)
         {
             if (_editor != null) { SetStatusText(T("请先保存并返回任务配置")); return; }
@@ -907,10 +918,6 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 string before = ComputeSourceSignatureForAction(out preparationSignature);
                 var issues = _store.Check(_workspace);
                 string after = ComputeSourceSignatureForAction(out preparationSignature);
-                _observedPreparationSignature = preparationSignature;
-                _sourceReadFailed = false;
-                _sourceReadError = null;
-                _sourceChanged = after != _workspace.BaseSignature;
                 _lastCheckIssues = before == after ? issues : null;
                 ShowIssues(_lastCheckIssues ?? new TaskValidationIssue[0]);
                 RefreshLibraryRows();
@@ -937,10 +944,11 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 + (english ? "; loading and preparation remain required." : "；仍需重新装载和设备准备。");
         }
 
-        /// <summary>更新正式任务文件前后都核对会话状态；存储层复核能力、引用及来源签名。</summary>
+        /// <summary>应用前后复核会话与来源，并撤销旧观察；存储层继续负责能力、引用和冲突检查。</summary>
         private void Apply_Click(object sender, RoutedEventArgs e)
         {
             if (_workspace == null || _editor != null || !ReadSettings()) return;
+            InvalidateSourceObservation();
             try
             {
                 string blocked = _getBlockedReason(); if (!string.IsNullOrEmpty(blocked)) throw new InvalidOperationException(blocked);
@@ -948,10 +956,18 @@ namespace MotionControl.TaskEngine.Wpf.Editing
                 if (issues.Any(item => item.Severity == TaskIssueSeverity.Error)) { SetActionStatusText(T("存在错误，不能应用")); return; }
                 if (MessageBox.Show(T("确认更新以下任务文件") + "\n" + string.Join("\n", _workspace.Tasks.Select(item => item.Definition.Name)), T("更新任务文件"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
                 blocked = _getBlockedReason(); if (!string.IsNullOrEmpty(blocked)) throw new InvalidOperationException(blocked);
-                string warning; _workspace = _store.Apply(_workspace, out warning); _activeWorkspace = _store.Load(_machineId, false); _catalog = _store.LoadCatalog(_workspace); _dirty = false; _sourceChanged = false; _lastCheckIssues = null; Rebuild();
+                string warning;
+                _workspace = _store.Apply(_workspace, out warning);
+                _activeWorkspace = _store.Load(_machineId, false);
+                _catalog = _store.LoadCatalog(_workspace);
+                string preparationSignature;
+                ComputeSourceSignatureForAction(out preparationSignature);
+                _dirty = false;
+                _lastCheckIssues = null;
+                Rebuild();
                 SetActionStatusText(T("任务文件已更新") + (warning == null ? "" : "\n" + warning));
             }
-            catch (Exception error) { ShowError(error); }
+            catch (Exception error) { RefreshSourceAfterActionFailure(); ShowError(error); RefreshPermission(null, EventArgs.Empty); }
         }
         /// <summary>明确放弃草稿并重新读取运行任务文件，执行前保留当前页面内容。</summary>
         private void ReloadRuntimeFiles()

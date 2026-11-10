@@ -60,7 +60,8 @@ namespace MotionControl.TaskEditing.Checks
             Check("ROC-18 来源变化保留未保存的编辑器", Roc18TaskSourceChangeKeepsUnsavedEditor, ref failed);
             Check("ROC-18 子编辑器来源变化撤销旧检查", Roc18EditorSourceCheckInvalidation, ref failed);
             Check("ROC-18 来源未变化保留检查结果", Roc18UnchangedTaskSourcesKeepChecks, ref failed);
-            Console.WriteLine("任务编辑内部检查：34 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
+            Check("ROC-18 来源观察兼容可写文件句柄", Roc18ObservationAllowsWritableSourceHandle, ref failed);
+            Console.WriteLine("任务编辑内部检查：35 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
             return failed == 0 ? 0 : 1;
         }
         /// <summary>逐项执行并保留异常堆栈。</summary>
