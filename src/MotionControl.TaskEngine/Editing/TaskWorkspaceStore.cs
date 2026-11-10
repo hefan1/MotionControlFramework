@@ -274,6 +274,14 @@ namespace MotionControl.TaskEngine.Editing
 
         /// <summary>只检查与任务有关的运行文件和引用目录，排除草稿、备份、变量恢复运行值。</summary>
         public string ComputeSignature(string machineId)
+        { return ComputeSignature(machineId, false); }
+
+        /// <summary>后台观察允许其他入口写入和原子替换文件；只用于撤销旧检查，不代替应用前的严格核验。</summary>
+        public string ComputeObservationSignature(string machineId)
+        { return ComputeSignature(machineId, true); }
+
+        /// <summary>观察与明确操作使用同一文件集合和字节编码，稳定来源得到完全相同的签名。</summary>
+        private string ComputeSignature(string machineId, bool observation)
         {
             string root = _store.GetMachineDirectory(machineId);
             var paths = new List<string> { "Parameters/TaskMachine.json", TaskStationPreparationStore.RelativePath, "HardwareConfig/AxisParameters.json", "HardwareConfig/IoMapping.json",
@@ -288,10 +296,26 @@ namespace MotionControl.TaskEngine.Editing
                 {
                     writer.Write(path);
                     bool exists = File.Exists(Path.Combine(root, path)); writer.Write(exists);
-                    if (exists) { byte[] data = File.ReadAllBytes(Path.Combine(root, path)); writer.Write(data.Length); writer.Write(data); }
+                    if (exists)
+                    {
+                        string fullPath = Path.Combine(root, path);
+                        byte[] data = observation ? ReadObservationFile(fullPath) : File.ReadAllBytes(fullPath);
+                        writer.Write(data.Length); writer.Write(data);
+                    }
                 }
                 writer.Flush();
                 return BitConverter.ToString(hash.ComputeHash(bytes.ToArray())).Replace("-", string.Empty);
+            }
+        }
+
+        /// <summary>只读观察不占住写入或删除权限，避免后台检查阻碍正常保存、应用或失败恢复。</summary>
+        private static byte[] ReadObservationFile(string path)
+        {
+            using (var source = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            using (var bytes = new MemoryStream())
+            {
+                source.CopyTo(bytes);
+                return bytes.ToArray();
             }
         }
 

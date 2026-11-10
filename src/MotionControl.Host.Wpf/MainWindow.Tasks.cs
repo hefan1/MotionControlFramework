@@ -63,7 +63,8 @@ namespace MotionControl.Host.Wpf
             _equipmentOverviewPage.SetTaskSessionStateProvider(launcher == null ? (Func<bool>)null : () => launcher.HasTaskSession);
             _equipmentOverviewPage.SetTaskStationProvider(launcher == null ? null
                 : (Func<System.Collections.Generic.IReadOnlyList<Operation.StationOverviewData>>)launcher.ReadStationOverview);
-            _equipmentOverviewPage.SetTaskSafetySummaryProvider(launcher == null ? null : (Func<string>)launcher.ReadOverviewSafetySummary);
+            _equipmentOverviewPage.SetTaskSafetySummaryProvider(launcher == null ? null : (Func<string>)launcher.ReadOverviewSafetySummary,
+                launcher == null ? null : (Func<MachineRuntime, Guid?, object>)launcher.ReadOverviewSafetySessionIdentity);
             _currentAlarmsPage.SetTaskStationProvider(launcher == null ? null
                 : (Func<System.Collections.Generic.IReadOnlyList<Operation.StationOverviewData>>)launcher.ReadStationOverview);
             UpdatePageContent();

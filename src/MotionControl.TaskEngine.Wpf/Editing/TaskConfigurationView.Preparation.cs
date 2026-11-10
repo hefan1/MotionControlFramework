@@ -53,7 +53,7 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             string signature = null;
             Exception readError = null;
             _sourceObservationRunning = true;
-            try { signature = await Task.Run(() => _store.ComputeSignature(_machineId)); }
+            try { signature = await Task.Run(() => _store.ComputeObservationSignature(_machineId)); }
             catch (Exception error) { readError = error; }
             finally { _sourceObservationRunning = false; }
 

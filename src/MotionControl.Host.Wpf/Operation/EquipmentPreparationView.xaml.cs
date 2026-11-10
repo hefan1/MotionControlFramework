@@ -489,6 +489,12 @@ namespace MotionControl.Host.Wpf.Operation
             {
                 _error = canceled ? T("回零已停止，请检查当前机构状态后重新回零。") : SimplifyError(error.Message);
                 _diagnostic = error.ToString();
+                // 摘要或诊断生成期间也可能换代；保留命令原身份，下一次刷新会再次核对。
+                _errorRuntime = runtime;
+                _errorSession = session;
+                _errorOwner = owner;
+                _errorPreparationVersion = preparationVersion;
+                return;
             }
             else
             {
@@ -505,19 +511,20 @@ namespace MotionControl.Host.Wpf.Operation
             _errorPreparationVersion = _runtime.PreparationConfigurationVersion;
         }
 
-        /// <summary>请求统一受控停止，等待 Runtime 确认动作退出。</summary>
+        /// <summary>对提交时的 Runtime 请求统一受控停止，迟到异常只按原连接和准备范围发布。</summary>
         private async void StopPreparation_Click(object sender, RoutedEventArgs e)
         {
             if (_runtime == null) return;
-            try { await _runtime.StopPreparationAsync(CancellationToken.None); }
-            catch (Exception error) { SetError(error); }
+            var commandRuntime = _runtime;
+            var commandSession = commandRuntime.ConnectionSessionId;
+            var commandOwner = commandRuntime.ControlOwner;
+            long preparationVersion = commandRuntime.PreparationConfigurationVersion;
+            try { await commandRuntime.StopPreparationAsync(CancellationToken.None); }
+            catch (OperationCanceledException error)
+            { SetCommandError(error, commandRuntime, commandSession, commandOwner, preparationVersion, true); }
+            catch (Exception error)
+            { SetCommandError(error, commandRuntime, commandSession, commandOwner, preparationVersion, false); }
             Refresh();
-        }
-        /// <summary>保留原始异常；摘要去除执行器编号但保留具体现场条件及读数。</summary>
-        private void SetError(Exception error)
-        {
-            _error = SimplifyError(error.Message);
-            _diagnostic = error.ToString();
         }
 
         /// <summary>去掉任务引擎的路径包装，不能从文案推断或替换实际设备条件。</summary>

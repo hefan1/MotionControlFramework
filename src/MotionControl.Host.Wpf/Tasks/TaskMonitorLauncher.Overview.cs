@@ -2,8 +2,10 @@
 using System.Collections.Generic;
 using System.Linq;
 using MotionControl.Framework.Contracts.Flow;
+using MotionControl.Framework.Runtime.Machine;
 using MotionControl.Host.Wpf.Operation;
 using MotionControl.TaskEngine.Machine;
+using MotionControl.TaskEngine.MachineDevice;
 using MotionControl.TaskEngine.Resources;
 using MotionControl.TaskEngine.Wpf.Monitoring;
 
@@ -12,6 +14,19 @@ namespace MotionControl.Host.Wpf.Tasks
     /// <summary>将当前任务会话的只读工位快照交给操作员总览，并定位实际监控工位。</summary>
     internal sealed partial class TaskMonitorLauncher
     {
+        /// <summary>资源证据只属于仍绑定本次 Runtime 和连接的保留会话，不要求准备配置仍是原发布代次。</summary>
+        internal object ReadOverviewSafetySessionIdentity(MachineRuntime runtime, Guid? connectionSession)
+        {
+            var session = _session;
+            var device = session?.TaskDevice as MachineTaskDevice;
+            if (session == null || runtime == null || !connectionSession.HasValue
+                || !ReferenceEquals(runtime, _runtime) || !IsControllerConnected()
+                || runtime.ControlOwner != MachineControlOwner.TaskEngine || !runtime.IsTaskEngineControlClaimed
+                || !runtime.IsConnectionSessionCurrent(connectionSession)
+                || device?.BoundConnectionSessionId != connectionSession) return null;
+            return ReferenceEquals(session, _session) && ReferenceEquals(runtime, _runtime) ? session : null;
+        }
+
         /// <summary>只读汇总本会话待确认资源；不采样硬件，也不把保持输出的命令当成夹具反馈。</summary>
         internal string ReadOverviewSafetySummary()
         {
