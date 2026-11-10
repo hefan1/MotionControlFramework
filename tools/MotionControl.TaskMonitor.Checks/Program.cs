@@ -16,6 +16,7 @@ using MotionControl.Framework.Contracts.Configuration;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.Variables;
 using MotionControl.Framework.Runtime.Configuration;
+using MotionControl.Framework.Wpf.Compatibility;
 using MotionControl.Framework.Wpf.Configuration;
 using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Definitions;
@@ -32,10 +33,12 @@ namespace MotionControl.TaskMonitor.Checks
     /// <summary>验证监控关联与 WPF 构造；不把这些内部检查当作屏幕验收。</summary>
     internal static class Program
     {
-        /// <summary>运行独立内存用例，失败时返回非零状态。</summary>
+        /// <summary>先统一 WPF 工具提示默认时长，再运行独立内存用例，失败时返回非零状态。</summary>
         [STAThread]
         private static int Main()
         {
+            ToolTipTimingCompatibility.Initialize();
+            Console.WriteLine("[兼容初始化] TextBlock 工具提示实际默认时长=" + ToolTipService.GetShowDuration(new TextBlock()) + "ms。");
             int failures = 0;
             Check("示例任务与未知输入、整机暂停、恢复和关闭", () => ExampleLifecycle().GetAwaiter().GetResult(), ref failures);
             Check("重复子任务调用与未选择分支", () => TreeAssociations().GetAwaiter().GetResult(), ref failures);
@@ -385,7 +388,7 @@ namespace MotionControl.TaskMonitor.Checks
             }
         }
 
-        /// <summary>在透明的离屏窗口中走操作员按钮和自动工艺信号，验证真实三工位循环可暂停并续跑。</summary>
+        /// <summary>在透明的离屏窗口中验证三工位暂停续跑，并记录关键等待阶段供停点定位，不代替屏幕验收。</summary>
         private static void ExerciseOperatorControls(Application application)
         {
             var session = TaskMonitorExample.Create();
@@ -393,6 +396,7 @@ namespace MotionControl.TaskMonitor.Checks
             bool requireBlockedClose = false;
             try
             {
+                Console.WriteLine("[操作按钮阶段] 开始打开窗口并等待首次布局。");
                 window = new TaskSimulationWindow(session)
                 {
                     Opacity = 0,
@@ -401,8 +405,11 @@ namespace MotionControl.TaskMonitor.Checks
                     Left = -2000,
                     Top = -2000
                 };
+                Console.WriteLine("[操作按钮阶段] 窗口构造已完成，开始 Show。");
                 window.Show();
+                Console.WriteLine("[操作按钮阶段] Show 已返回，开始等待首次空闲布局。");
                 application.Dispatcher.Invoke(new Action(() => { }), DispatcherPriority.ApplicationIdle);
+                Console.WriteLine("[操作按钮阶段] 窗口已打开，首次布局已返回。");
 
                 var reset = (Button)window.FindName("ResetButton");
                 var start = (Button)window.FindName("StartButton");
@@ -419,19 +426,24 @@ namespace MotionControl.TaskMonitor.Checks
                 Assert(session.Machine.GetSnapshot().State == TaskMachineState.Running && pause.IsEnabled,
                     "启动按钮没有启动整机循环。");
 
+                Console.WriteLine("[操作按钮阶段] 开始等待三工位首次完成两个周期。");
                 WaitWithDispatcher(() => ProductionCycleCounts(session).All(count => count >= 2), 45000,
                     "自动工艺信号未能带动上料、搬运、检测三个工位连续完成两个生产周期。");
+                Console.WriteLine("[操作按钮阶段] 首次两个周期已完成，开始暂停观察。");
                 ClickButton(pause);
                 Assert(session.Machine.GetSnapshot().State == TaskMachineState.Paused && reset.IsEnabled && !start.IsEnabled,
                     "暂停按钮没有锁存整机状态或刷新复位权限。");
                 long[] pausedCounts = ProductionCycleCounts(session);
+                Console.WriteLine("[操作按钮阶段] 暂停命令已完成，开始 700ms 消息泵观察。");
                 PumpFor(TimeSpan.FromMilliseconds(700));
                 Assert(ProductionCycleCounts(session).SequenceEqual(pausedCounts), "整机暂停后仍有工位完成新的生产周期。");
+                Console.WriteLine("[操作按钮阶段] 暂停观察已完成，开始复位并续跑两个追加周期。");
 
                 ClickButton(reset);
                 Assert(session.Machine.GetSnapshot().State == TaskMachineState.Ready && start.IsEnabled,
                     "暂停后整机复位没有恢复启动权限。");
                 ClickButton(start);
+                Console.WriteLine("[操作按钮阶段] 复位启动已完成，开始等待三工位两个追加周期。");
                 WaitWithDispatcher(() => ProductionCycleCounts(session).Zip(pausedCounts,
                     (current, prior) => current - prior >= 2).All(value => value),
                     45000, "暂停后复位并启动，三个工位没有各自连续完成两个追加生产周期。");
@@ -439,6 +451,7 @@ namespace MotionControl.TaskMonitor.Checks
                     "续跑期间整机没有保持运行状态。");
                 Console.WriteLine("[通过] 操作界面：复位、启动、三工位连续循环、暂停、复位续跑");
 
+                Console.WriteLine("[操作按钮阶段] 复位续跑已完成，开始验证物理信号按钮。");
                 var inputButtons = ((WrapPanel)window.FindName("InputsPanel")).Children.OfType<Button>();
                 var physicalStart = inputButtons.Single(button => (string)button.Tag == "启动按钮");
                 var physicalPause = inputButtons.Single(button => (string)button.Tag == "停止按钮");
@@ -456,34 +469,41 @@ namespace MotionControl.TaskMonitor.Checks
                 Assert(session.Machine.GetSnapshot().State == TaskMachineState.Running
                     && session.Device.ReadInput("启动按钮") == false,
                     "启动 DI 没有开始运行或信号未自动释放。");
+                Console.WriteLine("[操作按钮阶段] 物理信号按钮已触发，开始等待三工位继续生产。");
                 WaitWithDispatcher(() => ProductionCycleCounts(session).Zip(beforePhysicalButtons, (current, prior) => current > prior).All(value => value),
                     30000, "实体 DI 按钮启动后，三个工位没有全部继续生产。");
                 Console.WriteLine("[通过] 操作界面：停止、复位、启动 DI 按钮按瞬时信号执行并自动释放");
+                Console.WriteLine("[操作按钮阶段] 物理信号续跑已完成，开始等待资源占用以验证关闭保护。");
                 WaitWithDispatcher(() => session.Device.ReadResources().Any(item => item.State == TaskResourceState.Held),
                     5000, "未观察到示例占用资源，无法验证关闭保护。");
                 requireBlockedClose = true;
             }
             finally
             {
+                Console.WriteLine("[操作按钮阶段] 开始关闭窗口与会话；要求验证资源保护=" + requireBlockedClose + "。");
                 if (window != null && window.IsVisible)
                 {
                     window.Close();
                     if (requireBlockedClose)
                     {
+                        Console.WriteLine("[操作按钮阶段] 已请求关闭，开始等待资源待确认提示。");
                         var feedback = (TextBlock)window.FindName("CommandFeedback");
                         WaitWithDispatcher(() => window.IsVisible && window.IsEnabled
                             && session.Device.ReadResources().Any(item => item.State == TaskResourceState.Blocked)
                             && feedback.Text.Contains("待确认"), 10000, "资源待确认时窗口没有保留并显示原因。");
                         Assert(session.Machine.GetSnapshot().State != TaskMachineState.Closed,
                             "资源待确认时窗口错误关闭了整机会话。");
+                        Console.WriteLine("[操作按钮阶段] 资源待确认提示已出现，确认内存资源后再次关闭。");
                         ConfirmMemoryResources(session, session.Device.ReadResources().Where(item => item.State == TaskResourceState.Blocked).ToArray());
                         window.Close();
                     }
+                    Console.WriteLine("[操作按钮阶段] 开始等待窗口与会话完成关闭。");
                     WaitWithDispatcher(() => !window.IsVisible
                         && session.Machine.GetSnapshot().State == TaskMachineState.Closed,
                         30000, "操作员关闭窗口后，整机会话或窗口没有完成收尾。");
                 }
                 else CloseExampleSessionAsync(session, false).GetAwaiter().GetResult();
+                Console.WriteLine("[操作按钮阶段] 窗口与会话已完成关闭。");
             }
         }
 

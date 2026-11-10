@@ -17,6 +17,9 @@ namespace MotionControl.TaskEditing.Checks
     /// <summary>检查任务来源换代后的页面失效与草稿保留；只操作隔离文件和真实 WPF 控件，不连接控制器。</summary>
     internal static partial class Program
     {
+        /// <summary>仅表示本次可见页面未取得两轮合格发布，供独立负控精确识别，不包含采集或守护故障。</summary>
+        private const string Roc18SourceObservationNotPublished = "ROC18_SOURCE_OBSERVATION_NOT_PUBLISHED：本次可见窗口未完成两轮合格来源观察发布。";
+
         /// <summary>准备文件未变但任务内容被替换时，不能继续显示上次检查通过或隐藏来源核查入口。</summary>
         private static void Roc18TaskFileSourceChange()
         {
@@ -235,7 +238,7 @@ namespace MotionControl.TaskEditing.Checks
                 string source = ((TextBlock)page.FindName("SourceSummaryText")).Text;
                 string files = test.ActiveBytes();
 
-                ObserveRoc18TaskSources(page, () => true, TimeSpan.FromMilliseconds(2500));
+                ObserveCompletedRoc18TaskSources(page);
 
                 Assert(grid.Items.Cast<TaskLibraryRow>().Select(row => row.DraftState).SequenceEqual(states),
                     "任务来源未变化却清除了已有检查结果。");
@@ -262,7 +265,7 @@ namespace MotionControl.TaskEditing.Checks
                     FileShare.ReadWrite | FileShare.Delete))
                 {
                     // 没有写入新字节；只保留一个正常允许其他读写与原子替换的编辑器句柄。
-                    ObserveRoc18TaskSources(page, () => true, TimeSpan.FromMilliseconds(2500));
+                    ObserveCompletedRoc18TaskSources(page);
                     Assert(grid.Items.Cast<TaskLibraryRow>().Select(row => row.DraftState).SequenceEqual(states)
                         && ((Expander)page.FindName("ErrorDiagnosticsExpander")).Visibility == Visibility.Collapsed
                         && ((Button)page.FindName("ApplyButton")).IsEnabled,
@@ -271,6 +274,123 @@ namespace MotionControl.TaskEditing.Checks
                 Assert(test.ActiveBytes() == files && !page.HasUnsavedChanges,
                     "只读来源观察改动了已保存文件或草稿。");
             }
+        }
+
+        /// <summary>在新页面注入读取未完成状态，仅接受缺少真实发布的精确失败标记，其他故障继续报错。</summary>
+        private static void Roc18ObservationRejectsMissingPublication()
+        {
+            using (var test = new Workspace())
+            {
+                TaskConfigurationView page = CreateRoc18CheckedPage(test);
+                // 本项只核对读取缺失，不依赖鼠标悬停；避免工具提示候选故障混入这条独立负控。
+                page.IsHitTestVisible = false;
+                var running = typeof(TaskConfigurationView).GetField("_sourceObservationRunning", BindingFlags.Instance | BindingFlags.NonPublic);
+                object original = running.GetValue(page);
+                bool rejected = false;
+                try
+                {
+                    running.SetValue(page, true);
+                    try { ObserveCompletedRoc18TaskSources(page); }
+                    catch (InvalidOperationException error)
+                    {
+                        if (!string.Equals(error.Message, Roc18SourceObservationNotPublished, StringComparison.Ordinal)) throw;
+                        rejected = true;
+                    }
+                }
+                finally { running.SetValue(page, original); }
+                Assert(rejected, "ROC-18：本次没有执行后台来源读取，固定等待仍把页面旧状态当成观察通过。");
+            }
+        }
+
+        /// <summary>让首次 Loaded 超过五秒结果期限，证明迟到轮询不会再调用结果采样，也不能被判为成功。</summary>
+        private static void Roc18ObservationRejectsLatePoll()
+        {
+            using (var test = new Workspace())
+            {
+                TaskConfigurationView page = CreateRoc18CheckedPage(test);
+                page.IsHitTestVisible = false;
+                bool loadedDelayRan = false;
+                bool predicateCalled = false;
+                // 产品 Loaded 已先订阅；这里阻塞 UI，确保任何可见页面结果采样都只能在期限之后发生。
+                RoutedEventHandler delayLoaded = (sender, args) =>
+                {
+                    if (loadedDelayRan) return;
+                    loadedDelayRan = true;
+                    Thread.Sleep(5200);
+                };
+                page.Loaded += delayLoaded;
+                try
+                {
+                    bool resultAccepted = ObserveRoc18TaskSources(page, () =>
+                    {
+                        predicateCalled = true;
+                        return true;
+                    });
+                    Assert(loadedDelayRan, "ROC-18：迟到轮询检查没有执行 Loaded 延迟，无法证明五秒期限边界。");
+                    Assert(!predicateCalled && !resultAccepted,
+                        "ROC-18：首次可见轮询已晚于五秒结果期限，仍调用或接受了迟到结果采样。");
+                }
+                finally { page.Loaded -= delayLoaded; }
+            }
+        }
+
+        /// <summary>只读见证本次可见页面的两次成功发布，不能用旧检查状态或固定等待代替真实后台读取。</summary>
+        private static void ObserveCompletedRoc18TaskSources(TaskConfigurationView page)
+        {
+            var running = typeof(TaskConfigurationView).GetField("_sourceObservationRunning", BindingFlags.Instance | BindingFlags.NonPublic);
+            var next = typeof(TaskConfigurationView).GetField("_nextSourceObservationUtc", BindingFlags.Instance | BindingFlags.NonPublic);
+            var revision = typeof(TaskConfigurationView).GetField("_sourceObservationRevision", BindingFlags.Instance | BindingFlags.NonPublic);
+            var workspace = typeof(TaskConfigurationView).GetField("_workspace", BindingFlags.Instance | BindingFlags.NonPublic);
+            var readFailed = typeof(TaskConfigurationView).GetField("_sourceReadFailed", BindingFlags.Instance | BindingFlags.NonPublic);
+            bool firstLoadedSeen = false;
+            bool startCaptured = false;
+            object startingWorkspace = null;
+            long startingRevision = 0;
+            Exception startError = null;
+            DateTime previousPublication = DateTime.MinValue;
+            int publicationCount = 0;
+            bool currentPollQualified = false;
+
+            // 产品构造方法已先订阅 Loaded；这里只读取它启动观察后的状态，不在路由事件中抛出失败。
+            RoutedEventHandler loaded = (sender, args) =>
+            {
+                if (firstLoadedSeen) return;
+                firstLoadedSeen = true;
+                try
+                {
+                    startingWorkspace = workspace.GetValue(page);
+                    startingRevision = (long)revision.GetValue(page);
+                    startCaptured = startingWorkspace != null && (bool)running.GetValue(page)
+                        && (DateTime)next.GetValue(page) == DateTime.MinValue;
+                }
+                catch (Exception error) { startError = error; }
+            };
+            page.Loaded += loaded;
+            try
+            {
+                bool completedInTime = ObserveRoc18TaskSources(page, () =>
+                {
+                    // 轮询只在 UI 回调之间采样；同一次产品回调内的两次时间写入只能计为一次发布。
+                    DateTime published = (DateTime)next.GetValue(page);
+                    currentPollQualified = startCaptured && ReferenceEquals(startingWorkspace, workspace.GetValue(page))
+                        && startingRevision == (long)revision.GetValue(page) && !(bool)running.GetValue(page)
+                        && !(bool)readFailed.GetValue(page) && published != DateTime.MinValue;
+                    if (currentPollQualified && published != previousPublication)
+                    {
+                        previousPublication = published;
+                        publicationCount++;
+                    }
+                    return currentPollQualified && publicationCount >= 2;
+                }, TimeSpan.FromMilliseconds(2500));
+
+                // 采集异常单独报错，不能被缺失发布负控接受为预期失败。
+                if (startError != null)
+                    throw new InvalidOperationException("ROC-18：采集首次 Loaded 的来源观察起点失败。", startError);
+                // 关闭窗口会由 Unloaded 重置产品代次；这里只断言退出前最后一次轮询保存的有效证据。
+                if (!completedInTime || !startCaptured || !currentPollQualified || publicationCount < 2)
+                    throw new InvalidOperationException(Roc18SourceObservationNotPublished);
+            }
+            finally { page.Loaded -= loaded; }
         }
 
         /// <summary>建立有效准备文件与任务，并通过真实页面检查入口生成供后续失效核对的检查状态。</summary>
@@ -288,8 +408,8 @@ namespace MotionControl.TaskEditing.Checks
             return page;
         }
 
-        /// <summary>用真实窗口触发 Loaded 并泵送调度器，最多等五秒观察页面结果；不假定来源读取必须同步完成。</summary>
-        private static void ObserveRoc18TaskSources(TaskConfigurationView page, Func<bool> completed,
+        /// <summary>用真实窗口观察并返回五秒期限内采样的完成资格；独立八秒守护只负责失败退出。</summary>
+        private static bool ObserveRoc18TaskSources(TaskConfigurationView page, Func<bool> completed,
             TimeSpan minimumObservation = default(TimeSpan))
         {
             var window = new Window
@@ -303,14 +423,38 @@ namespace MotionControl.TaskEditing.Checks
             };
             var frame = new DispatcherFrame();
             var elapsed = Stopwatch.StartNew();
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(25) };
+            var timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(25) };
             var refresh = typeof(TaskConfigurationView).GetMethod("RefreshPermission", BindingFlags.Instance | BindingFlags.NonPublic);
-            // 测试只等待可见结果；到期后由调用处的具体断言报告缺失行为。
+            var dispatcher = Dispatcher.CurrentDispatcher;
+            var observationFinished = new ManualResetEvent(false);
+            int deadlineMissed = 0;
+            Exception watchdogError = null;
+            DispatcherOperation watchdogExit = null;
+            bool watchdogStarted = false;
+            // 保存最后一次期限内样本的完成资格；期限后的轮询不能覆盖它，期限内无效样本仍会撤销它。
+            bool resultCompletedInTime = false;
+
+            // 不依赖 UI 计时器推进期限；饥饿时先标记失败，再只投递一次 Send 来退出本次消息泵。
+            var watchdog = new Thread(() =>
+            {
+                try
+                {
+                    if (observationFinished.WaitOne(8000)) return;
+                    Interlocked.Exchange(ref deadlineMissed, 1);
+                    watchdogExit = dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(() => frame.Continue = false));
+                }
+                catch (Exception error)
+                {
+                    watchdogError = error;
+                    Interlocked.Exchange(ref deadlineMissed, 1);
+                }
+            }) { IsBackground = true, Name = "ROC18 来源观察守护" };
             EventHandler poll = (sender, args) =>
             {
+                bool observationComplete = false;
                 if (page.IsLoaded)
                 {
-                    // 模拟同步入口没有同步上下文的实际条件；后台观察必须显式回到页面 Dispatcher。
+                    // 模拟同步入口没有同步上下文的条件；恢复后在五秒期限内逐轮采样，不等待最短观察期。
                     SynchronizationContext context = SynchronizationContext.Current;
                     try
                     {
@@ -318,29 +462,50 @@ namespace MotionControl.TaskEditing.Checks
                         refresh.Invoke(page, new object[] { null, EventArgs.Empty });
                     }
                     finally { SynchronizationContext.SetSynchronizationContext(context); }
+                    // 刷新可能同步耗时；先核对期限，避免迟到轮询首次见证的发布混入有效证据。
+                    if (elapsed.Elapsed < TimeSpan.FromSeconds(5))
+                    {
+                        observationComplete = completed();
+                        // 结果委托也可能耗时，跨越期限的返回不能授予新的完成资格。
+                        if (elapsed.Elapsed < TimeSpan.FromSeconds(5))
+                            resultCompletedInTime = observationComplete;
+                    }
                 }
-                if (elapsed.Elapsed >= TimeSpan.FromSeconds(5)
-                    || (page.IsLoaded && elapsed.Elapsed >= minimumObservation && completed()))
+                if (Volatile.Read(ref deadlineMissed) != 0 || elapsed.Elapsed >= TimeSpan.FromSeconds(5)
+                    || (page.IsLoaded && elapsed.Elapsed >= minimumObservation && observationComplete))
                     frame.Continue = false;
             };
             timer.Tick += poll;
             try
             {
-                Console.WriteLine("[来源观察阶段] 显示任务来源窗口。");
+                watchdog.Start();
+                watchdogStarted = true;
                 window.Show();
-                Console.WriteLine("[来源观察阶段] 窗口已显示，开始泵送。");
                 timer.Start();
                 Dispatcher.PushFrame(frame);
-                Console.WriteLine("[来源观察阶段] 泵送已返回。");
+                if (Volatile.Read(ref deadlineMissed) != 0)
+                    throw new InvalidOperationException("ROC-18：来源观察超过独立八秒守护期限，计时器饥饿后的唤醒不能算通过。", watchdogError);
+                return resultCompletedInTime;
             }
             finally
             {
-                timer.Stop();
-                timer.Tick -= poll;
-                Console.WriteLine("[来源观察阶段] 关闭任务来源窗口。");
-                window.Close();
-                window.Content = null;
-                Console.WriteLine("[来源观察阶段] 窗口已关闭并解除内容绑定。");
+                observationFinished.Set();
+                bool watchdogEnded = !watchdogStarted || watchdog.Join(1000);
+                if (watchdogEnded) observationFinished.Dispose();
+                try
+                {
+                    // Join 成功后不再有新操作入队；撤销已取得且尚未执行的退出，避免干扰后续检查。
+                    if (watchdogExit != null) watchdogExit.Abort();
+                }
+                finally
+                {
+                    timer.Stop();
+                    timer.Tick -= poll;
+                    try { window.Close(); }
+                    finally { window.Content = null; }
+                }
+                // 守护收尾失败也必须报告失败，但要先完成计时器和窗口清理。
+                Assert(watchdogEnded, "ROC-18：来源观察守护线程未在一秒内退出，已清理窗口与轮询，保留等待句柄供进程守护收尾。");
             }
         }
 
