@@ -26,6 +26,9 @@ namespace MotionControl.TaskEditing.Checks
         {
             new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             int failed = 0;
+            // 到期调度回归须在其他窗口和计时器创建前执行，避免无关的新计时器登记改变现场。
+            Check("ROC-18 Tooltip时长不能饿死已到期轮询", Roc18ToolTipDurationKeepsDueTimerRunning, ref failed);
+            Check("ROC-18 无实际来源发布必须失败", Roc18ObservationRejectsMissingPublication, ref failed);
             Check("草稿完整保存、无效引用保留与运行文件隔离", DraftIsolation, ref failed);
             Check("应用校验、版本递增与外部修改冲突", ApplyAndConflict, ref failed);
             Check("中途写入失败恢复全部原字节", FailedApplyRollback, ref failed);
@@ -64,7 +67,7 @@ namespace MotionControl.TaskEditing.Checks
             // 只重复已出现间歇性停顿的用例，保留原顺序与断言，增加一次诊断运行取得停点的机会。
             for (int attempt = 1; attempt <= 10; attempt++)
                 Check("ROC-18 可写句柄停顿诊断第 " + attempt + " 轮", Roc18ObservationAllowsWritableSourceHandle, ref failed);
-            Console.WriteLine("任务编辑内部检查：45 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
+            Console.WriteLine("任务编辑内部检查：47 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
             return failed == 0 ? 0 : 1;
         }
         /// <summary>逐项记录开始和结果，便于定位未返回的检查，并保留异常堆栈。</summary>

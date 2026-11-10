@@ -235,7 +235,7 @@ namespace MotionControl.TaskEditing.Checks
                 string source = ((TextBlock)page.FindName("SourceSummaryText")).Text;
                 string files = test.ActiveBytes();
 
-                ObserveRoc18TaskSources(page, () => true, TimeSpan.FromMilliseconds(2500));
+                ObserveCompletedRoc18TaskSources(page);
 
                 Assert(grid.Items.Cast<TaskLibraryRow>().Select(row => row.DraftState).SequenceEqual(states),
                     "任务来源未变化却清除了已有检查结果。");
@@ -262,7 +262,7 @@ namespace MotionControl.TaskEditing.Checks
                     FileShare.ReadWrite | FileShare.Delete))
                 {
                     // 没有写入新字节；只保留一个正常允许其他读写与原子替换的编辑器句柄。
-                    ObserveRoc18TaskSources(page, () => true, TimeSpan.FromMilliseconds(2500));
+                    ObserveCompletedRoc18TaskSources(page);
                     Assert(grid.Items.Cast<TaskLibraryRow>().Select(row => row.DraftState).SequenceEqual(states)
                         && ((Expander)page.FindName("ErrorDiagnosticsExpander")).Visibility == Visibility.Collapsed
                         && ((Button)page.FindName("ApplyButton")).IsEnabled,
@@ -271,6 +271,38 @@ namespace MotionControl.TaskEditing.Checks
                 Assert(test.ActiveBytes() == files && !page.HasUnsavedChanges,
                     "只读来源观察改动了已保存文件或草稿。");
             }
+        }
+
+        /// <summary>故障注入阻止本次后台读取，旧检查结果即使仍正常也不能被固定等待误判为观察通过。</summary>
+        private static void Roc18ObservationRejectsMissingPublication()
+        {
+            using (var test = new Workspace())
+            {
+                TaskConfigurationView page = CreateRoc18CheckedPage(test);
+                // 本项只核对读取缺失，不依赖鼠标悬停；避免工具提示候选故障混入这条独立负控。
+                page.IsHitTestVisible = false;
+                var running = typeof(TaskConfigurationView).GetField("_sourceObservationRunning", BindingFlags.Instance | BindingFlags.NonPublic);
+                object original = running.GetValue(page);
+                bool rejected = false;
+                try
+                {
+                    running.SetValue(page, true);
+                    try { ObserveCompletedRoc18TaskSources(page); }
+                    catch (InvalidOperationException error)
+                    {
+                        if (!error.Message.StartsWith("ROC18_SOURCE_OBSERVATION_NOT_PUBLISHED", StringComparison.Ordinal)) throw;
+                        rejected = true;
+                    }
+                }
+                finally { running.SetValue(page, original); }
+                Assert(rejected, "ROC-18：本次没有执行后台来源读取，固定等待仍把页面旧状态当成观察通过。");
+            }
+        }
+
+        /// <summary>复用原固定等待入口，让负控先证明它尚未要求后台观察结果真实发布。</summary>
+        private static void ObserveCompletedRoc18TaskSources(TaskConfigurationView page)
+        {
+            ObserveRoc18TaskSources(page, () => true, TimeSpan.FromMilliseconds(2500));
         }
 
         /// <summary>建立有效准备文件与任务，并通过真实页面检查入口生成供后续失效核对的检查状态。</summary>
