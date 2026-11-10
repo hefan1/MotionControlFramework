@@ -1,8 +1,10 @@
 using System;
+using System.Diagnostics;
 using System.Reflection;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using MotionControl.TaskEngine.Wpf.Editing;
 using MotionControl.TaskEngine.Machine;
 
@@ -188,7 +190,7 @@ namespace MotionControl.OperatorPages.Checks
                         "英文读取故障说明或来源处理门禁不一致。");
                     page.SetLanguage("zh-CN");
                 }
-                refresh.Invoke(page, new object[] { null, EventArgs.Empty });
+                ObserveLoadedSources(page, () => ((TextBlock)page.FindName("StatusText")).Text.Contains("读取已恢复"));
                 Require(!((TextBlock)page.FindName("DraftSummaryText")).Text.Contains("基准待核查")
                     && ((TextBlock)page.FindName("StatusText")).Text.Contains("读取已恢复")
                     && !((TextBlock)page.FindName("StatusText")).Text.Contains("已变化"),
@@ -204,8 +206,7 @@ namespace MotionControl.OperatorPages.Checks
                 File.AppendAllText(preparation, Environment.NewLine);
                 using (var locked = new FileStream(axes, FileMode.Open, FileAccess.Read, FileShare.None))
                 {
-                    typeof(TaskConfigurationView).GetMethod("RefreshPermission", BindingFlags.Instance | BindingFlags.NonPublic)
-                        .Invoke(page, new object[] { null, EventArgs.Empty });
+                    ObserveLoadedSources(page, () => ((TextBox)page.FindName("ErrorDiagnosticsText")).Text.Contains("AxisParameters.json"));
                     Require(((TextBlock)page.FindName("ApplyReasonText")).Text.Contains("来源文件无法读取")
                         && ((TextBox)page.FindName("ErrorDiagnosticsText")).Text.Contains("AxisParameters.json")
                         && !((Button)page.FindName("RebaseDraftButton")).IsEnabled,
@@ -267,6 +268,43 @@ namespace MotionControl.OperatorPages.Checks
                 Require(!page.HasUnsavedChanges && grid.Items.Count > 0 && ((TaskLibraryRow)grid.SelectedItem).Definition.TaskId == selectedId
                     && ((Button)page.FindName("EditTaskButton")).IsEnabled,
                     "清除任务筛选改变了草稿状态。");
+            }
+        }
+
+        /// <summary>完整来源已改为可见页面的后台观察；真实触发 Loaded 并有界泵送，保留原恢复与门禁断言。</summary>
+        private static void ObserveLoadedSources(TaskConfigurationView page, Func<bool> completed)
+        {
+            var window = new Window
+            {
+                Content = page, Width = 1100, Height = 760,
+                ShowInTaskbar = false, ShowActivated = false, Title = "来源恢复离线检查"
+            };
+            var frame = new DispatcherFrame();
+            var elapsed = Stopwatch.StartNew();
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(25) };
+            EventHandler poll = (sender, args) =>
+            {
+                if (elapsed.Elapsed >= TimeSpan.FromSeconds(5) || (page.IsLoaded && completed()))
+                    frame.Continue = false;
+            };
+            timer.Tick += poll;
+            try
+            {
+                Console.WriteLine("[来源恢复阶段] 显示来源恢复窗口。");
+                window.Show();
+                Console.WriteLine("[来源恢复阶段] 窗口已显示，开始泵送。");
+                timer.Start();
+                Dispatcher.PushFrame(frame);
+                Console.WriteLine("[来源恢复阶段] 泵送已返回。");
+            }
+            finally
+            {
+                timer.Stop();
+                timer.Tick -= poll;
+                Console.WriteLine("[来源恢复阶段] 关闭来源恢复窗口。");
+                window.Close();
+                window.Content = null;
+                Console.WriteLine("[来源恢复阶段] 窗口已关闭并解除内容绑定。");
             }
         }
 

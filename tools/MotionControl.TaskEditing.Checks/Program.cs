@@ -52,12 +52,21 @@ namespace MotionControl.TaskEditing.Checks
             Check("V1.8 部分恢复失败保留标记并可重试", V18TaskApplyPartialRecovery, ref failed);
             Check("V1.8 工作区定义与后端能力准入分开", V18WorkspaceCapabilityPreflight, ref failed);
             Check("V1.8 异常恢复标记路径阻断装载与应用", V18TaskPendingMarkerDirectory, ref failed);
-            Console.WriteLine("任务编辑内部检查：26 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
+            Check("ROC-18 任务文件替换使旧检查失效", Roc18TaskFileSourceChange, ref failed);
+            Check("ROC-18 任务清单替换使旧检查失效", Roc18TaskMachineSourceChange, ref failed);
+            Check("ROC-18 新增任务使旧检查失效", Roc18TaskFileAdded, ref failed);
+            Check("ROC-18 删除任务使旧检查失效", Roc18TaskFileRemoved, ref failed);
+            Check("ROC-18 任务来源读取失败及恢复", Roc18TaskSourceReadFailure, ref failed);
+            Check("ROC-18 来源变化保留未保存的编辑器", Roc18TaskSourceChangeKeepsUnsavedEditor, ref failed);
+            Check("ROC-18 子编辑器来源变化撤销旧检查", Roc18EditorSourceCheckInvalidation, ref failed);
+            Check("ROC-18 来源未变化保留检查结果", Roc18UnchangedTaskSourcesKeepChecks, ref failed);
+            Check("ROC-18 来源观察兼容可写文件句柄", Roc18ObservationAllowsWritableSourceHandle, ref failed);
+            Console.WriteLine("任务编辑内部检查：35 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
             return failed == 0 ? 0 : 1;
         }
-        /// <summary>逐项执行并保留异常堆栈。</summary>
+        /// <summary>逐项记录开始和结果，便于定位未返回的检查，并保留异常堆栈。</summary>
         private static void Check(string name, Action action, ref int failed)
-        { try { action(); Console.WriteLine("[通过] " + name); } catch (Exception error) { failed++; Console.Error.WriteLine("[失败] " + name + "\n" + error); } }
+        { Console.WriteLine("[开始] " + name); try { action(); Console.WriteLine("[通过] " + name); } catch (Exception error) { failed++; Console.Error.WriteLine("[失败] " + name + "\n" + error); } }
         /// <summary>失败断言必须使检查返回失败。</summary>
         private static void Assert(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
         /// <summary>只有确实抛出异常才算拒绝无效操作。</summary>

@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Controls;
 using MotionControl.Framework.Contracts.Flow;
 using MotionControl.Framework.Contracts.IO;
@@ -18,6 +19,7 @@ using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Runtime.Machine;
 using MotionControl.Framework.Runtime.Variables;
 using MotionControl.Host.Wpf;
+using MotionControl.Host.Wpf.Operation;
 using MotionControl.TaskEngine.Catalog;
 using MotionControl.TaskEngine.Configuration;
 using MotionControl.TaskEngine.Definitions;
@@ -28,7 +30,7 @@ namespace MotionControl.OperatorPages.Checks
     /// <summary>驱动正式 WPF 装载方法、真实 Runtime 生命周期和临时机器配置，完全使用内存卡。</summary>
     internal static partial class BoundTaskLoadChecks
     {
-        /// <summary>检查同 Runtime 重连、准备订阅者错误、并发版本更换及解析失败后关闭可重试。</summary>
+        /// <summary>检查同 Runtime 重连、准备换代后的总览来源、装载回滚及关闭可重试。</summary>
         internal static async Task RunAsync()
         {
             const string id = "ReadCheck";
@@ -220,16 +222,63 @@ namespace MotionControl.OperatorPages.Checks
                 await Invoke("LoadTaskSessionAsync");
                 Require((bool)isPublished.Invoke(page, new object[] { runtime, runtime.ConnectionSessionId }),
                     "安全关闭并重新读取后未恢复任务准备范围。");
+
+                // 使用正式主窗口绑定，确认有效发布的任务确实能显示并定位工位。
+                window.SetTaskMonitorPage((UserControl)page);
+                window.SetMachineRuntime(runtime);
+                window.SetMotionCardConnectionStatus(true);
+                var overview = (EquipmentOverviewView)typeof(MainWindow)
+                    .GetField("_equipmentOverviewPage", flags).GetValue(window);
+                var overviewStations = (ListView)overview.FindName("StationTable");
+                var overviewFlow = (Button)overview.FindName("SelectedFlowButton");
+                var overviewReason = (Button)overview.FindName("SelectedReasonButton");
+                var overviewFields = (FrameworkElement)overview.FindName("OverviewSelectionFields");
+                overview.RefreshDisplay();
+                Require(overviewStations.Items.Count == 1, "有效发布后正式总览没有显示任务工位。");
+                overviewStations.SelectedIndex = 0;
+                Require(overviewFlow.IsEnabled && overviewFields.Visibility == Visibility.Visible
+                    && ((TextBlock)overview.FindName("SelectedStationNameText")).Text == "等待",
+                    "有效发布后正式总览没有显示所选工位详情或启用只读定位。");
+                OperatorNavigationEventArgs overviewTarget = null;
+                EventHandler<OperatorNavigationEventArgs> recordNavigation = (sender, args) => overviewTarget = args;
+                overview.NavigationRequested += recordNavigation;
+                overviewFlow.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Require(overviewTarget?.StationName == "Idle", "有效发布后正式总览无法定位任务工位。");
+                object retainedSession = Published();
+
                 runtime.ConfigurePreparations(new[] { replacement });
                 Require(!(bool)isPublished.Invoke(page, new object[] { runtime, runtime.ConnectionSessionId }),
                     "已发布任务错误地认领了其他准备配置代次。");
                 Require(currentPublishedSession.GetValue(page) == null, "准备配置换代后仍显示旧任务会话为当前来源。");
+
+                // 在下次刷新前点击旧按钮，验证点击入口也会复核已发布来源。
+                overviewTarget = null;
+                overviewFlow.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                bool staleNavigation = overviewTarget != null;
+                bool staleFocus = (bool)type.GetMethod("FocusStationByName", flags)
+                    .Invoke(page, new object[] { "Idle" });
+                overview.RefreshDisplay();
+                bool overviewCleared = overviewStations.Items.Count == 0 && overviewStations.SelectedIndex == -1
+                    && !overviewFlow.IsEnabled && !overviewReason.IsEnabled
+                    && overviewFields.Visibility == Visibility.Collapsed;
+                overview.NavigationRequested -= recordNavigation;
+                // 来源失效只撤下当前工位；保留会话供既有安全收尾和资源证据处理，不自动归还控制权。
+                bool safetySessionRetained = ReferenceEquals(Published(), retainedSession)
+                    && runtime.IsTaskEngineControlClaimed && runtime.ControlOwner == MachineControlOwner.TaskEngine;
                 await Reject(Invoke("CloseTaskSessionAsync", false), "设备准备配置未能恢复");
                 Require(Published() == null && !runtime.IsTaskEngineControlClaimed
                     && runtime.PreparationStations[0].StationId == "replacement",
                     "关闭任务时覆盖了其他准备配置或遗留了已关闭会话。");
                 await Invoke("LoadTaskSessionAsync");
                 Require(Published() != null && runtime.IsTaskEngineControlClaimed, "保留新定义后无法重新装载任务。");
+                // 总览观察结束后恢复窗口原显示绑定，不改变任务入口的 Runtime 或已重载会话。
+                window.SetTaskMonitorPage(null);
+                window.SetMachineRuntime(null);
+                window.SetMotionCardConnectionStatus(false);
+                Require(overviewCleared && !staleNavigation && !staleFocus && safetySessionRetained,
+                    "RED: 准备配置换代后正式总览未撤下旧任务来源或改变了保留会话。工位与选择已清="
+                        + overviewCleared + "；旧按钮仍导航=" + staleNavigation + "；旧工位仍可定位="
+                        + staleFocus + "；安全收尾会话保留=" + safetySessionRetained);
 
                 object loadedSession = Published();
                 object loadedDevice = loadedSession.GetType().GetProperty("TaskDevice").GetValue(loadedSession);

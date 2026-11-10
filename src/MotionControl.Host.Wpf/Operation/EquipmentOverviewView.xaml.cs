@@ -28,6 +28,8 @@ namespace MotionControl.Host.Wpf.Operation
         private Func<IReadOnlyList<StationOverviewData>> _taskStationProvider;
         /// <summary>当前任务会话中需要现场核查的资源摘要；不得推断为夹具实际状态。</summary>
         private Func<string> _taskSafetySummaryProvider;
+        /// <summary>核对资源证据所属的保留会话；准备配置换代不等于该连接的资源隔离已经解除。</summary>
+        private Func<MachineRuntime, Guid?, object> _taskSafetySessionIdentityProvider;
         /// <summary>当前控制卡连接状态。</summary>
         private bool _isCardConnected;
         /// <summary>Host 是否已提供连接结果；未提供时不臆断独立预览状态。</summary>
@@ -265,6 +267,18 @@ namespace MotionControl.Host.Wpf.Operation
             }
         }
 
+        /// <summary>读取与本轮 Runtime 和连接绑定的资源证据身份；读取失败时不采信旧摘要。</summary>
+        private object ReadTaskSafetySessionIdentity(Func<MachineRuntime, Guid?, object> provider,
+            MachineRuntime runtime, Guid? session)
+        {
+            try { return provider(runtime, session); }
+            catch (Exception error)
+            {
+                System.Diagnostics.Trace.TraceWarning("设备总览无法确认资源证据会话：" + error);
+                return null;
+            }
+        }
+
         /// <summary>确认本次只读工位快照和定位仍属于 Runtime 当前控制入口。</summary>
         private bool IsRuntimeControlOwnerCurrent(MachineRuntime runtime, MachineControlOwner? expectedOwner)
         {
@@ -331,9 +345,17 @@ namespace MotionControl.Host.Wpf.Operation
         /// <summary>接入任务入口的只读工位来源；未读取任务时提供方返回空。</summary>
         public void SetTaskStationProvider(Func<IReadOnlyList<StationOverviewData>> provider)
         { _taskStationProvider = provider; RefreshDisplay(); }
-        /// <summary>接入任务资源的只读摘要；读取失败时页面明确提示未知。</summary>
+        /// <summary>兼容原摘要入口；未提供独立资源身份时仍按工位会话身份校验。</summary>
         public void SetTaskSafetySummaryProvider(Func<string> provider)
-        { _taskSafetySummaryProvider = provider; RefreshDisplay(); }
+        { SetTaskSafetySummaryProvider(provider, null); }
+        /// <summary>同时接入资源摘要与保留会话身份，避免把准备换代误当成资源已经解除。</summary>
+        public void SetTaskSafetySummaryProvider(Func<string> provider,
+            Func<MachineRuntime, Guid?, object> sessionIdentityProvider)
+        {
+            _taskSafetySummaryProvider = provider;
+            _taskSafetySessionIdentityProvider = sessionIdentityProvider;
+            RefreshDisplay();
+        }
         /// <summary>同步控制卡连接诊断，供操作员在首页直接查看并跳转设置。</summary>
         public void SetConnectionStatus(bool isConnected, string statusMessage)
         {
@@ -399,6 +421,8 @@ namespace MotionControl.Host.Wpf.Operation
             bool taskIdentitySamplingChanged = false;
             bool taskIdentityAfterKnown = false;
             Exception taskIdentityReadError = null;
+            var safetyIdentityProvider = _taskSafetySessionIdentityProvider;
+            object safetyIdentityBeforeSample = null;
             if (!connectionLost && _preview == null && runtime != null)
             {
                 try
@@ -412,6 +436,8 @@ namespace MotionControl.Host.Wpf.Operation
                 }
                 catch (Exception error) { taskIdentityReadError = error; }
             }
+            if (!connectionLost && _preview == null && taskOwnerBeforeSample && safetyIdentityProvider != null)
+                safetyIdentityBeforeSample = ReadTaskSafetySessionIdentity(safetyIdentityProvider, runtime, session);
             OperationSnapshot snapshot = connectionLost ? null : ReadCurrentSnapshot(runtime);
             string safetySummary = null;
             bool? taskLoaded = null;
@@ -419,7 +445,12 @@ namespace MotionControl.Host.Wpf.Operation
             bool taskIdentityKnown = snapshot == null || snapshot.ControlOwner != MachineControlOwner.TaskEngine;
             if (!connectionLost)
             {
-                try { if (_preview == null && _taskSafetySummaryProvider != null) safetySummary = _taskSafetySummaryProvider(); }
+                try
+                {
+                    if (_preview == null && _taskSafetySummaryProvider != null
+                        && (safetyIdentityProvider == null || safetyIdentityBeforeSample != null))
+                        safetySummary = _taskSafetySummaryProvider();
+                }
                 catch (Exception error) { safetySummary = T("资源状态读取失败请核查") + "：" + error.Message; }
                 if (snapshot.ControlOwner == MachineControlOwner.TaskEngine && _isTaskSessionLoaded != null)
                 {
@@ -449,8 +480,19 @@ namespace MotionControl.Host.Wpf.Operation
                             snapshot.StationReadError = new InvalidOperationException(T("总览任务会话采样期间变化"));
                         else if (taskIdentityReadError != null)
                             snapshot.StationReadError = taskIdentityReadError;
-                        safetySummary = null;
+                        // 旧接入沿用工位身份保护；正式 Host 的资源证据由独立保留会话复核。
+                        if (safetyIdentityProvider == null) safetySummary = null;
                     }
+                }
+                if (safetyIdentityProvider != null)
+                {
+                    object safetyIdentityAfterSample = safetyIdentityBeforeSample == null ? null
+                        : ReadTaskSafetySessionIdentity(safetyIdentityProvider, runtime, session);
+                    if (safetyIdentityBeforeSample == null
+                        || !ReferenceEquals(safetyIdentityBeforeSample, safetyIdentityAfterSample)
+                        || !ReferenceEquals(safetyIdentityProvider, _taskSafetySessionIdentityProvider)
+                        || snapshot.ControlOwner != MachineControlOwner.TaskEngine)
+                        safetySummary = null;
                 }
             }
             if (!ReferenceEquals(runtime, _runtime)) return;

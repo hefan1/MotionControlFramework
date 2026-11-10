@@ -54,16 +54,17 @@ namespace MotionControl.Host.Wpf
         /// <summary>组合根显式接入任务配置页，不改变已有页面布局。</summary>
         public void SetTaskConfigurationPage(UserControl page) { _taskConfigurationPage = page; UpdatePageContent(); }
 
-        /// <summary>由 Host 显式接入任务模块。</summary>
+        /// <summary>由 Host 接入任务模块；总览工位身份只采用当前仍有效的发布会话。</summary>
         public void SetTaskMonitorPage(UserControl page)
         {
             _taskMonitorPage = page;
             var launcher = page as Tasks.TaskMonitorLauncher;
-            _equipmentOverviewPage.SetTaskSessionIdentityProvider(launcher == null ? null : (Func<object>) (() => launcher.CurrentTaskSession));
+            _equipmentOverviewPage.SetTaskSessionIdentityProvider(launcher == null ? null : (Func<object>) (() => launcher.CurrentPublishedTaskSession));
             _equipmentOverviewPage.SetTaskSessionStateProvider(launcher == null ? (Func<bool>)null : () => launcher.HasTaskSession);
             _equipmentOverviewPage.SetTaskStationProvider(launcher == null ? null
                 : (Func<System.Collections.Generic.IReadOnlyList<Operation.StationOverviewData>>)launcher.ReadStationOverview);
-            _equipmentOverviewPage.SetTaskSafetySummaryProvider(launcher == null ? null : (Func<string>)launcher.ReadOverviewSafetySummary);
+            _equipmentOverviewPage.SetTaskSafetySummaryProvider(launcher == null ? null : (Func<string>)launcher.ReadOverviewSafetySummary,
+                launcher == null ? null : (Func<MachineRuntime, Guid?, object>)launcher.ReadOverviewSafetySessionIdentity);
             _currentAlarmsPage.SetTaskStationProvider(launcher == null ? null
                 : (Func<System.Collections.Generic.IReadOnlyList<Operation.StationOverviewData>>)launcher.ReadStationOverview);
             UpdatePageContent();

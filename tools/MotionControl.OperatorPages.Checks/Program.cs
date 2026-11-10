@@ -55,6 +55,12 @@ namespace MotionControl.OperatorPages.Checks
                 app.Shutdown();
                 return failures == 0 ? 0 : 1;
             }
+            if (args.Length == 1 && args[0] == "--preparation-context")
+            {
+                Check("设备准备错误的来源隔离", () => RunUiAsync(PreparationContextResidualChecks.RunAsync), ref failures);
+                app.Shutdown();
+                return failures == 0 ? 0 : 1;
+            }
             Check("在途任务装载关闭", () => RunUiAsync(BoundTaskLoadChecks.RunPendingLoadChecksAsync), ref failures);
             Check("退出重试原关闭", () => RunUiAsync(BoundTaskLoadChecks.RunShutdownRetryCheckAsync), ref failures);
             Check("退出原上下文保护", () => RunUiAsync(BoundTaskLoadChecks.RunHostShutdownChecksAsync), ref failures);
@@ -80,6 +86,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("轴监控只读详情", V14AxisDetailChecks.Run, ref failures);
             Check("启动条件异步读取的连接与控制权归属", () => RunUiAsync(AutomaticStartReadinessSessionChecks.RunAsync), ref failures);
             Check("正式任务异步装载的连接归属和失败收尾", () => RunUiAsync(BoundTaskLoadChecks.RunAsync), ref failures);
+            Check("总览工位失效与保留资源证据分开", () => RunUiAsync(BoundTaskLoadChecks.RunOverviewSafetySourceChecksAsync), ref failures);
             Check("变量定义与内存摘要", V14VariableSummaryChecks.Run, ref failures);
             Check("变量筛选及隐藏目标保护", V14VariableSearchChecks.Run, ref failures);
             Check("设备总览连接会话与旧定位", EquipmentOverviewSessionChecks.Run, ref failures);
@@ -110,6 +117,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("启动条件部分观察与上下文隔离", StartConditionsObservationChecks.Run, ref failures);
             Check("设备准备依赖顺序预览", PreparationDependencyPreviewChecks.Run, ref failures);
             Check("准备提交期间配置变化与按需装载", () => RunUiAsync(PreparationDependencyPreviewChecks.RunSubmissionAsync), ref failures);
+            Check("设备准备错误的来源隔离", () => RunUiAsync(PreparationContextResidualChecks.RunAsync), ref failures);
             Check("V1.8 设备准备响应式布局", V18OperatorLayoutChecks.CheckPreparation, ref failures);
             Check("V1.8 设备总览响应式布局", V18OperatorLayoutChecks.CheckOverview, ref failures);
             Check("V1.8 当前报警布局与断连状态", V18CurrentAlarmsLayoutChecks.Run, ref failures);
@@ -122,7 +130,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("产品记录只读显示两种来源及错误", ProductRecordChecks.Run, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：67 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：69 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }
@@ -201,9 +209,9 @@ namespace MotionControl.OperatorPages.Checks
             foreach (string key in new[] { "控制入口工位流程", "控制入口任务列表", "控制入口无" })
                 Assert(zh.Contains(key) && en.Contains(key), "控制入口缺少语言资源：" + key);
         }
-        /// <summary>统一输出每组结果，异常保留原始堆栈。</summary>
+        /// <summary>统一记录每组开始和结果，便于定位未返回的检查，异常保留原始堆栈。</summary>
         private static void Check(string name, Action action, ref int failures)
-        { try { action(); Console.WriteLine("[通过] " + name); } catch (Exception error) { failures++; Console.Error.WriteLine("[失败] " + name + "\n" + error); } }
+        { Console.WriteLine("[开始] " + name); try { action(); Console.WriteLine("[通过] " + name); } catch (Exception error) { failures++; Console.Error.WriteLine("[失败] " + name + "\n" + error); } }
         /// <summary>运行异步 WPF 检查时处理调度队列，避免同步等待阻塞界面线程。</summary>
         private static void RunAxisMonitorAsyncChecks()
         {
