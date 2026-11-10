@@ -128,6 +128,16 @@ namespace MotionControl.Host.Wpf.Tasks
         /// <summary>当前是否已装载一个整机任务会话。</summary>
         internal bool HasTaskSession { get { return _session != null; } }
 
+        /// <summary>供退出与报警交接判断：包含在途装载、已发布会话和仍未结束的关闭。</summary>
+        internal bool HasUnsettledTaskSession
+        {
+            get
+            {
+                return _session != null || _pendingTaskLoad != null
+                    || (_sessionCloseTask != null && !_sessionCloseTask.IsCompleted);
+            }
+        }
+
         /// <summary>确认页面查看的是当前 Runtime 已发布的任务设备，而非装载中的定义。</summary>
         internal bool HasPublishedPreparationSession(MachineRuntime runtime, Guid? session)
         {
@@ -632,10 +642,15 @@ namespace MotionControl.Host.Wpf.Tasks
             }, "任务停止失败", "任务运行复位建议").ConfigureAwait(true);
         }
 
-        /// <summary>应用退出时沿用任务页的终止及收尾，不跳过设备控制权和资源检查。</summary>
+        /// <summary>应用退出先处理未发布或关闭中的会话；正常任务才执行终止，不跳过持权与资源检查。</summary>
         internal async Task StopTaskSessionForShutdownAsync()
         {
-            if (_session == null) return;
+            if (_session == null || _closingTaskSession)
+            {
+                // 尚未发布也可能已经持权；关闭失败后沿用原模式重试，不能重入已撤销的 Abort 入口。
+                await CloseTaskSessionAsync(_sessionClosePreservesBlocked).ConfigureAwait(true);
+                return;
+            }
             if (_commandInProgress) throw new InvalidOperationException("任务命令正在执行，请等待结束后重试关闭。");
             _commandInProgress = true;
             UpdateCommandAvailability();
