@@ -161,3 +161,18 @@ PR 运行的停顿现场快照把原场景与极值机制连接起来：
 最小补齐只涉及检查入口和检查脚本：TaskMonitor.Main 在控件前调用同一 Initialize，记录有效默认时长，并为现有窗口、循环、暂停与收尾增加中文阶段日志；Verify-V18 将原有 180 秒、本次 PID 的失败保护同时用于 TaskMonitor。所有业务断言、45 秒循环条件、内部等待实现、已有内存检查设施和生产逻辑保持。180 秒是整项检查的外层失败边界，不代表内部每次等待已改为独立硬超时；超时仍返回失败，不伪装关闭成功。
 
 补齐后的独立复核、Windows 结果与实际 master 合并验证继续记录于 [PR #13](https://github.com/hefan1/MotionControlFramework/pull/13) 和 ROC-18 / ROC-23，未完成前不关闭最后 TODO。正式 Host 的提示悬停与页面持续刷新已列入 ROC-13 待办。
+
+
+## ROC-29：合并后清料检查的预算与失败证据
+
+入口补齐提交 `c7054ab` 的 [PR 运行 42766331849](https://github.com/hefan1/MotionControlFramework/actions/runs/42766331849) 与 [push 运行 42766324204](https://github.com/hefan1/MotionControlFramework/actions/runs/42766324204) 均完整通过：任务编辑 39/39、任务监控 5/5、操作页面 69/69、内部项目 15/15、Host、保护布局和 Virtual API / 多控制器隔离。PR #13 已合并为 `23cbeb8`，代码树与候选一致。
+
+[实际 master 运行 42766971759](https://github.com/hefan1/MotionControlFramework/actions/runs/42766971759) 的上述三组页面检查继续通过，唯一失败为 MachineDevice.Checks 的 `PendingClearanceCannotRecoverAsync` 在原 334 行 `Directory.Delete` 抛出 IOException；内部项目因此为 14/15。该检查文件不在 PR #13 的差异中。错误文件 `88D2A8DC91D5A656619811944AB12447424D0B6575EFB32AED5E8E7F2B4621D3.guard` 的 SHA-256 与清料 Axis:X 持久记录一致；原 Blocked 记录的文件名不同。
+
+源码显示该用例的 100ms pauseTimeout 同时用于 `StartControlledClearanceAsync` 等待 `reservation.Ready`，后者包含真实文件创建、写入和 `Flush(true)`。启动等待超时时，Runtime 正确保留清料失败状态与资源；检查 finally 却释放停止 gate 后立即删除目录，可能与未完成的写入竞争，并覆盖原始异常。现场只留下删除异常，没有原异常或句柄栈，因此“先发生启动超时”是有源码路径支持的推断，不写成已捕获事实。
+
+本次仅修改检查：将该用例的共享预算明确为 5 秒（生产默认仍为 30 秒），停止迟到仍由未释放的 gate 保证；增加确实发生暂停超时、已经调用轴停止且 gate 仍未完成的断言，原隔离、拒绝提前恢复和正常恢复后保留旧记录的断言全部保留。只有所有业务断言成功后才一次删除临时目录；失败则释放 gate、保留目录并输出路径，让原始异常传播。保留失败目录不等于后台已完成，也不改变产品的资源许可或持久化语义。
+
+新增真实文件句柄回归：保持 .guard 的 FileShare.Read 写句柄，正文抛出指定异常，在同一失败收尾入口执行后要求捕获到同一个异常对象，且目录与记录仍存在。负控自身关闭已知句柄后再清理自己的目录。该用例覆盖首因被清理异常覆盖的已知风险；未宣称另行执行了新增负控的旧版本红态，修复前失败证据为上面的实际 master 日志。
+
+新候选复核、完整 Windows 检查和合并后主分支结果由 [ROC-29](https://linear.app/roc123/issue/ROC-29) 记录；ROC-18 的最后 TODO 在该集成门槛通过前保持未完成。正式屏幕验收仍由 ROC-13 跟踪。

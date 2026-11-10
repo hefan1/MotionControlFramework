@@ -14,9 +14,10 @@ namespace MotionControl.MachineDevice.Checks
     /// <summary>核验清料租约只提供隔离资源排他能力，不执行设备动作。</summary>
     internal static partial class Program
     {
-        /// <summary>任务持权下，以真实设备适配器和假轴验证整机清料、停止及急停入口。</summary>
+        /// <summary>先核对失败记录保留，再以真实设备适配器和假轴验证任务持权下的清料、停止及急停入口。</summary>
         private static void MachineClearanceLifecycleChecks()
         {
+            ClearanceFailureKeepsOpenGuardAndOriginalException();
             foreach (string scenario in new[] { "完成", "状态订阅异常", "恢复订阅异常", "停止", "急停", "记录时停止", "记录时报警", "核查写入失败", "核查后变化", "取消重入", "取消回调失败" })
                 MachineClearanceLifecycleScenarioAsync(scenario).GetAwaiter().GetResult();
             ClearanceIsolationErrorIsNotHiddenAsync().GetAwaiter().GetResult();
@@ -301,17 +302,19 @@ namespace MotionControl.MachineDevice.Checks
             Ensure(axis.MoveCalls == 0 && !string.IsNullOrWhiteSpace(runtime.RecoveryBlockReason), "记录异常后错误允许动作或旧生产。");
         }
 
-        /// <summary>停止调用迟到时，不能仅凭当前静止或取消信号解除资源。</summary>
+        /// <summary>以未放行停止验证清料隔离；失败时保留真实记录目录，避免删除异常掩盖业务首因。</summary>
         private static async Task PendingClearanceCannotRecoverAsync()
         {
             string root = Path.Combine(Path.GetTempPath(), "mcf-clearance-pending-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
             var stopGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            bool caseSucceeded = false;
             try
             {
                 var axis = new FakeAxis("X") { IgnoresCancellation = true, StopGate = stopGate };
+                // 此超时也覆盖启动时真实资源记录落盘，因此仅本例留出五秒；停止迟到由未放行的 stopGate 决定。
                 var device = CreateDevice(axis, new FakeLogicalIo { InputValue = true }, out _, out MachineRuntime runtime,
-                    journal: new TaskResourceJournal(root, "M1"), pauseTimeout: TimeSpan.FromMilliseconds(100));
+                    journal: new TaskResourceJournal(root, "M1"), pauseTimeout: TimeSpan.FromSeconds(5));
                 runtime.SetClearanceRecordCallbacks(() => { }, () => { }, value => { });
                 runtime.ConfigureControlledClearanceProfiles(new[] { TestClearanceProfile() });
                 await runtime.ConnectAsync(CancellationToken.None);
@@ -322,7 +325,12 @@ namespace MotionControl.MachineDevice.Checks
                 device.Resources.Block(blocked, "待确认");
                 await runtime.StartControlledClearanceAsync("test", CancellationToken.None);
                 Ensure(SpinWait.SpinUntil(() => axis.Moving, 5000), "清料轴命令未启动。");
-                try { await runtime.PauseAsync(CancellationToken.None); } catch (TimeoutException) { }
+                bool pauseTimedOut = false;
+                try { await runtime.PauseAsync(CancellationToken.None); }
+                catch (TimeoutException) { pauseTimedOut = true; }
+                Ensure(pauseTimedOut, "停止门未放行时暂停没有超时，未覆盖迟到停止场景。");
+                Ensure(axis.StopCalls > 0, "暂停超时前没有实际调用轴停止。");
+                Ensure(!stopGate.Task.IsCompleted, "核查迟到停止前停止门已被放行。");
                 ExpectMessage(() => runtime.ConfirmControlledClearanceRecoveryAsync("确认", CancellationToken.None)
                     .GetAwaiter().GetResult(), "仍在执行或收尾");
                 Ensure(runtime.IsClearing && !device.Resources.Recover(blocked), "迟到停止时丢失隔离。");
@@ -330,8 +338,50 @@ namespace MotionControl.MachineDevice.Checks
                 try { await runtime.ClearanceCompletion; } catch (InvalidOperationException) { }
                 await runtime.ConfirmControlledClearanceRecoveryAsync("现场已核实", CancellationToken.None);
                 Ensure(!runtime.IsClearing && device.ReadResources().Count == 1, "迟到停止结束后恢复未保留原隔离。");
+                caseSucceeded = true;
             }
-            finally { stopGate.TrySetResult(true); Directory.Delete(root, true); }
+            finally
+            {
+                stopGate.TrySetResult(true);
+                FinishClearanceCheckDirectory(root, caseSucceeded);
+            }
+        }
+
+        /// <summary>真实 .guard 句柄仍打开时，失败收尾必须保留原异常和目录，不能用删除错误覆盖业务首因。</summary>
+        private static void ClearanceFailureKeepsOpenGuardAndOriginalException()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "mcf-clearance-cleanup-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            string guardPath = Path.Combine(root, "cleanup.guard");
+            var originalError = new InvalidOperationException("清料失败收尾检查的原始异常哨兵。");
+            try
+            {
+                using (var guard = new FileStream(guardPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
+                {
+                    Exception observedError = null;
+                    try
+                    {
+                        try { throw originalError; }
+                        finally { FinishClearanceCheckDirectory(root, caseSucceeded: false); }
+                    }
+                    catch (Exception error) { observedError = error; }
+                    Ensure(ReferenceEquals(observedError, originalError), "清料失败收尾用目录删除异常覆盖了原始业务异常。");
+                    Ensure(Directory.Exists(root) && File.Exists(guardPath), "清料失败收尾删除了仍有打开句柄的诊断目录或记录。");
+                }
+            }
+            finally
+            {
+                // using 已关闭本负控持有的唯一句柄；只清理它自己的临时目录，不干预实际失败用例的证据。
+                if (Directory.Exists(root)) Directory.Delete(root, true);
+            }
+            Console.WriteLine("[通过] 清料失败收尾：真实 .guard 句柄未关闭时保留原始异常与记录目录。");
+        }
+
+        /// <summary>清料检查全部成功才一次删除目录；失败时只记录路径，保留可能仍被后台写入的证据。</summary>
+        private static void FinishClearanceCheckDirectory(string root, bool caseSucceeded)
+        {
+            if (caseSucceeded) Directory.Delete(root, true);
+            else Console.Error.WriteLine("[清料检查诊断] 用例失败，保留记录目录供排查：" + root);
         }
 
         /// <summary>C# 工位暂停并结算后共用清料状态，清料后不能续跑原工步。</summary>
