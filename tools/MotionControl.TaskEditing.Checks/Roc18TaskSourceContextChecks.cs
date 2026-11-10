@@ -311,12 +311,16 @@ namespace MotionControl.TaskEditing.Checks
             var observationFinished = new ManualResetEvent(false);
             string phase = "窗口尚未显示";
             int pollEntered = 0, refreshReturned = 0, pollExited = 0;
-            int operationsStarted = 0, operationsCompleted = 0, deadlineMissed = 0;
+            int operationsStarted = 0, operationsCompleted = 0, deadlineMissed = 0, deadlineSnapshotTaken = 0;
             DispatcherOperation lastStarted = null, lastCompleted = null;
             DispatcherHookEventHandler operationStarted = (sender, args) =>
             {
                 Interlocked.Increment(ref operationsStarted);
                 Volatile.Write(ref lastStarted, args.Operation);
+                // WPF 执行委托前还会扫描到期计时器；先记录调度操作开始时的原状态，避免探针改变证据。
+                if (Volatile.Read(ref deadlineMissed) != 0
+                    && Interlocked.Exchange(ref deadlineSnapshotTaken, 1) == 0)
+                    WriteRoc18TimerSnapshot("期限失守后的首次调度前", dispatcher, timer, page);
             };
             DispatcherHookEventHandler operationCompleted = (sender, args) =>
             {
@@ -344,7 +348,10 @@ namespace MotionControl.TaskEditing.Checks
                         if (sample == 0)
                         {
                             dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(() =>
-                                Console.Error.WriteLine("[来源观察探针] Send 已执行，原观察期限已经失守。")));
+                            {
+                                Console.Error.WriteLine("[来源观察探针] Send 已执行，原观察期限已经失守。");
+                                WriteRoc18TimerSnapshot("Send 探针委托内", dispatcher, timer, page);
+                            }));
                             dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
                                 Console.Error.WriteLine("[来源观察探针] Background 已执行，原观察期限已经失守。")));
                         }
@@ -397,6 +404,7 @@ namespace MotionControl.TaskEditing.Checks
                 Volatile.Write(ref phase, "正在启动轮询计时器");
                 Console.WriteLine("[来源观察阶段] 窗口已显示，启动轮询计时器。");
                 timer.Start();
+                WriteRoc18TimerSnapshot("轮询启动后", dispatcher, timer, page);
                 Volatile.Write(ref phase, "计时器已启动，正在泵送");
                 Console.WriteLine("[来源观察阶段] 计时器已启动，进入消息泵。");
                 Dispatcher.PushFrame(frame);
@@ -430,6 +438,77 @@ namespace MotionControl.TaskEditing.Checks
             string method = callback == null ? "回调名称未提供"
                 : callback.Method.DeclaringType?.FullName + "." + callback.Method.Name;
             return operation.Priority + "/" + operation.Status + "/" + method;
+        }
+
+        /// <summary>在 UI 线程只读记录到期登记；私有字段缺失时写明原因，不停止、重启或修改任何计时器。</summary>
+        private static void WriteRoc18TimerSnapshot(string stage, Dispatcher dispatcher, DispatcherTimer pollTimer,
+            TaskConfigurationView page)
+        {
+            try
+            {
+                dispatcher.VerifyAccess();
+                int now = Environment.TickCount;
+                var pageTimer = ReadRoc18DiagnosticField(page, "_timer") as DispatcherTimer;
+                object registered = ReadRoc18DiagnosticField(dispatcher, "_timers");
+                var timers = registered as IEnumerable<DispatcherTimer>;
+                // 不读取或持有框架私有锁；当前 UI 回调中先复制集合，随后只读描述各项。
+                DispatcherTimer[] snapshot = timers == null ? new DispatcherTimer[0] : timers.ToArray();
+                object cachedDue = ReadRoc18DiagnosticField(dispatcher, "_dueTimeInTicks");
+                Console.Error.WriteLine("[来源观察计时器] 阶段=" + stage + "；TickCount=" + now
+                    + "；页面已载入=" + page.IsLoaded + "；调度器退出=" + dispatcher.HasShutdownStarted + "/" + dispatcher.HasShutdownFinished
+                    + "；到期项=" + ReadRoc18DiagnosticField(dispatcher, "_dueTimeFound")
+                    + "；缓存到期=" + cachedDue + "；缓存到期差=" + DescribeRoc18DueDifference(cachedDue, now)
+                    + "；原生计时器登记标记=" + ReadRoc18DiagnosticField(dispatcher, "_isWin32TimerSet")
+                    + "；登记数量=" + (timers == null ? "未取得：" + registered : snapshot.Length.ToString()));
+                WriteRoc18TimerDetails("测试轮询", pollTimer, now, snapshot.Contains(pollTimer));
+                WriteRoc18TimerDetails("页面刷新", pageTimer, now, pageTimer != null && snapshot.Contains(pageTimer));
+                for (int index = 0; index < snapshot.Length; index++)
+                    if (snapshot[index] != pollTimer && snapshot[index] != pageTimer)
+                        WriteRoc18TimerDetails("其他登记 " + index, snapshot[index], now, true);
+                Console.Error.WriteLine("[来源观察运行时] WindowsBase=" + typeof(Dispatcher).Assembly.FullName
+                    + "；文件版本=" + FileVersionInfo.GetVersionInfo(typeof(Dispatcher).Assembly.Location).FileVersion
+                    + "；PresentationFramework=" + FileVersionInfo.GetVersionInfo(typeof(ToolTipService).Assembly.Location).FileVersion
+                    + "；Tooltip默认时长=" + ToolTipService.ShowDurationProperty.GetMetadata(typeof(FrameworkElement)).DefaultValue
+                    + "；来源说明Tooltip时长=" + ToolTipService.GetShowDuration((DependencyObject)page.FindName("SourceSummaryText")));
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine("[来源观察计时器快照未取得] " + error);
+            }
+        }
+
+        /// <summary>描述单个计时器的启用、到期、操作与订阅回调，区分页面轮询和框架内部计时器。</summary>
+        private static void WriteRoc18TimerDetails(string name, DispatcherTimer timer, int now, bool registered)
+        {
+            if (timer == null)
+            {
+                Console.Error.WriteLine("[来源观察计时器项] " + name + "：未取得。");
+                return;
+            }
+            object due = ReadRoc18DiagnosticField(timer, "_dueTimeInTicks");
+            object pending = ReadRoc18DiagnosticField(timer, "_operation");
+            var operation = pending as DispatcherOperation;
+            var tick = ReadRoc18DiagnosticField(timer, "Tick") as Delegate;
+            string callbacks = tick == null ? "回调未提供" : string.Join(",", tick.GetInvocationList()
+                .Select(callback => callback.Method.DeclaringType?.FullName + "." + callback.Method.Name));
+            Console.Error.WriteLine("[来源观察计时器项] " + name + "；启用=" + timer.IsEnabled
+                + "；间隔=" + timer.Interval.TotalMilliseconds + "ms；已登记=" + registered
+                + "；到期=" + due + "；到期差=" + DescribeRoc18DueDifference(due, now)
+                + "；操作=" + (operation == null ? (pending ?? "无").ToString() : DescribeRoc18DispatcherOperation(operation))
+                + "；回调=" + callbacks);
+        }
+
+        /// <summary>读取本次框架版本确有的诊断字段；不可用时保留明确标记，不能当作零值。</summary>
+        private static object ReadRoc18DiagnosticField(object target, string name)
+        {
+            FieldInfo field = target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic);
+            return field == null ? "字段未提供：" + name : field.GetValue(target);
+        }
+
+        /// <summary>按 TickCount 的有符号回绕规则展示到期差，同时由调用处保留原始到期数值。</summary>
+        private static string DescribeRoc18DueDifference(object due, int now)
+        {
+            return due is int ? unchecked((int)due - now).ToString() : "未取得";
         }
 
         /// <summary>核对人员实际可见的旧检查撤销、来源提示和安全重载入口，不要求自动覆盖草稿。</summary>
