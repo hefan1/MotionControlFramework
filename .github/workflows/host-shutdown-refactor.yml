@@ -7,47 +7,78 @@ on:
       - '.github/workflows/host-shutdown-refactor.yml'
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: host-shutdown-refactor
+  cancel-in-progress: false
 
 jobs:
-  reproduce:
+  migrate-and-verify:
     if: github.repository == 'hefan1/MotionControlFramework' && github.ref == 'refs/heads/codex/host-shutdown-lifecycle-20261110'
     runs-on: windows-2022
-    timeout-minutes: 12
+    timeout-minutes: 20
     env:
       PYTHONUTF8: '1'
       PYTHONIOENCODING: 'utf-8'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          persist-credentials: false
+          fetch-depth: 0
+          persist-credentials: true
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
         with:
           dotnet-version: '8.0.x'
-      - name: 只接线回归并编译原生产源码
+      - name: 精确迁移与退出职责检查
         shell: pwsh
         run: |
           python tools/Wire-HostShutdownChecks.py
           if ($LASTEXITCODE -ne 0) { throw '测试接线失败。' }
+          python tools/Apply-HostShutdownRefactor.py
+          if ($LASTEXITCODE -ne 0) { throw '生产迁移或职责检查失败。' }
           dotnet build tools/MotionControl.VirtualController/MotionControl.VirtualController.csproj -c Release
           if ($LASTEXITCODE -ne 0) { throw '软件控制器基础输出构建失败。' }
-          dotnet build tools/MotionControl.OperatorPages.Checks/MotionControl.OperatorPages.Checks.csproj -c Release -p:Platform=x64 -o tmp/shutdown-red
-          if ($LASTEXITCODE -ne 0) { throw '编译失败不算指定缺陷复现。' }
-      - name: 核对三个准确失败原因
+          dotnet build tools/MotionControl.OperatorPages.Checks/MotionControl.OperatorPages.Checks.csproj -c Release -p:Platform=x64 -o tmp/shutdown-green
+          if ($LASTEXITCODE -ne 0) { throw '迁移后编译失败。' }
+      - name: 三项退出专项必须全部通过
         shell: pwsh
         run: |
-          $cases = @(
-            @('--pending-task-load', 'PENDING_LOAD_CLOSE_RETURNED_EARLY'),
-            @('--shutdown-retry', 'SHUTDOWN_RETRY_REENTERED_INVALID_OPERATION'),
-            @('--host-shutdown', 'SHUTDOWN_OPERATION_MISSING')
-          )
-          foreach ($case in $cases) {
-            $ErrorActionPreference = 'Continue'
-            & ./tmp/shutdown-red/MotionControl.OperatorPages.Checks.exe $case[0] 2>&1 | Tee-Object -FilePath tmp/shutdown-red.log
-            $code = $LASTEXITCODE
-            $ErrorActionPreference = 'Stop'
-            $text = Get-Content tmp/shutdown-red.log -Raw
-            if ($code -eq 0 -or !$text.Contains($case[1])) { throw "未观察到指定失败：$($case[1])" }
-            Write-Host "[RED已确认] $($case[1])"
+          foreach ($case in @('--pending-task-load', '--shutdown-retry', '--host-shutdown')) {
+            & ./tmp/shutdown-green/MotionControl.OperatorPages.Checks.exe $case
+            if ($LASTEXITCODE -ne 0) { throw "退出回归未通过：$case" }
           }
-          exit 0
+      - name: 十个受保护文件与布局检查
+        shell: pwsh
+        run: |
+          ./tools/Verify-ProtectedUi.ps1
+          $pages = @('src/MotionControl.Framework.Wpf/Configuration/AxisMappingConfigurationView.xaml', 'src/MotionControl.Framework.Wpf/Configuration/IoMappingConfigurationView.xaml', 'src/MotionControl.Framework.Wpf/ManualDebug/ManualAxisControl.xaml', 'src/MotionControl.Framework.Wpf/ManualDebug/IoMonitorView.xaml', 'src/MotionControl.Host.Wpf/MainWindow.xaml')
+          foreach ($page in $pages) {
+            foreach ($path in @($page, "$page.cs")) {
+              git diff --exit-code e9912e32de74399e828c95e336a4a09f0514c8e2 -- $path
+              if ($LASTEXITCODE -ne 0) { throw "受保护文件变化：$path" }
+            }
+          }
+          Write-Host '[通过] 十个受保护布局及后台文件未变化。'
+      - name: 正式Host与全部内部检查
+        shell: pwsh
+        run: ./tools/Verify-V18.ps1
+      - name: 实际单卡双卡及任务操作协调API回归
+        shell: pwsh
+        run: ./tools/Verify-ControllerApi.ps1
+      - name: 仅提交已验证源码并删除临时迁移脚本
+        shell: pwsh
+        run: |
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { throw '源码差异存在空白错误。' }
+          git config user.name 'MotionControl Refactor'
+          git config user.email 'motioncontrol-refactor@users.noreply.github.com'
+          git rm -- tools/Wire-HostShutdownChecks.py tools/Apply-HostShutdownRefactor.py
+          if ($LASTEXITCODE -ne 0) { throw '临时脚本清理失败。' }
+          git add -- src/MotionControl.Host.Wpf/App.xaml.cs src/MotionControl.Host.Wpf/Tasks/TaskMonitorLauncher.cs src/MotionControl.Host.Wpf/HostShutdownOperation.cs tools/Check-CommandBoundaries.py tools/MotionControl.OperatorPages.Checks/Program.cs tools/MotionControl.OperatorPages.Checks/ShutdownLifecycleChecks.cs tools/MotionControl.OperatorPages.Checks/PendingTaskLoadCloseChecks.cs
+          if ($LASTEXITCODE -ne 0) { throw '暂存明确文件失败。' }
+          git diff --cached --stat
+          git commit -m '重构：App退出协调固定原设备，统一在途装载和关闭失败重试' -m '专用退出先等待原关闭；迟到退出只撤回原Runtime门禁。输出核验及恢复保存独立于关窗提示，原安全门禁不变。专项、完整内部检查、现有软件控制器API及十个保护文件已验证。'
+          if ($LASTEXITCODE -ne 0) { throw '提交失败。' }
+          git push origin HEAD:refs/heads/codex/host-shutdown-lifecycle-20261110
+          if ($LASTEXITCODE -ne 0) { throw '推送失败或分支已变化，禁止强推。' }
+          git rev-parse HEAD
