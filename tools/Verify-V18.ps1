@@ -80,8 +80,8 @@ foreach ($projectName in $checkProjects) {
 
     Write-Host "[$projectNumber/$($checkProjects.Count)] [开始检查] $projectName"
     try {
-        if ($projectName -eq "MotionControl.TaskEditing.Checks") {
-            # 此前该离线检查长时间未返回；直接启动本次构建产物并继承标准流。
+        if ($projectName -in @("MotionControl.TaskEditing.Checks", "MotionControl.TaskMonitor.Checks")) {
+            # 这两个离线检查均出现过长期不返回；直接启动本次构建产物并继承标准流。
             $checkStartInfo = [System.Diagnostics.ProcessStartInfo]::new()
             $checkStartInfo.FileName = (Resolve-Path -LiteralPath $checkProgram).ProviderPath
             $checkStartInfo.WorkingDirectory = $repositoryRoot
@@ -89,7 +89,7 @@ foreach ($projectName in $checkProjects) {
             $checkProcess = [System.Diagnostics.Process]::new()
             $checkProcess.StartInfo = $checkStartInfo
             try {
-                if (-not $checkProcess.Start()) { throw "未能启动本次任务编辑检查程序。" }
+                if (-not $checkProcess.Start()) { throw "未能启动本次检查程序：$projectName。" }
                 if ($checkProcess.WaitForExit(180000)) {
                     $checkExitCode = $checkProcess.ExitCode
                 }
@@ -99,7 +99,7 @@ foreach ($projectName in $checkProjects) {
                     try { if (-not $checkProcess.HasExited) { $checkProcess.Kill() } }
                     catch { if (-not $checkProcess.HasExited) { throw } }
                     if (-not $checkProcess.WaitForExit(10000)) {
-                        throw "任务编辑检查超时，停止后 10 秒内仍未确认进程 PID $($checkProcess.Id) 已退出。"
+                        throw "$projectName 检查超时，停止后 10 秒内仍未确认进程 PID $($checkProcess.Id) 已退出。"
                     }
                     $checkExitCode = 124
                 }

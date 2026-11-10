@@ -148,3 +148,16 @@ PR 运行的停顿现场快照把原场景与极值机制连接起来：
 独立复核随后指出普通五秒期限的边界：轮询先取结果、再判断期限，可能计入五秒之后首次看到的发布。已改为刷新返回并恢复同步上下文后先核对期限，取样返回后再次核对；只有期限内接受的结果可以使两轮发布正控通过。新增首次 Loaded 延迟 5200ms 的回归，要求迟到轮询不能调用结果谓词或获得新通过资格，任务编辑由 38 组增加至 39 组。此项审阅发现依据源码判断，未声称另行执行了该新增用例的修复前 Windows 红态。最终候选的运行链接与实际合并提交结果见 [PR #13 验证进度](https://github.com/hefan1/MotionControlFramework/pull/13)。
 
 正式 Host 的持续悬停提示、页面刷新与来源切换反馈仍应在 ROC-13 用实际 Windows 窗口核对，不能据此声明正式画面或实体设备已经验收。
+
+
+## 最终候选集成：任务监控独立入口补齐
+
+`5a54c2af` 的 [PR 运行 42764347678](https://github.com/hefan1/MotionControlFramework/actions/runs/42764347678) 完整通过：任务编辑 39/39（包括 5200ms 迟到轮询负控）、操作页面 69/69、内部项目 15/15、正式 Host、保护布局及 Virtual API / 多控制器隔离。
+
+同一候选的 [push 运行 42764342153，job 129657174308](https://github.com/hefan1/MotionControlFramework/actions/runs/42764342153/job/129657174308) 长时间没有结束。GitHub 下载接口在进行中返回 BlobNotFound，随后通过实时日志取得具体停点：任务编辑第 464 行报告 39 组、失败 0，第 465 行检查通过；后续结构化诊断 11 组和工程关联投影 9 组通过。第 10 个项目 TaskMonitor 的最后输出为第 582 行“已确认完成：等待诊断会话”，随后进入操作按钮与循环生产场景，约十分钟仍无后续输出。不能将 API 暂无日志解释为构建未输出，也不能把这次停顿误报为任务来源回归再次失败。
+
+静态复核确认两个集成缺口：该独立程序只创建普通 Application，没有构造正式 Host.App，因而未执行共享 ToolTip 兼容初始化；其 WaitWithDispatcher 的期限在 PushFrame 返回后才复核，唯一的 20ms UI 计时器若不触发，单次帧无法凭该期限退出。原 Verify-V18 仅给 TaskEditing 加进程守护，不能约束 TaskMonitor。此次没有捕获 TaskMonitor 的线程栈或 Dispatcher 缓存，不据此断言它与之前的 Tooltip 故障完全同因。
+
+最小补齐只涉及检查入口和检查脚本：TaskMonitor.Main 在控件前调用同一 Initialize，记录有效默认时长，并为现有窗口、循环、暂停与收尾增加中文阶段日志；Verify-V18 将原有 180 秒、本次 PID 的失败保护同时用于 TaskMonitor。所有业务断言、45 秒循环条件、内部等待实现、已有内存检查设施和生产逻辑保持。180 秒是整项检查的外层失败边界，不代表内部每次等待已改为独立硬超时；超时仍返回失败，不伪装关闭成功。
+
+补齐后的独立复核、Windows 结果与实际 master 合并验证继续记录于 [PR #13](https://github.com/hefan1/MotionControlFramework/pull/13) 和 ROC-18 / ROC-23，未完成前不关闭最后 TODO。正式 Host 的提示悬停与页面持续刷新已列入 ROC-13 待办。
