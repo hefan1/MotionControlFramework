@@ -548,12 +548,20 @@ namespace MotionControl.Host.Wpf
         private async Task DisconnectMachineBeforeCardAsync(CancellationToken cancellationToken)
         {
             MachineRuntime runtime = _machineRuntime;
-            if (_taskMonitorLauncher != null)
-                await _taskMonitorLauncher.CloseTaskSessionAsync().ConfigureAwait(true);
+            var tasks = _taskMonitorLauncher;
+            var connection = _cardConnection;
+            Guid? session = runtime?.ConnectionSessionId;
+            if (tasks != null)
+                await tasks.CloseTaskSessionAsync().ConfigureAwait(true);
+            if (!ReferenceEquals(runtime, _machineRuntime) || !ReferenceEquals(tasks, _taskMonitorLauncher)
+                || !ReferenceEquals(connection, _cardConnection) || session != runtime?.ConnectionSessionId)
+                throw new InvalidOperationException("任务收尾期间连接上下文已变化，未断开新的设备。");
             if (runtime != null && runtime.State != MachineRunState.Disconnected)
             {
                 RetainUnconfirmedAlarms(runtime);
                 await runtime.DisconnectAsync(cancellationToken).ConfigureAwait(true);
+                if (!ReferenceEquals(runtime, _machineRuntime) || !ReferenceEquals(connection, _cardConnection))
+                    throw new InvalidOperationException("原设备已请求断卡，但当前连接上下文已变化，未提交旧交接结果。");
                 _alarmHandoffSettled = runtime.IsAlarmHandoffSettled && _trackedAlarmSources;
                 if (!runtime.IsAlarmHandoffSettled)
                     _alarmContinuity?.MarkUnconfirmed("旧连接的停机报警、流程或通知收尾未确认。 ");
@@ -843,7 +851,7 @@ namespace MotionControl.Host.Wpf
             // Host 完成连接状态同步后再保存；断卡期间不禁用停止按钮。
             if ((_cardConnection != null && (_cardConnection.IsConnected || _cardConnection.ConnectedMotionCard != null))
                 || (runtimeState.HasValue && runtimeState != MachineRunState.Disconnected)
-                || (_taskMonitorLauncher != null && (_taskMonitorLauncher.HasTaskSession || _taskMonitorLauncher.IsCommandInProgress)))
+                || (_taskMonitorLauncher != null && (_taskMonitorLauncher.HasUnsettledTaskSession || _taskMonitorLauncher.IsCommandInProgress)))
             {
                 e.Cancel = true;
                 if (_machineRuntime == null)
@@ -860,50 +868,63 @@ namespace MotionControl.Host.Wpf
                 }
 
                 _shutdownDisconnectInProgress = true;
-                bool shutdownBegun = false;
+                var runtime = _machineRuntime;
+                var connection = _cardConnection;
+                var tasks = _taskMonitorLauncher;
+                var recovery = _machineRecoveryCoordinator;
+                bool preserveRecoveryFiles = _equipmentProjectRestartRequired;
+                // 只核对 App 组合对象归属；设备停止、输出核查和保存由具体退出对象负责。
+                void CheckShutdownContext()
+                {
+                    if (!ReferenceEquals(runtime, _machineRuntime) || !ReferenceEquals(connection, _cardConnection)
+                        || !ReferenceEquals(tasks, _taskMonitorLauncher) || !ReferenceEquals(recovery, _machineRecoveryCoordinator)
+                        || preserveRecoveryFiles != _equipmentProjectRestartRequired)
+                        throw new InvalidOperationException("退出期间设备上下文已变化，不能用旧退出结果操作当前设备。");
+                }
+                HostShutdownOperation shutdown = null;
                 try
                 {
-                    using (var shutdownWait = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
-                        await _machineRuntime.BeginShutdownAsync(shutdownWait.Token);
-                    shutdownBegun = true;
-                    if (_taskMonitorLauncher != null && _taskMonitorLauncher.IsCommandInProgress)
-                        throw new InvalidOperationException("任务命令正在执行，请等待结束后重试关闭。");
-                    if (_machineRuntime.IsPreparing)
-                        await _machineRuntime.StopPreparationAsync(CancellationToken.None);
-                    if (_taskMonitorLauncher != null)
-                        await _taskMonitorLauncher.StopTaskSessionForShutdownAsync();
-                    if (_machineRuntime.IsShutdownSealed) _shutdownRetainedBlockedEvidence = true;
-                    await _machineRuntime.StopStationFlowsForShutdownAsync(CancellationToken.None);
+                    shutdown = new HostShutdownOperation(runtime, connection, tasks, recovery,
+                        preserveRecoveryFiles, CheckShutdownContext);
+                    await shutdown.StopAsync();
                     await AcquireShutdownProjectGateAsync();
-                    if (_cardConnection == null || !_cardConnection.IsConnected)
-                        throw new InvalidOperationException("控制卡连接状态未知，无法核对断卡后的输出保持状态。");
-                    await _machineRuntime.VerifyShutdownOutputsAsync(_cardConnection.DigitalOutputs.Select(point => point.Name), CancellationToken.None);
-                    // 在断卡前保存可信的暂停记录；原待确认记录及保持输出不会被清除。
-                    if (!_equipmentProjectRestartRequired)
-                        _machineRecoveryCoordinator.SaveForShutdown(_machineRuntime, _machineRuntime.State == MachineRunState.Paused);
+                    await shutdown.VerifyAndSaveAsync();
                     await DisconnectMachineBeforeCardAsync(CancellationToken.None);
-                    if (_cardConnection != null) await _cardConnection.DisconnectAsync(CancellationToken.None);
+                    CheckShutdownContext();
+                    if (connection != null) await connection.DisconnectAsync(CancellationToken.None);
                     await SynchronizeCardConnectionAsync();
                 }
                 catch (Exception error)
                 {
-                    // 底层可能已断开而连接服务收尾失败，窗口继续使用前先同步实际状态。
-                    if (_cardConnection != null && !_cardConnection.IsConnected)
+                    // 仅同步本次连接仍为当前连接时的断卡结果，旧退出不得替新连接清理状态。
+                    if (ReferenceEquals(connection, _cardConnection) && connection != null && !connection.IsConnected)
                     {
                         try { await SynchronizeCardConnectionAsync(); }
                         catch (Exception syncError) { Trace.TraceError("关窗断卡后同步失败：" + syncError); }
                     }
                     _taskEditsCloseConfirmed = false;
                     ReleaseShutdownProjectGate();
-                    bool released = shutdownBegun && _machineRuntime != null && await _machineRuntime.TryCancelShutdownAsync();
-                    string lockNote = shutdownBegun && !released
+                    bool released = false;
+                    Exception reportedError = error;
+                    try
+                    {
+                        if (shutdown != null) released = await shutdown.TryCancelAsync();
+                    }
+                    catch (Exception cancelError)
+                    {
+                        reportedError = new AggregateException("退出失败，且原设备退出保护未能确认撤回。", error, cancelError);
+                        Trace.TraceError(reportedError.ToString());
+                    }
+                    string lockNote = shutdown != null && shutdown.HasBegun && !released
                         ? "\n退出保护仍在生效，仅允许停止及现场核查；处理原因后重试关闭。" : string.Empty;
-                    MessageBox.Show("设备停止、会话收尾或控制卡断开尚未确认，软件暂不关闭。请检查现场并根据以下原因处理后重试。\n" + error.Message + lockNote,
+                    MessageBox.Show("设备停止、会话收尾或控制卡断开尚未确认，软件暂不关闭。请检查现场并根据以下原因处理后重试。\n" + reportedError.Message + lockNote,
                         "暂不能关闭软件", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
                 finally
                 {
+                    // 即使后续保存或断卡失败，已交接的资源证据也必须保留。
+                    if (shutdown != null && shutdown.RetainsBlockedEvidence) _shutdownRetainedBlockedEvidence = true;
                     _shutdownDisconnectInProgress = false;
                 }
 
@@ -1376,7 +1397,7 @@ namespace MotionControl.Host.Wpf
             }
             // 正常关闭在主窗口关闭事件已要求任务收尾。系统强制退出时不能在 UI
             // 线程同步等待异步会话关闭；保留运行标记，让下次启动要求核对现场。
-            if (_taskMonitorLauncher != null && _taskMonitorLauncher.HasTaskSession)
+            if (_taskMonitorLauncher != null && _taskMonitorLauncher.HasUnsettledTaskSession)
                 Trace.TraceWarning("应用退出时任务会话尚未关闭，保留现有恢复记录以供下次核查。");
 
             if (_machineRuntime != null)
@@ -1413,9 +1434,10 @@ namespace MotionControl.Host.Wpf
             // 只有设备项目明确约束所有报警来源，且正常断卡已确认收尾时才能结束本会话。
             // 系统强退、异常断连、旧报警未复位或设备项目未声明时保留原记录。
             bool alarmHandoffComplete = _alarmHandoffSettled && !_shutdownRetainedBlockedEvidence
-                && (_taskMonitorLauncher == null || (!_taskMonitorLauncher.HasTaskSession && !_taskMonitorLauncher.IsCommandInProgress))
+                && (_taskMonitorLauncher == null || (!_taskMonitorLauncher.HasUnsettledTaskSession && !_taskMonitorLauncher.IsCommandInProgress))
                 && (_cardConnection == null || (!_cardConnection.IsConnected && _cardConnection.ConnectedMotionCard == null));
             bool defaultProjectNeverConnected = _usingSavedSimulationProject && !_savedControllerConnectionAttempted
+                && (_taskMonitorLauncher == null || (!_taskMonitorLauncher.HasUnsettledTaskSession && !_taskMonitorLauncher.IsCommandInProgress))
                 && _machineRuntime == null && (_cardConnection == null
                     || (!_cardConnection.IsConnected && _cardConnection.ConnectedMotionCard == null));
             _alarmContinuity?.CloseIfSettled(alarmHandoffComplete || defaultProjectNeverConnected);
