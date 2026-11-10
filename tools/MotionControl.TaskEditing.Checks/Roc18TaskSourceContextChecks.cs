@@ -302,6 +302,38 @@ namespace MotionControl.TaskEditing.Checks
             }
         }
 
+        /// <summary>让首次 Loaded 超过五秒结果期限，证明迟到轮询不会再调用结果采样，也不能被判为成功。</summary>
+        private static void Roc18ObservationRejectsLatePoll()
+        {
+            using (var test = new Workspace())
+            {
+                TaskConfigurationView page = CreateRoc18CheckedPage(test);
+                page.IsHitTestVisible = false;
+                bool loadedDelayRan = false;
+                bool predicateCalled = false;
+                // 产品 Loaded 已先订阅；这里阻塞 UI，确保任何可见页面结果采样都只能在期限之后发生。
+                RoutedEventHandler delayLoaded = (sender, args) =>
+                {
+                    if (loadedDelayRan) return;
+                    loadedDelayRan = true;
+                    Thread.Sleep(5200);
+                };
+                page.Loaded += delayLoaded;
+                try
+                {
+                    bool resultAccepted = ObserveRoc18TaskSources(page, () =>
+                    {
+                        predicateCalled = true;
+                        return true;
+                    });
+                    Assert(loadedDelayRan, "ROC-18：迟到轮询检查没有执行 Loaded 延迟，无法证明五秒期限边界。");
+                    Assert(!predicateCalled && !resultAccepted,
+                        "ROC-18：首次可见轮询已晚于五秒结果期限，仍调用或接受了迟到结果采样。");
+                }
+                finally { page.Loaded -= delayLoaded; }
+            }
+        }
+
         /// <summary>只读见证本次可见页面的两次成功发布，不能用旧检查状态或固定等待代替真实后台读取。</summary>
         private static void ObserveCompletedRoc18TaskSources(TaskConfigurationView page)
         {
@@ -336,7 +368,7 @@ namespace MotionControl.TaskEditing.Checks
             page.Loaded += loaded;
             try
             {
-                ObserveRoc18TaskSources(page, () =>
+                bool completedInTime = ObserveRoc18TaskSources(page, () =>
                 {
                     // 轮询只在 UI 回调之间采样；同一次产品回调内的两次时间写入只能计为一次发布。
                     DateTime published = (DateTime)next.GetValue(page);
@@ -355,7 +387,7 @@ namespace MotionControl.TaskEditing.Checks
                 if (startError != null)
                     throw new InvalidOperationException("ROC-18：采集首次 Loaded 的来源观察起点失败。", startError);
                 // 关闭窗口会由 Unloaded 重置产品代次；这里只断言退出前最后一次轮询保存的有效证据。
-                if (!startCaptured || !currentPollQualified || publicationCount < 2)
+                if (!completedInTime || !startCaptured || !currentPollQualified || publicationCount < 2)
                     throw new InvalidOperationException(Roc18SourceObservationNotPublished);
             }
             finally { page.Loaded -= loaded; }
@@ -376,8 +408,8 @@ namespace MotionControl.TaskEditing.Checks
             return page;
         }
 
-        /// <summary>用真实窗口观察最多五秒；独立八秒守护只负责失败退出，不能把唤醒后的结果算作通过。</summary>
-        private static void ObserveRoc18TaskSources(TaskConfigurationView page, Func<bool> completed,
+        /// <summary>用真实窗口观察并返回五秒期限内采样的完成资格；独立八秒守护只负责失败退出。</summary>
+        private static bool ObserveRoc18TaskSources(TaskConfigurationView page, Func<bool> completed,
             TimeSpan minimumObservation = default(TimeSpan))
         {
             var window = new Window
@@ -399,6 +431,8 @@ namespace MotionControl.TaskEditing.Checks
             Exception watchdogError = null;
             DispatcherOperation watchdogExit = null;
             bool watchdogStarted = false;
+            // 保存最后一次期限内样本的完成资格；期限后的轮询不能覆盖它，期限内无效样本仍会撤销它。
+            bool resultCompletedInTime = false;
 
             // 不依赖 UI 计时器推进期限；饥饿时先标记失败，再只投递一次 Send 来退出本次消息泵。
             var watchdog = new Thread(() =>
@@ -420,7 +454,7 @@ namespace MotionControl.TaskEditing.Checks
                 bool observationComplete = false;
                 if (page.IsLoaded)
                 {
-                    // 模拟同步入口没有同步上下文的条件，并在恢复上下文后每次都采样，不能等到最短观察期才采样。
+                    // 模拟同步入口没有同步上下文的条件；恢复后在五秒期限内逐轮采样，不等待最短观察期。
                     SynchronizationContext context = SynchronizationContext.Current;
                     try
                     {
@@ -428,7 +462,14 @@ namespace MotionControl.TaskEditing.Checks
                         refresh.Invoke(page, new object[] { null, EventArgs.Empty });
                     }
                     finally { SynchronizationContext.SetSynchronizationContext(context); }
-                    observationComplete = completed();
+                    // 刷新可能同步耗时；先核对期限，避免迟到轮询首次见证的发布混入有效证据。
+                    if (elapsed.Elapsed < TimeSpan.FromSeconds(5))
+                    {
+                        observationComplete = completed();
+                        // 结果委托也可能耗时，跨越期限的返回不能授予新的完成资格。
+                        if (elapsed.Elapsed < TimeSpan.FromSeconds(5))
+                            resultCompletedInTime = observationComplete;
+                    }
                 }
                 if (Volatile.Read(ref deadlineMissed) != 0 || elapsed.Elapsed >= TimeSpan.FromSeconds(5)
                     || (page.IsLoaded && elapsed.Elapsed >= minimumObservation && observationComplete))
@@ -444,6 +485,7 @@ namespace MotionControl.TaskEditing.Checks
                 Dispatcher.PushFrame(frame);
                 if (Volatile.Read(ref deadlineMissed) != 0)
                     throw new InvalidOperationException("ROC-18：来源观察超过独立八秒守护期限，计时器饥饿后的唤醒不能算通过。", watchdogError);
+                return resultCompletedInTime;
             }
             finally
             {

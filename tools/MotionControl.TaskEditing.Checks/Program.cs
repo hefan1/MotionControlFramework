@@ -32,6 +32,7 @@ namespace MotionControl.TaskEditing.Checks
             Check("ROC-18 Tooltip时长不能饿死已到期轮询", Roc18ToolTipDurationKeepsDueTimerRunning, ref failed);
             Check("ROC-18 Tooltip兼容初始化保留显式设置", Roc18ToolTipCompatibilityKeepsExplicitSettings, ref failed);
             Check("ROC-18 无实际来源发布必须失败", Roc18ObservationRejectsMissingPublication, ref failed);
+            Check("ROC-18 超过五秒的轮询不能接纳新结果", Roc18ObservationRejectsLatePoll, ref failed);
             Check("草稿完整保存、无效引用保留与运行文件隔离", DraftIsolation, ref failed);
             Check("应用校验、版本递增与外部修改冲突", ApplyAndConflict, ref failed);
             Check("中途写入失败恢复全部原字节", FailedApplyRollback, ref failed);
@@ -67,7 +68,7 @@ namespace MotionControl.TaskEditing.Checks
             Check("ROC-18 子编辑器来源变化撤销旧检查", Roc18EditorSourceCheckInvalidation, ref failed);
             Check("ROC-18 来源未变化保留检查结果", Roc18UnchangedTaskSourcesKeepChecks, ref failed);
             Check("ROC-18 来源观察兼容可写文件句柄", Roc18ObservationAllowsWritableSourceHandle, ref failed);
-            Console.WriteLine("任务编辑内部检查：38 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
+            Console.WriteLine("任务编辑内部检查：39 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
             return failed == 0 ? 0 : 1;
         }
         /// <summary>逐项记录开始和结果，便于定位未返回的检查，并保留异常堆栈。</summary>
