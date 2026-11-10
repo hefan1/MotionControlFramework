@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
@@ -303,9 +304,21 @@ namespace MotionControl.TaskEditing.Checks
             var frame = new DispatcherFrame();
             var elapsed = Stopwatch.StartNew();
             var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(25) };
+            var refresh = typeof(TaskConfigurationView).GetMethod("RefreshPermission", BindingFlags.Instance | BindingFlags.NonPublic);
             // 测试只等待可见结果；到期后由调用处的具体断言报告缺失行为。
             EventHandler poll = (sender, args) =>
             {
+                if (page.IsLoaded)
+                {
+                    // 模拟同步入口没有同步上下文的实际条件；后台观察必须显式回到页面 Dispatcher。
+                    SynchronizationContext context = SynchronizationContext.Current;
+                    try
+                    {
+                        SynchronizationContext.SetSynchronizationContext(null);
+                        refresh.Invoke(page, new object[] { null, EventArgs.Empty });
+                    }
+                    finally { SynchronizationContext.SetSynchronizationContext(context); }
+                }
                 if (elapsed.Elapsed >= TimeSpan.FromSeconds(5)
                     || (page.IsLoaded && elapsed.Elapsed >= minimumObservation && completed()))
                     frame.Continue = false;

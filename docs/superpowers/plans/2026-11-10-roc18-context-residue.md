@@ -38,11 +38,11 @@
 
 ## 任务 2：任务文件变化使旧检查结论失效
 
-**生产文件：** `src/MotionControl.TaskEngine.Wpf/Editing/TaskConfigurationView.Preparation.cs`、`TaskConfigurationView.xaml.cs`、`TaskEditorView.xaml.cs`；必要的对应中文/英文资源。
+**生产文件：** `src/MotionControl.TaskEngine.Wpf/Editing/TaskConfigurationView.Preparation.cs`、`TaskConfigurationView.xaml.cs`、`TaskEditorView.xaml.cs`；对应中文/英文资源；`src/MotionControl.TaskEngine/Editing/TaskWorkspaceStore.cs` 增加不占写权限的观察签名。
 
 **回归文件：** `tools/MotionControl.TaskEditing.Checks/Roc18TaskSourceContextChecks.cs`、同项目 `Program.cs`；复用已有临时 Workspace。
 
-**接口：** 继续使用 `TaskWorkspaceStore.ComputeSignature(string machineId)`、`ComputePreparationSignature` 和原 `RefreshPermission`/Loaded/Unloaded；不改变存储层 Apply 的冲突检查。
+**接口：** `TaskWorkspaceStore.ComputeSignature(string machineId)` 保留原严格读取，新增 `ComputeObservationSignature` 仅供后台观察；沿用 `ComputePreparationSignature` 和原 `RefreshPermission`/Loaded/Unloaded，不改变存储层 Apply 的冲突检查。
 
 - [x] 在未修改生产实现的分支上，验证替换任务、改 TaskMachine、增删任务后旧结论仍残留的失败断言；同时覆盖文件读取失败、草稿保留及无变化正控。
 - [ ] 保留准备文件的即时观察；其他完整来源每约 2 秒在后台串行读取。完整来源变化或读失败/恢复时清旧检查，显示明确冲突/未知提示。
@@ -64,7 +64,7 @@
 
 ## 任务 4：总览只展示当前有效发布的任务工位
 
-**生产文件：** `src/MotionControl.Host.Wpf/MainWindow.Tasks.cs`、`Tasks/TaskMonitorLauncher.Overview.cs`。
+**生产文件：** `src/MotionControl.Host.Wpf/MainWindow.Tasks.cs`、`Tasks/TaskMonitorLauncher.Overview.cs`、`Operation/EquipmentOverviewView.xaml.cs`；最后一项用于独立核对保留资源证据的来源。
 
 **回归文件：** `tools/MotionControl.OperatorPages.Checks/BoundTaskLoadChecks.cs`，复用真实 Host 组合及已有准备换代流程。
 

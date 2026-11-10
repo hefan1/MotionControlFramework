@@ -53,23 +53,33 @@ namespace MotionControl.TaskEngine.Wpf.Editing
             string signature = null;
             Exception readError = null;
             _sourceObservationRunning = true;
-            try { signature = await Task.Run(() => _store.ComputeObservationSignature(_machineId)); }
+            try { signature = await Task.Run(() => _store.ComputeObservationSignature(_machineId)).ConfigureAwait(false); }
             catch (Exception error) { readError = error; }
-            finally { _sourceObservationRunning = false; }
 
-            if (!_sourceObservationEnabled || !ReferenceEquals(workspace, _workspace)
-                || revision != _sourceObservationRevision) return;
-            if (readError != null) RecordSourceReadFailure(readError);
-            else
+            // Loaded 或明确刷新不保证带有同步上下文；所有页面状态只交回控件所属 Dispatcher 更新。
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+            try
             {
-                bool recovered = _sourceReadFailed;
-                if (RememberSourceSignature(signature))
-                    SetStatusText(T(recovered ? "任务来源读取已恢复，旧检查结论失效，请重新检查或装载"
-                        : "任务来源已变化，旧检查结论失效，请重新检查或装载"));
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    _sourceObservationRunning = false;
+                    if (!_sourceObservationEnabled || !ReferenceEquals(workspace, _workspace)
+                        || revision != _sourceObservationRevision) return;
+                    if (readError != null) RecordSourceReadFailure(readError);
+                    else
+                    {
+                        bool recovered = _sourceReadFailed;
+                        if (RememberSourceSignature(signature))
+                            SetStatusText(T(recovered ? "任务来源读取已恢复，旧检查结论失效，请重新检查或装载"
+                                : "任务来源已变化，旧检查结论失效，请重新检查或装载"));
+                    }
+                    // 失败也节流；持续失读不能形成无间隔的重试循环。
+                    _nextSourceObservationUtc = DateTime.UtcNow.AddSeconds(2);
+                    RefreshPermission(null, EventArgs.Empty);
+                }).Task.ConfigureAwait(false);
             }
-            // 失败也节流；持续失读不能形成无间隔的重试循环。
-            _nextSourceObservationUtc = DateTime.UtcNow.AddSeconds(2);
-            RefreshPermission(null, EventArgs.Empty);
+            catch (TaskCanceledException) when (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+            { /* 界面线程已退出，不再向关闭页面发布观察结果。 */ }
         }
 
         /// <summary>撤销在途观察的发布资格，并允许下次可见刷新尽快核对最新文件。</summary>
