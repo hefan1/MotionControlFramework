@@ -64,9 +64,9 @@ namespace MotionControl.TaskEditing.Checks
             Console.WriteLine("任务编辑内部检查：35 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
             return failed == 0 ? 0 : 1;
         }
-        /// <summary>逐项执行并保留异常堆栈。</summary>
+        /// <summary>逐项记录开始和结果，便于定位未返回的检查，并保留异常堆栈。</summary>
         private static void Check(string name, Action action, ref int failed)
-        { try { action(); Console.WriteLine("[通过] " + name); } catch (Exception error) { failed++; Console.Error.WriteLine("[失败] " + name + "\n" + error); } }
+        { Console.WriteLine("[开始] " + name); try { action(); Console.WriteLine("[通过] " + name); } catch (Exception error) { failed++; Console.Error.WriteLine("[失败] " + name + "\n" + error); } }
         /// <summary>失败断言必须使检查返回失败。</summary>
         private static void Assert(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
         /// <summary>只有确实抛出异常才算拒绝无效操作。</summary>

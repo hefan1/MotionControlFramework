@@ -290,16 +290,21 @@ namespace MotionControl.OperatorPages.Checks
             timer.Tick += poll;
             try
             {
+                Console.WriteLine("[来源恢复阶段] 显示来源恢复窗口。");
                 window.Show();
+                Console.WriteLine("[来源恢复阶段] 窗口已显示，开始泵送。");
                 timer.Start();
                 Dispatcher.PushFrame(frame);
+                Console.WriteLine("[来源恢复阶段] 泵送已返回。");
             }
             finally
             {
                 timer.Stop();
                 timer.Tick -= poll;
+                Console.WriteLine("[来源恢复阶段] 关闭来源恢复窗口。");
                 window.Close();
                 window.Content = null;
+                Console.WriteLine("[来源恢复阶段] 窗口已关闭并解除内容绑定。");
             }
         }
 

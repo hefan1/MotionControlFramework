@@ -209,9 +209,9 @@ namespace MotionControl.OperatorPages.Checks
             foreach (string key in new[] { "控制入口工位流程", "控制入口任务列表", "控制入口无" })
                 Assert(zh.Contains(key) && en.Contains(key), "控制入口缺少语言资源：" + key);
         }
-        /// <summary>统一输出每组结果，异常保留原始堆栈。</summary>
+        /// <summary>统一记录每组开始和结果，便于定位未返回的检查，异常保留原始堆栈。</summary>
         private static void Check(string name, Action action, ref int failures)
-        { try { action(); Console.WriteLine("[通过] " + name); } catch (Exception error) { failures++; Console.Error.WriteLine("[失败] " + name + "\n" + error); } }
+        { Console.WriteLine("[开始] " + name); try { action(); Console.WriteLine("[通过] " + name); } catch (Exception error) { failures++; Console.Error.WriteLine("[失败] " + name + "\n" + error); } }
         /// <summary>运行异步 WPF 检查时处理调度队列，避免同步等待阻塞界面线程。</summary>
         private static void RunAxisMonitorAsyncChecks()
         {

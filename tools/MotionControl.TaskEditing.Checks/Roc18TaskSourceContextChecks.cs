@@ -313,16 +313,21 @@ namespace MotionControl.TaskEditing.Checks
             timer.Tick += poll;
             try
             {
+                Console.WriteLine("[来源观察阶段] 显示任务来源窗口。");
                 window.Show();
+                Console.WriteLine("[来源观察阶段] 窗口已显示，开始泵送。");
                 timer.Start();
                 Dispatcher.PushFrame(frame);
+                Console.WriteLine("[来源观察阶段] 泵送已返回。");
             }
             finally
             {
                 timer.Stop();
                 timer.Tick -= poll;
+                Console.WriteLine("[来源观察阶段] 关闭任务来源窗口。");
                 window.Close();
                 window.Content = null;
+                Console.WriteLine("[来源观察阶段] 窗口已关闭并解除内容绑定。");
             }
         }
 
