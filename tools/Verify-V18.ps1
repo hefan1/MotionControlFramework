@@ -14,6 +14,9 @@ if ($env:OS -ne "Windows_NT") {
     throw "本检查入口需要 Windows、.NET Framework 4.8 和可构建 WPF 的 .NET SDK。"
 }
 
+python tools/Check-CommandBoundaries.py
+if ($LASTEXITCODE -ne 0) { throw "任务命令职责边界检查失败。" }
+
 # 先构建正式主程序，发现 XAML、页面事件和跨程序集调用的编译错误。
 $failures = [System.Collections.Generic.List[string]]::new()
 # 保留每个项目的实际构建、检查结果；某项目失败不代表其他项目失败。

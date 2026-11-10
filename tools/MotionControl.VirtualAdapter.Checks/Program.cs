@@ -39,6 +39,7 @@ namespace MotionControl.VirtualAdapter.Checks
                     int port = int.Parse(args[1]);
                     RunControllerApi(port);
                     CheckRuntimeTaskSession(port);
+                    CheckTaskCommandOperationsAsync(port).GetAwaiter().GetResult();
                 }
                 else if (args.Length == 3 && args[0] == "--multi-controller-api")
                 {
@@ -51,7 +52,7 @@ namespace MotionControl.VirtualAdapter.Checks
             catch (Exception ex)
             {
                 Console.Error.WriteLine(ex.GetType().FullName);
-                Console.Error.WriteLine(ex.Message);
+                Console.Error.WriteLine(ex.ToString());
                 Environment.ExitCode = 1;
             }
             finally
