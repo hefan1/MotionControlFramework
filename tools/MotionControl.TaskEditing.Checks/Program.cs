@@ -61,7 +61,10 @@ namespace MotionControl.TaskEditing.Checks
             Check("ROC-18 子编辑器来源变化撤销旧检查", Roc18EditorSourceCheckInvalidation, ref failed);
             Check("ROC-18 来源未变化保留检查结果", Roc18UnchangedTaskSourcesKeepChecks, ref failed);
             Check("ROC-18 来源观察兼容可写文件句柄", Roc18ObservationAllowsWritableSourceHandle, ref failed);
-            Console.WriteLine("任务编辑内部检查：35 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
+            // 只重复已出现间歇性停顿的用例，保留原顺序与断言，增加一次诊断运行取得停点的机会。
+            for (int attempt = 1; attempt <= 10; attempt++)
+                Check("ROC-18 可写句柄停顿诊断第 " + attempt + " 轮", Roc18ObservationAllowsWritableSourceHandle, ref failed);
+            Console.WriteLine("任务编辑内部检查：45 组，失败 " + failed + "。未连接控制器；不代表实际屏幕验证。");
             return failed == 0 ? 0 : 1;
         }
         /// <summary>逐项记录开始和结果，便于定位未返回的检查，并保留异常堆栈。</summary>

@@ -305,9 +305,64 @@ namespace MotionControl.TaskEditing.Checks
             var elapsed = Stopwatch.StartNew();
             var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(25) };
             var refresh = typeof(TaskConfigurationView).GetMethod("RefreshPermission", BindingFlags.Instance | BindingFlags.NonPublic);
+            // 只为本次隔离检查取证；不改变产品刷新、原计时器优先级或五秒观察条件。
+            var dispatcher = Dispatcher.CurrentDispatcher;
+            Thread uiThread = Thread.CurrentThread;
+            var observationFinished = new ManualResetEvent(false);
+            string phase = "窗口尚未显示";
+            int pollEntered = 0, refreshReturned = 0, pollExited = 0;
+            int operationsStarted = 0, operationsCompleted = 0, deadlineMissed = 0;
+            DispatcherOperation lastStarted = null, lastCompleted = null;
+            DispatcherHookEventHandler operationStarted = (sender, args) =>
+            {
+                Interlocked.Increment(ref operationsStarted);
+                Volatile.Write(ref lastStarted, args.Operation);
+            };
+            DispatcherHookEventHandler operationCompleted = (sender, args) =>
+            {
+                Interlocked.Increment(ref operationsCompleted);
+                Volatile.Write(ref lastCompleted, args.Operation);
+            };
+            dispatcher.Hooks.OperationStarted += operationStarted;
+            dispatcher.Hooks.OperationCompleted += operationCompleted;
+            // 独立后台线程先记下原始停点，再只投递一次 Send/Background 探针；探针唤醒不能算通过。
+            var watchdog = new Thread(() =>
+            {
+                try
+                {
+                    if (observationFinished.WaitOne(8000)) return;
+                    Interlocked.Exchange(ref deadlineMissed, 1);
+                    for (int sample = 0; sample < 3; sample++)
+                    {
+                        Console.Error.WriteLine("[来源观察守护] 用时=" + elapsed.ElapsedMilliseconds
+                            + "ms；阶段=" + Volatile.Read(ref phase) + "；UI线程=" + uiThread.ManagedThreadId
+                            + "/" + uiThread.ThreadState + "；轮询进入/刷新返回/轮询退出="
+                            + Volatile.Read(ref pollEntered) + "/" + Volatile.Read(ref refreshReturned) + "/" + Volatile.Read(ref pollExited)
+                            + "；调度开始/结束=" + Volatile.Read(ref operationsStarted) + "/" + Volatile.Read(ref operationsCompleted)
+                            + "；最后开始=" + DescribeRoc18DispatcherOperation(Volatile.Read(ref lastStarted))
+                            + "；最后结束=" + DescribeRoc18DispatcherOperation(Volatile.Read(ref lastCompleted)));
+                        if (sample == 0)
+                        {
+                            dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(() =>
+                                Console.Error.WriteLine("[来源观察探针] Send 已执行，原观察期限已经失守。")));
+                            dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+                                Console.Error.WriteLine("[来源观察探针] Background 已执行，原观察期限已经失守。")));
+                        }
+                        if (observationFinished.WaitOne(1000)) return;
+                    }
+                }
+                catch (Exception error)
+                {
+                    Interlocked.Exchange(ref deadlineMissed, 1);
+                    Console.Error.WriteLine("[来源观察诊断失败] " + error);
+                }
+            }) { IsBackground = true, Name = "ROC18 来源观察诊断" };
             // 测试只等待可见结果；到期后由调用处的具体断言报告缺失行为。
             EventHandler poll = (sender, args) =>
             {
+                Volatile.Write(ref phase, "轮询已进入");
+                int entered = Interlocked.Increment(ref pollEntered);
+                if (entered == 1) Console.WriteLine("[来源观察阶段] 首次轮询已进入。");
                 if (page.IsLoaded)
                 {
                     // 模拟同步入口没有同步上下文的实际条件；后台观察必须显式回到页面 Dispatcher。
@@ -315,26 +370,48 @@ namespace MotionControl.TaskEditing.Checks
                     try
                     {
                         SynchronizationContext.SetSynchronizationContext(null);
+                        Volatile.Write(ref phase, "正在同步刷新页面");
                         refresh.Invoke(page, new object[] { null, EventArgs.Empty });
+                        Interlocked.Increment(ref refreshReturned);
+                        Volatile.Write(ref phase, "同步刷新已经返回");
                     }
                     finally { SynchronizationContext.SetSynchronizationContext(context); }
                 }
                 if (elapsed.Elapsed >= TimeSpan.FromSeconds(5)
                     || (page.IsLoaded && elapsed.Elapsed >= minimumObservation && completed()))
+                {
+                    Volatile.Write(ref phase, "已请求退出消息泵");
+                    Console.WriteLine("[来源观察阶段] 请求退出消息泵；轮询次数=" + entered + "。");
                     frame.Continue = false;
+                }
+                Interlocked.Increment(ref pollExited);
+                if (entered == 1) Console.WriteLine("[来源观察阶段] 首次轮询已返回。");
             };
             timer.Tick += poll;
             try
             {
+                watchdog.Start();
+                Volatile.Write(ref phase, "正在显示窗口");
                 Console.WriteLine("[来源观察阶段] 显示任务来源窗口。");
                 window.Show();
-                Console.WriteLine("[来源观察阶段] 窗口已显示，开始泵送。");
+                Volatile.Write(ref phase, "正在启动轮询计时器");
+                Console.WriteLine("[来源观察阶段] 窗口已显示，启动轮询计时器。");
                 timer.Start();
+                Volatile.Write(ref phase, "计时器已启动，正在泵送");
+                Console.WriteLine("[来源观察阶段] 计时器已启动，进入消息泵。");
                 Dispatcher.PushFrame(frame);
+                Volatile.Write(ref phase, "消息泵已经返回");
                 Console.WriteLine("[来源观察阶段] 泵送已返回。");
+                Assert(Volatile.Read(ref deadlineMissed) == 0,
+                    "ROC-18：原观察期限已失守，诊断探针唤醒或后来返回不能算检查通过。");
             }
             finally
             {
+                observationFinished.Set();
+                if (watchdog.Join(1000)) observationFinished.Dispose();
+                else Console.Error.WriteLine("[来源观察诊断失败] 诊断线程未在一秒内退出，保留其等待句柄供外部进程守护收尾。");
+                dispatcher.Hooks.OperationStarted -= operationStarted;
+                dispatcher.Hooks.OperationCompleted -= operationCompleted;
                 timer.Stop();
                 timer.Tick -= poll;
                 Console.WriteLine("[来源观察阶段] 关闭任务来源窗口。");
@@ -342,6 +419,17 @@ namespace MotionControl.TaskEditing.Checks
                 window.Content = null;
                 Console.WriteLine("[来源观察阶段] 窗口已关闭并解除内容绑定。");
             }
+        }
+
+        /// <summary>仅在观察超时后记录 WPF 最后调度操作，私有字段不可用时如实说明，不影响产品行为。</summary>
+        private static string DescribeRoc18DispatcherOperation(DispatcherOperation operation)
+        {
+            if (operation == null) return "无";
+            var callbackField = typeof(DispatcherOperation).GetField("_method", BindingFlags.Instance | BindingFlags.NonPublic);
+            var callback = callbackField?.GetValue(operation) as Delegate;
+            string method = callback == null ? "回调名称未提供"
+                : callback.Method.DeclaringType?.FullName + "." + callback.Method.Name;
+            return operation.Priority + "/" + operation.Status + "/" + method;
         }
 
         /// <summary>核对人员实际可见的旧检查撤销、来源提示和安全重载入口，不要求自动覆盖草稿。</summary>
