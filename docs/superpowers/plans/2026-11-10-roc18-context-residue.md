@@ -45,9 +45,9 @@
 **接口：** `TaskWorkspaceStore.ComputeSignature(string machineId)` 保留原严格读取，新增 `ComputeObservationSignature` 仅供后台观察；沿用 `ComputePreparationSignature` 和原 `RefreshPermission`/Loaded/Unloaded，不改变存储层 Apply 的冲突检查。
 
 - [x] 在未修改生产实现的分支上，验证替换任务、改 TaskMachine、增删任务后旧结论仍残留的失败断言；同时覆盖文件读取失败、草稿保留及无变化正控。
-- [ ] 保留准备文件的即时观察；其他完整来源每约 2 秒在后台串行读取。完整来源变化或读失败/恢复时清旧检查，显示明确冲突/未知提示。
-- [ ] 每次人工检查、重载、同步、应用或离页使在途轮询失效；结果只有在同工作区、同观察代次下才能更新页面。
-- [ ] 原准备引用检查与新增回归全部通过；不增加后台设备读写。
+- [x] 保留准备文件的即时观察；其他完整来源每约 2 秒在后台串行读取。完整来源变化或读失败/恢复时清旧检查，显示明确冲突/未知提示。
+- [x] 每次人工检查、重载、同步、应用或离页使在途轮询失效；结果只有在同工作区、同观察代次下，经页面 Dispatcher 才能更新控件。
+- [x] 原准备引用检查与新增回归全部通过；不增加后台设备读写。
 
 ## 任务 3：准备页错误绑定原设备与准备范围
 
@@ -58,9 +58,9 @@
 **接口：** 使用已有 `MachineRuntime.ConnectionSessionId`、`ControlOwner`、`PreparationConfigurationVersion`；保留命令准入与安全观察版本校验。
 
 - [x] 原实现失败回归：同 Runtime 新准备范围不能沿用旧错误；迟到失败不能污染新 Runtime、新连接、新准备版本。
-- [ ] 保留同上下文错误跨普通刷新；上下文实际改变时清旧摘要和诊断，保留 Runtime 报警/恢复信息。
-- [ ] 异步命令捕获原身份，返回时只显示当前身份的错误；过期操作保留诊断日志并显示当前范围需重新核对的提示，不复用旧设备错误文字。
-- [ ] 覆盖 StopPreparation 的异常返回；保持现有“范围改变须重新选择”回归与按需装载准备行为。
+- [x] 保留同上下文错误跨普通刷新；上下文实际改变时清旧摘要和诊断，保留 Runtime 报警/恢复信息。
+- [x] 异步命令捕获原身份，返回时只显示当前身份的错误；过期操作保留 Trace 诊断输出并显示当前范围需重新核对的提示，不复用旧设备错误文字。
+- [x] 覆盖 StopPreparation 的异常返回；保持现有“范围改变须重新选择”回归与按需装载准备行为。
 
 ## 任务 4：总览只展示当前有效发布的任务工位
 
@@ -69,8 +69,8 @@
 **回归文件：** `tools/MotionControl.OperatorPages.Checks/BoundTaskLoadChecks.cs`，复用真实 Host 组合及已有准备换代流程。
 
 - [x] 有效会话可展示工位；同 Runtime 准备换代后会话未确认，总览不得保留旧工位和定位入口。先观察原实现失败。
-- [ ] 总览身份提供器及工位快照使用 `CurrentPublishedTaskSession`，读取前后核对同一身份。
-- [ ] 不清除原任务的资源隔离、恢复与未确认安全诊断；不修改固定页面骨架。
+- [x] 总览身份提供器及工位快照使用 `CurrentPublishedTaskSession`，读取前后核对同一身份。
+- [x] 不清除原任务的资源隔离、恢复与未确认安全诊断；不修改固定页面骨架。
 
 **独立复核补充：** 为工位和保留资源证据分别提供身份；资源摘要须绑定当前总览 Runtime/连接，并在采样前后核对同一保留会话。不能因工位发布资格失效而隐藏仍需核查的警示，也不能把原会话摘要带到新连接。
 
@@ -78,9 +78,9 @@
 
 - [x] 原基线 `python3 tools/Check-CommandBoundaries.py`：9 项通过。
 - [x] 在同一独立分支通过 GitHub Windows CI 观察新增测试失败；记录对应 SHA、运行与具体失败原因。
-- [ ] 修复后运行原 `Verify-ProtectedUi.ps1`、`Verify-V18.ps1` 和 `Verify-ControllerApi.ps1`，读取最终提交的真实日志。
-- [ ] 独立代理复核完整差异，处理影响正确性的发现；`git diff --check` 通过。
-- [ ] 更新中文来源表、失败/成功证据、PR 说明、Linear TODO 与任务状态。
+- [x] 修复后运行 `Verify-ProtectedUi.ps1`、`Verify-V18.ps1` 和 `Verify-ControllerApi.ps1`，读取与最终代码相符的真实日志。
+- [x] 独立代理复核完整差异，处理影响正确性的发现；`git diff --check` 通过。
+- [x] 更新中文来源表、失败/成功证据、PR 说明、Linear TODO 与任务状态。
 - [ ] 正式 Host 的 Windows 屏幕验收仍须可操作窗口和实际截图；本环境为 Linux，不能把 CI 控件测试记作目视验收。
 
 ## 裁定与进度记录
@@ -90,3 +90,5 @@
 - 验证裁定：本地 Linux 无正式 Windows WPF 桌面；使用现有 Windows CI 做实际构建及内部逻辑回归，正式屏幕与硬件验收继续单独标未完成。
 - 复核裁定：后台观察改用允许读写/原子替换的专用读取共享方式，人工检查、同步、应用的严格签名入口保持原语义；专用观察与原签名在稳定文件下必须等价。
 - 复核裁定：准备错误的四项归属使用命令捕获的原参数，不能在写入摘要后从当前环境重新采集身份；增加确定性 Message 读取换代回归。
+- 验证闭合：代码提交 `793159aa818c5e7d442cf3c1f4025191933a6729` 的 [Windows 运行 42746247040](https://github.com/hefan1/MotionControlFramework/actions/runs/42746247040) 成功；Host、保护布局 5/5、内部项目 15/15、任务编辑 35/35、操作页面 69/69 及软件控制器 API 通过。
+- 交付状态：[PR #12](https://github.com/hefan1/MotionControlFramework/pull/12) 已转待审查，ROC-18/23/24/28 已更新 In Review；尚未合并 master。正式屏幕走查仍留在 ROC-13。
