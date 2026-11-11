@@ -55,6 +55,8 @@ namespace MotionControl.Host.Wpf
                     ILogicalIo cleanupIo = cleanupConnection?.ConnectedLogicalIo;
                     bool wasConnected = cleanupConnection != null && cleanupConnection.IsConnected;
                     await FinishUnpublishedConnectionsAsync();
+                    // 即使收尾同步完成，也先让原 Closing 返回；WPF 禁止在原关闭事件中再次 Close。
+                    await Task.Yield();
                     // 收尾期间若又换了设备，旧关闭请求到此结束，不能重新请求关闭后来设备。
                     if (_exitingApplication || cleanupVersion != _connectionSynchronizationVersion
                         || !ReferenceEquals(cleanupWindow, _mainWindow) || !ReferenceEquals(cleanupRuntime, _machineRuntime)

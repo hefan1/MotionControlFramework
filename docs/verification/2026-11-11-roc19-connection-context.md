@@ -49,7 +49,15 @@
 
 独立完整差异评审接受具体对象保留与退出证据门，但指出新 pending 关窗分支在重试同步完成时，可能尚在原 Closing 事件中再次调用 `Close()`。Microsoft [.NET Framework 4.8 Window.Closing 文档](https://learn.microsoft.com/en-us/dotnet/api/system.windows.window.closing?view=netframework-4.8) 明确规定此时会抛 `InvalidOperationException`。
 
-原关窗组直接调用真实 App 处理函数，可以检查来源归属，但不会设置 WPF 的内部关闭状态，不能覆盖这一窗口事件边界。正在补充真实 `window.Close()` → `Closing` 的回归；在该补充场景取得 RED、最小修正并通过后再最终合并。当前全套已有检查通过不等于这个新发现的边界已验证。
+原关窗组直接调用真实 App 处理函数，可以检查来源归属，但不会设置 WPF 的内部关闭状态，不能覆盖这一窗口事件边界。仅测试检查点 [`b0bb763`](https://github.com/hefan1/MotionControlFramework/commit/b0bb763346fd739231d121fff4f06ab4e989f3c8) 加入真实 `window.Close()` → `Closing`，保持生产源码为 a0d83fe。
+
+[run 42945053437](https://github.com/hefan1/MotionControlFramework/actions/runs/42945053437) / job `130275734084` 已确认真实 RED：原始堆栈为 `Window.VerifyNotClosing` → `Window.InternalClose` → `App.MainWindow_Closing` 第 79 行，异常为 WPF 关闭重入的 `InvalidOperationException`；见证为“Closing 次数=1、首次取消=True、调度异常=1、待收尾对象=0”。原监控收尾组仍为 True/True/True。
+
+本轮同时有一条既有 `MachineDevice.Checks` 清料反馈超时，发生于 `ClearanceLeaseChecks.cs:404`，早于 OperatorPages 执行；因此实际内部结果为 13/15，不能称整轮通过。此项目与其 Runtime 源码在本次 Host 修改中未变；单独保留原始堆栈排查，不将其归因于新窗口回归，也不通过盲目延长超时处理。
+
+后续只读诊断找到既有检查对象确定存在的发布竞争：`MoveAbsoluteAsync` 先公布 `Moving=true`，再创建完成任务，观察线程可能提前调用 `Complete` 而丢失信号。该对象的原始源码在 be17f5c 与 b0bb763 相同。最小修正仅让本次目标和完成任务先准备好，再用 volatile 状态发布，并让返回、取消和完成使用捕获的本次任务；生产动作和预算没有调整。此竞争与实际超时相容，但原日志不能证明其为本次失败的唯一原因；由原有 43 组和最终全套检查验证该修正，保留原失败证据。
+
+对已确认的 WPF 问题，最小修正是在遗留监控收尾后增加一次 `await Task.Yield()`，先让原 Closing 返回，然后执行原有完整来源复核，再请求关闭捕获的窗口。该提交时的最终全套候选与实际 master 仍需验证；最终集成证据和完成状态统一登记到 [ROC-19](https://linear.app/roc123/issue/ROC-19) 及关联 PR，本文保留逐个检查点的证据边界。
 
 ## 证据边界
 
