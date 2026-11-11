@@ -90,6 +90,7 @@ namespace MotionControl.OperatorPages.Checks
             await RunConnectionCheckAsync("旧连接失败收尾不得清空新组合 C", () => CheckLateConnectionFailureAsync(app), failures);
             await RunConnectionCheckAsync("旧连接晚于断连不得重挂运行时", () => CheckLateConnectionAfterLossAsync(app, true), failures);
             await RunConnectionCheckAsync("失联通知不再同步时不得发布旧连接", () => CheckLateConnectionAfterLossAsync(app, false), failures);
+            await RunConnectionCheckAsync("未发布监控失败必须保留真实收尾", () => CheckUnpublishedMonitorCleanupAsync(app), failures);
             await RunConnectionCheckAsync("真实 App 关窗的连接来源", RunConnectionShutdownChecksAsync, failures);
             if (failures.Count != 0) throw new AggregateException("连接来源离线回归未通过。", failures);
         }
@@ -475,6 +476,133 @@ namespace MotionControl.OperatorPages.Checks
             if (errors.Count != 0) throw new AggregateException("旧连接晚于失联检查或收尾失败。", errors);
         }
 
+        /// <summary>在未发布运行时收尾时注入取消失败，核对真实 App finally 保留原监控与历史供重试。</summary>
+        private static async Task CheckUnpublishedMonitorCleanupAsync(App app)
+        {
+            var fixture = new ConnectionContextFixture(app);
+            var errors = new List<Exception>();
+            var monitorFinished = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var cancellationEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            MachineRuntime unpublished = null;
+            AlarmHistoryJournal history = null;
+            CancellationTokenSource monitorCancellation = null;
+            CancellationTokenRegistration monitorRegistration = default(CancellationTokenRegistration);
+            Task connecting = null;
+            Task retrying = null;
+            using (var dialogs = new ConnectionCheckDialogScope("设备运行时"))
+            {
+                try
+                {
+                    fixture.Initialize();
+                    await fixture.ConnectNewCardAsync();
+                    MachineRuntime original = fixture.CurrentRuntime;
+                    LoadCard pendingCard = await fixture.InstallNewCardAsync();
+                    fixture.Connection.ObserveLogicalIo = () =>
+                    {
+                        var candidate = fixture.LauncherField("_runtime") as MachineRuntime;
+                        if (candidate == null || ReferenceEquals(candidate, original)
+                            || ReferenceEquals(candidate, fixture.CurrentRuntime) || unpublished != null) return;
+                        // 只按真实 Runtime 身份触发一次，不依赖 getter 访问次数或替换 App 方法。
+                        unpublished = candidate;
+                        fixture.TrackRuntime(candidate);
+                        fixture.Connection.ObserveLogicalIo = null;
+                        try
+                        {
+                            var recorded = ReadConnectionCheckField(candidate.AlarmService, "HistoryRecorded") as Delegate;
+                            history = recorded?.GetInvocationList().Select(handler => handler.Target)
+                                .OfType<AlarmHistoryJournal>().SingleOrDefault();
+                            Require(history != null, "未发布 B 的真实报警历史订阅未找到，不能建立监控收尾检查。");
+                            var originalMonitor = (Task)ReadConnectionCheckField(candidate, "_controlInputMonitorTask");
+                            // 空 IO 的真实监控及其停止均不捕获 UI 上下文；先等它结束，不能泄漏原后台任务。
+                            candidate.StopControlInputMonitoringAsync().GetAwaiter().GetResult();
+                            Require(originalMonitor != null && originalMonitor.IsCompleted,
+                                "未发布 B 的原监控尚未结束，不能安装受控退出屏障。");
+                            monitorCancellation = new CancellationTokenSource();
+                            monitorRegistration = monitorCancellation.Token.Register(() =>
+                            {
+                                cancellationEntered.TrySetResult(true);
+                                throw new IOException("ROC19_注入未发布监控取消回调失败");
+                            });
+                            SetConnectionCheckField(candidate, "_controlInputMonitorCancellation", monitorCancellation);
+                            SetConnectionCheckField(candidate, "_controlInputMonitorTask", monitorFinished.Task);
+                            fixture.Connection.LogicalIo = new NoIo();
+                        }
+                        catch (Exception error)
+                        {
+                            cancellationEntered.TrySetException(new InvalidOperationException("未发布监控检查的注入条件未建立。", error));
+                        }
+                    };
+
+                    connecting = fixture.SynchronizeAsync();
+                    await WaitForConnectionCheckAsync(cancellationEntered.Task,
+                        "未进入补丁候选的未发布 Runtime 收尾；不能把旧生产或场景未成立当作本组 RED。");
+                    Require(unpublished != null && history != null && monitorCancellation.IsCancellationRequested
+                        && !monitorFinished.Task.IsCompleted,
+                        "真实 App finally 没有取消并保留受控监控等待，本次场景未建立。");
+                    var closingHistories = (HashSet<AlarmHistoryJournal>)fixture.AppField("_closingAlarmHistories");
+                    bool historyRetained = !(bool)ReadConnectionCheckField(history, "_closing") && !closingHistories.Contains(history);
+
+                    retrying = fixture.SynchronizeAsync();
+                    // 给真实重试一次调度机会；唯一监控屏障仍未释放，不能把正在调度当作收尾已经完成。
+                    await Task.Yield();
+                    var currentBindings = new[]
+                    {
+                        fixture.CurrentRuntime,
+                        (MachineRuntime)ReadConnectionCheckField(fixture.Host, "_machineRuntime"),
+                        (MachineRuntime)ReadConnectionCheckField(fixture.VariablePage, "_machineRuntime")
+                    };
+                    bool retryWaited = !retrying.IsCompleted && currentBindings.All(runtime => runtime == null
+                        || ((ReferenceEquals(runtime, original) || ReferenceEquals(runtime, unpublished))
+                            && runtime.ConnectionSessionId == null));
+                    historyRetained = historyRetained && !(bool)ReadConnectionCheckField(history, "_closing")
+                        && !closingHistories.Contains(history);
+                    monitorRegistration.Dispose();
+                    monitorFinished.TrySetResult(true);
+                    await connecting;
+                    await retrying;
+
+                    var writer = (Thread)ReadConnectionCheckField(history, "_writer");
+                    bool writerStopped = await Task.Run(() => writer.Join(4000));
+                    MachineRuntime replacement = fixture.CurrentRuntime;
+                    Console.WriteLine("[未发布收尾] 屏障内保留历史=" + historyRetained + "，重试等待原监控=" + retryWaited
+                        + "，放行后历史线程结束=" + writerStopped + "。");
+                    const string failure = "ROC19_未发布监控失败丢失收尾：B 的监控未结束就关闭了历史、允许重试发布 C，或放行后未完成原历史收尾。";
+                    Require(historyRetained && retryWaited && writerStopped && (bool)ReadConnectionCheckField(history, "_closing")
+                        && replacement != null && !ReferenceEquals(replacement, unpublished)
+                        && replacement.MotionCards.Cards.Any(card => ReferenceEquals(card, pendingCard)), failure);
+                    RequireCurrentConnection(fixture, replacement, replacement.ConnectionSessionId,
+                        fixture.AppField("_alarmHistoryJournal"), failure);
+                }
+                catch (Exception error) { errors.Add(error); }
+                finally
+                {
+                    fixture.Connection.ObserveLogicalIo = null;
+                    monitorRegistration.Dispose();
+                    monitorFinished.TrySetResult(true);
+                    await FinishConnectionCheckTaskAsync(connecting, false, errors);
+                    await FinishConnectionCheckTaskAsync(retrying, false, errors);
+                    // 产品断言之后才兜底回收捕获对象，不能用测试清理冒充 App 已保留或完成原收尾。
+                    if (unpublished != null)
+                    {
+                        try { await unpublished.StopControlInputMonitoringAsync(); }
+                        catch (Exception error) { errors.Add(error); }
+                    }
+                    if (history != null)
+                    {
+                        try
+                        {
+                            AlarmHistoryCloseResult result = await Task.Run(() => history.Close(TimeSpan.FromSeconds(4)));
+                            Require(result.IsComplete, "未发布监控检查的原报警历史兜底收尾失败：" + result.Error);
+                        }
+                        catch (Exception error) { errors.Add(error); }
+                    }
+                    await fixture.CleanupAsync(errors);
+                    monitorCancellation?.Dispose();
+                }
+            }
+            if (errors.Count != 0) throw new AggregateException("未发布监控失败检查或收尾失败。", errors);
+        }
+
         /// <summary>确认旧 App 调用已进入真实 setter 的关闭等待，不要求 Runtime 必须在等待前创建或发布。</summary>
         private static async Task WaitForAppContextSettingAsync(Task connecting, object launcher, long beforeSetting)
         {
@@ -808,6 +936,8 @@ namespace MotionControl.OperatorPages.Checks
             internal IMotionCard Card;
             /// <summary>本轮逻辑 IO 身份；NoIo 对所有硬件调用明确拒绝。</summary>
             internal ILogicalIo LogicalIo;
+            /// <summary>仅在专项故障注入观察真实 IO 来源读取；默认为空，不改变其他连接检查。</summary>
+            internal Action ObserveLogicalIo;
             /// <summary>只挂起下一次 provider 断开，默认不阻塞任何现有场景。</summary>
             internal bool BlockDisconnect;
             /// <summary>下一次被挂起的 provider 断开已经捕获原卡对象。</summary>
@@ -824,8 +954,11 @@ namespace MotionControl.OperatorPages.Checks
             public string ActualControllerVersion => string.Empty;
             /// <summary>返回当前实际参与 Runtime 的卡对象。</summary>
             public IMotionCard ConnectedMotionCard => Card;
-            /// <summary>返回与当前卡同时安装的 IO 身份。</summary>
-            public ILogicalIo ConnectedLogicalIo => LogicalIo;
+            /// <summary>返回与当前卡同时安装的 IO 身份；专项可在真实来源核对处注入生命周期变化。</summary>
+            public ILogicalIo ConnectedLogicalIo
+            {
+                get { ObserveLogicalIo?.Invoke(); return LogicalIo; }
+            }
             /// <summary>本检查没有轴映射。</summary>
             public IReadOnlyList<AxisHardwareDefinition> AxisHardwareDefinitions => new AxisHardwareDefinition[0];
             /// <summary>本检查没有输入映射。</summary>
