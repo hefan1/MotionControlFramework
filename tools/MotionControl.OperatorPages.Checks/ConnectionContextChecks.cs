@@ -88,6 +88,8 @@ namespace MotionControl.OperatorPages.Checks
             await RunConnectionCheckAsync("旧断连监控迟到不得清空新连接", () => CheckLateDisconnectAsync(app), failures);
             await RunConnectionCheckAsync("旧连接完成后不得覆盖新组合 C", () => CheckLateConnectionSuccessAsync(app), failures);
             await RunConnectionCheckAsync("旧连接失败收尾不得清空新组合 C", () => CheckLateConnectionFailureAsync(app), failures);
+            await RunConnectionCheckAsync("旧连接晚于断连不得重挂运行时", () => CheckLateConnectionAfterLossAsync(app, true), failures);
+            await RunConnectionCheckAsync("失联通知不再同步时不得发布旧连接", () => CheckLateConnectionAfterLossAsync(app, false), failures);
             await RunConnectionCheckAsync("真实 App 关窗的连接来源", RunConnectionShutdownChecksAsync, failures);
             if (failures.Count != 0) throw new AggregateException("连接来源离线回归未通过。", failures);
         }
@@ -375,6 +377,104 @@ namespace MotionControl.OperatorPages.Checks
             if (errors.Count != 0) throw new AggregateException("旧连接失败迟到检查或收尾失败。", errors);
         }
 
+        /// <summary>共用真实装载等待，分别检查后来离线同步和不再同步的失联通知能撤销旧 App 连接。</summary>
+        private static async Task CheckLateConnectionAfterLossAsync(App app, bool synchronizeDisconnect)
+        {
+            var fixture = new ConnectionContextFixture(app);
+            var errors = new List<Exception>();
+            LoadCard originalCard = null;
+            Task loading = null;
+            Task oldConnecting = null;
+            Task disconnecting = null;
+            try
+            {
+                fixture.Initialize();
+                originalCard = await fixture.ConnectNewCardAsync();
+                MachineRuntime original = fixture.CurrentRuntime;
+                Guid? originalSession = original.ConnectionSessionId;
+                object originalLauncher = fixture.AppField("_taskMonitorLauncher");
+                originalCard.BlockWorkerRead = true;
+                loading = fixture.InvokeLauncherAsync("LoadTaskSessionAsync");
+                await WaitForConnectionCheckAsync(originalCard.WorkerEntered.Task, "断连前的任务读取未进入受控等待窗口。");
+                long beforeSetting = (long)ReadConnectionCheckField(originalLauncher, "_machineContextVersion");
+                LoadCard pendingCard = await fixture.InstallNewCardAsync();
+                oldConnecting = fixture.SynchronizeAsync();
+                await WaitForAppContextSettingAsync(oldConnecting, originalLauncher, beforeSetting);
+                fixture.TrackRuntime(fixture.CurrentRuntime);
+
+                if (synchronizeDisconnect)
+                {
+                    fixture.ReplaceLauncher();
+                    fixture.Connection.Card = null;
+                    fixture.Connection.LogicalIo = null;
+                    disconnecting = fixture.SynchronizeAsync();
+                    await disconnecting;
+                    Require(fixture.CurrentRuntime == null && fixture.LauncherField("_runtime") == null,
+                        "后来离线同步没有实际清空当前上下文，不能检查旧连接迟到。");
+                }
+                else
+                {
+                    // 对应心跳路径的失联锁存边界：只发真实失联通知，故意不调用第二次 App 同步。
+                    pendingCard.Online = false;
+                    fixture.InvokeLauncher("MarkControllerConnectionLost");
+                    Require((bool)fixture.LauncherField("_controllerConnectionLost") && original.ConnectionSessionId == null,
+                        "真实失联通知没有撤销原连接身份，本次无同步场景未建立。");
+                }
+
+                originalCard.Resume.Set();
+                Exception loadError = await ObserveConnectionCheckAsync(loading);
+                if (!(loadError is InvalidOperationException))
+                    throw new InvalidOperationException("连接失效后，原任务装载没有按上下文撤销结束。", loadError);
+                await oldConnecting;
+
+                object flow = fixture.AppField("_flowStatusPage");
+                object manual = fixture.AppField("_manualMotionDebugPage");
+                object hostFlow = ReadConnectionCheckField(fixture.Host, "_flowStatusPage");
+                object hostManual = ReadConnectionCheckField(fixture.Host, "_manualMotionDebugPage");
+                if (synchronizeDisconnect)
+                {
+                    Require(!fixture.Connection.IsConnected && fixture.CurrentRuntime == null
+                        && fixture.LauncherField("_runtime") == null && fixture.LauncherField("_session") == null
+                        && (bool)fixture.LauncherField("_controllerConnectionLost")
+                        && ReadConnectionCheckField(fixture.Host, "_machineRuntime") == null
+                        && ReadConnectionCheckField(fixture.VariablePage, "_machineRuntime") == null
+                        && flow == null && manual == null && hostFlow == null && hostManual == null
+                        && fixture.AppField("_currentAlarmService") == null && fixture.AppField("_alarmHistoryJournal") == null,
+                        "ROC19_旧连接晚于断连重挂运行时：离线同步完成后，旧 B 把运行时或页面重新挂回当前组合。");
+                }
+                else
+                {
+                    // 保留已失效的 A 等待收尾是合法结果；任何入口都不能把迟到 B 安装为当前对象。
+                    var boundRuntimes = new object[]
+                    {
+                        fixture.CurrentRuntime, fixture.LauncherField("_runtime"),
+                        ReadConnectionCheckField(fixture.Host, "_machineRuntime"),
+                        ReadConnectionCheckField(fixture.VariablePage, "_machineRuntime"),
+                        flow == null ? null : ReadConnectionCheckField(flow, "_runtime"),
+                        manual == null ? null : ReadConnectionCheckField(manual, "_machineRuntime"),
+                        hostFlow == null ? null : ReadConnectionCheckField(hostFlow, "_runtime"),
+                        hostManual == null ? null : ReadConnectionCheckField(hostManual, "_machineRuntime")
+                    };
+                    Require(!fixture.Connection.IsConnected && original.ConnectionSessionId == null
+                        && !original.IsConnectionSessionCurrent(originalSession)
+                        && (bool)fixture.LauncherField("_controllerConnectionLost")
+                        && fixture.LauncherField("_session") == null && !original.IsTaskEngineControlClaimed
+                        && boundRuntimes.All(runtime => runtime == null || ReferenceEquals(runtime, original)),
+                        "ROC19_无同步失联后重挂旧连接：未再同步的失联通知被旧 B 覆盖，或页面仍安装 B，或原 A 身份未失效。");
+                }
+            }
+            catch (Exception error) { errors.Add(error); }
+            finally
+            {
+                originalCard?.Resume.Set();
+                await FinishConnectionCheckTaskAsync(loading, true, errors);
+                await FinishConnectionCheckTaskAsync(oldConnecting, false, errors);
+                await FinishConnectionCheckTaskAsync(disconnecting, false, errors);
+                await fixture.CleanupAsync(errors);
+            }
+            if (errors.Count != 0) throw new AggregateException("旧连接晚于失联检查或收尾失败。", errors);
+        }
+
         /// <summary>确认旧 App 调用已进入真实 setter 的关闭等待，不要求 Runtime 必须在等待前创建或发布。</summary>
         private static async Task WaitForAppContextSettingAsync(Task connecting, object launcher, long beforeSetting)
         {
@@ -485,6 +585,18 @@ namespace MotionControl.OperatorPages.Checks
                     var caption = new StringBuilder(256);
                     GetWindowText(window, caption, caption.Capacity);
                     if (caption.ToString() != _expectedCaption) return true;
+                    // 只读取已经匹配的本检查提示框正文，保留原始拒绝原因，不扫描其他窗口。
+                    EnumChildWindows(window, (child, childParameter) =>
+                    {
+                        var childClass = new StringBuilder(64);
+                        GetClassName(child, childClass, childClass.Capacity);
+                        if (childClass.ToString() != "Static") return true;
+                        var body = new StringBuilder(4096);
+                        GetWindowText(child, body, body.Capacity);
+                        if (!string.IsNullOrWhiteSpace(body.ToString()))
+                            Console.WriteLine("[内部提示正文] " + _expectedCaption + "：" + body);
+                        return true;
+                    }, IntPtr.Zero);
                     if (PostMessage(window, 0x0010, IntPtr.Zero, IntPtr.Zero)) DismissedCount++;
                     return false;
                 }, IntPtr.Zero);
@@ -502,6 +614,9 @@ namespace MotionControl.OperatorPages.Checks
             /// <summary>枚举当前内部检查线程的窗口，不扫描其他进程。</summary>
             [DllImport("user32.dll")]
             private static extern bool EnumThreadWindows(uint threadId, WindowEnumerator callback, IntPtr parameter);
+            /// <summary>只枚举已确认属于本检查的提示框子控件，取得拒绝正文。</summary>
+            [DllImport("user32.dll")]
+            private static extern bool EnumChildWindows(IntPtr parent, WindowEnumerator callback, IntPtr parameter);
             /// <summary>读取系统提示框的窗口类名。</summary>
             [DllImport("user32.dll", CharSet = CharSet.Unicode)]
             private static extern int GetClassName(IntPtr window, StringBuilder name, int maximum);
@@ -690,7 +805,7 @@ namespace MotionControl.OperatorPages.Checks
         private sealed class ConnectionContextCardConnection : IMotionCardHostConnection
         {
             /// <summary>本轮对外可见的无轴卡引用，测试据此控制来源变化。</summary>
-            internal LoadCard Card;
+            internal IMotionCard Card;
             /// <summary>本轮逻辑 IO 身份；NoIo 对所有硬件调用明确拒绝。</summary>
             internal ILogicalIo LogicalIo;
             /// <summary>只挂起下一次 provider 断开，默认不阻塞任何现有场景。</summary>
@@ -722,7 +837,7 @@ namespace MotionControl.OperatorPages.Checks
             /// <summary>断开当前无轴卡；只清理仍属于本次调用的源。</summary>
             public async Task DisconnectAsync(CancellationToken token)
             {
-                LoadCard card = Card;
+                IMotionCard card = Card;
                 if (BlockDisconnect)
                 {
                     BlockDisconnect = false;

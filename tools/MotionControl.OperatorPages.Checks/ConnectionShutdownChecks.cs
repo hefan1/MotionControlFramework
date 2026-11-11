@@ -9,6 +9,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Interop;
+using MotionControl.Framework.Contracts.Configuration;
+using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Runtime.Machine;
 using MotionControl.Host.Wpf;
@@ -56,8 +58,13 @@ namespace MotionControl.OperatorPages.Checks
                 try
                 {
                     fixture.Initialize();
-                    await fixture.ConnectNewCardAsync();
+                    LoadCard originalCard = await fixture.InstallNewCardAsync();
+                    Require(originalCard.Axes.Count == 0 && fixture.Connection.DigitalOutputs.Count == 0,
+                        "关窗来源检查只允许无轴、无输出的离线连接，不能替实际控制器声明断连保持能力。");
+                    fixture.Connection.Card = new OutputFreeShutdownCheckCard(originalCard, fixture.Connection.DigitalOutputs);
+                    await fixture.SynchronizeAsync();
                     MachineRuntime original = fixture.CurrentRuntime;
+                    Require(original != null, "关窗来源检查的合法空设备没有建立真实 Runtime。");
                     new WindowInteropHelper(fixture.Host).EnsureHandle();
                     fixture.Host.Closing += observeClose;
                     fixture.Connection.BlockDisconnect = true;
@@ -150,7 +157,14 @@ namespace MotionControl.OperatorPages.Checks
                     if (closingStarted)
                     {
                         try { await WaitForConnectionShutdownCompletionAsync(fixture); }
-                        catch (Exception error) { errors.Add(error); }
+                        catch (Exception error)
+                        {
+                            errors.Add(error);
+                            // 诊断超时不授予拆除权限：继续保留窗口观察者、提示框处理及全部组合对象。
+                            // 若真实退出始终未完成，由父进程的总时限结束本检查进程并报告未取得结果。
+                            while ((bool)fixture.AppField("_shutdownDisconnectInProgress"))
+                                await Task.Delay(10);
+                        }
                     }
                     if (fixture.Host != null) fixture.Host.Closing -= observeClose;
                     try
@@ -176,6 +190,37 @@ namespace MotionControl.OperatorPages.Checks
                 await Task.Delay(10);
             Require(!(bool)fixture.AppField("_shutdownDisconnectInProgress"),
                 "真实 App 关窗异步处理尚未收尾，不能将等待中状态当作来源拒绝。");
+        }
+
+        /// <summary>仅为零轴、零输出的离线来源检查声明断连能力，连接行为全部委托既有 LoadCard。</summary>
+        private sealed class OutputFreeShutdownCheckCard : IMotionCard, IOutputStatePreservingDisconnect
+        {
+            /// <summary>既有无轴连接对象；包装不新增轴、IO 或硬件调用。</summary>
+            private readonly LoadCard _card;
+
+            /// <summary>先明确核对空轴和空输出前提，不允许包装有实际输出的控制器。</summary>
+            internal OutputFreeShutdownCheckCard(LoadCard card, IReadOnlyList<DigitalIoHardwareDefinition> outputs)
+            {
+                if (card == null) throw new ArgumentNullException(nameof(card));
+                if (card.Axes.Count != 0 || outputs == null || outputs.Count != 0)
+                    throw new InvalidOperationException("零输出关窗检查不能为轴或输出设备声明保持能力。");
+                _card = card;
+            }
+
+            /// <summary>此测试卡没有数字输出，且委托断连只改变连接状态；不代表任何硬件的保持能力。</summary>
+            public bool PreservesDigitalOutputsOnDisconnect => true;
+            /// <summary>沿用既有离线卡身份。</summary>
+            public string ControllerId => _card.ControllerId;
+            /// <summary>读取既有离线连接状态，不伪造已连接结果。</summary>
+            public bool IsConnected => _card.IsConnected;
+            /// <summary>返回构造时已确认为空的原轴集合。</summary>
+            public IReadOnlyCollection<IAxis> Axes => _card.Axes;
+
+            /// <summary>通过既有 LoadCard 的真实检查实现建立离线连接。</summary>
+            public Task ConnectAsync(CancellationToken token) { return _card.ConnectAsync(token); }
+
+            /// <summary>通过既有 LoadCard 的真实检查实现断开连接，不提供输出操作。</summary>
+            public Task DisconnectAsync(CancellationToken token) { return _card.DisconnectAsync(token); }
         }
     }
 }
