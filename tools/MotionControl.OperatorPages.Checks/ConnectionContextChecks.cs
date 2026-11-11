@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -9,6 +10,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Threading;
 using MotionControl.Framework.Contracts.Configuration;
 using MotionControl.Framework.Contracts.IO;
@@ -91,6 +93,7 @@ namespace MotionControl.OperatorPages.Checks
             await RunConnectionCheckAsync("旧连接晚于断连不得重挂运行时", () => CheckLateConnectionAfterLossAsync(app, true), failures);
             await RunConnectionCheckAsync("失联通知不再同步时不得发布旧连接", () => CheckLateConnectionAfterLossAsync(app, false), failures);
             await RunConnectionCheckAsync("未发布监控失败必须保留真实收尾", () => CheckUnpublishedMonitorCleanupAsync(app), failures);
+            await RunConnectionCheckAsync("未发布监控同步收尾后必须安全重新关窗", () => CheckUnpublishedMonitorCleanupAsync(app, true), failures);
             await RunConnectionCheckAsync("真实 App 关窗的连接来源", RunConnectionShutdownChecksAsync, failures);
             if (failures.Count != 0) throw new AggregateException("连接来源离线回归未通过。", failures);
         }
@@ -476,8 +479,8 @@ namespace MotionControl.OperatorPages.Checks
             if (errors.Count != 0) throw new AggregateException("旧连接晚于失联检查或收尾失败。", errors);
         }
 
-        /// <summary>在未发布运行时收尾时注入取消失败，核对真实 App finally 保留原监控与历史供重试。</summary>
-        private static async Task CheckUnpublishedMonitorCleanupAsync(App app)
+        /// <summary>在未发布运行时收尾时注入取消失败，分别核对同步重试和真实关窗的原对象收尾。</summary>
+        private static async Task CheckUnpublishedMonitorCleanupAsync(App app, bool closeAfterMonitor = false)
         {
             var fixture = new ConnectionContextFixture(app);
             var errors = new List<Exception>();
@@ -542,36 +545,50 @@ namespace MotionControl.OperatorPages.Checks
                     var closingHistories = (HashSet<AlarmHistoryJournal>)fixture.AppField("_closingAlarmHistories");
                     bool historyRetained = !(bool)ReadConnectionCheckField(history, "_closing") && !closingHistories.Contains(history);
 
-                    retrying = fixture.SynchronizeAsync();
-                    // 给真实重试一次调度机会；唯一监控屏障仍未释放，不能把正在调度当作收尾已经完成。
-                    await Task.Yield();
-                    var currentBindings = new[]
+                    if (closeAfterMonitor)
                     {
-                        fixture.CurrentRuntime,
-                        (MachineRuntime)ReadConnectionCheckField(fixture.Host, "_machineRuntime"),
-                        (MachineRuntime)ReadConnectionCheckField(fixture.VariablePage, "_machineRuntime")
-                    };
-                    bool retryWaited = !retrying.IsCompleted && currentBindings.All(runtime => runtime == null
-                        || ((ReferenceEquals(runtime, original) || ReferenceEquals(runtime, unpublished))
-                            && runtime.ConnectionSessionId == null));
-                    historyRetained = historyRetained && !(bool)ReadConnectionCheckField(history, "_closing")
-                        && !closingHistories.Contains(history);
-                    monitorRegistration.Dispose();
-                    monitorFinished.TrySetResult(true);
-                    await connecting;
-                    await retrying;
+                        Require(historyRetained, "原监控失败后没有保留历史，不能建立真实关窗的同步收尾前提。");
+                        monitorRegistration.Dispose();
+                        monitorFinished.TrySetResult(true);
+                        await connecting;
+                        await pendingCard.DisconnectAsync(CancellationToken.None);
+                        fixture.Connection.Card = null;
+                        fixture.Connection.LogicalIo = null;
+                        await CheckSynchronousUnpublishedClosingAsync(app, fixture, unpublished, history);
+                    }
+                    else
+                    {
+                        retrying = fixture.SynchronizeAsync();
+                        // 给真实重试一次调度机会；唯一监控屏障仍未释放，不能把正在调度当作收尾已经完成。
+                        await Task.Yield();
+                        var currentBindings = new[]
+                        {
+                            fixture.CurrentRuntime,
+                            (MachineRuntime)ReadConnectionCheckField(fixture.Host, "_machineRuntime"),
+                            (MachineRuntime)ReadConnectionCheckField(fixture.VariablePage, "_machineRuntime")
+                        };
+                        bool retryWaited = !retrying.IsCompleted && currentBindings.All(runtime => runtime == null
+                            || ((ReferenceEquals(runtime, original) || ReferenceEquals(runtime, unpublished))
+                                && runtime.ConnectionSessionId == null));
+                        historyRetained = historyRetained && !(bool)ReadConnectionCheckField(history, "_closing")
+                            && !closingHistories.Contains(history);
+                        monitorRegistration.Dispose();
+                        monitorFinished.TrySetResult(true);
+                        await connecting;
+                        await retrying;
 
-                    var writer = (Thread)ReadConnectionCheckField(history, "_writer");
-                    bool writerStopped = await Task.Run(() => writer.Join(4000));
-                    MachineRuntime replacement = fixture.CurrentRuntime;
-                    Console.WriteLine("[未发布收尾] 屏障内保留历史=" + historyRetained + "，重试等待原监控=" + retryWaited
-                        + "，放行后历史线程结束=" + writerStopped + "。");
-                    const string failure = "ROC19_未发布监控失败丢失收尾：B 的监控未结束就关闭了历史、允许重试发布 C，或放行后未完成原历史收尾。";
-                    Require(historyRetained && retryWaited && writerStopped && (bool)ReadConnectionCheckField(history, "_closing")
-                        && replacement != null && !ReferenceEquals(replacement, unpublished)
-                        && replacement.MotionCards.Cards.Any(card => ReferenceEquals(card, pendingCard)), failure);
-                    RequireCurrentConnection(fixture, replacement, replacement.ConnectionSessionId,
-                        fixture.AppField("_alarmHistoryJournal"), failure);
+                        var writer = (Thread)ReadConnectionCheckField(history, "_writer");
+                        bool writerStopped = await Task.Run(() => writer.Join(4000));
+                        MachineRuntime replacement = fixture.CurrentRuntime;
+                        Console.WriteLine("[未发布收尾] 屏障内保留历史=" + historyRetained + "，重试等待原监控=" + retryWaited
+                            + "，放行后历史线程结束=" + writerStopped + "。");
+                        const string failure = "ROC19_未发布监控失败丢失收尾：B 的监控未结束就关闭了历史、允许重试发布 C，或放行后未完成原历史收尾。";
+                        Require(historyRetained && retryWaited && writerStopped && (bool)ReadConnectionCheckField(history, "_closing")
+                            && replacement != null && !ReferenceEquals(replacement, unpublished)
+                            && replacement.MotionCards.Cards.Any(card => ReferenceEquals(card, pendingCard)), failure);
+                        RequireCurrentConnection(fixture, replacement, replacement.ConnectionSessionId,
+                            fixture.AppField("_alarmHistoryJournal"), failure);
+                    }
                 }
                 catch (Exception error) { errors.Add(error); }
                 finally
@@ -601,6 +618,110 @@ namespace MotionControl.OperatorPages.Checks
                 }
             }
             if (errors.Count != 0) throw new AggregateException("未发布监控失败检查或收尾失败。", errors);
+        }
+
+        /// <summary>通过真实 Window.Close 进入 WPF Closing，核对同步完成的未发布收尾不会在原关窗事件中递归 Close。</summary>
+        private static async Task CheckSynchronousUnpublishedClosingAsync(App app, ConnectionContextFixture fixture,
+            MachineRuntime runtime, AlarmHistoryJournal history)
+        {
+            var errors = new List<Exception>();
+            var dispatcherErrors = new List<Exception>();
+            var closingObserved = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            int closingCalls = 0;
+            bool firstCancelled = false;
+            bool closingStarted = false;
+            CancelEventHandler productionClosing = null;
+            CancelEventHandler observeClosing = (sender, args) =>
+            {
+                closingCalls++;
+                if (closingCalls == 1) firstCancelled = args.Cancel;
+                // 此观察者在生产处理器之后执行；始终保留内部窗口，避免真正退出专项进程。
+                args.Cancel = true;
+                if (closingCalls >= 2) closingObserved.TrySetResult(true);
+            };
+            DispatcherUnhandledExceptionEventHandler observeException = (sender, args) =>
+            {
+                dispatcherErrors.Add(args.Exception);
+                Console.Error.WriteLine("[真实关窗原异常] " + args.Exception);
+                args.Handled = true;
+                closingObserved.TrySetResult(true);
+            };
+            using (var dialogs = new ConnectionCheckDialogScope("暂不能关闭软件"))
+            using (var recoveryDialogs = new ConnectionCheckDialogScope("恢复状态保存失败"))
+            {
+                try
+                {
+                    Require(app.ShutdownMode == ShutdownMode.OnExplicitShutdown,
+                        "真实关窗检查必须使用显式退出模式，不能让关闭一个内部窗口提前结束专项进程。");
+                    var pending = (System.Collections.IList)fixture.AppField("_unfinishedConnectionCleanups");
+                    Require(pending.Count == 1 && ReferenceEquals(ReadConnectionCheckField(pending[0], "Runtime"), runtime)
+                        && ReferenceEquals(ReadConnectionCheckField(pending[0], "History"), history),
+                        "App 没有保留本组真实未发布对象，不能建立同步关窗收尾场景。");
+                    object cleanup = pending[0];
+                    var previousStop = (Task)ReadConnectionCheckField(cleanup, "StopTask");
+                    var monitor = (Task)ReadConnectionCheckField(runtime, "_controlInputMonitorTask");
+                    Require(previousStop != null && previousStop.IsFaulted && monitor != null && monitor.IsCompleted
+                        && !fixture.Connection.IsConnected && fixture.Connection.Card == null && fixture.Connection.LogicalIo == null
+                        && fixture.CurrentRuntime == null && !(bool)fixture.AppField("_shutdownDisconnectInProgress"),
+                        "原取消失败、已结束监控和离线来源没有同时成立，不能检查同步完成的 Closing。");
+                    Require(new WindowInteropHelper(fixture.Host).EnsureHandle() != IntPtr.Zero,
+                        "真实关窗检查没有建立窗口 HWND，不能以直接调用事件代替 WPF Closing。");
+                    MethodInfo closing = typeof(App).GetMethod("MainWindow_Closing", ConnectionCheckFlags);
+                    Require(closing != null, "找不到真实 App 关窗处理器。");
+                    productionClosing = (CancelEventHandler)Delegate.CreateDelegate(typeof(CancelEventHandler), app, closing);
+                    app.DispatcherUnhandledException += observeException;
+                    fixture.Host.Closing += productionClosing;
+                    fixture.Host.Closing += observeClosing;
+                    SetConnectionCheckField(app, "_taskEditsCloseConfirmed", true);
+                    closingStarted = true;
+                    fixture.Host.Close();
+
+                    await WaitForConnectionCheckAsync(closingObserved.Task,
+                        "真实 Closing 没有再次进入，也未取得本组原始异常，不能确认关窗结果。");
+                    await WaitForConnectionShutdownCompletionAsync(fixture);
+                    // 排空本次 Close 已投递的异常；完成依据仍是真实 Closing 事件与 App 关闭状态。
+                    await app.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle).Task;
+                    Console.WriteLine("[真实 Closing] 次数=" + closingCalls + "，首次取消=" + firstCancelled
+                        + "，调度异常=" + dispatcherErrors.Count + "，待收尾对象=" + pending.Count + "。");
+                    Require(closingCalls >= 1 && firstCancelled && pending.Count == 0
+                        && ((Task)ReadConnectionCheckField(cleanup, "StopTask")).Status == TaskStatus.RanToCompletion,
+                        "真实关窗没有经过原 pending 收尾分支，不能把其他初始化或关闭错误当作本组 RED。");
+                    Require(dialogs.DismissedCount == 0 && recoveryDialogs.DismissedCount == 0,
+                        "真实关窗被恢复或来源提示拒绝，本次同步重入场景未完成，请查看原提示正文。");
+                    if (dispatcherErrors.Count == 0)
+                        Require(closingCalls == 2 && !(bool)fixture.AppField("_shutdownDisconnectInProgress"),
+                            "ROC19_未发布收尾同步关窗重入：原收尾完成后没有在 WPF 允许的时机再次进入 Closing。");
+                }
+                catch (Exception error) { errors.Add(error); }
+                finally
+                {
+                    if (closingStarted)
+                    {
+                        try { await WaitForConnectionShutdownCompletionAsync(fixture); }
+                        catch (Exception error)
+                        {
+                            errors.Add(error);
+                            // 未完成的 async void 仍持有窗口；继续观察到实际结束，不能拆掉 handler 后污染下一组。
+                            while ((bool)fixture.AppField("_shutdownDisconnectInProgress")) await Task.Delay(10);
+                        }
+                        try { await app.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle).Task; }
+                        catch (Exception error) { errors.Add(error); }
+                    }
+                    fixture.Host.Closing -= observeClosing;
+                    if (productionClosing != null) fixture.Host.Closing -= productionClosing;
+                    app.DispatcherUnhandledException -= observeException;
+                    try
+                    {
+                        typeof(App).GetMethod("ReleaseShutdownProjectGate", ConnectionCheckFlags).Invoke(app, null);
+                        SetConnectionCheckField(app, "_taskEditsCloseConfirmed", false);
+                        SetConnectionCheckField(app, "_shutdownRetainedBlockedEvidence", false);
+                    }
+                    catch (Exception error) { errors.Add(error); }
+                }
+            }
+            if (dispatcherErrors.Count != 0)
+                errors.Add(new AggregateException("ROC19_未发布收尾同步关窗重入：真实 Closing 的原处理尚未返回就再次 Close，产生调度异常。", dispatcherErrors));
+            if (errors.Count != 0) throw new AggregateException("未发布收尾的真实 WPF 关窗检查或收尾失败。", errors);
         }
 
         /// <summary>确认旧 App 调用已进入真实 setter 的关闭等待，不要求 Runtime 必须在等待前创建或发布。</summary>

@@ -41,7 +41,15 @@
 
 此次原来的九条来源问题全部转为 GREEN，正常关窗也通过。唯一产品失败为 `ROC19_未发布监控失败丢失收尾`，日志观察值为“屏障内保留历史=False、重试等待原监控=False、放行后历史线程结束=True”。场景实际建立，监控仍未结束时历史已被关闭，且下一次同步没有等待原监控；这是评审 finding 的真实 RED，不是编译或 fixture 失败。
 
-随后修正保留具体 Runtime、对应 history 与共享原始 StopTask：停止失败不移除；下一次同步在幂等返回前重试，正常关窗异步重试并再次核对当前来源，强制退出只等待原始 Runtime 停止任务而不等待 UI 续体。历史只在原监控确认结束后关闭，退出正常交接的两个许可分支都要求待收尾集合为空。此后完整 Windows GREEN 与最终集成仍待执行。
+随后修正保留具体 Runtime、对应 history 与共享原始 StopTask：停止失败不移除；下一次同步在幂等返回前重试，正常关窗异步重试并再次核对当前来源，强制退出只等待原始 Runtime 停止任务而不等待 UI 续体。历史只在原监控确认结束后关闭，退出正常交接的两个许可分支都要求待收尾集合为空。
+
+该候选 [`a0d83fe1`](https://github.com/hefan1/MotionControlFramework/commit/a0d83fe16375cbf0a84e42fb0e5610b97bf07edc) / [run 42943872813](https://github.com/hefan1/MotionControlFramework/actions/runs/42943872813)，job `130271849880` 已取得完整 GREEN：Host、15/15 内部检查项目、70/70 操作页面组、保护布局及 Virtual/多控制器 API 全部通过。监控收尾三个日志观察值全部为 True，原九条来源与正常关窗仍通过。
+
+## 最后评审补充：真实窗口关闭事件
+
+独立完整差异评审接受具体对象保留与退出证据门，但指出新 pending 关窗分支在重试同步完成时，可能尚在原 Closing 事件中再次调用 `Close()`。Microsoft [.NET Framework 4.8 Window.Closing 文档](https://learn.microsoft.com/en-us/dotnet/api/system.windows.window.closing?view=netframework-4.8) 明确规定此时会抛 `InvalidOperationException`。
+
+原关窗组直接调用真实 App 处理函数，可以检查来源归属，但不会设置 WPF 的内部关闭状态，不能覆盖这一窗口事件边界。正在补充真实 `window.Close()` → `Closing` 的回归；在该补充场景取得 RED、最小修正并通过后再最终合并。当前全套已有检查通过不等于这个新发现的边界已验证。
 
 ## 证据边界
 
