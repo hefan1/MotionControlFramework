@@ -35,6 +35,17 @@ namespace MotionControl.OperatorPages.Checks
         private static int Main(string[] args)
         {
             ToolTipTimingCompatibility.Initialize();
+            // 真实 App 检查使用独立进程，避免改变其他检查对 Application.Current 的既有判断。
+            if (args.Length == 1 && args[0] == "--connection-context")
+            {
+                Console.OutputEncoding = new System.Text.UTF8Encoding(false);
+                var connectionApp = new ConnectionContextCheckApplication { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+                connectionApp.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/MotionControl.Host.Wpf;component/Localization/Strings.zh-CN.xaml", UriKind.Relative) });
+                int connectionFailures = 0;
+                Check("Host 连接来源离线故障注入", () => RunUiAsync(BoundTaskLoadChecks.RunConnectionContextChecksAsync), ref connectionFailures);
+                connectionApp.Shutdown();
+                return connectionFailures == 0 ? 0 : 1;
+            }
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/MotionControl.Host.Wpf;component/Localization/Strings.zh-CN.xaml", UriKind.Relative) });
             int failures = 0;
@@ -63,6 +74,7 @@ namespace MotionControl.OperatorPages.Checks
                 app.Shutdown();
                 return failures == 0 ? 0 : 1;
             }
+            Check("Host 连接来源离线故障注入（独立 App）", () => RunUiAsync(BoundTaskLoadChecks.RunConnectionContextProcessAsync), ref failures);
             Check("在途任务装载关闭", () => RunUiAsync(BoundTaskLoadChecks.RunPendingLoadChecksAsync), ref failures);
             Check("退出重试原关闭", () => RunUiAsync(BoundTaskLoadChecks.RunShutdownRetryCheckAsync), ref failures);
             Check("退出原上下文保护", () => RunUiAsync(BoundTaskLoadChecks.RunHostShutdownChecksAsync), ref failures);
