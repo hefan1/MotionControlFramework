@@ -696,6 +696,9 @@ namespace MotionControl.MachineDevice.Checks
             /// <summary>本次动作的目标位置。</summary>
             private double _target;
 
+            /// <summary>向检查线程公布本次动作是否已经准备好。</summary>
+            private volatile bool _moving;
+
             /// <summary>当前未完成动作是否为测试用回零。</summary>
             private bool _homeInProgress;
 
@@ -713,8 +716,12 @@ namespace MotionControl.MachineDevice.Checks
             /// <summary>当前反馈位置。</summary>
             internal double Position { get; set; }
 
-            /// <summary>是否正在运动。</summary>
-            internal bool Moving { get; private set; }
+            /// <summary>是否正在运动；公布为真时，本次动作任务已经准备好。</summary>
+            internal bool Moving
+            {
+                get { return _moving; }
+                private set { _moving = value; }
+            }
 
             /// <summary>伺服是否使能。</summary>
             internal bool ServoEnabled { get; set; }
@@ -770,11 +777,12 @@ namespace MotionControl.MachineDevice.Checks
             /// <summary>让当前动作正常完成并把位置落到目标。</summary>
             internal void Complete()
             {
+                TaskCompletionSource<bool> currentMotion = _motion;
                 Position = _target;
                 Moving = false;
                 if (_homeInProgress) Homed = true;
                 _homeInProgress = false;
-                _motion?.TrySetResult(true);
+                currentMotion?.TrySetResult(true);
             }
 
             /// <summary>读取当前状态快照。</summary>
@@ -822,12 +830,12 @@ namespace MotionControl.MachineDevice.Checks
             {
                 MoveCalls++;
                 _target = position;
+                var currentMotion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _motion = currentMotion;
                 Moving = true;
-                _motion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 if (StartError != null) throw StartError;
                 if (!IgnoresCancellation)
                 {
-                    TaskCompletionSource<bool> currentMotion = _motion;
                     cancellationToken.Register(() =>
                     {
                         if (CancellationGate != null) _ = CompleteDelayedCancellationAsync(currentMotion, CancellationGate.Task);
@@ -835,7 +843,7 @@ namespace MotionControl.MachineDevice.Checks
                     });
                 }
 
-                return _motion.Task;
+                return currentMotion.Task;
             }
 
             /// <summary>模拟厂商动作任务迟到执行停止并结束取消。</summary>

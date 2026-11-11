@@ -35,6 +35,17 @@ namespace MotionControl.OperatorPages.Checks
         private static int Main(string[] args)
         {
             ToolTipTimingCompatibility.Initialize();
+            // 真实 App 检查使用独立进程，避免改变其他检查对 Application.Current 的既有判断。
+            if (args.Length == 1 && args[0] == "--connection-context")
+            {
+                Console.OutputEncoding = new System.Text.UTF8Encoding(false);
+                var connectionApp = new ConnectionContextCheckApplication { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+                connectionApp.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/MotionControl.Host.Wpf;component/Localization/Strings.zh-CN.xaml", UriKind.Relative) });
+                int connectionFailures = 0;
+                Check("Host 连接来源离线故障注入", () => RunUiAsync(BoundTaskLoadChecks.RunConnectionContextChecksAsync), ref connectionFailures);
+                connectionApp.Shutdown();
+                return connectionFailures == 0 ? 0 : 1;
+            }
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/MotionControl.Host.Wpf;component/Localization/Strings.zh-CN.xaml", UriKind.Relative) });
             int failures = 0;
@@ -63,6 +74,7 @@ namespace MotionControl.OperatorPages.Checks
                 app.Shutdown();
                 return failures == 0 ? 0 : 1;
             }
+            Check("Host 连接来源离线故障注入（独立 App）", () => RunUiAsync(BoundTaskLoadChecks.RunConnectionContextProcessAsync), ref failures);
             Check("在途任务装载关闭", () => RunUiAsync(BoundTaskLoadChecks.RunPendingLoadChecksAsync), ref failures);
             Check("退出重试原关闭", () => RunUiAsync(BoundTaskLoadChecks.RunShutdownRetryCheckAsync), ref failures);
             Check("退出原上下文保护", () => RunUiAsync(BoundTaskLoadChecks.RunHostShutdownChecksAsync), ref failures);
@@ -132,7 +144,7 @@ namespace MotionControl.OperatorPages.Checks
             Check("产品记录只读显示两种来源及错误", ProductRecordChecks.Run, ref failures);
             Check("工位版本、草稿与多轴参数独立保存", EditorIntegration, ref failures);
             Check("四页中英文和两种尺寸离屏布局", RenderWorkspaces, ref failures);
-            Console.WriteLine("操作页面内部检查：69 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
+            Console.WriteLine("操作页面内部检查：70 组，失败 " + failures + "。未连接控制器，不代表屏幕验收。");
             app.Shutdown();
             return failures == 0 ? 0 : 1;
         }

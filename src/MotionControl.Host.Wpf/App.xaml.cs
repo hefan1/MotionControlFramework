@@ -607,210 +607,6 @@ namespace MotionControl.Host.Wpf
             await SynchronizeCardConnectionAsync();
         }
 
-        /// <summary>同步连接状态；关窗断卡也须等待页面与运行时完成清理。</summary>
-        private async Task SynchronizeCardConnectionAsync()
-        {
-            if (_mainWindow == null)
-            {
-                return;
-            }
-
-            if (_safetyInterlockPage != null)
-            {
-                _safetyInterlockPage.RefreshDigitalInputNames();
-            }
-
-            bool softwareController = _cardConnection is VirtualAxisMappingCardConnection;
-            if (softwareController) _lastSoftwareConnectionStatus = _cardConnection.IsConnected;
-            _mainWindow.SetMotionCardConnectionStatus(
-                _cardConnection.IsConnected,
-                _axisMappingPage.CardConnectionStatusMessage,
-                softwareController);
-            if (!_cardConnection.IsConnected)
-            {
-                _taskMonitorLauncher?.MarkControllerConnectionLost();
-                if (_taskMonitorLauncher != null)
-                {
-                    try
-                    {
-                        await _taskMonitorLauncher.SetMachineContextAsync(null, null, null, null);
-                    }
-                    catch (Exception taskSessionError)
-                    {
-                        Trace.TraceError("控制卡断开后关闭任务会话失败：" + taskSessionError);
-                    }
-                }
-
-                if (_machineRuntime != null)
-                {
-                    if (_machineRuntime.State != MachineRunState.Disconnected)
-                    {
-                        RetainUnconfirmedAlarms(_machineRuntime);
-                        _alarmContinuity?.MarkUnconfirmed("控制器未经过已确认的断开交接。 ");
-                    }
-                    _machineRuntime.StatusChanged -= MachineRuntime_RecoveryStatusChanged;
-                    try
-                    {
-                        await _machineRuntime.StopControlInputMonitoringAsync();
-                    }
-                    catch (Exception monitorError)
-                    {
-                        Trace.TraceWarning("控制卡断开后停止现场按钮监控失败：" + monitorError.Message);
-                    }
-                }
-
-                _machineRuntime = null;
-                Volatile.Write(ref _currentAlarmService, null);
-                CloseAlarmHistory();
-                _machineSafetyStatus = null;
-                _manualMotionDebugPage = null;
-                _flowStatusPage = null;
-                _mainWindow.SetMachineRuntime(null);
-                _deviceVariablePage.SetMachineRuntime(null);
-                _mainWindow.SetFlowStatusPage(null);
-                _mainWindow.SetManualMotionDebugPage(null);
-                RefreshAxisMonitorPage(null);
-                RefreshIoMonitorPage();
-                return;
-            }
-
-            string recoveryMessage = string.Empty;
-            MachineRuntime createdRuntime = null;
-            try
-            {
-                IMotionCard connectedCard = _cardConnection.ConnectedMotionCard;
-                if (connectedCard == null)
-                {
-                    throw new InvalidOperationException("控制卡连接状态有效，但没有可供手动调试使用的卡对象。");
-                }
-
-                ILogicalIo connectedLogicalIo = _cardConnection.ConnectedLogicalIo;
-                if (connectedLogicalIo == null)
-                {
-                    throw new InvalidOperationException("控制卡已连接，但没有可供设备运行时使用的逻辑 IO 服务。");
-                }
-
-                var motionCards = new MotionCardGroup(new IMotionCard[] { connectedCard });
-                _alarmHandoffSettled = false;
-                _trackedAlarmSources = false;
-                _alarmContinuity.Open();
-                SafetyInterlockConfigurationDocument controlInputConfiguration;
-                _machineSafetyStatus = CreateSafetyStatus(connectedLogicalIo, out controlInputConfiguration);
-                var alarmService = new MachineAlarmService();
-                alarmService.StopAlarmRaised += AlarmService_StopAlarmRaised;
-                Volatile.Write(ref _currentAlarmService, alarmService);
-                if (!string.IsNullOrWhiteSpace(_alarmContinuity.BlockReason))
-                {
-                    ReportUnconfirmedAlarm(alarmService, _alarmContinuity.BlockReason
-                        + (string.IsNullOrWhiteSpace(_retainedAlarmDetails) ? string.Empty : " 旧报警线索：" + _retainedAlarmDetails));
-                }
-                CloseAlarmHistory();
-                _alarmHistoryJournal = new AlarmHistoryJournal(alarmService, _configurationStore, MachineId);
-                IStationFlow[] stationFlows;
-                IReadOnlyList<IStationPreparation> preparations;
-                IReadOnlyList<ControlledClearanceProfile> clearanceProfiles;
-                try
-                {
-                    stationFlows = CreateEquipmentStationFlows(
-                        motionCards, connectedLogicalIo, alarmService, out preparations, out clearanceProfiles);
-                }
-                catch (Exception error)
-                {
-                    stationFlows = new IStationFlow[0];
-                    preparations = new IStationPreparation[0];
-                    clearanceProfiles = new ControlledClearanceProfile[0];
-                    MessageBox.Show(
-                        "设备工位配置无法启用，自动流程已关闭；轴手动和 IO 监控仍可使用。\n"
-                        + error.Message,
-                        "设备工位配置",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Warning);
-                }
-
-                _machineRecoveryCoordinator.TryRestoreStationFlows(stationFlows, out recoveryMessage);
-
-                createdRuntime = new MachineRuntime(
-                    motionCards,
-                    stationFlows,
-                    alarmService,
-                    _machineSafetyStatus,
-                    controlInputIo: connectedLogicalIo,
-                    startInputName: controlInputConfiguration.StartInputName,
-                    pauseInputName: controlInputConfiguration.PauseInputName,
-                    resetInputName: controlInputConfiguration.ResetInputName,
-                    controlOwner: HostEquipmentSelection.ResolveExecutionOwner(_configurationStore, MachineId));
-                createdRuntime.RequestInitializationRecovery(
-                    _machineRecoveryCoordinator.HasCompletedInitializationCheckpoint);
-                // 恢复数据不可信时保留原文件，并阻止自动准备和生产；手动排查仍可用。
-                createdRuntime.SetRecoveryBlockReason(_machineRecoveryCoordinator.RecoveryBlockReason);
-                createdRuntime.SetAlarmContinuityBlockReason(_alarmContinuity.BlockReason);
-                createdRuntime.SetBeforeAutomaticRun(() => _machineRecoveryCoordinator.InvalidateBeforeAutomaticRun(createdRuntime));
-                createdRuntime.SetPreparationRecordCallbacks(() => _machineRecoveryCoordinator.MarkBeforePreparation(createdRuntime),
-                    _machineRecoveryCoordinator.SaveAfterSafePreparation);
-                createdRuntime.SetClearanceRecordCallbacks(_machineRecoveryCoordinator.MarkBeforeClearance,
-                    _machineRecoveryCoordinator.SaveClearanceActionsObserved, _machineRecoveryCoordinator.RecordClearanceInspection);
-                createdRuntime.ConfigureControlledClearanceProfiles(clearanceProfiles);
-                createdRuntime.ConfigurePreparations(preparations);
-                await createdRuntime.ConnectAsync(CancellationToken.None);
-
-                _machineRuntime = createdRuntime;
-                if (!string.IsNullOrWhiteSpace(_alarmContinuity.BlockReason))
-                    createdRuntime.MarkAlarmContinuityUnconfirmed(_alarmContinuity.BlockReason);
-                _machineRuntime.StatusChanged += MachineRuntime_RecoveryStatusChanged;
-                _deviceVariablePage.SetMachineRuntime(createdRuntime);
-                _flowStatusPage = new FlowStatusView(createdRuntime, () => _taskMonitorLauncher != null && _taskMonitorLauncher.HasTaskSession);
-                _mainWindow.SetFlowStatusPage(_flowStatusPage);
-                RefreshManualDebugPages(createdRuntime, motionCards, connectedLogicalIo);
-                await _taskMonitorLauncher.SetMachineContextAsync(
-                    createdRuntime, motionCards, connectedLogicalIo, _deviceVariableStore, preparations);
-                // 任务上下文先就位，再让可见的设备准备页读取对应入口，避免误用上一会话。
-                _mainWindow.SetMachineRuntime(createdRuntime);
-            }
-            catch (Exception error)
-            {
-                _alarmContinuity?.MarkUnconfirmed("运行时初始化未完成：" + error.Message);
-                if (createdRuntime != null)
-                {
-                    try
-                    {
-                        await createdRuntime.StopControlInputMonitoringAsync();
-                    }
-                    catch (Exception monitorError)
-                    {
-                        Trace.TraceWarning("运行时初始化失败后停止现场按钮监控失败：" + monitorError.Message);
-                    }
-                }
-
-                _machineRuntime = null;
-                Volatile.Write(ref _currentAlarmService, null);
-                CloseAlarmHistory();
-                _machineSafetyStatus = null;
-                _manualMotionDebugPage = null;
-                _flowStatusPage = null;
-                _mainWindow.SetMachineRuntime(null);
-                _deviceVariablePage.SetMachineRuntime(null);
-                _mainWindow.SetFlowStatusPage(null);
-                _mainWindow.SetManualMotionDebugPage(null);
-                RefreshAxisMonitorPage(null);
-                RefreshIoMonitorPage();
-                MessageBox.Show(
-                    "控制卡已连接，但创建运行时或调试页面失败：" + error.Message,
-                    "设备运行时",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-                return;
-            }
-
-            if (!string.IsNullOrWhiteSpace(recoveryMessage))
-            {
-                MessageBox.Show(
-                    recoveryMessage,
-                    "设备流程恢复",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-            }
-        }
-
         /// <summary>暂停后保存工位步骤与变量；自动运行开始时先写入不可续跑标记。</summary>
         private void MachineRuntime_RecoveryStatusChanged(object sender, EventArgs e)
         {
@@ -897,13 +693,14 @@ namespace MotionControl.Host.Wpf
             }
         }
 
-        /// <summary>按设备配置选择设备定义，并创建本设备的工位流程。</summary>
+        /// <summary>按设备配置创建工位流程并返回来源交接声明；是否发布由本次连接同步确认。</summary>
         private IStationFlow[] CreateEquipmentStationFlows(
             MotionCardGroup motionCards,
             ILogicalIo logicalIo,
             IMachineAlarmService alarmService,
             out IReadOnlyList<IStationPreparation> preparations,
-            out IReadOnlyList<ControlledClearanceProfile> clearanceProfiles)
+            out IReadOnlyList<ControlledClearanceProfile> clearanceProfiles,
+            out bool trackedAlarmSources)
         {
             IEquipmentDefinition equipment = HostEquipmentSelection.ResolveEquipmentDefinition(_configurationStore, MachineId);
             var declaration = equipment as IAlarmSourceSettlementDeclaration;
@@ -921,7 +718,7 @@ namespace MotionControl.Host.Wpf
             var provider = equipment as IEquipmentPreparationProvider;
             preparations = provider == null ? new IStationPreparation[0] : provider.CreatePreparations(context, flows);
             clearanceProfiles = CreateClearanceProfiles(equipment);
-            _trackedAlarmSources = declaration != null && declaration.AllAlarmSourcesOwnedByTrackedFlows;
+            trackedAlarmSources = declaration != null && declaration.AllAlarmSourcesOwnedByTrackedFlows;
             return flows;
         }
 
@@ -1213,9 +1010,14 @@ namespace MotionControl.Host.Wpf
         /// <summary>结束当前报警日志会话，后台收尾并保留未写入对象，不让磁盘等待阻断设备停机。</summary>
         private void CloseAlarmHistory()
         {
-            var history = _alarmHistoryJournal;
-            _alarmHistoryJournal = null;
-            if (history != null) _unfinishedAlarmHistories.Add(history);
+            CloseOwnedAlarmHistory(_alarmHistoryJournal);
+        }
+
+        /// <summary>结束指定来源的历史，不读取或清空后来连接安装的历史对象。</summary>
+        private void CloseOwnedAlarmHistory(AlarmHistoryJournal history)
+        {
+            if (ReferenceEquals(history, _alarmHistoryJournal)) _alarmHistoryJournal = null;
+            if (history != null && !_unfinishedAlarmHistories.Contains(history)) _unfinishedAlarmHistories.Add(history);
             if (_exitingApplication) return;
             foreach (var item in _unfinishedAlarmHistories.ToArray())
             {

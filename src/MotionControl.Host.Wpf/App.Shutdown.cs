@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using MotionControl.Framework.Contracts.IO;
+using MotionControl.Framework.Contracts.Motion;
 using MotionControl.Framework.Runtime.Machine;
 
 namespace MotionControl.Host.Wpf
@@ -34,6 +36,51 @@ namespace MotionControl.Host.Wpf
                 e.Cancel = true;
                 return;
             }
+            if (HasUnfinishedConnectionCleanup)
+            {
+                // 未发布对象可能没有当前 Runtime，必须先重试原监控，再重新进入正常关窗判断。
+                e.Cancel = true;
+                _shutdownDisconnectInProgress = true;
+                long cleanupVersion = ++_connectionSynchronizationVersion;
+                var cleanupWindow = _mainWindow;
+                var cleanupRuntime = _machineRuntime;
+                var cleanupConnection = _cardConnection;
+                var cleanupTasks = _taskMonitorLauncher;
+                var cleanupRecovery = _machineRecoveryCoordinator;
+                var cleanupContinuity = _alarmContinuity;
+                bool preserveRecoveryFiles = _equipmentProjectRestartRequired;
+                try
+                {
+                    IMotionCard cleanupCard = cleanupConnection?.ConnectedMotionCard;
+                    ILogicalIo cleanupIo = cleanupConnection?.ConnectedLogicalIo;
+                    bool wasConnected = cleanupConnection != null && cleanupConnection.IsConnected;
+                    await FinishUnpublishedConnectionsAsync();
+                    // 即使收尾同步完成，也先让原 Closing 返回；WPF 禁止在原关闭事件中再次 Close。
+                    await Task.Yield();
+                    // 收尾期间若又换了设备，旧关闭请求到此结束，不能重新请求关闭后来设备。
+                    if (_exitingApplication || cleanupVersion != _connectionSynchronizationVersion
+                        || !ReferenceEquals(cleanupWindow, _mainWindow) || !ReferenceEquals(cleanupRuntime, _machineRuntime)
+                        || !ReferenceEquals(cleanupConnection, _cardConnection) || !ReferenceEquals(cleanupTasks, _taskMonitorLauncher)
+                        || !ReferenceEquals(cleanupRecovery, _machineRecoveryCoordinator) || !ReferenceEquals(cleanupContinuity, _alarmContinuity)
+                        || preserveRecoveryFiles != _equipmentProjectRestartRequired
+                        || wasConnected != (cleanupConnection != null && cleanupConnection.IsConnected)
+                        || !ReferenceEquals(cleanupCard, cleanupConnection?.ConnectedMotionCard)
+                        || !ReferenceEquals(cleanupIo, cleanupConnection?.ConnectedLogicalIo))
+                        throw new InvalidOperationException("旧连接收尾期间设备上下文已变化，请核对当前设备后重试关闭。");
+                }
+                catch (Exception error)
+                {
+                    RecordConnectionSynchronizationError(cleanupContinuity, error);
+                    _taskEditsCloseConfirmed = false;
+                    ReleaseShutdownProjectGate();
+                    MessageBox.Show("旧连接收尾或当前设备来源尚未确认，软件暂不关闭。\n" + error.Message,
+                        "暂不能关闭软件", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                finally { _shutdownDisconnectInProgress = false; }
+                cleanupWindow?.Close();
+                return;
+            }
             MachineRunState? runtimeState = _machineRuntime == null
                 ? (MachineRunState?)null
                 : _machineRuntime.State;
@@ -58,22 +105,53 @@ namespace MotionControl.Host.Wpf
                 }
 
                 _shutdownDisconnectInProgress = true;
+                // 草稿确认完成后才正式受理关闭；在首次等待前撤销仍在装配的旧连接同步。
+                long expectedConnectionVersion = ++_connectionSynchronizationVersion;
+                var window = _mainWindow;
                 var runtime = _machineRuntime;
                 var connection = _cardConnection;
+                IMotionCard card = null;
+                ILogicalIo logicalIo = null;
                 var tasks = _taskMonitorLauncher;
                 var recovery = _machineRecoveryCoordinator;
                 bool preserveRecoveryFiles = _equipmentProjectRestartRequired;
-                // 只核对 App 组合对象归属；设备停止、输出核查和保存由具体退出对象负责。
+
+                // 核对关闭所捕获的组合和同步代次；不能把后来连接的结果当成本次断卡完成。
+                bool IsShutdownSourceCurrent()
+                {
+                    return !_exitingApplication && expectedConnectionVersion == _connectionSynchronizationVersion
+                        && ReferenceEquals(window, _mainWindow) && ReferenceEquals(connection, _cardConnection)
+                        && ReferenceEquals(tasks, _taskMonitorLauncher) && ReferenceEquals(recovery, _machineRecoveryCoordinator)
+                        && preserveRecoveryFiles == _equipmentProjectRestartRequired;
+                }
+
+                // 停止与保存阶段仍须持有原 Runtime；原卡或 IO 被替换时也不得继续操作。
                 void CheckShutdownContext()
                 {
-                    if (!ReferenceEquals(runtime, _machineRuntime) || !ReferenceEquals(connection, _cardConnection)
-                        || !ReferenceEquals(tasks, _taskMonitorLauncher) || !ReferenceEquals(recovery, _machineRecoveryCoordinator)
-                        || preserveRecoveryFiles != _equipmentProjectRestartRequired)
+                    if (!IsShutdownSourceCurrent() || !ReferenceEquals(runtime, _machineRuntime)
+                        || (connection != null && connection.ConnectedMotionCard != null
+                            && !ReferenceEquals(card, connection.ConnectedMotionCard))
+                        || (connection != null && connection.ConnectedLogicalIo != null
+                            && !ReferenceEquals(logicalIo, connection.ConnectedLogicalIo)))
                         throw new InvalidOperationException("退出期间设备上下文已变化，不能用旧退出结果操作当前设备。");
+                }
+
+                // 正常断卡会使原会话失效，随后同步会清空 Runtime；这两种变化不等于换成了新设备。
+                void CheckDisconnectedShutdownContext(bool synchronizationFinished)
+                {
+                    if (!IsShutdownSourceCurrent() || connection == null || connection.IsConnected
+                        || connection.ConnectedMotionCard != null || connection.ConnectedLogicalIo != null
+                        || (_machineRuntime != null && (!ReferenceEquals(runtime, _machineRuntime)
+                            || runtime.State != MachineRunState.Disconnected || runtime.ConnectionSessionId.HasValue))
+                        || (synchronizationFinished && (_machineRuntime != null
+                            || (tasks != null && (tasks.HasUnsettledTaskSession || tasks.IsCommandInProgress)))))
+                        throw new InvalidOperationException("退出期间连接来源已变化或断开收尾尚未完成，不能关闭当前设备。");
                 }
                 HostShutdownOperation shutdown = null;
                 try
                 {
+                    card = connection?.ConnectedMotionCard;
+                    logicalIo = connection?.ConnectedLogicalIo;
                     shutdown = new HostShutdownOperation(runtime, connection, tasks, recovery,
                         preserveRecoveryFiles, CheckShutdownContext);
                     await shutdown.StopAsync();
@@ -82,16 +160,24 @@ namespace MotionControl.Host.Wpf
                     await DisconnectMachineBeforeCardAsync(CancellationToken.None);
                     CheckShutdownContext();
                     if (connection != null) await connection.DisconnectAsync(CancellationToken.None);
+                    CheckDisconnectedShutdownContext(false);
+                    // 本次同步入口会递增一次；等待中若又有同步进入，完成时必须拒绝旧关闭。
+                    expectedConnectionVersion++;
                     await SynchronizeCardConnectionAsync();
+                    CheckDisconnectedShutdownContext(true);
                 }
                 catch (Exception error)
                 {
-                    // 仅同步本次连接仍为当前连接时的断卡结果，旧退出不得替新连接清理状态。
-                    if (ReferenceEquals(connection, _cardConnection) && connection != null && !connection.IsConnected)
+                    // 只整理仍属于本次来源的断卡结果；同一连接服务中的后来卡也不能被旧 catch 清理。
+                    try
                     {
-                        try { await SynchronizeCardConnectionAsync(); }
-                        catch (Exception syncError) { Trace.TraceError("关窗断卡后同步失败：" + syncError); }
+                        if (IsShutdownSourceCurrent() && connection != null && !connection.IsConnected
+                            && (_machineRuntime == null || ReferenceEquals(runtime, _machineRuntime))
+                            && (connection.ConnectedMotionCard == null || ReferenceEquals(card, connection.ConnectedMotionCard))
+                            && (connection.ConnectedLogicalIo == null || ReferenceEquals(logicalIo, connection.ConnectedLogicalIo)))
+                            await SynchronizeCardConnectionAsync();
                     }
+                    catch (Exception syncError) { Trace.TraceError("关窗断卡后同步失败：" + syncError); }
                     _taskEditsCloseConfirmed = false;
                     ReleaseShutdownProjectGate();
                     bool released = false;
@@ -120,7 +206,7 @@ namespace MotionControl.Host.Wpf
 
                 // 等待期间操作员可能编辑配置；重新检查未保存内容。
                 _taskEditsCloseConfirmed = false;
-                _mainWindow.Close();
+                window.Close();
                 return;
             }
 
@@ -203,6 +289,9 @@ namespace MotionControl.Host.Wpf
         /// <summary>应用退出时断开已连接的控制卡，并报告句柄释放失败。</summary>
         protected override void OnExit(ExitEventArgs e)
         {
+            // 退出入口即撤销旧连接同步，后续任何迟到续体都不得再发布运行时或页面。
+            _exitingApplication = true;
+            ++_connectionSynchronizationVersion;
             if (_softwareConnectionTimer != null)
             {
                 _softwareConnectionTimer.Stop();
@@ -213,15 +302,21 @@ namespace MotionControl.Host.Wpf
             if (_taskMonitorLauncher != null && _taskMonitorLauncher.HasUnsettledTaskSession)
                 Trace.TraceWarning("应用退出时任务会话尚未关闭，保留现有恢复记录以供下次核查。");
 
-            if (_machineRuntime != null)
+            MachineRuntime exitingRuntime = _machineRuntime;
+            var exitingHistory = _alarmHistoryJournal;
+            bool currentRuntimeWasPending = IsUnfinishedConnectionRuntime(exitingRuntime);
+            FinishUnpublishedConnectionsAtExit();
+            if (exitingRuntime != null && !currentRuntimeWasPending)
             {
                 try
                 {
-                    _machineRuntime.StopControlInputMonitoringAsync().GetAwaiter().GetResult();
+                    exitingRuntime.StopControlInputMonitoringAsync().GetAwaiter().GetResult();
                 }
                 catch (Exception monitorError)
                 {
-                    Trace.TraceWarning("应用退出时停止现场按钮监控失败：" + monitorError.Message);
+                    // 强制退出也不能把仍未结束的当前监控及其历史当成已正常收尾。
+                    RememberUnfinishedConnection(exitingRuntime, exitingHistory);
+                    RecordConnectionSynchronizationError(_alarmContinuity, monitorError);
                 }
             }
 
@@ -241,8 +336,7 @@ namespace MotionControl.Host.Wpf
                 }
             }
 
-            _exitingApplication = true;
-            CloseAlarmHistory();
+            if (!IsUnfinishedConnectionHistory(_alarmHistoryJournal)) CloseAlarmHistory();
             FinishAlarmHistoryAtExit();
             // 只有设备项目明确约束所有报警来源，且正常断卡已确认收尾时才能结束本会话。
             // 系统强退、异常断连、旧报警未复位或设备项目未声明时保留原记录。
@@ -253,7 +347,8 @@ namespace MotionControl.Host.Wpf
                 && (_taskMonitorLauncher == null || (!_taskMonitorLauncher.HasUnsettledTaskSession && !_taskMonitorLauncher.IsCommandInProgress))
                 && _machineRuntime == null && (_cardConnection == null
                     || (!_cardConnection.IsConnected && _cardConnection.ConnectedMotionCard == null));
-            _alarmContinuity?.CloseIfSettled(alarmHandoffComplete || defaultProjectNeverConnected);
+            _alarmContinuity?.CloseIfSettled(!HasUnfinishedConnectionCleanup
+                && (alarmHandoffComplete || defaultProjectNeverConnected));
             ReleaseSingleInstanceMutex();
 
             base.OnExit(e);

@@ -338,13 +338,15 @@ namespace MotionControl.Host.Wpf.Tasks
             panel.Background = Brush("#F7F9FC");
         }
 
-        /// <summary>提供连接后的设备实例；断开前必须先安全结束任务会话。</summary>
+        /// <summary>提供连接后的设备实例；安全结束旧任务后再次核对代次，失效请求不得恢复旧上下文。</summary>
         internal async Task SetMachineContextAsync(MachineRuntime runtime, MotionCardGroup motionCards,
             ILogicalIo logicalIo, DeviceVariableStore variables, IReadOnlyList<IStationPreparation> preparations = null)
         {
-            _machineContextVersion++;
+            long requestedContext = ++_machineContextVersion;
             _taskOperations?.Invalidate();
             if (_session != null || _pendingTaskLoad != null) await CloseTaskSessionAsync().ConfigureAwait(true);
+            if (requestedContext != _machineContextVersion)
+                throw new InvalidOperationException("任务收尾期间设备上下文已变化，未发布旧连接结果。");
             _runtime = runtime; _motionCards = motionCards; _logicalIo = logicalIo; _variables = variables;
             _equipmentPreparations = preparations ?? new IStationPreparation[0];
             _controllerConnectionLost = runtime == null;
@@ -360,6 +362,20 @@ namespace MotionControl.Host.Wpf.Tasks
             UpdateRunStatus();
             UpdateCommandAvailability();
             RefreshPageText();
+        }
+
+        /// <summary>核对 Host 已发布对象与本入口的实际绑定，避免新任务入口把旧组合误认成重复通知。</summary>
+        internal bool HasMachineContext(MachineRuntime runtime, ILogicalIo logicalIo, DeviceVariableStore variables)
+        {
+            return !_controllerConnectionLost && ReferenceEquals(_runtime, runtime)
+                && ReferenceEquals(_motionCards, runtime?.MotionCards) && ReferenceEquals(_logicalIo, logicalIo)
+                && ReferenceEquals(_variables, variables);
+        }
+
+        /// <summary>Host 未能发布某个运行时时，只撤销任务入口中仍属于该实例的操作资格。</summary>
+        internal void RevokeMachineContext(MachineRuntime runtime)
+        {
+            if (runtime != null && ReferenceEquals(_runtime, runtime)) MarkControllerConnectionLost();
         }
 
         /// <summary>页面进入可见区域后刷新已保存的任务资源目录。</summary>
