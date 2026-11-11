@@ -31,6 +31,33 @@ namespace MotionControl.Host.Wpf
         /// <summary>与已发布 Runtime 同时生效的逻辑 IO，不能只按卡对象判断同源。</summary>
         private ILogicalIo _publishedLogicalIo;
 
+        /// <summary>尚未确认监控结束的未发布运行时；失败后继续保留具体对象和对应历史。</summary>
+        private readonly List<UnfinishedConnectionCleanup> _unfinishedConnectionCleanups = new List<UnfinishedConnectionCleanup>();
+
+        /// <summary>一次未发布运行时的收尾记录，停止任务必须是 Runtime 返回的原始任务。</summary>
+        private sealed class UnfinishedConnectionCleanup
+        {
+            /// <summary>需要确认现场按钮监控已经结束的原运行时。</summary>
+            internal readonly MachineRuntime Runtime;
+            /// <summary>只有原监控结束后才能关闭的报警历史。</summary>
+            internal readonly AlarmHistoryJournal History;
+            /// <summary>共享仍在进行的停止；失败后下一次请求可以重新尝试。</summary>
+            internal Task StopTask;
+
+            /// <summary>保存具体来源，不发出停止命令或结束历史。</summary>
+            internal UnfinishedConnectionCleanup(MachineRuntime runtime, AlarmHistoryJournal history)
+            {
+                Runtime = runtime;
+                History = history;
+            }
+        }
+
+        /// <summary>是否还有未确认结束的连接监控；关闭与同步都必须先处理这些对象。</summary>
+        private bool HasUnfinishedConnectionCleanup
+        {
+            get { return _unfinishedConnectionCleanups != null && _unfinishedConnectionCleanups.Count != 0; }
+        }
+
         /// <summary>同步连接状态；先收尾捕获的旧上下文，再发布当前来源，旧续体不能清理新连接。</summary>
         private async Task SynchronizeCardConnectionAsync()
         {
@@ -73,20 +100,6 @@ namespace MotionControl.Host.Wpf
             window.SetMotionCardConnectionStatus(connected, _axisMappingPage.CardConnectionStatusMessage, softwareController);
 
             MachineRuntime previousRuntime = _machineRuntime;
-            if (connected && ReferenceEquals(connection, _publishedCardConnection)
-                && ReferenceEquals(logicalIo, _publishedLogicalIo) && previousRuntime != null
-                && previousRuntime.MotionCards.Cards.Count == 1
-                && ReferenceEquals(previousRuntime.MotionCards.Cards.First(), card)
-                && tasks != null && tasks.HasMachineContext(previousRuntime, logicalIo, variables)
-                && previousRuntime.IsConnectionSessionCurrent(previousRuntime.ConnectionSessionId))
-            {
-                // 已发布的同一来源只更新连接显示，不关闭任务、不换报警历史或重复启动监控。
-                return;
-            }
-
-            // 底层卡已连接不等于页面已可操作；旧对象收尾期间明确保留未就绪状态。
-            if (connected) window.SetMotionCardConnectionStatus(false, "设备连接尚未就绪，请等待或检查连接状态。", softwareController);
-
             AlarmHistoryJournal previousHistory = _alarmHistoryJournal;
             MachineRuntime createdRuntime = null;
             AlarmHistoryJournal createdHistory = null;
@@ -96,6 +109,23 @@ namespace MotionControl.Host.Wpf
             string stationConfigurationWarning = null;
             try
             {
+                // 即使当前卡与已发布卡相同，也不能绕过上一轮失败后仍保留的监控收尾。
+                await FinishUnpublishedConnectionsAsync();
+                if (!IsSourceCurrent() || !ReferenceEquals(previousRuntime, _machineRuntime)) return;
+                if (connected && ReferenceEquals(connection, _publishedCardConnection)
+                    && ReferenceEquals(logicalIo, _publishedLogicalIo) && previousRuntime != null
+                    && previousRuntime.MotionCards.Cards.Count == 1
+                    && ReferenceEquals(previousRuntime.MotionCards.Cards.First(), card)
+                    && tasks != null && tasks.HasMachineContext(previousRuntime, logicalIo, variables)
+                    && previousRuntime.IsConnectionSessionCurrent(previousRuntime.ConnectionSessionId))
+                {
+                    // 已发布的同一来源只更新连接显示，不关闭任务、不换报警历史或重复启动监控。
+                    return;
+                }
+
+                // 底层卡已连接不等于页面已可操作；旧对象收尾期间明确保留未就绪状态。
+                if (connected) window.SetMotionCardConnectionStatus(false, "设备连接尚未就绪，请等待或检查连接状态。", softwareController);
+
                 // 换源或失联时立即撤销旧操作资格，保留原对象供安全收尾和失败后重试。
                 if (previousRuntime != null)
                 {
@@ -210,17 +240,28 @@ namespace MotionControl.Host.Wpf
             {
                 if (!published && createdRuntime != null)
                 {
-                    createdRuntime.StatusChanged -= MachineRuntime_RecoveryStatusChanged;
-                    createdRuntime.InvalidateConnectionSessionOnLoss();
-                    tasks?.RevokeMachineContext(createdRuntime);
-                    try { await createdRuntime.StopControlInputMonitoringAsync(); }
+                    // 先登记再发起撤销和停止；任一步失败都不能丢失原对象的后续重试入口。
+                    UnfinishedConnectionCleanup cleanup = RememberUnfinishedConnection(createdRuntime, createdHistory);
+                    try
+                    {
+                        createdRuntime.StatusChanged -= MachineRuntime_RecoveryStatusChanged;
+                        createdRuntime.InvalidateConnectionSessionOnLoss();
+                        tasks?.RevokeMachineContext(createdRuntime);
+                    }
+                    catch (Exception error)
+                    {
+                        failure = failure == null ? error
+                            : new AggregateException("连接初始化失败，且本轮操作资格撤销失败。", failure, error);
+                    }
+                    try { await FinishUnpublishedConnectionAsync(cleanup); }
                     catch (Exception error)
                     {
                         failure = failure == null ? error
                             : new AggregateException("连接初始化失败，且本轮监控未确认收尾。", failure, error);
                     }
                 }
-                if (!published && createdHistory != null) CloseOwnedAlarmHistory(createdHistory);
+                // Runtime 尚未创建时没有按钮监控；已创建的历史由其具体收尾记录负责关闭。
+                if (!published && createdRuntime == null && createdHistory != null) CloseOwnedAlarmHistory(createdHistory);
                 if (failure != null) RecordConnectionSynchronizationError(continuity, failure);
                 if (!published && createdRuntime != null && IsLatestRequest()
                     && ReferenceEquals(createdRuntime, _machineRuntime)) ClearConnectionPages(createdRuntime);
@@ -238,6 +279,74 @@ namespace MotionControl.Host.Wpf
                 MessageBox.Show(stationConfigurationWarning, "设备工位配置", MessageBoxButton.OK, MessageBoxImage.Warning);
             if (IsSourceCurrent() && !string.IsNullOrWhiteSpace(recoveryMessage))
                 MessageBox.Show(recoveryMessage, "设备流程恢复", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+
+        /// <summary>保留未完成收尾的具体运行时和历史，同一对象不会登记两次。</summary>
+        private UnfinishedConnectionCleanup RememberUnfinishedConnection(MachineRuntime runtime, AlarmHistoryJournal history)
+        {
+            UnfinishedConnectionCleanup cleanup = _unfinishedConnectionCleanups.FirstOrDefault(item => ReferenceEquals(item.Runtime, runtime));
+            if (cleanup == null)
+            {
+                cleanup = new UnfinishedConnectionCleanup(runtime, history);
+                _unfinishedConnectionCleanups.Add(cleanup);
+            }
+            return cleanup;
+        }
+
+        /// <summary>只共享原始 Runtime 停止任务；不得保存需要回到 UI 才能完成的包装任务。</summary>
+        private Task GetConnectionMonitorStopTask(UnfinishedConnectionCleanup cleanup)
+        {
+            if (cleanup.StopTask == null || cleanup.StopTask.IsFaulted || cleanup.StopTask.IsCanceled)
+                cleanup.StopTask = cleanup.Runtime.StopControlInputMonitoringAsync();
+            return cleanup.StopTask;
+        }
+
+        /// <summary>只有停止成功才移除记录并结束原历史；失败时保留对象供下次同步或退出重试。</summary>
+        private async Task FinishUnpublishedConnectionAsync(UnfinishedConnectionCleanup cleanup)
+        {
+            await GetConnectionMonitorStopTask(cleanup);
+            if (_unfinishedConnectionCleanups.Remove(cleanup)) CloseOwnedAlarmHistory(cleanup.History);
+        }
+
+        /// <summary>新连接发布前或正常关闭前，重试尚未结束的具体监控。</summary>
+        private async Task FinishUnpublishedConnectionsAsync()
+        {
+            if (!HasUnfinishedConnectionCleanup) return;
+            foreach (UnfinishedConnectionCleanup cleanup in _unfinishedConnectionCleanups.ToArray())
+                await FinishUnpublishedConnectionAsync(cleanup);
+        }
+
+        /// <summary>强制退出不等待 UI 收尾续体，只等待使用 ConfigureAwait(false) 的原始运行时停止任务。</summary>
+        private void FinishUnpublishedConnectionsAtExit()
+        {
+            if (!HasUnfinishedConnectionCleanup) return;
+            foreach (UnfinishedConnectionCleanup cleanup in _unfinishedConnectionCleanups.ToArray())
+            {
+                try
+                {
+                    GetConnectionMonitorStopTask(cleanup).GetAwaiter().GetResult();
+                    if (_unfinishedConnectionCleanups.Remove(cleanup)) CloseOwnedAlarmHistory(cleanup.History);
+                }
+                catch (Exception error)
+                {
+                    // 继续尝试其他独立对象，但原失败对象与历史仍保持未完成状态。
+                    RecordConnectionSynchronizationError(_alarmContinuity, error);
+                }
+            }
+        }
+
+        /// <summary>判断当前字段是否仍归待收尾对象所有，避免退出路径重复停止或提前关闭历史。</summary>
+        private bool IsUnfinishedConnectionRuntime(MachineRuntime runtime)
+        {
+            return runtime != null && HasUnfinishedConnectionCleanup
+                && _unfinishedConnectionCleanups.Any(item => ReferenceEquals(item.Runtime, runtime));
+        }
+
+        /// <summary>未确认监控结束的历史不能交给已经关闭订阅的历史队列。</summary>
+        private bool IsUnfinishedConnectionHistory(AlarmHistoryJournal history)
+        {
+            return history != null && HasUnfinishedConnectionCleanup
+                && _unfinishedConnectionCleanups.Any(item => ReferenceEquals(item.History, history));
         }
 
         /// <summary>只撤下仍属于指定 Runtime 的页面；调用方已核对连接来源，不能替新运行时清空绑定。</summary>

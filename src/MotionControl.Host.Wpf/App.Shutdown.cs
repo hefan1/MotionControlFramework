@@ -36,6 +36,49 @@ namespace MotionControl.Host.Wpf
                 e.Cancel = true;
                 return;
             }
+            if (HasUnfinishedConnectionCleanup)
+            {
+                // 未发布对象可能没有当前 Runtime，必须先重试原监控，再重新进入正常关窗判断。
+                e.Cancel = true;
+                _shutdownDisconnectInProgress = true;
+                long cleanupVersion = ++_connectionSynchronizationVersion;
+                var cleanupWindow = _mainWindow;
+                var cleanupRuntime = _machineRuntime;
+                var cleanupConnection = _cardConnection;
+                var cleanupTasks = _taskMonitorLauncher;
+                var cleanupRecovery = _machineRecoveryCoordinator;
+                var cleanupContinuity = _alarmContinuity;
+                bool preserveRecoveryFiles = _equipmentProjectRestartRequired;
+                try
+                {
+                    IMotionCard cleanupCard = cleanupConnection?.ConnectedMotionCard;
+                    ILogicalIo cleanupIo = cleanupConnection?.ConnectedLogicalIo;
+                    bool wasConnected = cleanupConnection != null && cleanupConnection.IsConnected;
+                    await FinishUnpublishedConnectionsAsync();
+                    // 收尾期间若又换了设备，旧关闭请求到此结束，不能重新请求关闭后来设备。
+                    if (_exitingApplication || cleanupVersion != _connectionSynchronizationVersion
+                        || !ReferenceEquals(cleanupWindow, _mainWindow) || !ReferenceEquals(cleanupRuntime, _machineRuntime)
+                        || !ReferenceEquals(cleanupConnection, _cardConnection) || !ReferenceEquals(cleanupTasks, _taskMonitorLauncher)
+                        || !ReferenceEquals(cleanupRecovery, _machineRecoveryCoordinator) || !ReferenceEquals(cleanupContinuity, _alarmContinuity)
+                        || preserveRecoveryFiles != _equipmentProjectRestartRequired
+                        || wasConnected != (cleanupConnection != null && cleanupConnection.IsConnected)
+                        || !ReferenceEquals(cleanupCard, cleanupConnection?.ConnectedMotionCard)
+                        || !ReferenceEquals(cleanupIo, cleanupConnection?.ConnectedLogicalIo))
+                        throw new InvalidOperationException("旧连接收尾期间设备上下文已变化，请核对当前设备后重试关闭。");
+                }
+                catch (Exception error)
+                {
+                    RecordConnectionSynchronizationError(cleanupContinuity, error);
+                    _taskEditsCloseConfirmed = false;
+                    ReleaseShutdownProjectGate();
+                    MessageBox.Show("旧连接收尾或当前设备来源尚未确认，软件暂不关闭。\n" + error.Message,
+                        "暂不能关闭软件", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                finally { _shutdownDisconnectInProgress = false; }
+                cleanupWindow?.Close();
+                return;
+            }
             MachineRunState? runtimeState = _machineRuntime == null
                 ? (MachineRunState?)null
                 : _machineRuntime.State;
@@ -257,15 +300,21 @@ namespace MotionControl.Host.Wpf
             if (_taskMonitorLauncher != null && _taskMonitorLauncher.HasUnsettledTaskSession)
                 Trace.TraceWarning("应用退出时任务会话尚未关闭，保留现有恢复记录以供下次核查。");
 
-            if (_machineRuntime != null)
+            MachineRuntime exitingRuntime = _machineRuntime;
+            var exitingHistory = _alarmHistoryJournal;
+            bool currentRuntimeWasPending = IsUnfinishedConnectionRuntime(exitingRuntime);
+            FinishUnpublishedConnectionsAtExit();
+            if (exitingRuntime != null && !currentRuntimeWasPending)
             {
                 try
                 {
-                    _machineRuntime.StopControlInputMonitoringAsync().GetAwaiter().GetResult();
+                    exitingRuntime.StopControlInputMonitoringAsync().GetAwaiter().GetResult();
                 }
                 catch (Exception monitorError)
                 {
-                    Trace.TraceWarning("应用退出时停止现场按钮监控失败：" + monitorError.Message);
+                    // 强制退出也不能把仍未结束的当前监控及其历史当成已正常收尾。
+                    RememberUnfinishedConnection(exitingRuntime, exitingHistory);
+                    RecordConnectionSynchronizationError(_alarmContinuity, monitorError);
                 }
             }
 
@@ -285,7 +334,7 @@ namespace MotionControl.Host.Wpf
                 }
             }
 
-            CloseAlarmHistory();
+            if (!IsUnfinishedConnectionHistory(_alarmHistoryJournal)) CloseAlarmHistory();
             FinishAlarmHistoryAtExit();
             // 只有设备项目明确约束所有报警来源，且正常断卡已确认收尾时才能结束本会话。
             // 系统强退、异常断连、旧报警未复位或设备项目未声明时保留原记录。
@@ -296,7 +345,8 @@ namespace MotionControl.Host.Wpf
                 && (_taskMonitorLauncher == null || (!_taskMonitorLauncher.HasUnsettledTaskSession && !_taskMonitorLauncher.IsCommandInProgress))
                 && _machineRuntime == null && (_cardConnection == null
                     || (!_cardConnection.IsConnected && _cardConnection.ConnectedMotionCard == null));
-            _alarmContinuity?.CloseIfSettled(alarmHandoffComplete || defaultProjectNeverConnected);
+            _alarmContinuity?.CloseIfSettled(!HasUnfinishedConnectionCleanup
+                && (alarmHandoffComplete || defaultProjectNeverConnected));
             ReleaseSingleInstanceMutex();
 
             base.OnExit(e);

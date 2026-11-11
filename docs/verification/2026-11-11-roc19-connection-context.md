@@ -37,6 +37,12 @@
 
 独立静态评审还发现初版补丁在未发布 Runtime 停监控失败时丢失重试对象，并提前关闭其历史。新增回归通过真实 launcher 已安装、App 尚未发布的身份窗口注入取消回调失败，核对再次同步必须等待原监控且保留原历史；标记为 `ROC19_未发布监控失败丢失收尾`。该回归将随初版生产候选执行，不能归入旧生产基线的九条 RED。
 
+初版候选 [`bb0e6dd2`](https://github.com/hefan1/MotionControlFramework/commit/bb0e6dd21672fa71782fa656b6e7e18d1a950b6e) / [run 42942126808](https://github.com/hefan1/MotionControlFramework/actions/runs/42942126808) 在 App 分文件缺少 `MotionControl.Framework.Wpf.Configuration` 命名空间时编译失败（`SafetyInterlockConfigurationDocument` / CS0246），行为检查未执行，不能计作新增产品 RED。仅补引用的 [`2fced14b`](https://github.com/hefan1/MotionControlFramework/commit/2fced14be73c80586698a90af4a09800419846f0) / [run 42942706244](https://github.com/hefan1/MotionControlFramework/actions/runs/42942706244)，job `130268080990` 已完成：Host 与全部检查编译、保护布局和 Virtual API 通过，内部项目 14/15。
+
+此次原来的九条来源问题全部转为 GREEN，正常关窗也通过。唯一产品失败为 `ROC19_未发布监控失败丢失收尾`，日志观察值为“屏障内保留历史=False、重试等待原监控=False、放行后历史线程结束=True”。场景实际建立，监控仍未结束时历史已被关闭，且下一次同步没有等待原监控；这是评审 finding 的真实 RED，不是编译或 fixture 失败。
+
+随后修正保留具体 Runtime、对应 history 与共享原始 StopTask：停止失败不移除；下一次同步在幂等返回前重试，正常关窗异步重试并再次核对当前来源，强制退出只等待原始 Runtime 停止任务而不等待 UI 续体。历史只在原监控确认结束后关闭，退出正常交接的两个许可分支都要求待收尾集合为空。此后完整 Windows GREEN 与最终集成仍待执行。
+
 ## 证据边界
 
 上述为真实 App / TaskMonitorLauncher 入口的受控离线通知和生命周期故障注入，不是正常按钮操作已观察到的现场故障，也不是正式 Host 屏幕验收。测试复用已有无轴设施，不验证运动 API；运动软件调用另由既有 Virtual 回归记录。正式 Windows Host 的跨设备 A→B→A 验收仍归 ROC-13，本轮当前未执行。
