@@ -13,6 +13,7 @@ using MotionControl.Framework.Contracts.Preparation;
 using MotionControl.Framework.Runtime.Alarms;
 using MotionControl.Framework.Runtime.Configuration;
 using MotionControl.Framework.Runtime.Machine;
+using MotionControl.Framework.Wpf.Configuration;
 using MotionControl.Framework.Wpf.Monitoring;
 using MotionControl.Host.Wpf.Recovery;
 
